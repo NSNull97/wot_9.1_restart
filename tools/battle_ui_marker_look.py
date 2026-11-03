@@ -90,10 +90,15 @@ ICON_CLASSES = {'lightTank': 'tank', 'mediumTank': 'tank', 'heavyTank': 'tank', 
 # Owner palette round 13: the glow of a damage number by its target, ally #A8D177,
 # enemy #F07870, a team killer #38B8C8, and the player's own damage #E2A53D (#E8B866
 # a little darker) whatever the target; the fire and ammo icons of a frame take it too.
-GLOW_COLOURS = {'green': bytes.fromhex('a8d177'), 'red': bytes.fromhex('f07870'), 'gold': bytes.fromhex('e2a53d'),
-                'blue': bytes.fromhex('38b8c8')}
+# Round 14: the whole palette darker ("Темнее A": lightness x0.85, saturation x1.15).
+GLOW_COLOURS = {'green': bytes.fromhex('91cd4a'), 'red': bytes.fromhex('f84033'), 'gold': bytes.fromhex('e29512'),
+                'blue': bytes.fromhex('26a4b4')}
 # The bar, the names and the contour of a marker: allies, enemies, a team killer.
-MARKER_PALETTE = {'green': 0xa8d177, 'red': 0xf07870, 'blue': 0x38b8c8}
+MARKER_PALETTE = {'green': 0x91cd4a, 'red': 0xf84033, 'blue': 0x26a4b4}
+# Owner round 14: the ammo icon covered the damage number; it goes under the number
+# and this far further right of where the native puts it.
+EXPLOSION_SHIFT = 8
+NAME_FIELDS_LIVE = ('pNameField', 'vNameField')
 # DAMAGE_COLOR rows: the player's damage takes the gold frames (#E2A53D) on every
 # target; any other source the frame of the target's label (#717 sends a team
 # killer to green and the squad's damage to an enemy to gold).
@@ -692,7 +697,17 @@ def _paint_icon():
             + stmt(('set', var('tr'), 'colorTransform', var('ct'))))
     alive = _if(('not', ('call', m, '__get__vehicleDestroyed', [])),
                 paint + _if(('not', ('==', ('typeof', tint), 'undefined')), make))
-    return stmt(('local', 'il', ('get', m, 'iconLoader'))) + _if(var('il'), alive)
+    # Owner round 14: the native setMarkerState paints the names by the scheme of the
+    # vehicle name (vm_*), over the data edit of the movie; a living vehicle's names
+    # take the colour of its bar here, after every native repaint.
+    colour = ('get', ('get', look, 'colours'), ('get', m, 'm_markerLabel'))
+    names = stmt(('local', 'nc', colour))
+    for field in NAME_FIELDS_LIVE:
+        clip = ('get', m, field)
+        names += _if(clip, stmt(('set', clip, 'textColor', var('nc'))))
+    names = _if(('not', ('call', m, '__get__vehicleDestroyed', [])),
+                stmt(('local', 'nc', colour)) + _if(('==', ('typeof', var('nc')), 'number'), names))
+    return stmt(('local', 'il', ('get', m, 'iconLoader'))) + _if(var('il'), alive) + names
 
 
 def _raise():
@@ -709,8 +724,14 @@ def _raise():
                 + _if(('<', ('call', clip, 'getDepth', []), ('-', var('top'), 1)),
                       stmt(('do', ('call', clip, 'swapDepths', [var('top')])))))
     body = b''
-    for part in ('hitLbl', 'hitExplosion'):
+    # Round 14: the ammo icon first, then the number above it.
+    for part in ('hitExplosion', 'hitLbl'):
         body += stmt(('local', 'c', ('get', m, part))) + _if(var('c'), up(var('c'), m))
+    # The icon right by EXPLOSION_SHIFT, once for each place the native gives it.
+    shift = (stmt(('set', var('e'), '_x', ('+', ('get', var('e'), '_x'), EXPLOSION_SHIFT)))
+             + stmt(('set', var('e'), 'projectShiftedX', ('get', var('e'), '_x'))))
+    body += (stmt(('local', 'e', ('get', m, 'hitExplosion')))
+             + _if(var('e'), _if(('not', ('==', ('get', var('e'), '_x'), ('get', var('e'), 'projectShiftedX'))), shift)))
     return body
 
 

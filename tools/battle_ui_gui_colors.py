@@ -25,9 +25,10 @@ TARGET = 'res_mods/0.9.1/' + MEMBER
 MAX_BYTES = 256 * 1024
 IDENTITY = (('mult', '1 1 1 1'), ('offset', '0 0 0 0'))
 # scheme: (sections to change, rgba of the text).
-SCHEMES = {'normal': ((None,), '218 221 213 255'),
-           'selected': (('default',), '217 182 111 255'),
-           'teamkiller': (('default', 'color_blind'), '56 184 200 255')}
+# Round 14: darker ("Темнее A"): #BBC1B0, #D9A63E, #26A4B4.
+SCHEMES = {'normal': ((None,), '187 193 176 255'),
+           'selected': (('default',), '217 166 62 255'),
+           'teamkiller': (('default', 'color_blind'), '38 164 180 255')}
 
 
 def _child(node, name):

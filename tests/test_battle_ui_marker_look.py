@@ -466,6 +466,30 @@ class RoundSevenTests(unittest.TestCase):
         self.vm.invoke(self.marker_proto.get('setMarkerState'), clip, ['dead'])
         self.assertIs(clip.get('iconLoader').get('transforms'), UNDEFINED)
 
+    def test_a_living_vehicles_names_take_its_bar_colour_after_a_native_repaint(self):
+        clip = self.marker('red')
+        clip.set('pNameField', Clip('p', textColor=0xffffff))
+        clip.set('vNameField', Clip('v', textColor=0xffffff))
+        self.vm.invoke(self.marker_proto.get('setMarkerState'), clip, ['alive'])
+        self.assertEqual((clip.get('pNameField').get('textColor'), clip.get('vNameField').get('textColor')),
+                         (COLOURS['red'], COLOURS['red']))
+        dead = self.marker('red', destroyed=True)
+        dead.set('pNameField', Clip('p', textColor=0x828282))
+        self.vm.invoke(self.marker_proto.get('setMarkerState'), dead, ['dead'])
+        self.assertEqual(dead.get('pNameField').get('textColor'), 0x828282, 'a dead name stays native')
+
+    def test_the_ammo_icon_goes_right_once_per_native_place(self):
+        clip = self.marker()
+        icon = Clip('hitExplosion', _x=40, getDepth=Native('getDepth', lambda this: 11), swapDepths=Native('swapDepths'))
+        clip.set('hitExplosion', icon)
+        clip.set('getNextHighestDepth', Native('next', lambda this: 12))
+        for _ in range(2):
+            self.vm.invoke(self.marker_proto.get('updateHealth'), clip, [100, 0, 'attack'])
+        self.assertEqual(icon.get('_x'), 40 + look.EXPLOSION_SHIFT, 'not again while the native left it')
+        icon.set('_x', 55)
+        self.vm.invoke(self.marker_proto.get('updateHealth'), clip, [100, 0, 'attack'])
+        self.assertEqual(icon.get('_x'), 55 + look.EXPLOSION_SHIFT)
+
     def test_a_hit_raises_the_number_and_icon_and_never_the_marker(self):
         parent = Clip('canvas', getNextHighestDepth=Native('next', lambda this: 40))
         clip = self.marker()
@@ -567,7 +591,7 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(whites), 6)
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in whites),
                          sorted(['95ff00ff', 'ff371cff', 'ffb21cff', '00eaffff', 'ffff00ff', '9086ffff']))
-        palette = {'95ff00ff': 'a8d177ff', 'ff371cff': 'f07870ff', 'ffb21cff': 'e2a53dff', '00eaffff': '38b8c8ff'}
+        palette = {'95ff00ff': '91cd4aff', 'ff371cff': 'f84033ff', 'ffb21cff': 'e29512ff', '00eaffff': '26a4b4ff'}
         self.assertEqual(sorted(value[:4].hex() for value in glows.values()),
                          sorted(palette.get(self.body[at:at + 4].hex(), self.body[at:at + 4].hex()) for at in whites),
                          'the palette of round 13 (ally, enemy, own damage, team killer); colour-blind frames native')

@@ -39,9 +39,10 @@ MAX_SIDE = 256
 CLASSES = {'lightTank': 'tank', 'mediumTank': 'tank', 'heavyTank': 'tank', 'AT-SPG': 'td', 'SPG': 'spg'}
 # Owner palette round 13: allies #9BAA8E, enemies #B3968F, own #D9B66F, team killer
 # #38B8C8; tank destroyers and artillery the shades of the accepted preview.
-ALLY = {'tank': (155, 170, 142), 'td': (136, 159, 175), 'spg': (179, 165, 132)}
-ENEMY = {'tank': (179, 150, 143), 'td': (177, 145, 163), 'spg': (189, 157, 132)}
-OWN, TEAM_KILLER = (217, 182, 111), (56, 184, 200)
+# Round 14: darker ("Темнее A": lightness x0.85, saturation x1.15).
+ALLY = {'tank': (0x83, 0x99, 0x71), 'td': (0x68, 0x89, 0xa0), 'spg': (0xa6, 0x92, 0x63)}
+ENEMY = {'tank': (0xa3, 0x79, 0x6f), 'td': (0xa0, 0x72, 0x8c), 'spg': (0xb2, 0x83, 0x5f)}
+OWN, TEAM_KILLER = (0xd9, 0xa6, 0x3e), (0x26, 0xa4, 0xb4)
 SETS = {'contour': ALLY, 'contour_ally': ALLY, 'contour_enemy': ENEMY,
         'contour_own': {kind: OWN for kind in ALLY}, 'contour_tk': {kind: TEAM_KILLER for kind in ALLY}}
 # The colours of the default path, which the vehicle markers divide by.

@@ -27,8 +27,8 @@ class GuiColoursTests(unittest.TestCase):
         return node
 
     def test_alive_rows_get_the_palette_text_and_a_neutral_icon_transform(self):
-        for path, rgba in (('normal', '218 221 213 255'), ('selected/default', '217 182 111 255'),
-                           ('teamkiller/default', '56 184 200 255'), ('teamkiller/color_blind', '56 184 200 255')):
+        for path, rgba in (('normal', '187 193 176 255'), ('selected/default', '217 166 62 255'),
+                           ('teamkiller/default', '38 164 180 255'), ('teamkiller/color_blind', '38 164 180 255')):
             node = self.section(path)
             self.assertEqual(node.findtext('rgba'), rgba, path)
             self.assertIsNone(node.find('schemeGroup'), path)
