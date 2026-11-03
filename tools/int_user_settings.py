@@ -10,6 +10,8 @@ import json
 import sqlite3
 
 MAX_KEY = 56
+# constants.USER_SERVER_SETTINGS.HIDE_MARKS_ON_GUN, sent with the first-login defaults.
+MARKS_ON_GUN = 500
 MAX_CHANGES = 64
 INT32 = (-2**31, 2**31 - 1)
 SCHEMA = """CREATE TABLE IF NOT EXISTS project_int_user_setting(
@@ -21,7 +23,7 @@ def _int(value):
 
 
 def _key(value):
-    return type(value) is int and 0 <= value <= MAX_KEY
+    return type(value) is int and (0 <= value <= MAX_KEY or value == MARKS_ON_GUN)
 
 
 def validate(request):

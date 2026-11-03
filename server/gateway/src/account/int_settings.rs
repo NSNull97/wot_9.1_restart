@@ -11,6 +11,11 @@ pub const ADD:i16=1600;
 pub const DELETE:i16=1601;
 pub const MAX_ARGUMENTS:usize=128;
 const MAX_KEY:i32=56;
+/// constants.USER_SERVER_SETTINGS.HIDE_MARKS_ON_GUN: the one key outside 0..56.
+/// _initializeDefaultSettings sends it in the same 52-pair batch, so refusing it
+/// refused every default the client wanted to store.
+const MARKS_ON_GUN:i32=500;
+fn known(key:i32)->bool {(0..=MAX_KEY).contains(&key)||key==MARKS_ON_GUN}
 const MAX_CHANGES:usize=64;
 /// Client migration version key. Never written for the client: with no
 /// version #717 ServerSettingsManager._updateToVersion runs
@@ -37,7 +42,6 @@ pub struct Request {pub id:i16,pub change:Change}
 impl Change {
     /// None for anything outside the closed native shape: refused, not stored.
     pub fn decode(command:i16,values:&[i32])->Option<Self> {
-        let known=|key:i32|(0..=MAX_KEY).contains(&key);
         let change=match command {
             ADD if values.len()%2==0=>Self{set:values.chunks_exact(2).map(|pair|(pair[0],pair[1])).collect(),delete:Vec::new()},
             DELETE=>Self{set:Vec::new(),delete:values.to_vec()},
@@ -81,13 +85,13 @@ pub fn parse_reply(bytes:&[u8],account_id:&str)->io::Result<Map> {
     let value:serde_json::Value=serde_json::from_slice(bytes).map_err(|_|invalid("int settings reply JSON"))?;
     let object=value.as_object().filter(|o|o.len()==2).ok_or_else(||invalid("int settings reply fields"))?;
     if object.get("account_id").and_then(|v|v.as_str())!=Some(account_id) {return Err(invalid("int settings reply account"));}
-    let rows=object.get("settings").and_then(|v|v.as_array()).filter(|r|r.len()<=MAX_KEY as usize+1).ok_or_else(||invalid("int settings reply rows"))?;
+    let rows=object.get("settings").and_then(|v|v.as_array()).filter(|r|r.len()<=MAX_KEY as usize+2).ok_or_else(||invalid("int settings reply rows"))?;
     let mut map=Map::new();
     for row in rows {
         let pair=row.as_array().filter(|p|p.len()==2).ok_or_else(||invalid("int settings reply row"))?;
         let number=|v:&serde_json::Value|v.as_i64().and_then(|n|i32::try_from(n).ok());
         let (Some(key),Some(value))=(number(&pair[0]),number(&pair[1])) else {return Err(invalid("int settings reply number"))};
-        if !(0..=MAX_KEY).contains(&key) || map.insert(key,value).is_some() {return Err(invalid("int settings reply key"));}
+        if !known(key) || map.insert(key,value).is_some() {return Err(invalid("int settings reply key"));}
     }
     Ok(map)
 }
@@ -129,7 +133,11 @@ mod tests {
     #[test] fn native_arguments_are_closed() {
         assert_eq!(Change::decode(ADD,&[43,5,0,11]),Some(Change{set:vec![(43,5),(0,11)],delete:vec![]}));
         assert_eq!(Change::decode(DELETE,&[43]),Some(Change{set:vec![],delete:vec![43]}));
-        for (command,values) in [(ADD,vec![43]),(ADD,vec![]),(ADD,vec![57,1]),(ADD,vec![-1,1]),(ADD,vec![1,1,1,2]),(DELETE,vec![0]),(DELETE,vec![57]),(DELETE,vec![]),(DELETE,vec![1,1]),(102,vec![1,1])] {
+        // The client's first-login batch: every section 0..55 plus MARKS_ON_GUN.
+        let defaults=(0..51).flat_map(|key|[key,1]).chain([500,0]).collect::<Vec<_>>();
+        assert_eq!(Change::decode(ADD,&defaults).map(|c|c.set.len()),Some(52));
+        assert_eq!(Change::decode(DELETE,&[500]),Some(Change{set:vec![],delete:vec![500]}));
+        for (command,values) in [(ADD,vec![43]),(ADD,vec![]),(ADD,vec![57,1]),(ADD,vec![499,1]),(ADD,vec![501,1]),(ADD,vec![-1,1]),(ADD,vec![1,1,1,2]),(DELETE,vec![0]),(DELETE,vec![57]),(DELETE,vec![]),(DELETE,vec![1,1]),(102,vec![1,1])] {
             assert_eq!(Change::decode(command,&values),None,"{command} {values:?}");
         }
     }

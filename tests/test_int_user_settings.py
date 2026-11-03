@@ -33,6 +33,15 @@ class Store(unittest.TestCase):
         self.assertEqual(self.execute(), [[0, 11], [1, 6]])
         self.assertEqual(settings.execute(self.database, OTHER, body(OTHER))["settings"], [])
 
+    def test_the_first_login_batch_with_marks_on_gun_is_stored(self):
+        pairs = [[key, 1] for key in range(51)] + [[500, 0]]
+        stored = self.execute(pairs=pairs)
+        self.assertEqual(len(stored), 52)
+        self.assertIn([500, 0], stored)
+        for key in (499, 501):
+            with self.assertRaises(ValueError):
+                self.execute(pairs=[[key, 1]])
+
     def test_a_change_is_all_or_nothing(self):
         self.execute(pairs=[[2, 1]])
         with self.assertRaises(sqlite3.IntegrityError):
