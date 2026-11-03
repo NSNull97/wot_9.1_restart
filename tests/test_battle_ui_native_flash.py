@@ -75,7 +75,7 @@ class BuilderTests(unittest.TestCase):
         dealt = [history.DEALT_GLYPH_X - half - number_right, history.DEALT_CLASS_X - half - (history.DEALT_GLYPH_X + half),
                  history.DEALT_NAME_X + gutter - (history.DEALT_CLASS_X + half)]
         received = [history.RECEIVED_GLYPH_X - half - number_right, history.SHELL_X - (history.RECEIVED_GLYPH_X + half),
-                    history.RECEIVED_CLASS_X - half - (history.SHELL_X + history.SHELL_WIDTH),
+                    history.RECEIVED_CLASS_X - half - (history.SHELL_X + history.SHELL_SLOT),
                     history.RECEIVED_NAME_X + gutter - (history.RECEIVED_CLASS_X + half)]
         total = [history.TOTAL_NUMBER_X + gutter - (history.TOTAL_GLYPH_X + half)]
         self.assertEqual(set(dealt + received + total), {gap})
@@ -184,9 +184,9 @@ class FeedTests(unittest.TestCase):
         machine = Attaching(root)
         machine.run(native.actions(True, True, kwargs.get('art', False)), [scope])
         flat = [item for row in rows for item in row]
-        flat += list(feed_client.EMPTY_ROW) * (feed.ROWS - len(rows))
+        flat += list(feed_client.EMPTY_ROW) * (feed.ROWS - len(rows)) + [kwargs.get('slide', False)]
         machine.invoke(scope['_projectFeedRender'], root, flat)
-        self.machine = machine
+        self.machine, self.scope, self.root = machine, scope, root
         return root.members['projectFeed']
 
     def row(self, number='384', label=u'Урон', vehicle='T-34', vehicle_class='whiteIconMediumTank16x16', colour=feed.GREEN,
@@ -241,7 +241,7 @@ class FeedTests(unittest.TestCase):
         holder = root.members['projectFeed']
         holder.members['row0'] = None
         real = holder.members.get
-        flat = [feed.GREEN, '1', feed_client.CROSS, 'a', 'b', 5000, '', ''] + list(feed_client.EMPTY_ROW) * 2
+        flat = [feed.GREEN, '1', feed_client.CROSS, 'a', 'b', 5000, '', ''] + list(feed_client.EMPTY_ROW) * 2 + [False]
         original = Clip.__init__
 
         def without_gradient(self, name='root'):
@@ -290,6 +290,42 @@ class FeedTests(unittest.TestCase):
         self.machine.invoke(tick, row, [])
         self.assertEqual(row.members['_alpha'], 50)
 
+    def test_a_new_row_slides_up_from_below_and_shows_at_once(self):
+        holder = self.render((feed.GREEN, '1', feed_client.CROSS, 'a', 'b', 5000, '', ''),
+                             (feed.GREEN, '2', feed_client.CROSS, 'c', 'd', 5000, '', ''), slide=True)
+        new, old = holder.members['row0'], holder.members['row1']
+        self.assertEqual((new.members['_y'], new.members['fromAlpha']), (feed.ROW_STEP, feed.APPEAR_ALPHA))
+        self.assertEqual((old.members['_y'], old.members['fromAlpha']), (0, 100), 'the older row starts where it stood')
+        tick = new.members['onEnterFrame']
+        self.machine.clock = 1000 + feed.SLIDE_MS // 2
+        self.machine.invoke(tick, new, [])
+        self.assertTrue(0 < new.members['_y'] < feed.ROW_STEP / 2.0, 'ease-out: most of the way at half the time')
+        self.assertGreater(new.members['_alpha'], feed.APPEAR_ALPHA)
+        self.machine.clock = 1000 + feed.SLIDE_MS
+        self.machine.invoke(tick, new, [])
+        self.machine.invoke(old.members['onEnterFrame'], old, [])
+        self.assertEqual((new.members['_y'], new.members['_alpha']), (0, 100))
+        self.assertEqual(old.members['_y'], -feed.ROW_STEP)
+
+    def test_the_oldest_row_of_a_full_feed_leaves_upwards_fading(self):
+        rows = [(feed.GREEN, str(n), feed_client.CROSS, 'a', 'b', 5000, '', '') for n in (1, 2, 3)]
+        holder = self.render(*rows)
+        oldest = holder.members['row2']
+        self.machine.invoke(self.scope['_projectFeedRender'], self.root,
+                            [item for row in rows for item in row] + [True])
+        self.assertEqual(oldest.members['_name'], 'leaving')
+        self.assertIn(('swapDepths', 9), oldest.calls)
+        tick = oldest.members['onEnterFrame']
+        self.machine.clock = 1000 + feed.LEAVE_MS
+        self.machine.invoke(tick, oldest, [])
+        self.assertEqual(oldest.members['_y'], -2 * feed.ROW_STEP - feed.ROW_STEP)
+        self.assertEqual(oldest.members['_alpha'], 0)
+        self.assertIn(('removeMovieClip',), oldest.calls)
+
+    def test_without_a_slide_rows_are_drawn_in_place(self):
+        holder = self.render((feed.GREEN, '1', feed_client.CROSS, 'a', 'b', 5000, '', ''))
+        self.assertEqual((holder.members['row0'].members['_y'], holder.members['row0'].members['fromAlpha']), (0, 100))
+
     def test_every_glyph_is_one_fill(self):
         for number in feed.GLYPHS:
             holder = self.render((feed.GREEN, '1', number, 'a', 'b', 5000, '', ''))
@@ -299,7 +335,12 @@ class FeedTests(unittest.TestCase):
 
 class HistoryTests(unittest.TestCase):
     def draw(self, place, row):
-        machine, scope, root, delegate = loaded()
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'TextFormat': TextFormat, 'Object': lambda: Clip('gradientBox'), 'Array': lambda *a: list(a),
+                 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine = Attaching(root)
+        machine.run(native.actions(), [scope])
         machine.invoke(scope['_projectHistoryRow'], root, [place] + list(row))
         return root.members['projectHistory_' + place].members['row%d' % row[0]]
 
@@ -369,7 +410,15 @@ class HistoryTests(unittest.TestCase):
             self.assertGreater(len([call for call in row.calls if call[0] == 'curveTo']), 0)
             fills.add([call for call in calls(row, 'beginFill')][-1][1])
         self.assertEqual(len(fills), len(history_client.SHELL_LABELS), 'four types, four colours')
-        self.assertLessEqual(history.SHELL_WIDTH, 20)
+
+    def test_a_shell_plaque_is_as_wide_as_its_text_and_centred_in_its_column(self):
+        row = self.received('high_explosive')
+        width = 2 * 7 + 2 * history.SHELL_PAD
+        left = history.SHELL_X + (history.SHELL_SLOT - width) / 2.0
+        path = [call for call in row.calls if call[0] in ('moveTo', 'lineTo')]
+        box = path[max(i for i, call in enumerate(path) if call[0] == 'moveTo'):]
+        self.assertEqual(box[0], ('moveTo', left + history.SHELL_RADIUS, box[0][2]), 'rounded corners from the left edge')
+        self.assertEqual(box[1][1], left + width - history.SHELL_RADIUS)
 
     def test_an_unknown_shell_is_a_dash_without_a_box(self):
         row = self.received()

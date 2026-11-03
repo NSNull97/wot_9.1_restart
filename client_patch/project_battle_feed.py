@@ -432,7 +432,7 @@ class Runtime(object):
 
     def draw(self):
         self.place()
-        self.battle.call(CALLBACK, self.feed.render_args())
+        self.battle.call(CALLBACK, self.feed.render_args() + [False])
 
     def on_event(self, event):
         if self.failed:
@@ -444,7 +444,7 @@ class Runtime(object):
             row = self.feed.rows[0]
             self.record(EVENT + '_row', version=VERSION, key=row['key'], value=row['value'],
                         count=row['count'], vehicle_known=bool(row['vehicle']))
-            self.push()
+            self.push(True)
         except Exception:
             self.fail('event')
 
@@ -455,14 +455,15 @@ class Runtime(object):
         if self.failed or self.battle is None:
             return
         try:
-            self.battle.call(CALLBACK, self.feed.render_args())
+            self.battle.call(CALLBACK, self.feed.render_args() + [False])
         except Exception:
             self.fail('options')
 
-    def push(self):
+    def push(self, slide=False):
+        """`slide`: a new row came, the movie animates it in (owner round 6)."""
         if self.battle is None:
             return
-        self.battle.call(CALLBACK, self.feed.render_args())
+        self.battle.call(CALLBACK, self.feed.render_args() + [slide])
         if self.timer is None:
             self.timer = self.schedule(TICK_PERIOD, self.tick)
 
@@ -472,7 +473,7 @@ class Runtime(object):
             return
         try:
             if self.feed.expire():
-                self.battle.call(CALLBACK, self.feed.render_args())
+                self.battle.call(CALLBACK, self.feed.render_args() + [False])
             if self.feed.rows:
                 self.timer = self.schedule(TICK_PERIOD, self.tick)
         except Exception:

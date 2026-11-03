@@ -47,7 +47,7 @@ BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, DAMAGE_PANEL_TOP, 247, 66
 # Native battle.swf: consumablesPanel lies 56 px above the bottom of the stage. Its
 # half width is an estimate. The block is as wide as a received row. A screen too
 # narrow to keep the rows left of it shows only those above its top edge.
-BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 186, 230, 4
+BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 192, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
 # Owner 02.11: what the player dealt is green (crit, damage, kill), a crit taken
 # gold, damage taken red; the player's own destruction has no row.

@@ -291,7 +291,7 @@ class RuntimeTests(unittest.TestCase):
     def test_the_native_window_is_placed_and_drawn_when_it_comes(self):
         self.runtime.attach(self.battle)
         self.assertEqual(self.battle.places(), [[960, 818, True]])
-        self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3])
+        self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3 + [False]])
 
     def test_rows_before_the_window_wait_for_it(self):
         self.runtime.on_event(event(1, 1, 1))
@@ -302,9 +302,10 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.attach(self.battle)
         self.runtime.on_event(event(1, 1, 1))
         self.assertEqual(len(self.battle.rows()), 2)
+        self.assertIs(self.battle.rows()[-1][-1], True, 'a new row slides in')
         self.clock.now += m.LIFETIME
         self.timers.pop()()
-        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3)
+        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3 + [False])
         self.assertEqual(self.timers, [])
 
     def test_an_invisible_row_draws_nothing(self):
@@ -318,7 +319,7 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.on_event(event(1, 1, 1))
         self.runtime.ready()
         self.assertEqual(self.runtime.feed.rows, [])
-        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3)
+        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3 + [False])
 
     def test_the_closed_window_gets_no_call_and_its_timer_stops(self):
         self.runtime.attach(self.battle)

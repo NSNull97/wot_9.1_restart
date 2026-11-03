@@ -30,6 +30,10 @@ GRADIENT_STEPS, GRADIENT_FROM, GRADIENT_TO = 8, 62, 6
 # A Lesta icon (ribbons*, 48 px) at this scale fills the icon column.
 ICON_SCALE = 45
 FADE_MS = 500
+# Owner round 6: a new row comes up from below like an iOS notification turned
+# over, easing out, while it shows from APPEAR_ALPHA; the rows above slide up a
+# step, the oldest leaves upwards, fading. Short, so the battle is not held up.
+SLIDE_MS, APPEAR_ALPHA, LEAVE_MS = 300, 35, 300
 ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'icon', 'vehicleClass')
 # Colours of client_patch/project_battle_feed.py: tint, light accent, text.
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
@@ -204,11 +208,37 @@ def circle(mc, cx, cy, r):
     return rows
 
 
+def eased(elapsed, duration):
+    """Statements that leave in `e` the ease-out of elapsed / duration, 0..1:
+    1 - (1 - p)^3, fast at first and slowing to its place."""
+    return [('local', 'p', ('/', elapsed, duration)),
+            ('if', ('<', 1, var('p')), [('assign', 'p', 1)]),
+            ('local', 'u', ('-', 1, var('p'))),
+            ('local', 'e', ('-', 1, ('*', ('*', var('u'), var('u')), var('u'))))]
+
+
 def fade_body():
+    """Every frame: slide from fromY to toY and show from fromAlpha, then keep
+    still until the last FADE_MS of its life fade it."""
     me = var('this')
-    return [('local', 'left', ('-', ('get', me, 'left'), ('-', ('time',), ('get', me, 'startedAt')))),
-            ('set', me, '_alpha', 100),
-            ('if', ('<', var('left'), FADE_MS), [('set', me, '_alpha', ('/', var('left'), 5))])]
+    age = ('-', ('time',), ('get', me, 'startedAt'))
+    return ([('local', 'left', ('-', ('get', me, 'left'), age)),
+             ('local', 'life', 100),
+             ('if', ('<', var('left'), FADE_MS), [('assign', 'life', ('/', var('left'), 5))])]
+            + eased(age, SLIDE_MS)
+            + [('set', me, '_y', ('+', ('get', me, 'fromY'), ('*', ('-', ('get', me, 'toY'), ('get', me, 'fromY')), var('e')))),
+               ('set', me, '_alpha', ('/', ('*', var('life'), ('+', ('get', me, 'fromAlpha'),
+                                                                 ('*', ('-', 100, ('get', me, 'fromAlpha')), var('e')))), 100))])
+
+
+def leave_body():
+    """The oldest row goes up a step and fades out, then is removed."""
+    me = var('this')
+    age = ('-', ('time',), ('get', me, 'leftAt'))
+    return (eased(age, LEAVE_MS)
+            + [('set', me, '_y', ('-', ('get', me, 'fromY'), ('*', ROW_STEP, var('e')))),
+               ('set', me, '_alpha', ('*', 100, ('-', 1, var('e')))),
+               ('if', ('==', var('p'), 1), [method(me, 'removeMovieClip')])])
 
 
 def palette():
@@ -269,16 +299,33 @@ def row_source(art=False):
         ('set', mc, '_x', ('neg', ('/', var('width'), 2))),
         ('set', mc, 'startedAt', ('time',)), ('set', mc, 'left', var('left')),
         ('set', mc, 'onEnterFrame', ('func', [], fade_body()))]
+    # A slide: the new row starts a step below the line, the others where they
+    # stood a step lower; without it every row is drawn in place.
+    to_y = ('*', ('neg', var('index')), ROW_STEP)
     body = [('local', 'm', ('call', var('feedMC'), 'createEmptyMovieClip', [('+', 'row', var('index')), ('+', 10, var('index'))])),
-            ('set', mc, '_y', ('*', ('neg', var('index')), ROW_STEP)),
+            ('set', mc, 'toY', to_y), ('set', mc, 'fromY', to_y), ('set', mc, 'fromAlpha', 100),
+            ('if', var('slide'), [('set', mc, 'fromY', ('+', to_y, ROW_STEP)),
+                                  ('if', ('==', var('index'), 0), [('set', mc, 'fromAlpha', APPEAR_ALPHA)])]),
+            ('set', mc, '_y', ('get', mc, 'fromY')),
             ('if', ('<', -1, var('colour')), draw)]
-    return function('_projectFeedRow', ['index'] + list(ROW_ARGS), body)
+    return function('_projectFeedRow', ['index', 'slide'] + list(ROW_ARGS), body)
 
 
 def render_source():
-    names = ['%s%d' % (name, row) for row in range(ROWS) for name in ROW_ARGS]
-    body = [('do', ('fn', '_projectFeedRow', [row] + [var('%s%d' % (name, row)) for name in ROW_ARGS]))
-            for row in range(ROWS)]
+    """All rows; `slide` after a new row. The oldest row of a full feed then leaves
+    on its own instead of being replaced at once."""
+    names = ['%s%d' % (name, row) for row in range(ROWS) for name in ROW_ARGS] + ['slide']
+    holder, last = var('feedMC'), 'row%d' % (ROWS - 1)
+    leaving = var('old')
+    body = [('if', var('slide'), [('if', ('==', ('get', holder, 'full'), True), [
+        ('local', 'old', ('get', holder, last)),
+        ('set', leaving, '_name', 'leaving'),
+        method(leaving, 'swapDepths', 9),
+        ('set', leaving, 'fromY', ('get', leaving, '_y')), ('set', leaving, 'leftAt', ('time',)),
+        ('set', leaving, 'onEnterFrame', ('func', [], leave_body()))])])]
+    body += [('do', ('fn', '_projectFeedRow', [row, var('slide')] + [var('%s%d' % (name, row)) for name in ROW_ARGS]))
+             for row in range(ROWS)]
+    body.append(('set', holder, 'full', ('<', -1, var('colour%d' % (ROWS - 1)))))
     return function('_projectFeedRender', names, body)
 
 
