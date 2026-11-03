@@ -185,7 +185,6 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
     let mut crew=damage(0,0,1,440,440);crew.crew_after=false;w.damage_events.push(crew);
     assert_eq!(publish(&mut s,&w,now),vec![
         Row{kind:FeedKind::ShotDamage as u8,value:Some(50),vehicle:id(1)},
-        Row{kind:FeedKind::FireReceived as u8,value:Some(10),vehicle:id(1)},
         Row{kind:FeedKind::Kill as u8,value:None,vehicle:id(1)}]);
 }
 
@@ -208,6 +207,19 @@ fn fire_of(w:&mut World,attacker:usize,shot:u32,ticks:&[u16],end:bool) {
     w.device_events.push((1,end));
     assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::Ignition as u8,value:Some(300),vehicle:id(1)}],
         "the sum of that fire only, not an ally's fire on the same vehicle");
+}
+
+#[test] fn ui03_own_fire_is_one_row_with_the_burned_sum_when_it_ends() {
+    let (mut w,now)=hit_world(Instant::now(),1,0);
+    let mut s=spotted(now,&w,0);open(&mut s);
+    let mut sequence=0;
+    let mut add=|w:&mut World,from_fire:bool,change:device::Change|{
+        sequence+=1;let mut t=transition(sequence,1,from_fire,change);t.cause.shot=9;w.device_events.push((0,t));};
+    add(&mut w,false,device::Change::Fire{before_active:false,after_active:true});
+    for amount in [107u16,107,107] {add(&mut w,true,device::Change::VehicleDamage{amount});}
+    assert_eq!(feed(&mut s,&mut w,now),vec![],"a burning own vehicle is no row yet");
+    add(&mut w,true,device::Change::Fire{before_active:true,after_active:false});
+    assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::FireReceived as u8,value:Some(321),vehicle:id(1)}]);
 }
 
 #[test] fn ui03_a_fire_that_ends_out_of_sight_is_silent() {
