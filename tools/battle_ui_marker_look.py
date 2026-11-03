@@ -46,8 +46,6 @@ FILTER_GLOW = 2
 # The damage halo: the native GlowFilter of each colour frame is blur 11, strength
 # 3; owner 2026-11-03 asked for a more contrasting one, so it is tighter and denser.
 DAMAGE_GLOW_BLUR, DAMAGE_GLOW_STRENGTH = 6, 6.0
-# Glow flags of the native damage number: composite source, three passes.
-DAMAGE_GLOW_FLAGS = bytes((0x23,))
 BAR_WIDTH = 70          # HealthBar.HEALTH_BAR_WIDTH of #717
 BAR_HEIGHT = 5
 PLATE, PLATE_ALPHA = 0x0e1216, 70
@@ -266,27 +264,21 @@ def damage_colours(body, start):
     return colours
 
 
-def white_halo(colour):
-    """Filter list: the damage number's glow in `colour` (owner round 7: the fire and
-    ammo icons in the style of the flying damage); the white is in the bitmap."""
-    return (bytes((1, FILTER_GLOW)) + colour + bytes((255,))
-            + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16, round(DAMAGE_GLOW_STRENGTH * 256))
-            + DAMAGE_GLOW_FLAGS)
-
-
 _OWN_ICONS = {}
 
 
-def white_bitmap(data, kind):
+def white_bitmap(data, kind, colour):
     """DefineBitsLossless2 data (id, format 5, size, zlib ARGB premultiplied) with the
-    project's white `kind` icon in place of its pixels; the canvas stays native."""
+    project's white `kind` icon and the glow of `colour` (3 bytes) in place of its
+    pixels; the canvas stays native. Round 12: no filter, see battle_ui_marker_icons."""
     import battle_ui_marker_icons as icons
     character, form, width, height = struct.unpack_from('<HBHH', data, 0)
     if form != 5 or (width, height) != (icons.CANVAS, icons.CANVAS):
         raise ValueError('explosion bitmap differs from the 86 x 86 ARGB canvas of #717')
-    if kind not in _OWN_ICONS:
-        _OWN_ICONS[kind] = zlib.compress(icons.argb(kind), 9)
-    return data[:7] + _OWN_ICONS[kind]
+    key = (kind, bytes(colour))
+    if key not in _OWN_ICONS:
+        _OWN_ICONS[key] = zlib.compress(icons.argb(kind, tuple(colour)), 9)
+    return data[:7] + _OWN_ICONS[key]
 
 
 def explosion_bitmaps(body, start):
@@ -295,13 +287,17 @@ def explosion_bitmaps(body, start):
     holder = sprites[_export(body, start, EXPLOSION_EXPORT)]
     inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
                  if code == 26 and data[0] & 2)
-    # Shape of each icon frame and its kind by the frame label (<colour>_fire, <colour>_explosion).
+    # Shape of each icon frame, its kind and colour by the frame label (<colour>_fire, <colour>_explosion).
+    colours = damage_colours(body, start)
     placed, label = {}, None
     for code, data in _inner(body, *sprites[inner]):
         if code == 43:
             label = data[:data.index(0)].decode('ascii')
         elif code == 26 and data[0] & 2:
-            placed[struct.unpack_from('<H', data, 3)[0]] = (label or '').rpartition('_')[2]
+            colour, _, kind = (label or '').partition('_')
+            if colour not in colours:
+                raise ValueError('explosion icon frame differs from the six colours')
+            placed[struct.unpack_from('<H', data, 3)[0]] = (kind, colours[colour])
     shapes, bitmaps = {}, {}
     for code, begin, end in tags(body, start):
         at = begin + _head(body, begin)
@@ -310,7 +306,7 @@ def explosion_bitmaps(body, start):
         elif code == 36:
             bitmaps[struct.unpack_from('<H', body, at)[0]] = body[at:end]
     found = {}
-    for shape, kind in placed.items():
+    for shape, (kind, colour) in placed.items():
         if kind not in ('fire', 'explosion'):
             raise ValueError('explosion icon frame differs from fire and explosion')
         data = shapes[shape]
@@ -321,7 +317,7 @@ def explosion_bitmaps(body, start):
             if 0x40 <= fill <= 0x43:
                 bitmap = struct.unpack_from('<H', data, at + 1)[0]
                 if bitmap in bitmaps:
-                    found[bitmap] = white_bitmap(bitmaps[bitmap], kind)
+                    found[bitmap] = white_bitmap(bitmaps[bitmap], kind, colour)
                 at += 3 + _matrix_bytes(data, at + 3)
             elif fill == 0:
                 at += 4
@@ -330,30 +326,6 @@ def explosion_bitmaps(body, start):
     if len(found) != 12:
         raise ValueError('explosion icons differ from twelve bitmaps')
     return found
-
-
-def explosion_inner(body, start):
-    """(sprite id, new inner tags) of the fire and ammo icon sprite: every icon
-    placement becomes a PlaceObject3 with white_halo of its label's colour."""
-    sprites = _sprites(body, start)
-    holder = sprites[_export(body, start, EXPLOSION_EXPORT)]
-    inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
-                 if code == 26 and data[0] & 2)
-    colours = damage_colours(body, start)
-    out, label, changed = bytearray(), None, 0
-    for code, data in _inner(body, *sprites[inner]):
-        if code == 43:
-            label = data[:data.index(0)].decode('ascii')
-        elif code == 26 and data[0] & 2:
-            colour = (label or '').split('_')[0]
-            if data[0] & 0xd8 or colour not in colours:
-                raise ValueError('explosion icon placement differs from the #717 layout')
-            data = data[:1] + bytes((1,)) + data[1:] + white_halo(colours[colour])
-            code, changed = 70, changed + 1
-        out += tag(code, data)
-    if changed != 12:
-        raise ValueError('explosion sprite differs from twelve icons')
-    return inner, bytes(out)
 
 
 def recoloured(body, start):
@@ -457,16 +429,11 @@ def transform(body, start, names=None):
         for at, value in name_edits(body, start, names).items():
             out[at:at + 4] = value
         body = bytes(out)
-    explosion, explosion_tags = explosion_inner(body, start)
     whites = explosion_bitmaps(body, start)
     out, changed = bytearray(body[:start]), 0
     for code, begin, end in tags(body, start):
         if code == 36 and struct.unpack_from('<H', body, begin + _head(body, begin))[0] in whites:
             out += tag(36, whites[struct.unpack_from('<H', body, begin + _head(body, begin))[0]])
-            continue
-        if code == 39 and struct.unpack_from('<H', body, begin + _head(body, begin))[0] == explosion:
-            sprite_at = begin + _head(body, begin)
-            out += tag(39, body[sprite_at:sprite_at + 4] + explosion_tags)
             continue
         if code == 39:
             inner = _haloed(_inner(body, begin, end))

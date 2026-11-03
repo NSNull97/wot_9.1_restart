@@ -8,6 +8,11 @@ the ammo icon three shells among short sparks, the fire icon a warning triangle
 with a flame in it, at the native size. The coloured glow is the movie's filter.
 They are drawn with 4 x 4 supersampling into the native canvas (86 x 86, the
 icon centred) as premultiplied ARGB rows of DefineBitsLossless2.
+
+Round 12: the glow is baked into the pixels too. Only the green frames of
+HitExplosion place their icon anew; the others replace it in place (PlaceObject2
+move + character) and Scaleform dropped a filter of such a placement, so damage to
+enemies (red and gold frames) showed a white icon without its halo.
 """
 from __future__ import annotations
 
@@ -126,10 +131,37 @@ def coverage(kind):
     return rows
 
 
-def argb(kind):
-    """Premultiplied white ARGB bytes of the icon, as DefineBitsLossless2 holds them."""
+# The glow of the damage number (battle_ui_marker_look: GlowFilter blur 6, strength
+# 6, three passes) as pixels: three box blurs of this radius, alpha times strength.
+GLOW_RADIUS, GLOW_PASSES, GLOW_STRENGTH = 3, 3, 6
+
+
+def _box(rows, radius):
+    """One box blur of float rows, horizontal then vertical, edges as zero."""
+    size, span = len(rows), 2 * radius + 1
+    across = [[sum(row[max(0, x - radius):x + radius + 1]) / span for x in range(size)] for row in rows]
+    return [[sum(across[yy][x] for yy in range(max(0, y - radius), min(size, y + radius + 1))) / span
+             for x in range(size)] for y in range(size)]
+
+
+def glow(kind):
+    """CANVAS x CANVAS glow alpha (0..1) around the icon, row by row."""
+    rows = [[value / 255.0 for value in row] for row in coverage(kind)]
+    for _ in range(GLOW_PASSES):
+        rows = _box(rows, GLOW_RADIUS)
+    return [[min(1.0, value * GLOW_STRENGTH) for value in row] for row in rows]
+
+
+def argb(kind, halo=None):
+    """Premultiplied ARGB bytes of the white icon, as DefineBitsLossless2 holds them;
+    with `halo` (r, g, b) the glow of that colour under it."""
+    icon = coverage(kind)
+    shine = glow(kind) if halo else None
     out = bytearray()
-    for row in coverage(kind):
-        for alpha in row:
-            out += bytes((alpha, alpha, alpha, alpha))
+    for y, row in enumerate(icon):
+        for x, value in enumerate(row):
+            white = value / 255.0
+            under = shine[y][x] * (1 - white) if shine else 0.0
+            alpha = white + under
+            out += bytes((round(255 * alpha),) + tuple(round(255 * white + c * under) for c in (halo or (0, 0, 0))))
     return bytes(out)
