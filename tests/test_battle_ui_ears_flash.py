@@ -59,12 +59,17 @@ class StringMachine(Machine):
 
 
 class Renderer(Clip):
-    def __init__(self, side, **data):
+    """A row under its list and panel, or (`beside`) attached next to the list."""
+
+    def __init__(self, side, beside=False, **data):
         Clip.__init__(self, 'row')
         panel = Clip('panel')
         panel.members['m_type'] = side
-        self.members['_parent'] = Clip('list')
-        self.members['_parent'].members['_parent'] = panel
+        if beside:
+            self.members['_parent'] = panel
+        else:
+            self.members['_parent'] = Clip('list')
+            self.members['_parent'].members['_parent'] = panel
         self.members['data'] = Obj(icon=NATIVE_ICON, **data)
 
 
@@ -89,6 +94,11 @@ class EarsTests(unittest.TestCase):
                             (Renderer('left', himself=True), 'contour_own'), (Renderer('left', teamKiller=True), 'contour_tk')):
             self.update(machine, proto, row)
             self.assertEqual(seen[-1], '../maps/icons/vehicle/%s/ussr-IS-7.png' % folder)
+
+    def test_a_row_attached_beside_its_list_still_finds_its_side(self):
+        machine, scope, proto, seen = world()
+        self.update(machine, proto, Renderer('right', beside=True))
+        self.assertEqual(seen[-1], '../maps/icons/vehicle/contour_enemy/ussr-IS-7.png')
 
     def test_a_rewritten_path_is_rewritten_again_without_growing(self):
         machine, scope, proto, seen = world()

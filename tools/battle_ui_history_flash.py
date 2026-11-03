@@ -55,7 +55,7 @@ SHELL_HEIGHT, SHELL_SIZE, SHELL_RADIUS = 12, 10, 3
 NAME_WIDTH, TEXT_SIZE, TOTAL_SIZE = 80, 14, 16
 NAME_COLOUR, NUMBER_COLOUR, DASH_COLOUR = 0xf1f2ed, 0xf1f2ed, 0x8c8c8c
 # A crit taken: client_patch/project_battle_history.py GOLD.
-GOLD = 0xe8b866
+GOLD = 0xeea72e
 # A Lesta icon of the history (damageLog_*, 16 px) is drawn at its own size.
 ICON_SCALE = 100
 # Shell plaque of client_patch/project_battle_history.py: style, fill, text; -1
@@ -127,6 +127,7 @@ def detail_rows(mc, art):
                    text(mc, 'nameField', 40, RECEIVED_NAME_X, NAME_WIDTH, TEXT_SIZE, NAME_COLOUR, 'left', var('name'))])
     dealt = (plaque_of_row(mc, DEALT_WIDTH)
              + icon(mc, 'glyphMC', 2, DEALT_GLYPH_X, var('glyph'), var('colour'), 70, art)
+             + (feed.gold_icon(('get', mc, 'glyphMC')) if art else [])
              + [text(mc, 'numberField', 10, DEALT_NUMBER_X, NUMBER_WIDTH, TEXT_SIZE, NUMBER_COLOUR, 'right', var('number')),
                 ('if', feed.not_empty(var('vehicleClass')), mark(mc, DEALT_CLASS_X, 11, art)),
                 text(mc, 'nameField', 40, DEALT_NAME_X, NAME_WIDTH, TEXT_SIZE, NAME_COLOUR, 'left', var('name'))])

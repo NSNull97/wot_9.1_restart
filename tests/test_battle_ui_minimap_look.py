@@ -19,7 +19,7 @@ def world():
     calls = []
     manager = Obj(getAliasColor=lambda scheme: ALIASES[scheme],
                   getAdjustMatrixFilter=lambda scheme: 'adjust-' + scheme if scheme == 'vm_enemy' else None)
-    proto = Obj(updateIfEntryIsPlayer=lambda this, *args: calls.append(this))
+    proto = Obj(updateIfEntryIsPlayer=lambda this, *args: calls.append(this), draw=lambda this, *args: calls.append(('draw', this)))
     scope = {'this': Clip(), 'Array': lambda *values: list(values),
              'flash': {'filters': {'ColorMatrixFilter': lambda values: ('matrix', tuple(values))}},
              '_global': {'net': {'wargaming': {'ingame': {'MinimapEntry': Obj(prototype=proto)}}}}}
@@ -49,7 +49,7 @@ class MinimapTests(unittest.TestCase):
         filters = self.update('vm_ally')
         self.assertEqual(len(filters), 1)
         values = filters[0][1]
-        self.assertEqual(values[1], round(0xa8 * 1000 / 189) / 1000, 'red out of the green channel')
+        self.assertEqual(values[1], round(minimap.ALLY[0] * 1000 / 189) / 1000, 'red out of the green channel')
         self.assertEqual(values[0], 0, 'nothing from the native red')
         self.assertEqual(values[15:20], (0, 0, 0, 1, 0), 'alpha untouched, no offset')
 
@@ -67,6 +67,29 @@ class MinimapTests(unittest.TestCase):
             body = [0, 0, 0]
             body[channel] = mean
             self.assertEqual(tuple(round(sum(rows[r * 5 + i] * body[i] for i in range(3)) / 1000) for r in range(3)), colour)
+
+    def test_a_base_takes_its_matrix_after_the_native_draw(self):
+        machine, proto, manager, calls = world()
+        manager.members['getAliasColor'] = lambda scheme: {'teamPointbasered': 'red'}.get(scheme, ALIASES.get(scheme))
+        clip = entry(proto, manager, 'vm_ally')
+        clip.members['isTeamPoint'] = lambda: True
+        clip.members['entryName'], clip.members['vehicleClass'] = 'base', 'red'
+        colour, kind, point = Clip('teamColor'), Clip('pointType'), Clip('teamPoint')
+        kind.members['teamColor'], point.members['pointType'] = colour, kind
+        clip.members['teamPoint'] = point
+        machine.invoke(proto.members['draw'], clip, [])
+        self.assertEqual(calls, [('draw', clip)])
+        self.assertEqual(colour.members['filters'][0][1], tuple(v / 1000 if v else 0 for v in minimap.base_matrix('red')))
+
+    def test_a_base_disc_takes_the_team_colour_and_its_flag_stays_white(self):
+        for alias, ((i, j), (body_i, body_j), colour) in minimap.BASES.items():
+            rows = minimap.base_matrix(alias)
+            body = [0, 0, 0]
+            body[i], body[j] = body_i, body_j
+            apply = lambda pixel: tuple(round(sum(rows[r * 5 + c] * pixel[c] for c in range(3)) / 1000) for r in range(3))
+            self.assertEqual(apply(body), colour, alias)
+            self.assertEqual(apply((255, 255, 255)), (255, 255, 255), 'the white flag')
+            self.assertEqual(rows[15:], [0, 0, 0, 1000, 0], 'alpha untouched, no offset')
 
     def test_the_battle_movie_carries_it_with_the_palette(self):
         self.assertIn(b'_projectMinimapWrap', native.actions(palette=True))

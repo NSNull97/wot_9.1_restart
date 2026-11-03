@@ -43,9 +43,17 @@ def update_body():
     """The wrapper of update: the row's set, then the native with every argument."""
     me = var('this')
     data = ('get', me, 'data')
-    panel = ('get', ('get', me, '_parent'), '_parent')
-    choose = [('local', 'set', 'ally'),
-              ('if', ('==', ('get', panel, 'm_type'), 'right'), [('assign', 'set', 'enemy')]),
+    parent = ('get', me, '_parent')
+    # Round 14: the side panel is the first of these that has m_type. CLIK lists
+    # may attach their renderers next to themselves, so _parent._parent alone (as
+    # setState reads isColorBlind) gave every enemy row the ally set in battle.
+    side = [('local', 'side', ('get', parent, 'm_type')),
+            ('if', ('not', ('==', ('typeof', var('side')), 'string')),
+             [('assign', 'side', ('get', ('get', parent, '_parent'), 'm_type'))]),
+            ('if', ('not', ('==', ('typeof', var('side')), 'string')),
+             [('assign', 'side', ('get', ('get', ('get', me, 'owner'), '_parent'), 'm_type'))])]
+    choose = side + [('local', 'set', 'ally'),
+              ('if', ('==', var('side'), 'right'), [('assign', 'set', 'enemy')]),
               ('if', ('get', var('d'), 'himself'), [('assign', 'set', 'own')]),
               ('if', ('get', var('d'), 'teamKiller'), [('assign', 'set', 'tk')]),
               ('set', var('d'), 'icon', ('fn', '_projectEarsIcon', [('get', var('d'), 'icon'), var('set')]))]

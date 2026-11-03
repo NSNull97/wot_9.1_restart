@@ -91,7 +91,8 @@ def actions(with_feed=True, with_history=True, art=False, palette=False):
 # Owner round 13: spotting messages #DFCA91. gui/player_messages_panel.xml gives the
 # alias gold to the six ENEMY_SPOTTED* messages and to nothing else (VERIFIED), and
 # PlayerGoldMessageRenderer draws them; its text field is fff4b5 in #717.
-DETECTION_EXPORT, DETECTION_NATIVE, DETECTION_COLOUR = 'PlayerGoldMessageRenderer', 'fff4b5ff', 'dfca91ff'
+# Round 14: darker, #DBB95E.
+DETECTION_EXPORT, DETECTION_NATIVE, DETECTION_COLOUR = 'PlayerGoldMessageRenderer', 'fff4b5ff', 'dbb95eff'
 
 
 def detection_edit(body):
