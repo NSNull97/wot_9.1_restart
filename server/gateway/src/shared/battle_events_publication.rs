@@ -117,12 +117,9 @@ impl Feed<'_> {
                 let damage=hp_lost(event.health_before,event.health_after)?;
                 if event.reason==1&&event.target==c.slot {self.received(event.tick,FeedKind::FireReceived,event.attacker,damage);}
                 if event.attacker!=c.slot {continue;}
-                match event.reason {
-                    0=>self.dealt(event.tick,FeedKind::ShotDamage,event.target,damage)?,
-                    // A fire of a hidden vehicle is a module fact: no event.
-                    1 if c.visible()[event.target]=>self.dealt(event.tick,FeedKind::FireDamage,event.target,damage)?,
-                    _=>{},
-                }
+                // Owner round 9: a fire's damage is no row per tick; devices() gives one
+                // Ignition row with the burned sum when that fire ends.
+                if event.reason==0 {self.dealt(event.tick,FeedKind::ShotDamage,event.target,damage)?;}
                 if event.lethal() {self.kill(event.tick,event.target)?;}
             }
         } else {
@@ -173,14 +170,20 @@ impl Feed<'_> {
                 }
                 continue;
             }
-            if usize::from(event.cause.attacker_slot)!=c.slot||event.from_fire||!self.enemy(*target)?||!c.visible()[*target] {continue;}
+            if usize::from(event.cause.attacker_slot)!=c.slot||!self.enemy(*target)?||!c.visible()[*target] {continue;}
+            if let Change::Fire{before_active:true,after_active:false}=event.change {
+                // A fire of a hidden vehicle is a module fact: no event (checked above).
+                let burned=burned(world,*target,event.cause.shot,event.cause.attacker_slot);
+                if burned>0 {self.push(tick,FeedKind::Ignition,Some(burned),Some(*target));}
+                continue;
+            }
+            if event.from_fire {continue;}
             let kind=match event.change {
                 Change::Device{device,before_condition,after_condition,repair:false,..} if before_condition!=after_condition=>match(device,after_condition){
                     (_,Condition::Normal)=>None,
                     (crate::p06t_device_caps::Device::LeftTrack|crate::p06t_device_caps::Device::RightTrack,Condition::Destroyed)=>Some(FeedKind::TrackDown),
                     _=>Some(FeedKind::Critical)},
                 Change::Crew{before_active:true,after_active:false,..}=>Some(FeedKind::Critical),
-                Change::Fire{before_active:false,after_active:true}=>Some(FeedKind::Ignition),
                 _=>None,
             };
             if let Some(kind)=kind {self.push(tick,kind,None,Some(*target));}
@@ -205,6 +208,13 @@ impl Feed<'_> {
             if defence>cursors.defence {self.push(world.tick,FeedKind::DefencePoints,Some(defence-cursors.defence),None);}
         }
     }
+}
+/// HP one fire took from `target`: its VehicleDamage ticks share the cause of the
+/// shot that lit it. Saturates at the wire's u16.
+fn burned(world:&World,target:usize,shot:u32,attacker:u8)->u16 {
+    let sum:u32=world.device_events.iter().filter(|(t,e)|*t==target&&e.from_fire&&e.cause.shot==shot&&e.cause.attacker_slot==attacker)
+        .map(|(_,e)|match e.change {Change::VehicleDamage{amount}=>u32::from(amount),_=>0}).sum();
+    u16::try_from(sum).unwrap_or(u16::MAX)
 }
 fn current_cursors(c:&Client,world:&World)->FeedCursors {
     FeedCursors{impacts:world.impacts.len(),damage:world.damage_events.len(),ram:world.ram_damage_events.len(),
