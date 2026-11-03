@@ -194,6 +194,28 @@ def load(folder):
     return images
 
 
+def label_colours(images):
+    """{label: rgb} of the icons: the mean of their opaque, bright pixels, all classes
+    of a label together. The bar and the names take it, so the three match."""
+    colours = {}
+    for label in LABELS:
+        total, count = [0, 0, 0], 0
+        for cls in CLASSES:
+            image = images.get(linkage('%s_%s' % (label, cls)))
+            if image is None:
+                continue
+            rgba = image[2]
+            for at in range(0, len(rgba), 4):
+                if rgba[at + 3] == 255 and max(rgba[at:at + 3]) > 120:
+                    for i in range(3):
+                        total[i] += rgba[at + i]
+                    count += 1
+        if count:
+            red, green, blue = (value // count for value in total)
+            colours[label] = red << 16 | green << 8 | blue
+    return colours
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = parser.add_subparsers(dest='command', required=True)

@@ -123,7 +123,8 @@ def build(raw, look=True, team_killer=False, images=None):
     added = b''
     if look:
         added = battle_ui_marker_look.frame_tags(body, start, images)
-        body = battle_ui_marker_look.transform(body, start)
+        # The names take the icon colour of their label, like the bar.
+        body = battle_ui_marker_look.transform(body, start, battle_ui_marker_look.marker_colours(body, start, images))
         rows = tags(body, start)
     if team_killer:
         added += tag(12, actions())
