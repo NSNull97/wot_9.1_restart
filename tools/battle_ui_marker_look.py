@@ -79,6 +79,14 @@ NATIVE_ICON_LOADER, NATIVE_HEALTH = 'projectLookNativeIconLoader', 'projectLookN
 DAMAGE_FLAGS = ('FROM_PLAYER', 'FROM_SQUAD', 'FROM_ENEMY', 'FROM_ALLY', 'FROM_UNKNOWN')
 EXPLOSION_EXPORT = 'HitExplosion'
 FILTER_COLOR_MATRIX = 6
+# Owner round 8: the native fire and ammo bitmaps (86 x 86) are a soft haze with the
+# icon as its densest part; white over all of it was a blot. The matrix keeps only
+# alpha above ALPHA_CUT of 255: alpha' = ALPHA_GAIN * alpha - (ALPHA_GAIN - 1) * 255.
+EXPLOSION_ALPHA_GAIN = 4
+# Owner round 8 (a trial): the contour icon without its transparency. Its pixels
+# hold alpha about 170 of 255 (median of IS-7 and WZ-111), so 3/2 makes the body opaque
+# and keeps the antialiased edge soft.
+ICON_ALPHA_GAIN = (3, 2)
 
 
 # ---------------------------------------------------------------- SWF reading
@@ -252,10 +260,11 @@ def damage_colours(body, start):
 
 
 def white_halo(colour):
-    """Filter list: a ColorMatrixFilter that turns every pixel white and keeps its
-    alpha, then the damage number's glow in `colour` (owner round 7: the fire and
-    ammo icons in the style of the flying damage)."""
-    matrix = (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 1, 0)
+    """Filter list: a ColorMatrixFilter that turns the icon white and keeps only its
+    densest alpha (EXPLOSION_ALPHA_GAIN), then the damage number's glow in `colour`
+    (owner round 7: the fire and ammo icons in the style of the flying damage)."""
+    gain = EXPLOSION_ALPHA_GAIN
+    matrix = (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, gain, -(gain - 1) * 255)
     return (bytes((2, FILTER_COLOR_MATRIX)) + struct.pack('<20f', *matrix)
             + bytes((FILTER_GLOW,)) + colour + bytes((255,))
             + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16, round(DAMAGE_GLOW_STRENGTH * 256))
@@ -624,13 +633,14 @@ def _paint_icon():
     """function(m): the contour icon of a living vehicle in the colour of its bar.
     The native colours it by the scheme transform (ally mult 0.76 1 0.2, offset
     +25 green), not the bar colour; the icon is white and grey, so multipliers of
-    the bar colour make its white the bar's colour and keep its shading."""
+    the bar colour make its white the bar's colour and keep its shading; the alpha
+    gain takes away its transparency."""
     m, tint = var('m'), var('t')
     look = ('get', var('_global'), 'projectMarkerLook')
     paint = (stmt(('local', 't', ('get', ('get', look, 'tints'), ('get', m, 'm_markerLabel')))))
     make = (As2.push('ct') + b''.join(expr(arg) for arg in reversed(
                 [('/', ('get', tint, 'r'), 1000), ('/', ('get', tint, 'g'), 1000), ('/', ('get', tint, 'b'), 1000),
-                 1, 0, 0, 0, 0])) + As2.push(8) + expr(('get', var('flash'), 'geom')) + As2.push('ColorTransform')
+                 ('/', ICON_ALPHA_GAIN[0], ICON_ALPHA_GAIN[1]), 0, 0, 0, 0])) + As2.push(8) + expr(('get', var('flash'), 'geom')) + As2.push('ColorTransform')
             + As2.record(0x53) + As2.record(0x3c)
             + As2.push('tr') + expr(var('il')) + As2.push(1) + expr(('get', var('flash'), 'geom')) + As2.push('Transform')
             + As2.record(0x53) + As2.record(0x3c)
@@ -641,9 +651,11 @@ def _paint_icon():
 
 
 def _raise():
-    """function(m): owner round 7, the flying damage over every other marking. The
-    marker goes above its neighbours, its number and fire/ammo icon above its own
-    parts; a clip already on top is left where it is."""
+    """function(m): owner round 7, the flying damage over every other part of its
+    marker; a clip already on top is left where it is. The marker itself stays at
+    its depth: round 7 swapped it above its neighbours and the engine then failed
+    to reach it (python.log: Battle.invokeMarker, invokePy2As - Failed to invoke
+    method), so some markers stopped updating and vanished."""
     m = var('m')
 
     def up(clip, holder):
@@ -651,7 +663,7 @@ def _raise():
         return (stmt(('local', 'top', top))
                 + _if(('<', ('call', clip, 'getDepth', []), ('-', var('top'), 1)),
                       stmt(('do', ('call', clip, 'swapDepths', [var('top')])))))
-    body = stmt(('local', 'p', ('get', m, '_parent'))) + _if(var('p'), up(m, var('p')))
+    body = b''
     for part in ('hitLbl', 'hitExplosion'):
         body += stmt(('local', 'c', ('get', m, part))) + _if(var('c'), up(var('c'), m))
     return body
