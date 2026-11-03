@@ -31,21 +31,23 @@ FEATURE = 'sr_battle_history'
 CALLBACK = 'ProjectHistory.row'
 PLACE_CALLBACK = 'ProjectHistory.place'
 # Rows on screen: all in one list, or each group in its own place.
-BOTTOM_ROWS, TOP_ROWS = 7, 5
+BOTTOM_ROWS, TOP_ROWS = 6, 5
 KEPT_ROWS = 16
 TOTALS_ROWS = 3
 ALT_PERIOD = 0.1
 # Block coordinates in screen pixels. The bottom block stands right of the 230 px
-# native damage panel: the sums, then the rows, every row on its own plaque (owner
-# round 3: tight steps). The top block stands by the team list.
-TOTAL_STEP, DEALT_STEP, RECEIVED_STEP, PANEL_GAP = 18, 18, 20, 6
+# native damage panel, its top level with the panel's top (owner round 4; battle.swf
+# places damagePanel 230 px above the bottom of the stage): the sums, then the
+# rows, every row on its own plaque. The top block stands by the team list.
+TOTAL_STEP, DEALT_STEP, RECEIVED_STEP, PANEL_GAP = 22, 22, 22, 6
 DETAIL_Y = TOTALS_ROWS * TOTAL_STEP + PANEL_GAP
 BOTTOM_HEIGHT = DETAIL_Y + BOTTOM_ROWS * DEALT_STEP
-BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, BOTTOM_HEIGHT + 12, 247, 66
+DAMAGE_PANEL_TOP = 230
+BOTTOM_X, BOTTOM_ABOVE, TOP_X, TOP_Y = 235, DAMAGE_PANEL_TOP, 247, 66
 # Native battle.swf: consumablesPanel lies 56 px above the bottom of the stage. Its
 # half width is an estimate. The block is as wide as a received row. A screen too
 # narrow to keep the rows left of it shows only those above its top edge.
-BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 214, 230, 4
+BLOCK_WIDTH, AMMO_HALF, NARROW_ROWS = 192, 230, 4
 KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
 # Owner 02.11: what the player dealt is green (crit, damage, kill), a crit taken
 # gold, damage taken red; the player's own destruction has no row.

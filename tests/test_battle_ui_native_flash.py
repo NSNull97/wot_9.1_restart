@@ -64,11 +64,21 @@ class BuilderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 native.build(movie, native.actions())
 
-    def test_the_widest_row_is_the_block_width_and_columns_do_not_touch(self):
+    def test_the_widest_row_is_the_block_width(self):
         self.assertEqual(history.RECEIVED_WIDTH, history_client.BLOCK_WIDTH)
-        self.assertLess(history.RECEIVED_WORD_X + 54, history.SHELL_X)
-        self.assertLess(history.SHELL_X + history.SHELL_WIDTH, history.RECEIVED_CLASS_X - 6)
-        self.assertLess(history.DEALT_WORD_X + 54, history.DEALT_NAME_X)
+
+    def test_neighbours_keep_one_gap(self):
+        """Owner: the same gap between number, icon, plaque, class and name."""
+        half, gutter, gap = history.ICON // 2, history.FIELD_GUTTER, history.ELEMENT_GAP
+        number_right = history.DEALT_NUMBER_X + history.NUMBER_WIDTH - gutter
+        dealt = [history.DEALT_GLYPH_X - half - number_right, history.DEALT_CLASS_X - half - (history.DEALT_GLYPH_X + half),
+                 history.DEALT_NAME_X + gutter - (history.DEALT_CLASS_X + half)]
+        received = [history.RECEIVED_GLYPH_X - half - number_right, history.SHELL_X - (history.RECEIVED_GLYPH_X + half),
+                    history.RECEIVED_CLASS_X - half - (history.SHELL_X + history.SHELL_WIDTH),
+                    history.RECEIVED_NAME_X + gutter - (history.RECEIVED_CLASS_X + half)]
+        total = [history.TOTAL_NUMBER_X + gutter - (history.TOTAL_GLYPH_X + half)]
+        self.assertEqual(set(dealt + received + total), {gap})
+        self.assertEqual(number_right, history.RECEIVED_NUMBER_X + history.NUMBER_WIDTH - gutter, 'numbers share a column')
 
     def test_icons_go_before_the_added_action_and_a_missing_file_means_none(self):
         import tempfile
@@ -260,8 +270,9 @@ class HistoryTests(unittest.TestCase):
         h = history_client.History({}, lambda v: '', lambda v: '')
         row = self.draw('bottom', h.view()['bottom'][0])
         self.assertEqual(row.members['_y'], 0)
-        self.assertEqual((field(row, 'wordField'), field(row, 'numberField')), (u'Урон', '0'))
-        self.assertEqual(fmt(row, 'numberField')[8], 'right')
+        self.assertEqual(field(row, 'numberField'), '0')
+        self.assertNotIn('wordField', row.members, 'owner round 4: marks only, no words')
+        self.assertEqual(fmt(row, 'numberField')[8], 'left')
         fills = calls(row, 'beginFill')
         self.assertEqual(len(fills), history.GRADIENT_STEPS)
         self.assertEqual((fills[0][2], fills[-1][2]), (history.GRADIENT_FROM, history.GRADIENT_TO), 'a light gradient')
@@ -289,7 +300,9 @@ class HistoryTests(unittest.TestCase):
 
     def test_a_dealt_row_has_number_glyph_class_word_and_name(self):
         row = self.dealt()
-        self.assertEqual((field(row, 'numberField'), field(row, 'wordField'), field(row, 'nameField')), ('384', u'Урон', 'T-34'))
+        self.assertEqual((field(row, 'numberField'), field(row, 'nameField')), ('384', 'T-34'))
+        self.assertNotIn('wordField', row.members)
+        self.assertEqual(fmt(row, 'numberField')[1], history.TEXT_SIZE)
         self.assertEqual(row.members['classMC'].members['_x'], history.DEALT_CLASS_X)
         self.assertEqual(row.members['glyphMC'].members['_x'], history.DEALT_GLYPH_X)
         self.assertNotIn('shellField', row.members)
@@ -304,8 +317,9 @@ class HistoryTests(unittest.TestCase):
 
     def test_a_received_row_has_word_plaque_class_and_name(self):
         row = self.received('high_explosive')
-        self.assertEqual((field(row, 'numberField'), field(row, 'wordField'), field(row, 'shellField'), field(row, 'nameField')),
-                         ('258', u'Пробитие', u'ОФ', 'B-C 155 58'))
+        self.assertEqual((field(row, 'numberField'), field(row, 'shellField'), field(row, 'nameField')),
+                         ('258', u'ОФ', 'B-C 155 58'))
+        self.assertNotIn('wordField', row.members)
         self.assertIn(('beginFill', 0xd84a2a, 100), row.calls)
         self.assertEqual(row.members['classMC'].members['_x'], history.RECEIVED_CLASS_X)
 

@@ -235,8 +235,8 @@ class FeedTests(unittest.TestCase):
         self.assertEqual(m.class_icon(frozenset(['observer'])), '')
 
     def test_origin_by_the_centre_and_the_bottom_of_the_screen(self):
-        self.assertEqual(m.origin((1920, 1080)), (960, 850))
-        self.assertEqual(m.origin((1024, 768)), (512, 538))
+        self.assertEqual(m.origin((1920, 1080)), (960, 818))
+        self.assertEqual(m.origin((1024, 768)), (512, 506))
 
     def test_a_module_hit_reads_as_the_module_of_the_own_vehicle(self):
         names = {(1, 7): 'leftTrack', (2, 3): 'engine', (3, 1): 'gunner2', (1, 9): 'unknownThing'}
@@ -290,7 +290,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_the_native_window_is_placed_and_drawn_when_it_comes(self):
         self.runtime.attach(self.battle)
-        self.assertEqual(self.battle.places(), [[960, 850, True]])
+        self.assertEqual(self.battle.places(), [[960, 818, True]])
         self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3])
 
     def test_rows_before_the_window_wait_for_it(self):
@@ -336,7 +336,7 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.show_all(False)
         self.screen = (1280, 720)
         self.runtime.resize()
-        self.assertEqual(self.battle.places()[-2:], [[960, 850, False], [640, 490, False]])
+        self.assertEqual(self.battle.places()[-2:], [[960, 818, False], [640, 458, False]])
 
     def test_a_failing_call_switches_the_feed_off_and_hides_it(self):
         self.runtime.attach(self.battle)
