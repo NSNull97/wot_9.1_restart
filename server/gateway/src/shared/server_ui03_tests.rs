@@ -236,12 +236,17 @@ fn fire_of(w:&mut World,attacker:usize,shot:u32,ticks:&[u16],end:bool) {
     assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::Spotted as u8,value:None,vehicle:0}]);
 }
 
-#[test] fn ui03_fire_on_a_hidden_enemy_is_silent_and_own_fire_keeps_the_source_rule() {
+#[test] fn ui03_fire_ticks_are_silent_and_own_fire_keeps_the_source_rule_at_its_end() {
     let now=Instant::now();let (mut terrain,now)=hit_world(now,0,1);terrain.actors[1].position[0]=500.;
     let mut s=spotted(now,&terrain,0);open(&mut s);
     let mut w=mixed(now);
     w.damage_events.push(damage(1,0,1,450,440));w.damage_events.push(damage(1,1,0,300,290));
-    assert_eq!(publish(&mut s,&w,now),vec![Row{kind:FeedKind::FireReceived as u8,value:Some(10),vehicle:0}]);
+    assert_eq!(publish(&mut s,&w,now),vec![],"round 9 and 15: no row per fire tick");
+    let mut end=transition(1,1,true,device::Change::VehicleDamage{amount:10});end.cause.shot=4;w.device_events.push((0,end));
+    let mut out=transition(2,1,true,device::Change::Fire{before_active:true,after_active:false});out.cause.shot=4;
+    w.device_events.push((0,out));
+    assert_eq!(publish(&mut s,&w,now),vec![Row{kind:FeedKind::FireReceived as u8,value:Some(10),vehicle:0}],
+        "a hidden lighter stays nameless");
 }
 
 #[test] fn ui03_spot_credit_reaches_only_its_observer_and_names_a_seen_target() {
