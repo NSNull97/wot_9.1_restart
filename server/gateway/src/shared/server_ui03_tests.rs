@@ -160,7 +160,8 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
     let mut s=visible;open(&mut s);
     let rows=feed(&mut s,&mut w,now);
     let kinds=rows.iter().map(|row|row.kind).collect::<Vec<_>>();
-    assert_eq!(kinds,[FeedKind::TrackDown,FeedKind::Critical,FeedKind::Critical,FeedKind::Critical,FeedKind::Ignition].map(|k|k as u8).to_vec());
+    assert_eq!(kinds,[FeedKind::TrackDown,FeedKind::Critical,FeedKind::Critical,FeedKind::Critical].map(|k|k as u8).to_vec(),
+        "a fire is no row when it starts, and one that burned nothing is none when it ends");
     assert!(rows.iter().all(|row|row.value.is_none()&&row.vehicle==id(1)));
     open(&mut hidden);let mut w=w.clone();w.actors[1].position[0]=500.;
     assert_eq!(feed(&mut hidden,&mut w,now),vec![],"no module fact of a hidden vehicle");
@@ -184,9 +185,36 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
     let mut crew=damage(0,0,1,440,440);crew.crew_after=false;w.damage_events.push(crew);
     assert_eq!(publish(&mut s,&w,now),vec![
         Row{kind:FeedKind::ShotDamage as u8,value:Some(50),vehicle:id(1)},
-        Row{kind:FeedKind::FireDamage as u8,value:Some(10),vehicle:id(1)},
         Row{kind:FeedKind::FireReceived as u8,value:Some(10),vehicle:id(1)},
         Row{kind:FeedKind::Kill as u8,value:None,vehicle:id(1)}]);
+}
+
+fn fire_of(w:&mut World,attacker:usize,shot:u32,ticks:&[u16],end:bool) {
+    let mut sequence=w.device_events.len() as u32;
+    let mut add=|w:&mut World,from_fire:bool,change:device::Change|{
+        sequence+=1;let mut t=transition(sequence,attacker,from_fire,change);t.cause.shot=shot;w.device_events.push((1,t));};
+    add(w,false,device::Change::Fire{before_active:false,after_active:true});
+    for amount in ticks {add(w,true,device::Change::VehicleDamage{amount:*amount});}
+    if end {add(w,true,device::Change::Fire{before_active:true,after_active:false});}
+}
+
+#[test] fn ui03_own_fire_is_one_ignition_row_with_the_burned_sum_when_it_ends() {
+    let (mut w,now)=hit_world(Instant::now(),1,0);
+    let mut s=spotted(now,&w,0);open(&mut s);
+    fire_of(&mut w,0,7,&[100,100,100],false);
+    assert_eq!(feed(&mut s,&mut w,now),vec![],"a burning fire is no row yet");
+    fire_of(&mut w,1,8,&[55],true);
+    let mut end=transition(99,0,true,device::Change::Fire{before_active:true,after_active:false});end.cause.shot=7;
+    w.device_events.push((1,end));
+    assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::Ignition as u8,value:Some(300),vehicle:id(1)}],
+        "the sum of that fire only, not an ally's fire on the same vehicle");
+}
+
+#[test] fn ui03_a_fire_that_ends_out_of_sight_is_silent() {
+    let (mut w,now)=hit_world(Instant::now(),1,0);
+    w.actors[1].position[0]=500.;let mut s=spotted(now,&w,0);open(&mut s);
+    fire_of(&mut w,0,7,&[100,100],true);
+    assert_eq!(feed(&mut s,&mut w,now),vec![]);
 }
 
 #[test] fn ui03_spot_credit_of_a_target_out_of_sight_has_no_name() {
