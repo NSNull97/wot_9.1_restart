@@ -19,6 +19,8 @@ from battle_ui_hit_flash import function, method, var
 CALLBACK = 'ProjectHistory.row'
 PLACE_CALLBACK = 'ProjectHistory.place'
 PLACES = ('bottom', 'top')
+# Owner round 7: the top block follows the width of the left ears.
+EARS_GAP, EARS_MIN_X = 6, 8
 KIND_TOTAL, KIND_DETAIL = 1, 2
 # A row's plaque: radius, the gap to the next row, the gradient of the dark fill
 # from the left to the right edge.
@@ -140,10 +142,28 @@ def row_source(art=False):
     return function('_projectHistoryRow', list(ROW_ARGS), body)
 
 
+def ears_body():
+    """Every frame: the top block stands EARS_GAP right of the visible edge of the
+    left ears. PlayersPanel.swf moves its players_bg by the state's bg_x (none
+    -1000, short -390, medium -348, medium2 -320, large 0), so that edge follows
+    the ears' mode; hidden ears leave the block at EARS_MIN_X, a missing panel at
+    the x Python gave."""
+    me, root = var('this'), ('get', var('this'), '_parent')
+    bg = var('bg')
+    return [('local', 'bg', ('get', ('get', root, 'leftPanel'), 'players_bg')),
+            ('local', 'nx', ('get', me, 'baseX')),
+            ('if', ('==', ('typeof', bg), 'movieclip'), [
+                ('assign', 'nx', ('+', ('get', ('call', bg, 'getBounds', [root]), 'xMax'), EARS_GAP)),
+                ('if', ('<', var('nx'), EARS_MIN_X), [('assign', 'nx', EARS_MIN_X)])]),
+            ('set', me, '_x', var('nx'))]
+
+
 def place_source():
     holder = ('get', var('this'), ('+', 'projectHistory_', var('place')))
     return function('_projectHistoryPlace', ['place', 'x', 'y', 'shown'],
-                    [('set', holder, '_x', var('x')), ('set', holder, '_y', var('y')), ('set', holder, '_visible', var('shown'))])
+                    [('set', holder, '_x', var('x')), ('set', holder, '_y', var('y')), ('set', holder, '_visible', var('shown')),
+                     ('if', ('==', var('place'), 'top'), [('set', holder, 'baseX', var('x')),
+                                                          ('set', holder, 'onEnterFrame', ('func', [], ears_body()))])])
 
 
 def sources(art=False):
