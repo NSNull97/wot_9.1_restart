@@ -440,14 +440,14 @@ class RoundSevenTests(unittest.TestCase):
             self.assertEqual(clip.calls[0][0], method, 'the native first')
             made = clip.get('iconLoader').get('transforms')
             self.assertEqual(len(made), 1, method)
-            self.assertEqual(made[0].get('colorTransform').get('args'), expected + (1, 0, 0, 0, 0))
+            self.assertEqual(made[0].get('colorTransform').get('args'), expected + (1.5, 0, 0, 0, 0))
 
     def test_a_destroyed_vehicle_keeps_the_native_dead_colour(self):
         clip = self.marker('red', destroyed=True)
         self.vm.invoke(self.marker_proto.get('setMarkerState'), clip, ['dead'])
         self.assertIs(clip.get('iconLoader').get('transforms'), UNDEFINED)
 
-    def test_a_hit_raises_the_marker_and_then_its_number_and_icon(self):
+    def test_a_hit_raises_the_number_and_icon_and_never_the_marker(self):
         parent = Clip('canvas', getNextHighestDepth=Native('next', lambda this: 40))
         clip = self.marker()
         clip.set('_parent', parent)
@@ -460,7 +460,7 @@ class RoundSevenTests(unittest.TestCase):
         clip.set('hitExplosion', icon)
         self.vm.invoke(self.marker_proto.get('updateHealth'), clip, [100, 0, 'attack'])
         self.assertEqual(clip.calls[0][0], 'updateHealth')
-        self.assertIn(('swapDepths', 40), clip.calls)
+        self.assertNotIn('swapDepths', [call[0] for call in clip.calls], 'the engine reaches markers by place')
         self.assertEqual([call for call in number.calls if call[0] == 'swapDepths'], [('swapDepths', 12)])
         self.assertEqual([call for call in icon.calls if call[0] == 'swapDepths'], [], 'already on top')
 
@@ -626,8 +626,10 @@ class MovieTests(unittest.TestCase):
         self.assertIn('blue_fire', seen)
         halo = look.white_halo(colours['red'])
         self.assertEqual(halo[:2], bytes((2, look.FILTER_COLOR_MATRIX)))
-        self.assertEqual(struct.unpack_from('<20f', halo, 2),
-                         (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 1, 0))
+        matrix = struct.unpack_from('<20f', halo, 2)
+        self.assertEqual(matrix[:15], (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255))
+        alpha = lambda a: max(0, min(255, matrix[18] * a + matrix[19]))
+        self.assertEqual((alpha(170), alpha(191), alpha(255)), (0, 0, 255), 'the haze goes, the icon stays')
         self.assertEqual(halo[83:87], colours['red'] + bytes((255,)), 'the glow of the red damage number')
 
     def test_halo_is_black_and_a_little_thicker_than_the_native(self):
