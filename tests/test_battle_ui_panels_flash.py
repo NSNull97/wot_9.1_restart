@@ -71,12 +71,23 @@ class MovieTests(unittest.TestCase):
         with zipfile.ZipFile(ORIGINAL / 'res/packages/gui.pkg') as package:
             raw = package.read(native.MEMBER)
         at, colour = native.detection_edit(expanded(raw))
-        self.assertEqual(colour.hex(), 'dfca91ff')
+        self.assertEqual(colour.hex(), 'dbb95eff')
         plain = expanded(native.build(raw, native.actions()))
         styled = expanded(native.build(raw, native.actions(palette=True), palette=True))
         self.assertEqual(plain[at:at + 4].hex(), 'fff4b5ff')
-        self.assertEqual(styled[at:at + 4].hex(), 'dfca91ff')
+        self.assertEqual(styled[at:at + 4].hex(), 'dbb95eff')
 
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GoldIconTests(unittest.TestCase):
+    def test_a_pale_green_icon_turns_gold(self):
+        import battle_ui_feed_flash as feed
+        values = feed.gold_icon_filter()[2][0][3][0][2]
+        rows = [v[1] / v[2] if isinstance(v, tuple) else v for v in values]
+        gold = (feed.EFFECT_GOLD >> 16 & 255, feed.EFFECT_GOLD >> 8 & 255, feed.EFFECT_GOLD & 255)
+        body = (185, feed.ICON_GOLD_REFERENCE, 160)
+        self.assertEqual(tuple(round(sum(rows[r * 5 + c] * body[c] for c in range(3))) for r in range(3)), gold)
+        self.assertEqual(rows[15:], [0, 0, 0, 1, 0])

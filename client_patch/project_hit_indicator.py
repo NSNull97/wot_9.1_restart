@@ -50,8 +50,8 @@ HELLO_DELAY, HELLO_PERIOD, HELLO_ATTEMPTS = 1.0, 2.0, 5
 FACTS_LIFETIME = 5.0
 MAX_FACTS = 16
 # RED and ORANGE pick the tone of the indicator art (tools/battle_ui_hit_flash.py).
-# Owner palette, round 13: a blocked hit #B7C9D6, an ally's name #A8D177, other text #F1F2ED.
-RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0xb7c9d6, 0xf1f2ed, 0xa8d177
+# Owner palette, round 14 (darker): a blocked hit #8EADC4, an ally's name #91CD4A, other text #F1F2ED.
+RED, ORANGE, GREY, WHITE, GREEN = 0xc8181e, 0xe06a1b, 0x8eadc4, 0xf1f2ed, 0x91cd4a
 # Owner round 3: Lesta icons, from tools/battle_ui_hit_icons.py when the movie
 # has them; an icon the movie lacks leaves its place empty.
 MODULE_ICONS = {'engine': 'engineCircle', 'gun': 'gunCircle', 'turretRotator': 'turretCircle',

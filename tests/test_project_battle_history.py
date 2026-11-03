@@ -299,7 +299,7 @@ class LayoutTests(unittest.TestCase):
         h.add(hit(damage=90, source=2))
         colours = [(row[6], row[3]) for row in filled(h.view()['bottom']) if row[2] == m.KIND_DETAIL]
         self.assertEqual(colours, [('Пробитие', m.RED), ('Крит', m.GOLD), ('Поджог', m.GREEN), ('Уничтожен', m.GREEN),
-                                   ('Крит', m.GREEN)])
+                                   ('Крит', m.EFFECT_GOLD)], 'owner round 14: a dealt crit gold, its icon too')
 
     def test_sums_end_on_one_line_whichever_are_shown(self):
         rows = filled(self.fill(total_blocked=False).view()['bottom'])

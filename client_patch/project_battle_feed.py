@@ -41,8 +41,8 @@ EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
 # vehicle #E8B866, a blocked hit #B7C9D6, the player's own damage and effect #E2A53D
 # (#E8B866 a little darker), assist #C2AFE4, spotting #DFCA91, capture and defence the
 # ally colour #A8D177. The names stay those of the rows they colour.
-RED, GOLD, GREY, GREEN = 0xf07870, 0xe8b866, 0xb7c9d6, 0xe2a53d
-ASSIST, DETECT, ALLY = 0xc2afe4, 0xdfca91, 0xa8d177
+RED, GOLD, GREY, GREEN = 0xf84033, 0xeea72e, 0x8eadc4, 0x91cd4a
+ASSIST, DETECT, ALLY, EFFECT_GOLD = 0x9e7cdb, 0xdbb95e, 0x91cd4a, 0xe29512
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 RADIO, DIAMOND, DIAMOND_OUTLINE, LEAF, RING, BURST, SHELL_HIT, MODULE_TRACK = range(10, 18)
@@ -56,11 +56,11 @@ ROWS_TABLE = {'received': (RED, SHELL_HIT, 'Получен урон', False, RIN
               'blocked': (GREY, SHIELD, 'Удар сдержан', True, SHIELD, 'ribbonsArmor'),
               'defence': (ALLY, FLAG, 'Очки защиты', False, LEAF, 'ribbonsDefence'),
               'capture': (ALLY, FLAG, 'Очки захвата', False, LEAF, 'ribbonsCapture'),
-              'spotted': (DETECT, EYE, 'Обнаружил', False, LEAF, 'ribbonsSpotted'),
+              'spotted': (EFFECT_GOLD, EYE, 'Обнаружил', False, LEAF, 'ribbonsSpotted'),
               'ram': (GREEN, CHEVRONS, 'Таран', True, LEAF, 'ribbonsRam'),
               'kill': (GREEN, CROSS, 'Уничтожен', False, BURST, 'ribbonsKill'),
-              'track': (GREEN, TRACK, 'Сбитие гусеницы', False, LEAF, 'ribbonsAssistTrack'),
-              'critical': (GREEN, GEAR, 'Критический урон', False, LEAF, 'ribbonsCrits'),
+              'track': (EFFECT_GOLD, TRACK, 'Сбитие гусеницы', False, LEAF, 'ribbonsAssistTrack'),
+              'critical': (EFFECT_GOLD, GEAR, 'Критический урон', False, LEAF, 'ribbonsCrits'),
               'shot': (GREEN, CROSS, 'Урон выстрелом', True, LEAF, 'ribbonsDamage'),
               'ignition': (GREEN, FLAME, 'Поджог', False, LEAF, 'ribbonsBurn'),
               'assist_spot': (ASSIST, RADIO, 'Урон по разведанным', True, LEAF, 'ribbonsAssistSpot'),

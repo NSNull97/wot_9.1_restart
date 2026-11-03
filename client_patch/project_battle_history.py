@@ -54,7 +54,8 @@ KIND_EMPTY, KIND_TOTAL, KIND_DETAIL = 0, 1, 2
 # (#E8B866 a little darker), assist #C2AFE4, spotting #DFCA91, capture and defence the
 # ally colour #A8D177. The names stay those of the rows they colour.
 # The player's own destruction has no row.
-RED, GOLD, GREY, GREEN, ASSIST = 0xf07870, 0xe8b866, 0xb7c9d6, 0xe2a53d, 0xc2afe4
+RED, GOLD, GREY, GREEN, ASSIST = 0xf84033, 0xeea72e, 0x8eadc4, 0x91cd4a, 0x9e7cdb
+EFFECT_GOLD = 0xe29512
 # Glyph numbers of tools/battle_ui_feed_flash.py.
 CROSS, SHIELD, FLAG, EYE, CHEVRONS, KILL, TRACK, GEAR, FLAME = range(1, 10)
 RADIO = 10
@@ -69,7 +70,7 @@ ROWS_TABLE = {'received': (RECEIVED, RED, CROSS, 'Пробитие', 'damageLog_
               'shot': (EFFECT, GREEN, CROSS, 'Урон', 'damageLog_damage_16x16'),
               'ram': (EFFECT, GREEN, CHEVRONS, 'Таран', 'damageLog_ram_16x16'),
               'burned': (EFFECT, GREEN, FLAME, 'Поджог', 'damageLog_fire_16x16'),
-              'critical': (EFFECT, GREEN, GEAR, 'Крит', 'damageLog_critical_16x16'),
+              'critical': (EFFECT, EFFECT_GOLD, GEAR, 'Крит', 'damageLog_critical_16x16'),
               'assist_spot': (EFFECT, ASSIST, RADIO, 'Помощь', 'damageLog_coordinate_16x16'),
               'assist_track': (EFFECT, ASSIST, TRACK, 'Помощь', 'damageLog_immobilized_16x16')}
 KILLED = (KILL, 'Уничтожен', 'damageLog_kill_16x16')

@@ -39,11 +39,32 @@ SLIDE_MS, APPEAR_ALPHA, LEAVE_MS = 300, 35, 300
 ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'icon', 'vehicleClass')
 # Colours of client_patch/project_battle_feed.py: tint, light accent, text.
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
-RED, GOLD, GREY, GREEN = 0xf07870, 0xe8b866, 0xb7c9d6, 0xe2a53d
-ASSIST, DETECT, ALLY = 0xc2afe4, 0xdfca91, 0xa8d177
+RED, GOLD, GREY, GREEN = 0xf84033, 0xeea72e, 0x8eadc4, 0x91cd4a
+ASSIST, DETECT, ALLY, EFFECT_GOLD = 0x9e7cdb, 0xdbb95e, 0x91cd4a, 0xe29512
+# Owner round 14: the borrowed icons of a gold row gold. They are pale green (mean
+# 185 200 160); their green channel, about 200, lays the brightness on the gold.
+ICON_GOLD_REFERENCE = 200
 # Owner round 13: the main text #F1F2ED; a module row keeps its label in its colour.
 TEXT_COLOUR = NUMBER_COLOUR = NAME_COLOUR = 0xf1f2ed
-PALETTE = tuple((tint, tint, GOLD if tint == GOLD else TEXT_COLOUR) for tint in (RED, GOLD, GREY, GREEN, ASSIST, DETECT, ALLY))
+PALETTE = tuple((tint, tint, GOLD if tint == GOLD else TEXT_COLOUR)
+                for tint in (RED, GOLD, GREY, GREEN, ASSIST, DETECT, EFFECT_GOLD))
+
+
+def gold_icon_filter():
+    """[ColorMatrixFilter] that lays a borrowed icon's green channel on EFFECT_GOLD."""
+    gold = (EFFECT_GOLD >> 16 & 255, EFFECT_GOLD >> 8 & 255, EFFECT_GOLD & 255)
+    rows = []
+    for channel in gold:
+        rows += [0, round(channel * 1000 / ICON_GOLD_REFERENCE), 0, 0, 0]
+    rows += [0, 0, 0, 1000, 0]
+    values = [('/', value, 1000) if value else 0 for value in rows]
+    return ('new', 'Array', [('newm', ('get', var('flash'), 'filters'), 'ColorMatrixFilter', [('new', 'Array', values)])])
+
+
+def gold_icon(clip):
+    """Statements: an attached icon of a gold row takes the gold filter."""
+    return [('if', ('==', var('colour'), EFFECT_GOLD),
+             [('if', not_empty(var('icon')), [('set', clip, 'filters', gold_icon_filter())])])]
 # Halo: four soft dark copies around a field instead of one hard shadow.
 HALO = ((-1, -1), (1, -1), (-1, 1), (1, 1))
 HALO_ALPHA = 45
@@ -292,6 +313,8 @@ def row_source(art=False):
                         ('if', not_empty(var('number')), flow_text(mc, 'numberField', 10, NUMBER_SIZE, NUMBER_COLOUR,
                                                                    var('number'), NUMBER_Y))]
     draw += icon(mc, 'glyphMC', 3, ('+', var('x'), ICON // 2), middle, var('glyph'), var('accent'), 70, art)
+    if art:
+        draw += gold_icon(('get', mc, 'glyphMC'))
     draw += [('assign', 'x', ('+', var('x'), ICON + GAP)),
              ('if', not_empty(var('label')), flow_text(mc, 'labelField', 20, TEXT_SIZE, var('ink'), var('label'))),
              ('if', not_empty(var('vehicleClass')),
