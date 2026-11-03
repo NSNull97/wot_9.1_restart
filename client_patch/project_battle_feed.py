@@ -36,7 +36,7 @@ TICK_PERIOD = 0.25
 # (its top 230 px above the bottom) with 4 px of air; 1920 x 1080 puts its middle
 # on y 832.
 ABOVE_BOTTOM = 262
-EMPTY_ROW = (-1, '', 0, '', '', 0, 0, '')
+EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
 RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
 # Glyph numbers of tools/battle_ui_feed_flash.py.
@@ -352,15 +352,16 @@ class Feed(object):
         """Flat arguments of ProjectFeed.render: always ROWS rows."""
         args, now = [], self.clock()
         for row in self.rows:
-            colour, glyph, label, _, badge, icon = ROWS_TABLE[row['key']]
+            colour, glyph, label, _, _, icon = ROWS_TABLE[row['key']]
             module = self.module_of(row['critical']) if 'critical' in row and self.module_of is not None else None
             if module is not None:
-                label, badge = module
-                icon = FIRE_ICON if badge == FLAME else MODULE_ICON
+                label, glyph = module
+                icon = FIRE_ICON if glyph == FLAME else MODULE_ICON
             shown = row['vehicle'] and self.options['show_vehicle']
             args += [colour, number(row['key'], row['value'], row['count']), glyph,
                      label if self.options['show_label'] or module is not None else '',
-                     self.name_of(row['vehicle']) if shown else '', int(max(0.0, row['expires'] - now) * 1000), badge, icon]
+                     self.name_of(row['vehicle']) if shown else '', int(max(0.0, row['expires'] - now) * 1000), icon,
+                     (self.class_of(row['vehicle']) or '') if shown else '']
         for _ in range(ROWS - len(self.rows)):
             args += list(EMPTY_ROW)
         return args
@@ -431,7 +432,7 @@ class Runtime(object):
 
     def draw(self):
         self.place()
-        self.battle.call(CALLBACK, self.feed.render_args())
+        self.battle.call(CALLBACK, self.feed.render_args() + [False])
 
     def on_event(self, event):
         if self.failed:
@@ -443,7 +444,7 @@ class Runtime(object):
             row = self.feed.rows[0]
             self.record(EVENT + '_row', version=VERSION, key=row['key'], value=row['value'],
                         count=row['count'], vehicle_known=bool(row['vehicle']))
-            self.push()
+            self.push(True)
         except Exception:
             self.fail('event')
 
@@ -454,14 +455,15 @@ class Runtime(object):
         if self.failed or self.battle is None:
             return
         try:
-            self.battle.call(CALLBACK, self.feed.render_args())
+            self.battle.call(CALLBACK, self.feed.render_args() + [False])
         except Exception:
             self.fail('options')
 
-    def push(self):
+    def push(self, slide=False):
+        """`slide`: a new row came, the movie animates it in (owner round 6)."""
         if self.battle is None:
             return
-        self.battle.call(CALLBACK, self.feed.render_args())
+        self.battle.call(CALLBACK, self.feed.render_args() + [slide])
         if self.timer is None:
             self.timer = self.schedule(TICK_PERIOD, self.tick)
 
@@ -471,7 +473,7 @@ class Runtime(object):
             return
         try:
             if self.feed.expire():
-                self.battle.call(CALLBACK, self.feed.render_args())
+                self.battle.call(CALLBACK, self.feed.render_args() + [False])
             if self.feed.rows:
                 self.timer = self.schedule(TICK_PERIOD, self.tick)
         except Exception:

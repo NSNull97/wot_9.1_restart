@@ -252,7 +252,10 @@ class History(object):
         rows = []
         for (option, colour, glyph, word, icon), name in zip(TOTALS_TABLE, ('dealt', 'blocked', 'assist')):
             if self.options[option]:
-                text = '%s%s' % ('{:,}'.format(self.sums[name]).replace(',', ' '), '+' if name in self.partial else '')
+                # Owner round 5: no "+" in the sums. It marked a sum the server kept
+                # incomplete in battle (withheld amounts); the totals record at the
+                # end replaces it with the exact one. `partial` stays in the trace.
+                text = '{:,}'.format(self.sums[name]).replace(',', ' ')
                 rows.append((KIND_TOTAL, colour, text, glyph, word, '', '', '', NO_PLAQUE, icon))
         return rows
 

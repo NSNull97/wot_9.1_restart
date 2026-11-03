@@ -130,7 +130,7 @@ class FeedTests(unittest.TestCase):
 
     def test_dealt_damage_with_name(self):
         self.assertTrue(self.feed.add(event(1, 320, 523)))
-        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000, m.LEAF, 'ribbonsDamage'])
+        self.assertEqual(self.row(), [m.GREEN, '320', m.CROSS, 'Урон выстрелом', 'T-34', 5000, 'ribbonsDamage', 'mediumTank'])
 
     def test_a_withheld_amount_stays_visibly_absent(self):
         self.feed.add(event(1))
@@ -140,7 +140,7 @@ class FeedTests(unittest.TestCase):
         self.feed.add(hit(damage=90, source=523, criticals=((1, 3), (4, 0))))
         self.assertEqual(self.row(0)[:5], [m.GOLD, 'x2', m.GEAR, 'Критическое повреждение', 'T-34'])
         self.assertEqual(self.row(1)[:5], [m.RED, '90', m.SHELL_HIT, 'Получен урон', 'T-34'])
-        self.assertEqual((self.row(0)[6], self.row(1)[6]), (m.GEAR, m.RING))
+        self.assertEqual((self.row(0)[6], self.row(1)[6]), ('ribbonsCritsEnemy', 'ribbonsDamageEnemy'))
 
     def test_blocked_shows_the_nominal_or_a_dash_for_a_hidden_shooter(self):
         self.feed.add(hit(damage=0, blocked=400, verdict=2, source=523))
@@ -209,7 +209,7 @@ class FeedTests(unittest.TestCase):
         self.feed.add(event(3, NO_VALUE, 523))
         self.assertEqual(len(self.feed.rows), 1)
         self.assertEqual(self.row()[:5], [m.GREEN, '440', m.CROSS, 'Уничтожен', 'T-34'], 'owner 02.11: a kill is green')
-        self.assertEqual(self.row()[6], m.BURST)
+        self.assertEqual(self.row()[6], 'ribbonsKill')
 
     def test_damage_after_the_kill_adds_to_the_kill_row(self):
         self.feed.add(event(3, NO_VALUE, 523))
@@ -243,8 +243,8 @@ class FeedTests(unittest.TestCase):
         feed = m.Feed({}, self.clock, {523: 'T-34'}.get, {}.get,
                       lambda critical: m.module_phrase(critical, names.get(tuple(critical), '')))
         feed.add(hit(damage=0, verdict=1, source=523, criticals=((1, 7),)))
-        self.assertEqual(feed.render_args()[:8], [m.GOLD, '', m.GEAR, 'Повреждена левая гусеница', 'T-34', 5000,
-                                                  m.MODULE_TRACK, m.MODULE_ICON])
+        self.assertEqual(feed.render_args()[:8], [m.GOLD, '', m.MODULE_TRACK, 'Повреждена левая гусеница', 'T-34', 5000,
+                                                  m.MODULE_ICON, ''])
         feed.apply_options({'show_label': False})
         self.assertEqual(feed.render_args()[3], 'Повреждена левая гусеница', 'a module row is its text')
         self.assertEqual(m.module_phrase((2, 3), 'engineHealth'), ('Уничтожен двигатель', m.GEAR))
@@ -291,7 +291,7 @@ class RuntimeTests(unittest.TestCase):
     def test_the_native_window_is_placed_and_drawn_when_it_comes(self):
         self.runtime.attach(self.battle)
         self.assertEqual(self.battle.places(), [[960, 818, True]])
-        self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3])
+        self.assertEqual(self.battle.rows(), [list(m.EMPTY_ROW) * 3 + [False]])
 
     def test_rows_before_the_window_wait_for_it(self):
         self.runtime.on_event(event(1, 1, 1))
@@ -302,9 +302,10 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.attach(self.battle)
         self.runtime.on_event(event(1, 1, 1))
         self.assertEqual(len(self.battle.rows()), 2)
+        self.assertIs(self.battle.rows()[-1][-1], True, 'a new row slides in')
         self.clock.now += m.LIFETIME
         self.timers.pop()()
-        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3)
+        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3 + [False])
         self.assertEqual(self.timers, [])
 
     def test_an_invisible_row_draws_nothing(self):
@@ -318,7 +319,7 @@ class RuntimeTests(unittest.TestCase):
         self.runtime.on_event(event(1, 1, 1))
         self.runtime.ready()
         self.assertEqual(self.runtime.feed.rows, [])
-        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3)
+        self.assertEqual(self.battle.rows()[-1], list(m.EMPTY_ROW) * 3 + [False])
 
     def test_the_closed_window_gets_no_call_and_its_timer_stops(self):
         self.runtime.attach(self.battle)

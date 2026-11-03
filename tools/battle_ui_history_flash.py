@@ -29,7 +29,11 @@ RADIUS, GAP, PANEL_FILL, GRADIENT_FROM, GRADIENT_TO, GRADIENT_STEPS = 3, 2, 0x0d
 # to the next; an icon is ICON wide and placed by its centre; a text field keeps
 # a gutter of FIELD_GUTTER inside; a number keeps its right edge at NUMBER_RIGHT.
 ELEMENT_GAP, ICON, FIELD_GUTTER, NUMBER_RIGHT = 6, 16, 2, 30
-NUMBER_WIDTH, SHELL_WIDTH = 50, 26
+NUMBER_WIDTH = 50
+# The shell plaque fits its text (owner: "зависит от названия"): text width plus
+# SHELL_PAD on each side, centred in a column SHELL_SLOT wide, so the class and
+# the name keep their columns in every row.
+SHELL_SLOT, SHELL_PAD = 26, 4
 _ICON_X = NUMBER_RIGHT + ELEMENT_GAP + ICON // 2
 TOTAL_GLYPH_X = 3 + ICON // 2
 TOTAL_NUMBER_X = TOTAL_GLYPH_X + ICON // 2 + ELEMENT_GAP - FIELD_GUTTER
@@ -41,10 +45,10 @@ DEALT_NAME_X = DEALT_CLASS_X + ICON // 2 + ELEMENT_GAP - FIELD_GUTTER
 DEALT_WIDTH = DEALT_NAME_X + 82
 RECEIVED_NUMBER_X, RECEIVED_GLYPH_X = DEALT_NUMBER_X, _ICON_X
 SHELL_X = RECEIVED_GLYPH_X + ICON // 2 + ELEMENT_GAP
-RECEIVED_CLASS_X = SHELL_X + SHELL_WIDTH + ELEMENT_GAP + ICON // 2
+RECEIVED_CLASS_X = SHELL_X + SHELL_SLOT + ELEMENT_GAP + ICON // 2
 RECEIVED_NAME_X = RECEIVED_CLASS_X + ICON // 2 + ELEMENT_GAP - FIELD_GUTTER
 RECEIVED_WIDTH = RECEIVED_NAME_X + 82
-SHELL_HEIGHT, SHELL_SIZE = 14, 11
+SHELL_HEIGHT, SHELL_SIZE, SHELL_RADIUS = 12, 10, 3
 NAME_WIDTH, TEXT_SIZE, TOTAL_SIZE = 80, 14, 16
 NAME_COLOUR, NUMBER_COLOUR, DASH_COLOUR = 0xf0f0f0, 0xffffff, 0x8c8c8c
 # A crit taken: client_patch/project_battle_history.py GOLD.
@@ -96,17 +100,18 @@ def total_rows(mc, art):
 
 
 def plaque(mc):
+    """Plain text (owner round 5: no halo) on a rounded box as wide as the text."""
     middle = ('/', ('-', var('step'), GAP), 2)
-    top, bottom = ('-', middle, SHELL_HEIGHT // 2), ('+', middle, SHELL_HEIGHT - SHELL_HEIGHT // 2)
-    box = [method(mc, 'moveTo', SHELL_X, top), method(mc, 'lineTo', SHELL_X + SHELL_WIDTH, top),
-           method(mc, 'lineTo', SHELL_X + SHELL_WIDTH, bottom), method(mc, 'lineTo', SHELL_X, bottom),
-           method(mc, 'lineTo', SHELL_X, top)]
+    top = ('-', middle, SHELL_HEIGHT // 2)
     rows = [('local', 'fill', -1), ('local', 'ink', DASH_COLOUR)]
     for style, fill, ink in SHELL_STYLES:
         rows.append(('if', ('==', var('shellStyle'), style), [('assign', 'fill', fill), ('assign', 'ink', ink)]))
-    return rows + [('if', ('<', -1, var('fill')), feed.filled(mc, box, var('fill'), 100)),
-                   text(mc, 'shellField', 30, SHELL_X, SHELL_WIDTH, SHELL_SIZE, var('ink'), 'center', var('shell'),
-                        ('-', middle, 8))]
+    rows += [('do', ('fn', '_projectFeedField', [mc, 'shellField', 30, SHELL_X, ('-', middle, 8), SHELL_SLOT, SHELL_SIZE,
+                                                  var('ink'), 'center', var('shell'), True, 100])),
+             ('local', 'shellW', ('+', ('get', ('get', mc, 'shellField'), 'textWidth'), 2 * SHELL_PAD)),
+             ('local', 'shellX', ('+', SHELL_X, ('/', ('-', SHELL_SLOT, var('shellW')), 2)))]
+    box = feed.round_rect(mc, var('shellX'), top, var('shellW'), SHELL_HEIGHT, SHELL_RADIUS)
+    return rows + [('if', ('<', -1, var('fill')), feed.filled(mc, box, var('fill'), 100))]
 
 
 def detail_rows(mc, art):
