@@ -3,7 +3,7 @@
 Дата: 2026-10-04, Asia/Yekaterinburg. Run: `20261004-p02-baseapp-reply`.
 **Карточка PASS; полный gate P02 NOT_RUN.** Основание — «давай» владельца
 после [карточки redirect](P02_LOGIN_REDIRECT.md). Граница —
-[план](../plans/P02_baseapp_reply.md).
+план (`docs/plans/P02_baseapp_reply.md` в git на `1eaff5e`).
 
 ## Результат и граница
 

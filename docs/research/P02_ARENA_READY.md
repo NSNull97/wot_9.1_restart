@@ -1,6 +1,6 @@
 # P02 — настоящая готовность клиента и серверная подготовка арены
 
-2026-10-05. Карточка из [плана](../plans/P02_arena_ready_countdown.md).
+2026-10-05. Карточка из плана (`docs/plans/P02_arena_ready_countdown.md` в git на `1eaff5e`).
 O = `local/evidence/20261005-p02-arena-ready/`, N = предыдущая карточка
 `local/evidence/20261005-p02-arena-entry/`. Все команды ниже выполняются из
 `D:\WoT_9.1_Server`. Клиент #717 и исходные ресурсы не публикуются.

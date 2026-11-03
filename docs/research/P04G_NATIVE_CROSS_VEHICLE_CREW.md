@@ -3,7 +3,7 @@
 2026-10-13. Branch `codex/p04g-native-cross-vehicle-crew`, accepted base
 `83fecd563a9edc7dd13cdab56f3846e59673140b`. The owner requested a second
 verified vehicle and crew transfers through the original interface.
-The [execution plan](../plans/P04G_NATIVE_CROSS_VEHICLE_CREW.md) defines the
+The execution plan (`docs/plans/P04G_NATIVE_CROSS_VEHICLE_CREW.md` в git на `1eaff5e`) defines the
 runtime, regression, restoration and acceptance gates.
 
 **Static research: VERIFIED_STATIC. Native P04G wire/state/relogin gate:
@@ -321,6 +321,6 @@ writer must not operate on the new schema.
 
 Research acceptance is PASS for the bounded static facts and actual native
 wire/state/fresh-client-login result. Root completed the separate pixel and
-cleanup gates; the [final card index](../evidence-index/P04G_NATIVE_CROSS_VEHICLE_CREW.md)
+cleanup gates; the final card index (`docs/evidence-index/P04G_NATIVE_CROSS_VEHICLE_CREW.md` в git на `1eaff5e`)
 binds them to current-build regressions. Next crew card: native recruitment
 for every required primary role of the two verified rosters.

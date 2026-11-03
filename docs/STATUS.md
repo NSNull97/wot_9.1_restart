@@ -12,7 +12,11 @@
 - R1 (вне исходников): ветки 370 → 20, рабочие деревья 108 → 28; невлитые — в бандле
   `local/archive/branches-20261103/unmerged-82.bundle`, `local/` удалённых деревьев — `local/archive/worktrees-20261103/`.
 - R2: удалены планы принятых карточек, отчёты-снимки и `web/*_PLAN|REPORT.md` (решение владельца «Удалить»), STATUS сокращён.
-- Дальше R3 мёртвый код → R4 общие помощники → R5 имена → R6 модули шлюза (вопрос `rustfmt`) → R7 клиентский патч.
+- R3: удалены 18 разовых скриптов без ссылок из кода. R4: общие `tools/gui_atlas.py`, `tools/swf_bitmap.py`,
+  `client_patch/native_contract.py` вместо копий (1851 полезная нагрузка UI побайтно та же). R5: 28 свободных от привязок файлов
+  названы по смыслу.
+- R6 (модули шлюза) и R7 (клиентский патч) не начаты: пересекаются с PG-01, кандидатом PERF-02 и UI-PREF01 — решения владельца
+  в списке «На утро» [плана](plans/REFACTOR01_PLAN.md).
 
 После REFACTOR (порядок владельца 03.11): CLIENT-PERF-01 → UI-PREF01 → снаряды (сначала SHELLS-R) → PG-01 и NET-02/LOAD-200
 → контент (все машины, карты, разрушаемость).
@@ -41,10 +45,10 @@
 
 ## Проверки базы
 
-- Канонический gate в D: (`8bda1b9`): 1993 PASS / 2 FAIL / 21 ignored. Два FAIL `scene_worker::tests_p04m` — базовые.
-- Полный Python-набор в D: 94 FAIL/ERROR, построчно равен main (`E:/WoT091_Verify_20261031/pyD-*.fails`); сравнивать только
+- Канонический gate в D: (`4e46418`): 1993 PASS / 2 FAIL / 21 ignored. Два FAIL `scene_worker::tests_p04m` — базовые.
+- Полный Python-набор в D: (`10f10e5`) 3961 тест, 94 FAIL/ERROR, построчно равен main (`E:/WoT091_Verify_20261031/pyD-*.fails`); сравнивать только
   в D:. Два ERROR `test_server_build_driver` — журналы сборок, потерянные при чистке 24.10.
-- `python -B -X utf8 server/check_layout.py` — PASS.
+- `python -B -X utf8 server/check_layout.py` — PASS. Web `npm test` — 85 PASS / 27 FAIL, как на main `05c102a`.
 
 ## Открыто
 

@@ -3,7 +3,7 @@
 Дата: 2026-10-04, Asia/Yekaterinburg. Run: `20261004-p02-channel-ack`.
 **Карточка PASS. Общий надёжный канал и полный gate P02 NOT_RUN.**
 Основание — «поехали» владельца после [BaseApp reply](P02_BASEAPP_REPLY.md).
-Граница работы — [план](../plans/P02_channel_ack.md).
+Граница работы — план (`docs/plans/P02_channel_ack.md` в git на `1eaff5e`).
 
 ## Что установлено
 

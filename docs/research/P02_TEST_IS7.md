@@ -12,7 +12,7 @@ ToolTip/Awards/native PNG, чистый ручной exit0/11cleanup/rollback.
 Дальше документ сохраняет историю, включая прежние PARTIAL и FAIL.
 
 Дата:2026-10-04. Запрос владельца: «также добавь ИС-7 для тестов».
-План: [P02_test_is7](../plans/P02_test_is7.md).
+План: P02_test_is7 (`docs/plans/P02_test_is7.md` в git на `1eaff5e`).
 
 **Тестовая выдача и исправленный cached relogin подтверждены настоящим
 клиентом; полная приёмка карточки PARTIAL.** UI11: wire/backend/garage/GUI

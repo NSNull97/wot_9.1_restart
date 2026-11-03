@@ -186,7 +186,7 @@ python -B -X utf8 server/check_layout.py --out local/evidence/20261013-p04b-crew
 ```
 
 Fresh outputs are append-only; choose a new output path for reruns. Exact
-execution counts, hashes and final commit are in [the evidence index](../evidence-index/P04B.md)
+execution counts, hashes and final commit are in the evidence index (`docs/evidence-index/P04B.md` в git на `1eaff5e`)
 and the local final receipt. Earlier extraction/rounding evidence remains in
 `local/evidence/20261013-p04b-crew-equipment-01/crew-source/` and
 `equipment-source/`. Source assertions and extracted factual rosters are saved,

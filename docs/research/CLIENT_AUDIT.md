@@ -131,4 +131,4 @@ automatic retry, отказы неправильного пароля/digest и 
 только отрицательный password control; native callbacks не подменяются.
 
 Команды и откат: [REPRODUCE.md](REPRODUCE.md). Индекс хешей:
-[P00_P01](../evidence-index/P00_P01.md).
+P00_P01 (`docs/evidence-index/P00_P01.md` в git на `1eaff5e`).

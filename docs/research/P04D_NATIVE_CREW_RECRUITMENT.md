@@ -111,7 +111,7 @@ The client copy is `local/clients/p04d-b`, a manifested independent copy;
 the primary checkout and the sibling P09D client/services are not changed.
 
 The full native result, source bindings, exact commands, tests and rollback
-are recorded in the [evidence index](../evidence-index/P04D_NATIVE_CREW_RECRUITMENT.md).
+are recorded in the evidence index (`docs/evidence-index/P04D_NATIVE_CREW_RECRUITMENT.md` в git на `1eaff5e`).
 Both successful installations were restored by their ledgers, both original
 client runs exited normally, and only this card's server processes were stopped.
 The original and parallel primary/P09D copies were not modified.

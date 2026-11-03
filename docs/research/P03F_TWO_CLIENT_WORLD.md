@@ -1,10 +1,10 @@
 # P03F — native two-client laboratory research
 
-Card: [plan](../plans/P03F_TWO_CLIENT_WORLD.md). Branch:
+Card: plan (`docs/plans/P03F_TWO_CLIENT_WORLD.md` в git на `1eaff5e`). Branch:
 `codex/p03f-two-client-world`; base `3e59991f41d4459bbe571afcec04207ce2c20e12`.
 Evidence root: `local/evidence/20261007-p03f-two-client-world-01/`.
 Same-PC native/owner acceptance is now PASS, scoped by the
-[final receipt](../evidence-index/P03F_GUN_POSE.md). This document distinguishes each run.
+final receipt (`docs/evidence-index/P03F_GUN_POSE.md` в git на `1eaff5e`). This document distinguishes each run.
 
 ## Verified inputs and implementation boundaries
 
@@ -146,7 +146,7 @@ that receipt. No `SHARED_REJECT`/`SHARED_FAILED` or native observer error events
 occur in the separately frozen runtime/log prefixes. Earlier run01 failure remains
 preserved and is not relabeled PASS.
 
-Evidence: [P03F index](../evidence-index/P03F.md), local `result.json`,
+Evidence: P03F index (`docs/evidence-index/P03F.md` в git на `1eaff5e`), local `result.json`,
 `capture-audit-02.json`, `capture-manifest-02-prefix.jsonl`, `native-prefix-01/`,
 and the three process launch receipts. Original/research EXE and deployed gateway
 hash guards match the pre-card pins. Card status is
@@ -223,7 +223,7 @@ or errors, two documented skips. Evidence: `aim-01/result.json`,
 `aim-01/owner-acceptance.json`; commands and limits in the final receipt.
 
 Full proof, commands, failures, limits and current rollback:
-[P03F shot cue receipt](../evidence-index/P03F_SHOT_CUE.md).
+P03F shot cue receipt (`docs/evidence-index/P03F_SHOT_CUE.md` в git на `1eaff5e`).
 
 ## Rollback
 

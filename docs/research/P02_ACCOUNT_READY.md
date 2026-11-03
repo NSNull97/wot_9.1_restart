@@ -1,7 +1,7 @@
 # P02 — минимальный Account: lifecycle и начальная синхронизация
 
 2026-10-04. Продолжение по поручению владельца «доведём акк до готовности».
-План: [P02_account_ready](../plans/P02_account_ready.md).
+План: P02_account_ready (`docs/plans/P02_account_ready.md` в git на `1eaff5e`).
 Evidence root: `local/evidence/20261004-p02-account-ready/` (далее E).
 Публичные названия: GAYmDev Stutio, «Стальной рубеж»; [NAMING](../NAMING.md).
 

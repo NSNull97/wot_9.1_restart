@@ -8,7 +8,7 @@ The source-backed calculation found in this client is a **UI marker predictor**.
 It is implemented as a pure, bounded diagnostic. It is not used to decide
 penetration, ricochet, damage, effects or any world-state transition.
 
-Plan: [P06K](../plans/P06K_AP_IMPACT_CONTRACT.md). Base accepted merge:
+Plan: P06K (`docs/plans/P06K_AP_IMPACT_CONTRACT.md` в git на `1eaff5e`). Base accepted merge:
 `92ed46e30d4cdca824437a282a0916b9c987ad5b` (P06J). Evidence directory:
 `local/evidence/20261010-p06k-ap-impact-contract-01/`.
 

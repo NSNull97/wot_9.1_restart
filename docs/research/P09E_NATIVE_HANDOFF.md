@@ -4,7 +4,7 @@
 Do not mark this card accepted or merge it before the actual required result.
 
 The completed implementation and automatic evidence are indexed in
-[P09E_TANK_MODULE_RESEARCH](../evidence-index/P09E_TANK_MODULE_RESEARCH.md).
+P09E_TANK_MODULE_RESEARCH (`docs/evidence-index/P09E_TANK_MODULE_RESEARCH.md` в git на `1eaff5e`).
 This is a checklist for later preparation and owner testing, not a claim that a
 client copy, installed patch, port lease or active service already exists.
 

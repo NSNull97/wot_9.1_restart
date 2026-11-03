@@ -2,7 +2,7 @@
 
 2026-10-04, Asia/Yekaterinburg. Evidence run `20261004-p02-session-gateway`.
 Основание: владелец разрешил идти последовательно до первого крупного
-проверенного шага. [План](../plans/P02_session_gateway.md).
+проверенного шага. План (`docs/plans/P02_session_gateway.md` в git на `1eaff5e`).
 
 **Локальный transport/session рубеж PASS. Полный P02 — PARTIAL.**
 Десять последовательных native входов/выходов прошли на одном живом gateway.
