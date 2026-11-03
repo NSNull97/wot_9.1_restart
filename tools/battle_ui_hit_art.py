@@ -17,8 +17,10 @@ import math
 import struct
 import zlib
 
-# Marker colours: damage, a blocked shot, a critical hit without damage.
-TONES = {'red': (255, 38, 38), 'grey': (150, 150, 150), 'orange': (255, 138, 30)}
+# Marker colours: damage, a blocked shot, a critical hit without damage. Owner
+# round 4: the blocked marker almost black; its bright core stays dark too.
+TONES = {'red': (255, 38, 38), 'grey': (30, 30, 32), 'orange': (255, 138, 30)}
+CORES = {'red': (255, 108, 108), 'grey': (52, 52, 56), 'orange': (255, 208, 100)}
 DISC_FILL = (18, 10, 12)
 DISC_RADIUS = 20
 # Where each sprite's centre sits, measured outwards from the disc centre.
@@ -79,7 +81,7 @@ def _wing_x(along):
 
 def wings(tone):
     """Two glowing strokes from beside the disc outwards, brightest near it."""
-    colour, core = TONES[tone], tuple(min(255, c + 70) for c in TONES[tone])
+    colour, core = TONES[tone], CORES[tone]
     def paint(x, y):
         along = WINGS_AT - y
         fade = _smooth(5, 12, along) * (1 - _smooth(40, 68, along))

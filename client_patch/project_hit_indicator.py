@@ -63,9 +63,6 @@ VEHICLE_ICONS = ('lightTank', 'mediumTank', 'heavyTank', 'SPG', 'AT-SPG')
 # while it lives, also across a sniper/arcade rebuild.
 SPREADS = (0, 14, -14, 28, -28)
 SPREAD_APART, SPREAD_LIFETIME = 13.0, 3.75
-# The second line of the marker: the shell family, as the history plaques.
-SHELL_LABELS = {'armor_piercing': u'\u0411\u0411', 'armor_piercing_cr': u'\u0411\u041f',
-                'hollow_charge': u'\u041a\u0421', 'high_explosive': u'\u041e\u0424'}
 
 # Values for UI-05: key, allowed values, default. Standard shows the native arc,
 # so the last four keys act in the extended view only. `apply_options` takes
@@ -278,8 +275,6 @@ class Policy(object):
                 continue
             if event['kind'] == 'hit_received':
                 self.remember(event)
-            elif event['kind'] == 'shell':
-                self.remember_shell(event)
             self.notify(event)
 
     def notify(self, event):
@@ -303,12 +298,6 @@ class Policy(object):
                     source_known=event['source'] != 0, criticals=len(event['criticals']))
         if event['verdict'] == 'splash' and self.show_splash is not None:
             self.show_splash(event['yaw'])
-
-    def remember_shell(self, event):
-        """The server sends it after its hit, only for a shooter the recipient sees."""
-        for _, row in self.facts.values():
-            if row['shot'] == event['shot']:
-                row['shell'] = event['family']
 
     def facts_for(self, yaw):
         row = self.facts.get(_key(yaw))
@@ -362,9 +351,8 @@ class Policy(object):
         if options['dynamic'] and damage > 0 and max_health > 0:
             scale += 0.6 * min(1.0, 2.0 * damage / float(max_health))
         shown = name if options['show_vehicle'] else ''
-        shell = SHELL_LABELS.get(event.get('shell'), '') if options['show_vehicle'] else ''
         return [colour, number, shown, GREEN if event['friendly'] else WHITE, note if critical else '', scale,
-                options['animate'], shell, icon if critical and damage == 0 else '', vehicle if shown else '',
+                options['animate'], icon if critical and damage == 0 else '', vehicle if shown else '',
                 self.spread_for(event)]
 
 
