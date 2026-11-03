@@ -155,6 +155,26 @@ class SetupTests(unittest.TestCase):
         holder = root.members['projectHistory_top']
         self.assertEqual((holder.members['_x'], holder.members['_y'], holder.members['_visible']), (247, 66, True))
 
+    def test_the_top_block_follows_the_edge_of_the_left_ears(self):
+        machine, scope, root, delegate = loaded()
+        machine.invoke(scope['_projectHistoryPlace'], root, ['top', 247, 66, True])
+        holder = root.members['projectHistory_top']
+        holder.members['_parent'] = root
+        frame = holder.members['onEnterFrame']
+        ears, bounds = Clip('leftPanel'), {'xMax': 310}
+        root.members['leftPanel'] = ears
+        machine.invoke(frame, holder, [])
+        self.assertEqual(holder.members['_x'], 247, 'no ears background: the x Python gave')
+        background = Clip('players_bg')
+        background.members['getBounds'] = lambda target: bounds if target is root else None
+        ears.members['players_bg'] = background
+        for edge, expected in ((310, 310 + history.EARS_GAP), (-200, history.EARS_MIN_X), (600, 600 + history.EARS_GAP)):
+            bounds['xMax'] = edge
+            machine.invoke(frame, holder, [])
+            self.assertEqual(holder.members['_x'], expected, edge)
+        machine.invoke(scope['_projectHistoryPlace'], root, ['bottom', 235, 850, True])
+        self.assertNotIn('onEnterFrame', root.members['projectHistory_bottom'].members, 'the bottom block stays put')
+
 
 class Attaching(Machine):
     """An attached sprite is a clip of its own; text measures 7 px a character."""

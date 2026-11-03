@@ -21,14 +21,15 @@ ROWS = 3
 # Row of owner round 5: number, one event icon, label, class icon, name, with one
 # gap between neighbours; the panel is as wide as its content and centred on the
 # place Python gives. ICON is the width of the event icon, CLASS of the class icon.
-ROW_STEP, PANEL_HEIGHT, RADIUS, PAD, GAP, ICON, CLASS = 33, 28, 5, 10, 6, 22, 16
+ROW_STEP, PANEL_HEIGHT, RADIUS, PAD, GAP, ICON, CLASS = 33, 28, 5, 10, 6, 24, 16
 NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE, FIELD_WIDTH, FIELD_GUTTER = 2, 5, 17, 13, 220, 2
 # A dense panel with the row's tint as a smooth gradient strongest at the left
 # edge; GRADIENT_STEPS bands stand in where the player has no beginGradientFill.
 PANEL_FILL, PANEL_ALPHA, EDGE_ALPHA = 0x0d1216, 62, 40
 GRADIENT_STEPS, GRADIENT_FROM, GRADIENT_TO = 8, 62, 6
-# A Lesta icon (ribbons*, 48 px) at this scale fills the icon column.
-ICON_SCALE = 45
+# A Lesta icon (ribbons*, 48 px) draws in about its middle 28 px; at this scale
+# that is some 21 px, most of the panel height (owner round 7: it was too small).
+ICON_SCALE = 75
 FADE_MS = 500
 # Owner round 6: a new row comes up from below like an iOS notification turned
 # over, easing out, while it shows from APPEAR_ALPHA; the rows above slide up a
