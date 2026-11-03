@@ -18,27 +18,24 @@ from battle_ui_hit_flash import FONT, function, method, polygon, var
 CALLBACK = 'ProjectFeed.render'
 PLACE_CALLBACK = 'ProjectFeed.place'
 ROWS = 3
-# Row geometry of ref2/battle-feed.png; x from the left edge of the panel, which
-# stands PANEL_LEFT from the centre of the screen.
-ROW_STEP, PANEL_LEFT, PANEL_WIDTH, PANEL_HEIGHT, RADIUS = 33, -146, 293, 28, 5
-BADGE_X, BADGE_RADIUS, NUMBER_X, NUMBER_WIDTH, GLYPH_X, TEXT_X, TEXT_WIDTH = 16, 9, 30, 52, 75, 92, 200
-MODULE_GLYPH_X, MODULE_TEXT_X = 24, 52
-NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE = 2, 5, 17, 13
-# Owner round 3: a denser panel with a gradient strongest at its left edge. The
-# gradient is GRADIENT_STEPS bands of the row's tint, from GRADIENT_FROM percent of
-# alpha at the left to GRADIENT_TO at the right, over a dark base.
+# Row of owner round 5: number, one event icon, label, class icon, name, with one
+# gap between neighbours; the panel is as wide as its content and centred on the
+# place Python gives. ICON is the width of the event icon, CLASS of the class icon.
+ROW_STEP, PANEL_HEIGHT, RADIUS, PAD, GAP, ICON, CLASS = 33, 28, 5, 10, 6, 22, 16
+NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE, FIELD_WIDTH, FIELD_GUTTER = 2, 5, 17, 13, 220, 2
+# A dense panel with the row's tint as a smooth gradient strongest at the left
+# edge; GRADIENT_STEPS bands stand in where the player has no beginGradientFill.
 PANEL_FILL, PANEL_ALPHA, EDGE_ALPHA = 0x0d1216, 62, 40
 GRADIENT_STEPS, GRADIENT_FROM, GRADIENT_TO = 8, 62, 6
-# A Lesta icon (ribbons*, 48 px) at this scale fills the glyph column.
-ICON_SCALE = 55
-SEPARATOR = u' • '
+# A Lesta icon (ribbons*, 48 px) at this scale fills the icon column.
+ICON_SCALE = 45
 FADE_MS = 500
-ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'badge', 'icon')
+ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'icon', 'vehicleClass')
 # Colours of client_patch/project_battle_feed.py: tint, light accent, text.
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
 RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
 PALETTE = ((RED, 0xff5a4a, 0xdcdcdc), (GOLD, 0xf0c040, 0xf0c040), (GREY, 0xd0d0d0, 0xdcdcdc), (GREEN, 0x9be04a, 0xdcdcdc))
-TEXT_COLOUR, NUMBER_COLOUR, ICON_COLOUR = 0xdcdcdc, 0xffffff, 0xe6e6e6
+TEXT_COLOUR, NUMBER_COLOUR, NAME_COLOUR = 0xdcdcdc, 0xffffff, 0xf0f0f0
 # Halo: four soft dark copies around a field instead of one hard shadow.
 HALO = ((-1, -1), (1, -1), (-1, 1), (1, 1))
 HALO_ALPHA = 45
@@ -57,6 +54,8 @@ def _star(points, r_out, r_in):
     return [(round((r_out if i % 2 == 0 else r_in) * math.sin(math.pi * i / points)),
              round(-(r_out if i % 2 == 0 else r_in) * math.cos(math.pi * i / points))) for i in range(2 * points)]
 
+
+DIAMOND = 11
 
 # Project shapes in a 22 x 22 box around (0, 0): polygons of (x, y), filled with
 # the even-odd rule, so an inner polygon is a hole. Numbers are the glyph numbers
@@ -162,15 +161,32 @@ def add(a, b):
     return a + b
 
 
+def part(width, index, steps):
+    """width * index / steps, folded for a number."""
+    if not isinstance(width, tuple):
+        return width * index // steps
+    return 0 if index == 0 else width if index == steps else ('/', ('*', width, index), steps)
+
+
 def gradient(mc, width, height, colour, radius, start, stop, steps=GRADIENT_STEPS, top=0):
-    """A horizontal gradient as `steps` bands from alpha `start` to `stop`; the
-    first and the last band keep the rounded corners of the box."""
-    rows = []
+    """A smooth horizontal gradient from alpha `start` at the left to `stop` at the
+    right over the rounded box (owner round 5: not in blocks). A player without
+    beginGradientFill gets `steps` bands instead."""
+    matrix = ('get', var('this'), 'gradientBox')
+    box = round_rect(mc, 0, top, width, height, radius)
+    smooth = [('set', var('this'), 'gradientBox', ('new', 'Object', [])),
+              ('set', matrix, 'matrixType', 'box'), ('set', matrix, 'x', 0), ('set', matrix, 'y', top),
+              ('set', matrix, 'w', width), ('set', matrix, 'h', height), ('set', matrix, 'r', 0),
+              method(mc, 'beginGradientFill', 'linear', ('new', 'Array', [colour, colour]), ('new', 'Array', [start, stop]),
+                     ('new', 'Array', [0, 255]), matrix)] + box + [method(mc, 'endFill')]
+    bands = []
     for index in range(steps):
-        x0, x1 = width * index // steps, width * (index + 1) // steps
+        x0, x1 = part(width, index, steps), part(width, index + 1, steps)
         alpha = start + (stop - start) * index // (steps - 1)
-        rows += filled(mc, round_rect(mc, x0, top, x1 - x0, height, radius, index == 0, index == steps - 1), colour, alpha)
-    return rows
+        bands += filled(mc, round_rect(mc, x0, top, add(x1, ('neg', x0)) if isinstance(x0, tuple) or isinstance(x1, tuple)
+                                       else x1 - x0, height, radius, index == 0, index == steps - 1), colour, alpha)
+    can = ('==', ('typeof', ('get', mc, 'beginGradientFill')), 'function')
+    return [('if', can, smooth), ('if', ('==', can, False), bands)]
 
 
 def filled(mc, outline, colour, alpha):
@@ -202,60 +218,58 @@ def palette():
     return rows
 
 
-def panel(mc):
-    """A dark rounded panel, the row's tint as a gradient strongest at the left,
-    and a fine edge."""
-    box = round_rect(mc, 0, 0, PANEL_WIDTH, PANEL_HEIGHT, RADIUS)
+def panel(mc, width):
+    """A dark rounded panel `width` wide, the row's tint as a smooth gradient
+    strongest at the left, and a fine edge."""
+    box = round_rect(mc, 0, 0, width, PANEL_HEIGHT, RADIUS)
     return (filled(mc, box, PANEL_FILL, PANEL_ALPHA)
-            + gradient(mc, PANEL_WIDTH, PANEL_HEIGHT, var('colour'), RADIUS, GRADIENT_FROM, GRADIENT_TO)
+            + gradient(mc, width, PANEL_HEIGHT, var('colour'), RADIUS, GRADIENT_FROM, GRADIENT_TO)
             + [method(mc, 'lineStyle', 1, var('accent'), EDGE_ALPHA)] + box + [method(mc, 'lineStyle')])
 
 
-def icon(mc, clip, depth, x, y, number, colour, scale, art, function_name='_projectFeedGlyph'):
-    """The Lesta icon named by `icon` when the movie carries the icons and the row
-    names one, the project glyph otherwise."""
+def icon(mc, clip, depth, x, y, number, colour, scale, art, function_name='_projectFeedGlyph', name='icon',
+         sprite_scale=ICON_SCALE):
+    """The Lesta icon named by the argument `name` when the movie carries the icons
+    and the row names one, the project glyph otherwise."""
     if not art:
         return glyph(mc, clip, depth, x, y, number, colour, scale, function_name)
     holder = ('get', mc, clip)
-    attached = [method(mc, 'attachMovie', var('icon'), clip, depth), ('set', holder, '_x', x), ('set', holder, '_y', y),
-                ('set', holder, '_xscale', ICON_SCALE), ('set', holder, '_yscale', ICON_SCALE)]
-    return [('if', not_empty(var('icon')), attached),
-            ('if', ('==', var('icon'), ''), glyph(mc, clip, depth, x, y, number, colour, scale, function_name))]
+    attached = [method(mc, 'attachMovie', var(name), clip, depth), ('set', holder, '_x', x), ('set', holder, '_y', y),
+                ('set', holder, '_xscale', sprite_scale), ('set', holder, '_yscale', sprite_scale)]
+    return [('if', not_empty(var(name)), attached),
+            ('if', ('==', var(name), ''), glyph(mc, clip, depth, x, y, number, colour, scale, function_name))]
 
 
-def text_of(label, vehicle):
-    """`label • vehicle`, either part may be empty."""
-    both = ('+', ('+', label, SEPARATOR), vehicle)
-    return [('local', 'line', label),
-            ('if', not_empty(vehicle), [('assign', 'line', vehicle)]),
-            ('if', not_empty(label), [('if', not_empty(vehicle), [('assign', 'line', both)])])]
+def flow_text(mc, name, depth, size, colour, value, y=TEXT_Y):
+    """A field at the running x; x moves past its text and one gap."""
+    return [('do', ('fn', '_projectFeedText', [mc, name, depth, ('-', var('x'), FIELD_GUTTER), y, FIELD_WIDTH, size,
+                                               colour, 'left', value, True])),
+            ('assign', 'x', ('+', ('+', var('x'), ('get', ('get', mc, name), 'textWidth')), GAP))]
 
 
 def row_source(art=False):
-    """A panel row; the newest row is on the line Python places, the older ones
-    stand above it. A gold row is a module of the own vehicle: its icon and
-    its text, no badge."""
+    """A panel row: number, event icon, label, class icon and name, one gap
+    between neighbours, the panel as wide as that and centred. The newest row is on
+    the line Python places, the older ones stand above it. A gold row is a module
+    of the own vehicle: its icon in place of the event icon."""
     mc = var('m')
     middle = PANEL_HEIGHT // 2
-    module = (icon(mc, 'glyphMC', 2, MODULE_GLYPH_X, middle, var('badge'), var('accent'), 100, art)
-              + [('if', not_empty(var('number')), [('assign', 'line', ('+', ('+', var('line'), ' '), var('number')))]),
-                 ('do', ('fn', '_projectFeedText', [mc, 'textField', 30, MODULE_TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
-                                                    var('ink'), 'left', var('line'), True]))])
-    event = ([method(mc, 'lineStyle', 2, var('accent'), 100)] + filled(mc, circle(mc, BADGE_X, middle, BADGE_RADIUS), var('colour'), 30)
-             + [method(mc, 'lineStyle')]
-             + glyph(mc, 'badgeMC', 2, BADGE_X, middle, var('badge'), var('accent'), 55)
-             + [('do', ('fn', '_projectFeedText', [mc, 'numberField', 10, NUMBER_X, NUMBER_Y, NUMBER_WIDTH, NUMBER_SIZE,
-                                                   NUMBER_COLOUR, 'left', var('number'), True]))]
-             + icon(mc, 'glyphMC', 3, GLYPH_X, middle, var('glyph'), ICON_COLOUR, 70, art)
-             + [('do', ('fn', '_projectFeedText', [mc, 'textField', 30, TEXT_X, TEXT_Y, TEXT_WIDTH, TEXT_SIZE,
-                                                   var('ink'), 'left', var('line'), True]))])
-    draw = palette() + panel(mc) + text_of(var('label'), var('vehicle')) + [
-        ('if', ('==', var('colour'), GOLD), module),
-        ('if', ('==', ('==', var('colour'), GOLD), False), event),
+    draw = palette() + [('local', 'x', PAD),
+                        ('if', not_empty(var('number')), flow_text(mc, 'numberField', 10, NUMBER_SIZE, NUMBER_COLOUR,
+                                                                   var('number'), NUMBER_Y))]
+    draw += icon(mc, 'glyphMC', 3, ('+', var('x'), ICON // 2), middle, var('glyph'), var('accent'), 70, art)
+    draw += [('assign', 'x', ('+', var('x'), ICON + GAP)),
+             ('if', not_empty(var('label')), flow_text(mc, 'labelField', 20, TEXT_SIZE, var('ink'), var('label'))),
+             ('if', not_empty(var('vehicleClass')),
+              icon(mc, 'classMC', 4, ('+', var('x'), CLASS // 2), middle, DIAMOND, NAME_COLOUR, 70, art, name='vehicleClass',
+                   sprite_scale=100) + [('assign', 'x', ('+', var('x'), CLASS + GAP))]),
+             ('if', not_empty(var('vehicle')), flow_text(mc, 'nameField', 30, TEXT_SIZE, NAME_COLOUR, var('vehicle'))),
+             ('local', 'width', ('+', ('-', var('x'), GAP), PAD))]
+    draw += panel(mc, var('width')) + [
+        ('set', mc, '_x', ('neg', ('/', var('width'), 2))),
         ('set', mc, 'startedAt', ('time',)), ('set', mc, 'left', var('left')),
         ('set', mc, 'onEnterFrame', ('func', [], fade_body()))]
     body = [('local', 'm', ('call', var('feedMC'), 'createEmptyMovieClip', [('+', 'row', var('index')), ('+', 10, var('index'))])),
-            ('set', mc, '_x', PANEL_LEFT),
             ('set', mc, '_y', ('*', ('neg', var('index')), ROW_STEP)),
             ('if', ('<', -1, var('colour')), draw)]
     return function('_projectFeedRow', ['index'] + list(ROW_ARGS), body)

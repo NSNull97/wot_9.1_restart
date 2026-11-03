@@ -36,7 +36,7 @@ TICK_PERIOD = 0.25
 # (its top 230 px above the bottom) with 4 px of air; 1920 x 1080 puts its middle
 # on y 832.
 ABOVE_BOTTOM = 262
-EMPTY_ROW = (-1, '', 0, '', '', 0, 0, '')
+EMPTY_ROW = (-1, '', 0, '', '', 0, '', '')
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
 RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
 # Glyph numbers of tools/battle_ui_feed_flash.py.
@@ -352,15 +352,16 @@ class Feed(object):
         """Flat arguments of ProjectFeed.render: always ROWS rows."""
         args, now = [], self.clock()
         for row in self.rows:
-            colour, glyph, label, _, badge, icon = ROWS_TABLE[row['key']]
+            colour, glyph, label, _, _, icon = ROWS_TABLE[row['key']]
             module = self.module_of(row['critical']) if 'critical' in row and self.module_of is not None else None
             if module is not None:
-                label, badge = module
-                icon = FIRE_ICON if badge == FLAME else MODULE_ICON
+                label, glyph = module
+                icon = FIRE_ICON if glyph == FLAME else MODULE_ICON
             shown = row['vehicle'] and self.options['show_vehicle']
             args += [colour, number(row['key'], row['value'], row['count']), glyph,
                      label if self.options['show_label'] or module is not None else '',
-                     self.name_of(row['vehicle']) if shown else '', int(max(0.0, row['expires'] - now) * 1000), badge, icon]
+                     self.name_of(row['vehicle']) if shown else '', int(max(0.0, row['expires'] - now) * 1000), icon,
+                     (self.class_of(row['vehicle']) or '') if shown else '']
         for _ in range(ROWS - len(self.rows)):
             args += list(EMPTY_ROW)
         return args

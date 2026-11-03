@@ -92,18 +92,19 @@ class HistoryTests(unittest.TestCase):
         h = history()
         h.add(feed(1, None, 0))
         self.assertEqual(details(h.view()['bottom']), [('- -', m.CROSS, '')])
-        self.assertEqual(sums(h)[0], '0+')
+        self.assertEqual(sums(h)[0], '0', 'owner round 5: no "+" in the sums')
+        self.assertEqual(h.partial, set(['dealt']), 'the incomplete sum stays known to the trace')
         h.add(feed(1, None, 0))
         self.assertEqual([row[0] for row in details(h.view()['bottom'])], ['- -', '- -'])
         h.add(feed(1, 300, 9))
-        self.assertEqual(sums(h)[0], '300+')
+        self.assertEqual(sums(h)[0], '300')
 
     def test_blocked_hits_have_their_own_rows_and_the_sum_marks_the_withheld(self):
         h = history()
         h.add(hit(blocked=400, verdict='ricochet', source=5))
         h.add(hit(blocked=None, verdict='not_pierced', source=5))
         self.assertEqual(details(h.view()['bottom']), [('- -', m.SHIELD, 'tank5'), ('400', m.SHIELD, 'tank5')])
-        self.assertEqual(sums(h)[1], '400+')
+        self.assertEqual(sums(h)[1], '400')
 
     def test_assist_of_both_kinds_has_its_own_row_and_one_sum(self):
         h = history()
@@ -143,6 +144,16 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(plaques(h.view()['top']), [('БП', 2), ('ОФ', 3), ('ОФ', 3)])
         h.add(hit(damage=50, source=0, shot=13))
         self.assertEqual(plaques(h.view()['top'])[0], ('—', m.NO_SHELL))
+
+    def test_every_shell_type_has_its_own_plaque_colour(self):
+        styles = {}
+        for shot, family in enumerate(sorted(m.SHELL_LABELS), 1):
+            h = history(layout='top')
+            h.add(hit(damage=10, source=2, shot=shot))
+            h.add(shell(shot, family))
+            styles[family] = plaques(h.view()['top'])[0][1]
+        self.assertEqual(len(set(styles.values())), len(m.SHELL_LABELS))
+        self.assertNotIn(m.NO_SHELL, styles.values())
 
     def test_shell_labels_are_the_lesta_ones(self):
         self.assertEqual(m.SHELL_LABELS, {'armor_piercing': 'ББ', 'armor_piercing_cr': 'БП', 'hollow_charge': 'КС',

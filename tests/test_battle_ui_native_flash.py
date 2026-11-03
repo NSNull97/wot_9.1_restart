@@ -33,7 +33,8 @@ def fake_battle(actions=3, tail=(59, 59, 1, 0), count=None):
 def loaded():
     root, delegate = Clip(), Delegate()
     root.members['getNextHighestDepth'] = lambda: 300
-    scope = {'this': root, 'TextFormat': TextFormat, 'gfx': {'io': {'GameDelegate': delegate}}}
+    scope = {'this': root, 'TextFormat': TextFormat, 'Object': lambda: Clip('gradientBox'), 'Array': lambda *a: list(a),
+             'gfx': {'io': {'GameDelegate': delegate}}}
     machine = Machine(root)
     machine.run(native.actions(), [scope])
     return machine, scope, root, delegate
@@ -156,9 +157,11 @@ class SetupTests(unittest.TestCase):
 
 
 class Attaching(Machine):
-    """An attached sprite is a clip of its own."""
+    """An attached sprite is a clip of its own; text measures 7 px a character."""
 
     def member(self, owner, name):
+        if name == 'textWidth':
+            return 7 * len(owner.members['text'])
         if name == 'attachMovie':
             return lambda linkage, clip, depth: self.attached(owner, linkage, clip, depth)
         return Machine.member(self, owner, name)
@@ -171,67 +174,114 @@ class Attaching(Machine):
 
 
 class FeedTests(unittest.TestCase):
-    def render(self, *rows):
-        machine, scope, root, delegate = loaded()
+    """Rows of owner round 5: number, one event icon, label, class icon, name."""
+
+    def render(self, *rows, **kwargs):
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'TextFormat': TextFormat, 'Object': lambda: Clip('gradientBox'), 'Array': lambda *a: list(a),
+                 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine = Attaching(root)
+        machine.run(native.actions(True, True, kwargs.get('art', False)), [scope])
         flat = [item for row in rows for item in row]
         flat += list(feed_client.EMPTY_ROW) * (feed.ROWS - len(rows))
         machine.invoke(scope['_projectFeedRender'], root, flat)
         self.machine = machine
         return root.members['projectFeed']
 
-    def test_an_event_row_has_panel_badge_number_glyph_and_text(self):
-        holder = self.render((feed.GREEN, '384', feed_client.CROSS, u'Урон выстрелом', 'Grille 15', 5000, feed_client.LEAF, ''))
+    def row(self, number='384', label=u'Урон', vehicle='T-34', vehicle_class='whiteIconMediumTank16x16', colour=feed.GREEN,
+            **kwargs):
+        holder = self.render((colour, number, feed_client.CROSS, label, vehicle, 5000, 'ribbonsDamage', vehicle_class), **kwargs)
+        return holder.members['row0']
+
+    def created(self, row, name):
+        return [call for call in row.calls if call[0] == 'createTextField' and call[1] == name][0]
+
+    def test_one_event_icon_and_no_round_badge(self):
+        row = self.row()
+        self.assertNotIn('badgeMC', row.members)
+        self.assertIn('glyphMC', row.members)
+
+    def test_neighbours_keep_one_gap_and_the_panel_fits_its_content(self):
+        row = self.row()
+        gap, pad, gutter = feed.GAP, feed.PAD, feed.FIELD_GUTTER
+        number_x = self.created(row, 'numberField')[3] + gutter
+        self.assertEqual(number_x, pad)
+        icon_x = row.members['glyphMC'].members['_x']
+        self.assertEqual(icon_x - feed.ICON // 2, pad + 3 * 7 + gap)
+        label_x = self.created(row, 'labelField')[3] + gutter
+        self.assertEqual(label_x, icon_x + feed.ICON // 2 + gap)
+        class_x = row.members['classMC'].members['_x']
+        self.assertEqual(class_x - feed.CLASS // 2, label_x + 4 * 7 + gap)
+        name_x = self.created(row, 'nameField')[3] + gutter
+        self.assertEqual(name_x, class_x + feed.CLASS // 2 + gap)
+        width = name_x + 4 * 7 + pad
+        self.assertEqual(row.members['_x'], -width / 2.0, 'centred on the place Python gives')
+        self.assertIn(('lineTo', width - feed.RADIUS, 0), row.calls)
+
+    def test_a_short_row_is_narrower(self):
+        long_row, short_row = self.row(), self.row(number='', label='', vehicle_class='')
+        self.assertLess(short_row.members['_x'] * -2, long_row.members['_x'] * -2)
+        self.assertNotIn('numberField', short_row.members)
+        self.assertNotIn('classMC', short_row.members)
+
+    def test_the_gradient_is_smooth_and_strongest_at_the_left(self):
+        row = self.row()
+        fill = [call for call in row.calls if call[0] == 'beginGradientFill'][0]
+        self.assertEqual(fill[1:5], ('linear', [feed.GREEN, feed.GREEN], [feed.GRADIENT_FROM, feed.GRADIENT_TO], [0, 255]))
+        self.assertEqual(fill[5].members['matrixType'], 'box')
+        self.assertEqual(len([call for call in row.calls if call[0] == 'beginFill']), 1, 'only the dark base')
+
+    def test_a_player_without_gradient_fills_gets_bands(self):
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'TextFormat': TextFormat, 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine = Attaching(root)
+        machine.run(native.actions(True, False), [scope])
+        holder = root.members['projectFeed']
+        holder.members['row0'] = None
+        real = holder.members.get
+        flat = [feed.GREEN, '1', feed_client.CROSS, 'a', 'b', 5000, '', ''] + list(feed_client.EMPTY_ROW) * 2
+        original = Clip.__init__
+
+        def without_gradient(self, name='root'):
+            original(self, name)
+            if name == 'row0':
+                self.members['beginGradientFill'] = None
+        Clip.__init__ = without_gradient
+        try:
+            machine.invoke(scope['_projectFeedRender'], root, flat)
+        finally:
+            Clip.__init__ = original
         row = holder.members['row0']
-        self.assertEqual(row.members['_x'], feed.PANEL_LEFT)
-        fills = calls(row, 'beginFill')
-        self.assertEqual(fills[0], ('beginFill', feed.PANEL_FILL, feed.PANEL_ALPHA))
-        bands = [fill[2] for fill in fills[1:1 + feed.GRADIENT_STEPS]]
-        self.assertEqual((bands[0], bands[-1]), (feed.GRADIENT_FROM, feed.GRADIENT_TO), 'strongest at the left')
-        self.assertEqual(bands, sorted(bands, reverse=True))
-        self.assertTrue(all(fill[1] == feed.GREEN for fill in fills[1:1 + feed.GRADIENT_STEPS]))
-        self.assertIn(('lineStyle', 1, 0x9be04a, feed.EDGE_ALPHA), row.calls)
-        self.assertEqual(len(calls(row, 'curveTo')), 4 * (2 + feed.GRADIENT_STEPS) + 8, 'base, bands, edge and the badge')
-        self.assertEqual(field(row, 'numberField'), '384')
-        self.assertEqual(field(row, 'textField'), u'Урон выстрелом • Grille 15')
-        self.assertEqual(row.members['badgeMC'].calls[0], ('beginFill', 0x9be04a, 100))
-        self.assertEqual(row.members['glyphMC'].calls[0], ('beginFill', feed.ICON_COLOUR, 100))
+        self.assertEqual(len([call for call in row.calls if call[0] == 'beginFill']), 1 + feed.GRADIENT_STEPS)
 
     def test_text_has_a_soft_halo_not_a_hard_shadow(self):
-        row = self.render((feed.RED, '307', feed_client.CROSS, u'Уничтожен', 'T-34', 5000, feed_client.BURST, '')).members['row0']
+        row = self.row()
         for index, (dx, dy) in enumerate(feed.HALO):
-            halo = row.members['textFieldHalo%d' % index]
-            self.assertEqual(halo.members['_alpha'], feed.HALO_ALPHA)
-            created = [call for call in row.calls if call[0] == 'createTextField' and call[1] == 'textFieldHalo%d' % index][0]
-            self.assertEqual((created[3], created[4]), (feed.TEXT_X + dx, feed.TEXT_Y + dy))
-        self.assertEqual(row.members['textField'].members['_alpha'], 100)
-        self.assertIs(fmt(row, 'textField')[3], True)
+            self.assertEqual(row.members['labelFieldHalo%d' % index].members['_alpha'], feed.HALO_ALPHA)
+        self.assertIs(fmt(row, 'labelField')[3], True)
 
-    def test_label_and_name_each_alone(self):
-        holder = self.render((feed.GREEN, '1', feed_client.EYE, '', 'T-34', 5000, feed_client.LEAF, ''),
-                             (feed.GREEN, '1', feed_client.EYE, u'Обнаружил', '', 5000, feed_client.LEAF, ''))
-        self.assertEqual(field(holder.members['row0'], 'textField'), 'T-34')
-        self.assertEqual(field(holder.members['row1'], 'textField'), u'Обнаружил')
-
-    def test_a_module_row_has_its_glyph_and_text_and_no_badge(self):
-        row = self.render((feed.GOLD, '', feed_client.GEAR, u'Повреждена левая гусеница', '', 5000,
-                           feed_client.MODULE_TRACK, '')).members['row0']
-        self.assertNotIn('badgeMC', row.members)
+    def test_a_gold_row_is_a_module_with_its_icon(self):
+        row = self.row(number='', label=u'Повреждена левая гусеница', colour=feed.GOLD)
+        self.assertEqual(fmt(row, 'labelField')[2], 0xf0c040)
         self.assertNotIn('numberField', row.members)
-        self.assertEqual(row.members['glyphMC'].members['_x'], feed.MODULE_GLYPH_X)
-        self.assertEqual(field(row, 'textField'), u'Повреждена левая гусеница')
-        self.assertEqual(fmt(row, 'textField')[2], 0xf0c040)
-        twice = self.render((feed.GOLD, 'x2', feed_client.GEAR, u'Пожар', '', 5000, feed_client.FLAME, '')).members['row0']
-        self.assertEqual(field(twice, 'textField'), u'Пожар x2')
+
+    def test_with_the_icons_the_row_attaches_the_event_and_class_icons(self):
+        row = self.row(art=True)
+        self.assertIn(('attachMovie', 'ribbonsDamage', 'glyphMC', 3), row.calls)
+        self.assertIn(('attachMovie', 'whiteIconMediumTank16x16', 'classMC', 4), row.calls)
+        self.assertEqual(row.members['glyphMC'].members['_xscale'], feed.ICON_SCALE)
 
     def test_newer_rows_on_the_line_older_above_and_an_empty_row_draws_nothing(self):
-        holder = self.render((feed.RED, '90', feed_client.CROSS, 'a', '', 5000, feed_client.RING, ''),
-                             (feed.GREEN, '1', feed_client.EYE, 'b', '', 5000, feed_client.LEAF, ''))
+        holder = self.render((feed.RED, '90', feed_client.CROSS, 'a', '', 5000, '', ''),
+                             (feed.GREEN, '1', feed_client.EYE, 'b', '', 5000, '', ''))
         self.assertEqual(holder.members['row0'].members['_y'], 0)
         self.assertEqual(holder.members['row1'].members['_y'], -feed.ROW_STEP)
-        self.assertNotIn('numberField', holder.members['row2'].members)
+        self.assertEqual(holder.members['row2'].calls, [])
 
     def test_a_row_fades_only_at_the_end_of_its_life(self):
-        row = self.render((feed.RED, '90', feed_client.CROSS, 'a', '', 1000, feed_client.RING, '')).members['row0']
+        row = self.render((feed.RED, '90', feed_client.CROSS, 'a', '', 1000, '', '')).members['row0']
         tick = row.members['onEnterFrame']
         self.machine.clock = 1100
         self.machine.invoke(tick, row, [])
@@ -240,22 +290,9 @@ class FeedTests(unittest.TestCase):
         self.machine.invoke(tick, row, [])
         self.assertEqual(row.members['_alpha'], 50)
 
-    def test_with_the_icons_a_row_attaches_the_lesta_icon_and_keeps_its_badge(self):
-        root, delegate = Clip(), Delegate()
-        root.members['getNextHighestDepth'] = lambda: 300
-        scope = {'this': root, 'TextFormat': TextFormat, 'gfx': {'io': {'GameDelegate': delegate}}}
-        machine = Attaching(root)
-        machine.run(native.actions(True, True, True), [scope])
-        flat = [feed.GREEN, '384', feed_client.CROSS, u'Урон', 'T-34', 5000, feed_client.LEAF, 'ribbonsDamage']
-        machine.invoke(scope['_projectFeedRender'], root, flat + list(feed_client.EMPTY_ROW) * 2)
-        row = root.members['projectFeed'].members['row0']
-        self.assertIn(('attachMovie', 'ribbonsDamage', 'glyphMC', 3), row.calls)
-        self.assertEqual(row.members['glyphMC'].members['_xscale'], feed.ICON_SCALE)
-        self.assertIn('badgeMC', row.members, 'the badge stays the project one')
-
     def test_every_glyph_is_one_fill(self):
         for number in feed.GLYPHS:
-            holder = self.render((feed.GREEN, '1', number, 'a', 'b', 5000, number, ''))
+            holder = self.render((feed.GREEN, '1', number, 'a', 'b', 5000, '', ''))
             glyph = holder.members['row0'].members['glyphMC']
             self.assertEqual(len(calls(glyph, 'endFill')), 1, number)
 
@@ -273,16 +310,17 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(field(row, 'numberField'), '0')
         self.assertNotIn('wordField', row.members, 'owner round 4: marks only, no words')
         self.assertEqual(fmt(row, 'numberField')[8], 'left')
-        fills = calls(row, 'beginFill')
-        self.assertEqual(len(fills), history.GRADIENT_STEPS)
-        self.assertEqual((fills[0][2], fills[-1][2]), (history.GRADIENT_FROM, history.GRADIENT_TO), 'a light gradient')
+        fill = calls(row, 'beginGradientFill')[0]
+        self.assertEqual(fill[3], [history.GRADIENT_FROM, history.GRADIENT_TO], 'a light smooth gradient')
+        self.assertEqual(calls(row, 'beginFill'), [])
         self.assertIn(('moveTo', history.RADIUS, 0), row.calls)
         self.assertIn(('lineTo', history.TOTAL_WIDTH, history_client.TOTAL_STEP - history.GAP - history.RADIUS), row.calls)
 
     def test_with_the_icons_a_row_attaches_the_lesta_icon_and_class(self):
         root, delegate = Clip(), Delegate()
         root.members['getNextHighestDepth'] = lambda: 300
-        scope = {'this': root, 'TextFormat': TextFormat, 'gfx': {'io': {'GameDelegate': delegate}}}
+        scope = {'this': root, 'TextFormat': TextFormat, 'Object': lambda: Clip('gradientBox'), 'Array': lambda *a: list(a),
+             'gfx': {'io': {'GameDelegate': delegate}}}
         machine = Attaching(root)
         machine.run(native.actions(True, True, True), [scope])
         h = history_client.History({'events': 'efficiency'}, lambda v: 'T-34', lambda v: 'whiteIconMediumTank16x16')
@@ -322,6 +360,16 @@ class HistoryTests(unittest.TestCase):
         self.assertNotIn('wordField', row.members)
         self.assertIn(('beginFill', 0xd84a2a, 100), row.calls)
         self.assertEqual(row.members['classMC'].members['_x'], history.RECEIVED_CLASS_X)
+
+    def test_shell_plaques_are_rounded_coloured_by_type_and_without_halo(self):
+        fills = set()
+        for family in sorted(history_client.SHELL_LABELS):
+            row = self.received(family)
+            self.assertNotIn('shellFieldHalo0', row.members, 'plain text on the plaque')
+            self.assertGreater(len([call for call in row.calls if call[0] == 'curveTo']), 0)
+            fills.add([call for call in calls(row, 'beginFill')][-1][1])
+        self.assertEqual(len(fills), len(history_client.SHELL_LABELS), 'four types, four colours')
+        self.assertLessEqual(history.SHELL_WIDTH, 20)
 
     def test_an_unknown_shell_is_a_dash_without_a_box(self):
         row = self.received()

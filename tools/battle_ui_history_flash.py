@@ -29,7 +29,7 @@ RADIUS, GAP, PANEL_FILL, GRADIENT_FROM, GRADIENT_TO, GRADIENT_STEPS = 3, 2, 0x0d
 # to the next; an icon is ICON wide and placed by its centre; a text field keeps
 # a gutter of FIELD_GUTTER inside; a number keeps its right edge at NUMBER_RIGHT.
 ELEMENT_GAP, ICON, FIELD_GUTTER, NUMBER_RIGHT = 6, 16, 2, 30
-NUMBER_WIDTH, SHELL_WIDTH = 50, 26
+NUMBER_WIDTH, SHELL_WIDTH = 50, 20
 _ICON_X = NUMBER_RIGHT + ELEMENT_GAP + ICON // 2
 TOTAL_GLYPH_X = 3 + ICON // 2
 TOTAL_NUMBER_X = TOTAL_GLYPH_X + ICON // 2 + ELEMENT_GAP - FIELD_GUTTER
@@ -44,7 +44,7 @@ SHELL_X = RECEIVED_GLYPH_X + ICON // 2 + ELEMENT_GAP
 RECEIVED_CLASS_X = SHELL_X + SHELL_WIDTH + ELEMENT_GAP + ICON // 2
 RECEIVED_NAME_X = RECEIVED_CLASS_X + ICON // 2 + ELEMENT_GAP - FIELD_GUTTER
 RECEIVED_WIDTH = RECEIVED_NAME_X + 82
-SHELL_HEIGHT, SHELL_SIZE = 14, 11
+SHELL_HEIGHT, SHELL_SIZE, SHELL_RADIUS = 12, 10, 3
 NAME_WIDTH, TEXT_SIZE, TOTAL_SIZE = 80, 14, 16
 NAME_COLOUR, NUMBER_COLOUR, DASH_COLOUR = 0xf0f0f0, 0xffffff, 0x8c8c8c
 # A crit taken: client_patch/project_battle_history.py GOLD.
@@ -98,15 +98,14 @@ def total_rows(mc, art):
 def plaque(mc):
     middle = ('/', ('-', var('step'), GAP), 2)
     top, bottom = ('-', middle, SHELL_HEIGHT // 2), ('+', middle, SHELL_HEIGHT - SHELL_HEIGHT // 2)
-    box = [method(mc, 'moveTo', SHELL_X, top), method(mc, 'lineTo', SHELL_X + SHELL_WIDTH, top),
-           method(mc, 'lineTo', SHELL_X + SHELL_WIDTH, bottom), method(mc, 'lineTo', SHELL_X, bottom),
-           method(mc, 'lineTo', SHELL_X, top)]
+    box = feed.round_rect(mc, SHELL_X, top, SHELL_WIDTH, SHELL_HEIGHT, SHELL_RADIUS)
     rows = [('local', 'fill', -1), ('local', 'ink', DASH_COLOUR)]
     for style, fill, ink in SHELL_STYLES:
         rows.append(('if', ('==', var('shellStyle'), style), [('assign', 'fill', fill), ('assign', 'ink', ink)]))
     return rows + [('if', ('<', -1, var('fill')), feed.filled(mc, box, var('fill'), 100)),
-                   text(mc, 'shellField', 30, SHELL_X, SHELL_WIDTH, SHELL_SIZE, var('ink'), 'center', var('shell'),
-                        ('-', middle, 8))]
+                   # Owner round 5: plain text on the plaque, no halo.
+                   ('do', ('fn', '_projectFeedField', [mc, 'shellField', 30, SHELL_X, ('-', middle, 8), SHELL_WIDTH, SHELL_SIZE,
+                                                        var('ink'), 'center', var('shell'), True, 100]))]
 
 
 def detail_rows(mc, art):
