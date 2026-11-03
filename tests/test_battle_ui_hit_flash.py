@@ -449,7 +449,26 @@ class ArtTests(unittest.TestCase):
         self.assertEqual(mc.members['tickMC'].members['_y'], -(flash.ART_DISC_AT + art.TICK_AT))
         self.assertEqual(mc.members['numberMC'].members['_y'], -flash.ART_DISC_AT)
         self.assertEqual(mc.members['textMC'].members['_y'], -(flash.ART_DISC_AT + flash.ART_TEXT_AT))
-        self.assertEqual([self.line(mc, line).members['_y'] for line, _, _ in flash.LINES], [-20, 0])
+        self.assertEqual([self.line(mc, line).members['_y'] for line, _, _ in flash.LINES], [-20, -1])
+
+    def test_a_line_alone_sits_on_the_axis_of_the_marker(self):
+        # Owner round 4: the text in the middle of the marker. A field's glyphs
+        # are centred about 2 + 0.6 * size below its top.
+        for line, _, size in flash.LINES:
+            self.assertAlmostEqual(flash.ALONE[line] + 2 + 0.6 * size, 0, delta=0.6)
+        mc = self.show(note='')[1]
+        self.assertEqual(self.line(mc, 'nameLine').members['_y'], flash.ALONE['nameLine'])
+        mc = self.show(name='', vehicle='')[1]
+        self.assertEqual(self.line(mc, 'noteLine').members['_y'], flash.ALONE['noteLine'])
+        ABSENT.add('heavyTank')
+        mc = self.show(name='', vehicle='heavyTank')[1]
+        self.assertEqual(self.line(mc, 'noteLine').members['_y'], flash.ALONE['noteLine'])
+        ABSENT.clear()
+        mc = self.show(name='', vehicle='heavyTank')[1]
+        self.assertEqual(self.line(mc, 'noteLine').members['_y'], -1)
+        name_centre = -20 + 2 + 0.6 * 15
+        note_centre = -1 + 2 + 0.6 * 14
+        self.assertAlmostEqual(name_centre + note_centre, 0, delta=1)
         self.assertNotIn('shellLine', mc.members['textMC'].members)
 
     def test_dynamic_scale_spreads_the_wings_only(self):

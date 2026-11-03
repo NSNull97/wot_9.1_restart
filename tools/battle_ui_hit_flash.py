@@ -44,7 +44,11 @@ HALO = ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
 HALO_ALPHA = 70
 # Text lines along the marker: the vehicle with its class icon, the critical
 # note. Owner round 4: no shell line.
-LINES = (('nameLine', -20, 15), ('noteLine', 0, 14))
+# A field's glyphs are centred about 2 + 0.6 * size below its top; the lines
+# sit symmetric about the marker's axis, and a line alone sits on it (owner
+# round 4: "текст не по середине самого маркера").
+LINES = (('nameLine', -20, 15), ('noteLine', -1, 14))
+ALONE = {'nameLine': -11, 'noteLine': -10}
 CLASS_ICON_WIDTH, MODULE_ICON_SCALE = 21, 70
 
 
@@ -279,6 +283,9 @@ def art_show_source():
                   [('assign', 'x', CLASS_ICON_WIDTH)])]),
              ('do', ('fn', '_projectHaloLine', [name_line, var('x'), 15, var('nameColour'), var('name')])),
              ('do', ('fn', '_projectHaloLine', [('get', text, 'noteLine'), 0, 14, var('colour'), var('note')])),
+             ('if', ('==', var('note'), ''), [('set', name_line, '_y', ALONE['nameLine'])]),
+             ('if', ('==', var('name'), ''), [('if', ('==', var('x'), 0),
+                                              [('set', ('get', text, 'noteLine'), '_y', ALONE['noteLine'])])]),
              ('set', mc, 'startedAt', ('time',)), ('set', mc, 'animate', var('animate')),
              ('set', mc, 'onEnterFrame', ('func', [], art_frame_body())),
              ('do', ('call', mc, 'onEnterFrame', [])),
