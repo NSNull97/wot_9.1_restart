@@ -43,6 +43,9 @@ HIT_LABEL_EXPORT = 'HitLbl'
 HEALTH_BAR_EXPORT = 'HealthBar'
 WHITE = b'\xff\xff\xff\xff'
 FILTER_GLOW = 2
+# The damage halo: the native GlowFilter of each colour frame is blur 11, strength
+# 3; owner 2026-11-03 asked for a more contrasting one, so it is tighter and denser.
+DAMAGE_GLOW_BLUR, DAMAGE_GLOW_STRENGTH = 6, 6.0
 BAR_WIDTH = 70          # HealthBar.HEALTH_BAR_WIDTH of #717
 BAR_HEIGHT = 5
 PLATE, PLATE_ALPHA = 0x0e1216, 70
@@ -204,7 +207,10 @@ def damage_edits(body, start):
         if flags & 0x8005 != 0x0005:
             raise ValueError('label text has no font or colour')
         colour_at = text_at + 2 + rect + 2 + 4
-        edits[data_at + glow] = body[colour_at:colour_at + 3] + b'\xff'
+        # Glow: colour, blurX, blurY (16.16), strength (8.8); the flags byte stays.
+        edits[data_at + glow] = (body[colour_at:colour_at + 3] + b'\xff'
+                                 + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16,
+                                               round(DAMAGE_GLOW_STRENGTH * 256)))
         edits[colour_at] = WHITE
     if len(edits) != 12:
         raise ValueError('label sprite differs from six colour frames')
@@ -214,7 +220,7 @@ def damage_edits(body, start):
 def recoloured(body, start):
     out = bytearray(body)
     for at, value in damage_edits(body, start).items():
-        out[at:at + 4] = value
+        out[at:at + len(value)] = value
     return bytes(out)
 
 

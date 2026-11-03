@@ -103,6 +103,11 @@ HP — родные цвета по источнику урона.
 | Причина отказа | Клиент пишет раздел `MARKS_ON_GUN` под ключом `USER_SERVER_SETTINGS.HIDE_MARKS_ON_GUN` = **500** (`constants.pyc`, `IntSettingsRequester.SETTINGS`), а `int_settings.rs` `Change::decode` принимает ключи только `0..=56` (`MAX_KEY`) и отвергает весь запрос; `tools/int_user_settings.py` тоже `MAX_KEY = 56` | VERIFIED по коду обеих сторон; что ключ 500 был именно в запросе 225 — INFERRED (пары журнал не пишет, состав `_initializeDefaultSettings` его включает) |
 | Откуда `0x00200117` | После отказа разделы отсутствуют; окно настроек пишет раздел поверх нуля (`_buildMarkersSettings`/`_buildSectionSettings`), пункты, которых не было в записи, — 0 | INFERRED, тот же механизм, что GAME в UI-06b |
 
+Владелец подтвердил: «и правда отлетающий урон выключен». После включения: «отлетающему урону более контрастные ореолы надо». Ореол числа
+урона стал плотнее: родной `GlowFilter` кадров `HitLbl` — blur 11, strength 3; теперь blur 6, strength 6, цвет — прежний яркий цвет кадра
+(выбор цвета родной), число белое. Правка тех же тегов, длины прежние (`DAMAGE_GLOW_BLUR`, `DAMAGE_GLOW_STRENGTH`; тест
+`test_the_damage_halo_is_tighter_and_denser_than_the_native`).
+
 **Исправление (не в этой карточке, шлюз и Domain):** принимать ключ 500 в `int_settings.rs` (`Change::decode`) и `tools/int_user_settings.py`
 наравне с 0…56, проверить тестом, что 52 пары `_initializeDefaultSettings` сохраняются. После этого — сбросить сохранённые настройки
 аккаунта ещё раз, чтобы клиент записал умолчания. До исправления владельцу: включить «Урон» в «Настройки» → «Маркеры» для союзников и противников.

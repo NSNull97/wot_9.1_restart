@@ -483,16 +483,29 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(whites), 6)
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in whites),
                          sorted(['95ff00ff', 'ff371cff', 'ffb21cff', '00eaffff', 'ffff00ff', '9086ffff']))
-        self.assertEqual(sorted(value.hex() for value in glows.values()),
+        self.assertEqual(sorted(value[:4].hex() for value in glows.values()),
                          sorted(self.body[at:at + 4].hex() for at in whites))
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in glows),
                          sorted(['144200ff', '500000ff', '631700ff', '003c40ff', '633600ff', '1e004fff']))
+
+    def test_the_damage_halo_is_tighter_and_denser_than_the_native(self):
+        edits = look.damage_edits(self.body, self.start)
+        for at, value in edits.items():
+            if value == look.WHITE:
+                continue
+            native_blur, _, native_strength = struct.unpack_from('<IIH', self.body, at + 4)
+            blur_x, blur_y, strength = struct.unpack_from('<IIH', value, 4)
+            self.assertEqual((native_blur >> 16, native_strength / 256), (11, 3.0))
+            self.assertEqual((blur_x, blur_y), (look.DAMAGE_GLOW_BLUR << 16,) * 2)
+            self.assertLess(blur_x, native_blur)
+            self.assertGreater(strength, native_strength)
+            self.assertEqual(len(value), 14, 'the flags byte after the strength stays native')
 
     def test_only_those_bytes_change_and_the_tags_keep_their_lengths(self):
         new = look.recoloured(self.body, self.start)
         edits = look.damage_edits(self.body, self.start)
         changed = [at for at in range(len(self.body)) if self.body[at] != new[at]]
-        allowed = {at + i for at in edits for i in range(4)}
+        allowed = {at + i for at, value in edits.items() for i in range(len(value))}
         self.assertTrue(set(changed) <= allowed)
         self.assertEqual(len(new), len(self.body))
 
