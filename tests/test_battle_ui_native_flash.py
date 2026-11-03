@@ -64,12 +64,21 @@ class BuilderTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 native.build(movie, native.actions())
 
-    def test_the_widest_row_is_the_block_width_and_columns_do_not_touch(self):
+    def test_the_widest_row_is_the_block_width(self):
         self.assertEqual(history.RECEIVED_WIDTH, history_client.BLOCK_WIDTH)
-        self.assertLess(history.RECEIVED_GLYPH_X + 8, history.SHELL_X)
-        self.assertLess(history.SHELL_X + history.SHELL_WIDTH, history.RECEIVED_CLASS_X - 6)
-        self.assertLess(history.DEALT_CLASS_X + 6, history.DEALT_NAME_X)
-        self.assertLessEqual(history.RECEIVED_NAME_X + history.NAME_WIDTH, history.RECEIVED_WIDTH + history.NAME_WIDTH)
+
+    def test_neighbours_keep_one_gap(self):
+        """Owner: the same gap between number, icon, plaque, class and name."""
+        half, gutter, gap = history.ICON // 2, history.FIELD_GUTTER, history.ELEMENT_GAP
+        number_right = history.DEALT_NUMBER_X + history.NUMBER_WIDTH - gutter
+        dealt = [history.DEALT_GLYPH_X - half - number_right, history.DEALT_CLASS_X - half - (history.DEALT_GLYPH_X + half),
+                 history.DEALT_NAME_X + gutter - (history.DEALT_CLASS_X + half)]
+        received = [history.RECEIVED_GLYPH_X - half - number_right, history.SHELL_X - (history.RECEIVED_GLYPH_X + half),
+                    history.RECEIVED_CLASS_X - half - (history.SHELL_X + history.SHELL_WIDTH),
+                    history.RECEIVED_NAME_X + gutter - (history.RECEIVED_CLASS_X + half)]
+        total = [history.TOTAL_NUMBER_X + gutter - (history.TOTAL_GLYPH_X + half)]
+        self.assertEqual(set(dealt + received + total), {gap})
+        self.assertEqual(number_right, history.RECEIVED_NUMBER_X + history.NUMBER_WIDTH - gutter, 'numbers share a column')
 
     def test_icons_go_before_the_added_action_and_a_missing_file_means_none(self):
         import tempfile
