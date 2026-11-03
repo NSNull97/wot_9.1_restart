@@ -26,6 +26,8 @@ import zlib
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import battle_ui_art as art_tool
+import battle_ui_ears_flash as ears_tool
+import battle_ui_panels_flash as panels_tool
 import battle_ui_feed_flash as feed
 import battle_ui_history_flash as history
 from battle_ui_hit_flash import stmt, tag, tags, var
@@ -61,8 +63,10 @@ def layout(body):
     return rows
 
 
-def actions(with_feed=True, with_history=True, art=False):
-    """One frame action: the shared text and glyph functions, the widgets' own."""
+def actions(with_feed=True, with_history=True, art=False, palette=False):
+    """One frame action: the shared text and glyph functions, the widgets' own;
+    `palette` (owner round 13): the ears' icons from the project sets
+    (battle_ui_ears_flash) and the panel backgrounds (battle_ui_panels_flash)."""
     if not (with_feed or with_history):
         raise ValueError('nothing to add to the battle movie')
     delegate = ('get', ('get', var('gfx'), 'io'), 'GameDelegate')
@@ -75,11 +79,43 @@ def actions(with_feed=True, with_history=True, art=False):
     if with_history:
         code += history.sources(art)
         setup += history.setup(delegate, ('+', depth, 1))
+    if palette:
+        code += ears_tool.sources() + panels_tool.sources()
+        setup += ears_tool.setup(('+', depth, 2)) + panels_tool.setup(('+', depth, 3))
     return code + b''.join(stmt(row) for row in setup) + b'\0'
 
 
-def build(raw, added):
+# Owner round 13: spotting messages #DFCA91. gui/player_messages_panel.xml gives the
+# alias gold to the six ENEMY_SPOTTED* messages and to nothing else (VERIFIED), and
+# PlayerGoldMessageRenderer draws them; its text field is fff4b5 in #717.
+DETECTION_EXPORT, DETECTION_NATIVE, DETECTION_COLOUR = 'PlayerGoldMessageRenderer', 'fff4b5ff', 'dfca91ff'
+
+
+def detection_edit(body):
+    """(offset, 4 bytes) of the text colour of the spotting message renderer."""
+    import battle_ui_marker_look as look
+    start = ((5 + 4 * (body[0] >> 3) + 7) // 8) + 4
+    sprites, texts = look._sprites(body, start), {}
+    for code, begin, end in tags(body, start):
+        if code == 37:
+            at = begin + look._head(body, begin)
+            texts[struct.unpack_from('<H', body, at)[0]] = at
+    found = []
+    for code, data in look._inner(body, *sprites[look._export(body, start, DETECTION_EXPORT)]):
+        if code in (26, 70) and data[0] & 2:
+            character = struct.unpack_from('<H', data, 4 if code == 70 else 3)[0]
+            if character in texts:
+                found.append(look._text_colour_at(body, texts[character]))
+    if len(found) != 1 or body[found[0]:found[0] + 4].hex() != DETECTION_NATIVE:
+        raise ValueError('spotting message renderer differs from #717')
+    return found[0], bytes.fromhex(DETECTION_COLOUR)
+
+
+def build(raw, added, palette=False):
     body = expanded(raw)
+    if palette:
+        at, colour = detection_edit(body)
+        body = body[:at] + colour + body[at + 4:]
     rows = layout(body)
     frame = [row for row in rows if row[0] == 1][0]
     out = body[:frame[1]] + tag(12, added) + body[frame[1]:]
@@ -90,7 +126,7 @@ def sprites(with_feed, with_history):
     return (art_tool.FEED_SPRITES if with_feed else ()) + (art_tool.HISTORY_SPRITES if with_history else ())
 
 
-def payload(original, with_feed=True, with_history=True, icons=None):
+def payload(original, with_feed=True, with_history=True, icons=None, palette=False):
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -100,7 +136,8 @@ def payload(original, with_feed=True, with_history=True, icons=None):
     if source != SOURCE_SHA256:
         raise ValueError('native battle movie differs from the pinned #717 bytes')
     images, missing = art_tool.load(icons, sprites(with_feed, with_history)) if icons is not None else ({}, [])
-    result = art_tool.embed(build(raw, actions(with_feed, with_history, bool(images))), images, SOURCE_ACTIONS + 1)
+    result = art_tool.embed(build(raw, actions(with_feed, with_history, bool(images), palette), palette), images,
+                            SOURCE_ACTIONS + 1)
     if len(result) > MAX_BYTES:
         raise ValueError('battle movie with the project panels is oversized')
     layout_after = [row[0] for row in tags(expanded(result), ((5 + 4 * (expanded(result)[0] >> 3) + 7) // 8) + 4)]
@@ -108,6 +145,7 @@ def payload(original, with_feed=True, with_history=True, icons=None):
         raise ValueError('built battle movie layout differs')
     return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'feed': with_feed, 'history': with_history,
+                    'palette': palette,
                     'callbacks': ([feed.CALLBACK, feed.PLACE_CALLBACK] if with_feed else [])
                     + ([history.CALLBACK, history.PLACE_CALLBACK] if with_history else []),
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),

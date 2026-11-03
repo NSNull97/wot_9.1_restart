@@ -474,8 +474,11 @@ def prepare(args):
         # One res_mods copy of the native battle movie, pinned to the #717 bytes:
         # a source that differs refuses the whole prepare.
         import battle_ui_native_flash
+        # Round 13: the owner's palette (ears icon sets, panel backgrounds, spotting
+        # messages) goes with the project markers.
         movie, resource_evidence['project_battle_native_movie'] = battle_ui_native_flash.payload(
-            original, feed_view is not None, history_view is not None, getattr(args, 'battle_icons', None))
+            original, feed_view is not None, history_view is not None, getattr(args, 'battle_icons', None),
+            palette=not getattr(args, 'native_vehicle_markers', False))
         payloads[battle_ui_native_flash.TARGET] = movie
     if getattr(args, 'battle_settings', False):
         # UI-05 owner order 2026-11-01: the tab of the native settings windows.

@@ -26,7 +26,8 @@ NUMBER_Y, TEXT_Y, NUMBER_SIZE, TEXT_SIZE, FIELD_WIDTH, FIELD_GUTTER = 2, 5, 17, 
 # A dense panel with the row's tint as a smooth gradient strongest at the left
 # edge; GRADIENT_STEPS bands stand in where the player has no beginGradientFill.
 PANEL_FILL, PANEL_ALPHA, EDGE_ALPHA = 0x0d1216, 62, 40
-GRADIENT_STEPS, GRADIENT_FROM, GRADIENT_TO = 8, 62, 6
+# Round 13: the palette's tints are light, so the band is lighter than the dark ones were.
+GRADIENT_STEPS, GRADIENT_FROM, GRADIENT_TO = 8, 36, 6
 # A Lesta icon (ribbons*, 48 px) draws in about its middle 28 px; at this scale
 # that is some 21 px, most of the panel height (owner round 7: it was too small).
 ICON_SCALE = 75
@@ -38,9 +39,11 @@ SLIDE_MS, APPEAR_ALPHA, LEAVE_MS = 300, 35, 300
 ROW_ARGS = ('colour', 'number', 'glyph', 'label', 'vehicle', 'left', 'icon', 'vehicleClass')
 # Colours of client_patch/project_battle_feed.py: tint, light accent, text.
 # Owner 02.11: effectiveness green, damage taken red, a crit taken gold.
-RED, GOLD, GREY, GREEN = 0xc8181e, 0xd8a020, 0x6e6e6e, 0x3f8f24
-PALETTE = ((RED, 0xff5a4a, 0xdcdcdc), (GOLD, 0xf0c040, 0xf0c040), (GREY, 0xd0d0d0, 0xdcdcdc), (GREEN, 0x9be04a, 0xdcdcdc))
-TEXT_COLOUR, NUMBER_COLOUR, NAME_COLOUR = 0xdcdcdc, 0xffffff, 0xf0f0f0
+RED, GOLD, GREY, GREEN = 0xf07870, 0xe8b866, 0xb7c9d6, 0xe2a53d
+ASSIST, DETECT, ALLY = 0xc2afe4, 0xdfca91, 0xa8d177
+# Owner round 13: the main text #F1F2ED; a module row keeps its label in its colour.
+TEXT_COLOUR = NUMBER_COLOUR = NAME_COLOUR = 0xf1f2ed
+PALETTE = tuple((tint, tint, GOLD if tint == GOLD else TEXT_COLOUR) for tint in (RED, GOLD, GREY, GREEN, ASSIST, DETECT, ALLY))
 # Halo: four soft dark copies around a field instead of one hard shadow.
 HALO = ((-1, -1), (1, -1), (-1, 1), (1, 1))
 HALO_ALPHA = 45
