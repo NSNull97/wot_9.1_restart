@@ -430,6 +430,13 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(set(m.ROWS_TABLE) - set(row[0] for row in m.OPTION_SCHEMA), set(m.OPTION_OF))
         self.assertTrue(set(m.OPTION_OF.values()) <= set(row[0] for row in m.OPTION_SCHEMA))
 
+    def test_a_module_the_fire_damaged_is_a_row_without_criticals(self):
+        feed = m.Feed(m.default_options(), lambda: 0.0, lambda v: '', lambda v: '')
+        self.assertTrue(feed.add({'kind': 'feed', 'feed': 13, 'value': None, 'vehicle': 0}))
+        self.assertEqual(feed.rows[0]['key'], 'received_critical')
+        self.assertNotIn('critical', feed.rows[0])
+        self.assertEqual(feed.render_args()[3], m.ROWS_TABLE['received_critical'][2])
+
     def test_damage_taken_by_a_ram_or_a_fire_is_its_own_row_under_the_switch_of_damage_taken(self):
         for wire, key, glyph in ((11, 'received_ram', m.CHEVRONS), (12, 'received_fire', m.FLAME)):
             feed = m.Feed(m.default_options(), lambda: 0.0, lambda v: 'tank%d' % v, lambda v: 'heavyTank')

@@ -340,7 +340,10 @@ class Feed(object):
                 row['expires'] = expires
             else:
                 row = {'key': key, 'value': value, 'count': count, 'vehicle': vehicle, 'expires': expires}
-                if key == 'received_critical':
+                # A module the fire damaged (FireCritical, 13) comes as a feed event
+                # without criticals: its row keeps the generic label. Round 15 battle:
+                # reading criticals there failed the whole feed.
+                if key == 'received_critical' and event.get('criticals'):
                     row['critical'] = event['criticals'][0]
             self.rows.insert(0, row)
             del self.rows[ROWS:]
