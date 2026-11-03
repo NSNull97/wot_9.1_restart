@@ -78,12 +78,11 @@ NATIVE_ICON_LOADER, NATIVE_HEALTH = 'projectLookNativeIconLoader', 'projectLookN
 # damage to a team killer (label blue) to the green frames, the owner wants blue.
 DAMAGE_FLAGS = ('FROM_PLAYER', 'FROM_SQUAD', 'FROM_ENEMY', 'FROM_ALLY', 'FROM_UNKNOWN')
 EXPLOSION_EXPORT = 'HitExplosion'
-# Owner round 8: the native fire and ammo bitmaps (86 x 86) are a soft haze with the
-# icon as its densest part; white over all of it was a blot. Only alpha above 191 of
-# 255 stays: alpha' = GAIN * alpha - (GAIN - 1) * 255. Round 8 did it with a
-# ColorMatrixFilter and Scaleform drew a black square; round 9 bakes it into the
-# bitmaps, white and premultiplied, and keeps only the glow as a filter.
-EXPLOSION_ALPHA_GAIN = 4
+# The fire and ammo icons. Round 8 whitened the native haze with a ColorMatrixFilter
+# and Scaleform drew a black square; round 9 baked a cut alpha into the native
+# bitmaps and the thin icon still read as a blot. Round 10 (owner: least change from
+# the native look) fills them with the native pictures redrawn white by
+# tools/battle_ui_marker_icons.py; only the glow is a filter.
 # Owner round 8 (a trial): the contour icon without its transparency. Its pixels
 # hold alpha about 170 of 255 (median of IS-7 and WZ-111), so 3/2 makes the body opaque
 # and keeps the antialiased edge soft.
@@ -278,20 +277,19 @@ def white_halo(colour):
             + DAMAGE_GLOW_FLAGS)
 
 
-def white_bitmap(data):
-    """DefineBitsLossless2 data (id, format 5, size, zlib ARGB premultiplied) made
-    white with only its dense alpha kept (EXPLOSION_ALPHA_GAIN)."""
+_OWN_ICONS = {}
+
+
+def white_bitmap(data, kind):
+    """DefineBitsLossless2 data (id, format 5, size, zlib ARGB premultiplied) with the
+    project's white `kind` icon in place of its pixels; the canvas stays native."""
+    import battle_ui_marker_icons as icons
     character, form, width, height = struct.unpack_from('<HBHH', data, 0)
-    if form != 5:
-        raise ValueError('explosion bitmap is not 32-bit ARGB')
-    pixels = zlib.decompressobj().decompress(data[7:], width * height * 4 + 1)
-    if len(pixels) != width * height * 4:
-        raise ValueError('explosion bitmap size differs')
-    gain, out = EXPLOSION_ALPHA_GAIN, bytearray(len(pixels))
-    for at in range(0, len(pixels), 4):
-        alpha = max(0, min(255, gain * pixels[at] - (gain - 1) * 255))
-        out[at:at + 4] = bytes((alpha, alpha, alpha, alpha))
-    return data[:7] + zlib.compress(bytes(out), 9)
+    if form != 5 or (width, height) != (icons.CANVAS, icons.CANVAS):
+        raise ValueError('explosion bitmap differs from the 86 x 86 ARGB canvas of #717')
+    if kind not in _OWN_ICONS:
+        _OWN_ICONS[kind] = zlib.compress(icons.argb(kind), 9)
+    return data[:7] + _OWN_ICONS[kind]
 
 
 def explosion_bitmaps(body, start):
@@ -300,8 +298,13 @@ def explosion_bitmaps(body, start):
     holder = sprites[_export(body, start, EXPLOSION_EXPORT)]
     inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
                  if code == 26 and data[0] & 2)
-    placed = {struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *sprites[inner])
-              if code == 26 and data[0] & 2}
+    # Shape of each icon frame and its kind by the frame label (<colour>_fire, <colour>_explosion).
+    placed, label = {}, None
+    for code, data in _inner(body, *sprites[inner]):
+        if code == 43:
+            label = data[:data.index(0)].decode('ascii')
+        elif code == 26 and data[0] & 2:
+            placed[struct.unpack_from('<H', data, 3)[0]] = (label or '').rpartition('_')[2]
     shapes, bitmaps = {}, {}
     for code, begin, end in tags(body, start):
         at = begin + _head(body, begin)
@@ -310,18 +313,20 @@ def explosion_bitmaps(body, start):
         elif code == 36:
             bitmaps[struct.unpack_from('<H', body, at)[0]] = body[at:end]
     found = {}
-    for shape in placed:
+    for shape, kind in placed.items():
+        if kind not in ('fire', 'explosion'):
+            raise ValueError('explosion icon frame differs from fire and explosion')
         data = shapes[shape]
         at = 2 + _rect_bytes(data, 2)
         count, at = data[at], at + 1
         for _ in range(count):
-            kind = data[at]
-            if 0x40 <= kind <= 0x43:
+            fill = data[at]
+            if 0x40 <= fill <= 0x43:
                 bitmap = struct.unpack_from('<H', data, at + 1)[0]
                 if bitmap in bitmaps:
-                    found[bitmap] = white_bitmap(bitmaps[bitmap])
+                    found[bitmap] = white_bitmap(bitmaps[bitmap], kind)
                 at += 3 + _matrix_bytes(data, at + 3)
-            elif kind == 0:
+            elif fill == 0:
                 at += 4
             else:
                 raise ValueError('explosion shape fill differs from the #717 layout')

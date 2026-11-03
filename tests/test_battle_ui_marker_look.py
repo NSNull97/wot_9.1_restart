@@ -631,7 +631,7 @@ class MovieTests(unittest.TestCase):
                          'only the glow of the red damage number: Scaleform drew the colour matrix as a black square')
         self.assertEqual(colours['green'], look.GLOW_COLOURS['green'], 'the darker glow of damage to allies')
 
-    def test_fire_and_ammo_bitmaps_are_white_and_keep_only_the_dense_icon(self):
+    def test_fire_and_ammo_bitmaps_are_the_project_icons_white_on_the_native_canvas(self):
         whites = look.explosion_bitmaps(self.body, self.start)
         self.assertEqual(len(whites), 12)
         for bitmap, data in whites.items():
@@ -640,16 +640,11 @@ class MovieTests(unittest.TestCase):
             self.assertEqual(len(pixels), width * height * 4)
             for at in range(0, len(pixels), 4):
                 self.assertEqual(len(set(pixels[at:at + 4])), 1, 'white, premultiplied')
-        native = {}
-        for code, begin, end in tags(self.body, self.start):
-            at = begin + look._head(self.body, begin)
-            if code == 36 and struct.unpack_from('<H', self.body, at)[0] in whites:
-                native[struct.unpack_from('<H', self.body, at)[0]] = zlib.decompress(self.body[at + 7:end])
-        for bitmap, pixels in native.items():
-            new = zlib.decompress(whites[bitmap][7:])
-            for at in range(0, len(pixels), 4):
-                expected = max(0, min(255, 4 * pixels[at] - 765))
-                self.assertEqual(new[at], expected)
+        import battle_ui_marker_icons as icons
+        kinds = sorted({zlib.decompress(data[7:]) for data in whites.values()}, key=len)
+        self.assertEqual(sorted(kinds), sorted([icons.argb(icons.FIRE), icons.argb(icons.AMMO)]),
+                         'six fire frames share the fire icon, six ammo frames the ammo icon')
+        self.assertNotEqual(icons.argb(icons.FIRE), icons.argb(icons.AMMO))
         new = look.transform(self.body, self.start)
         self.assertEqual(sum(1 for code, b, e in tags(new, self.start) if code == 36),
                          sum(1 for code, b, e in tags(self.body, self.start) if code == 36), 'replaced, not added')
