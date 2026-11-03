@@ -6,6 +6,13 @@ preview (local/codex-tasks/BATTLE-UI-screens/round11) and asked to keep the clas
 colouring of the ears: #717 bakes the class into the picture (tanks olive grey,
 tank destroyers blue grey, artillery brown), and PlayersPanel shows it as it is.
 
+Round 13 (owner palette, preview round13/palette-preview.html accepted): one set
+per colour of an ears row, the class a shade of the team colour (tank destroyers
+cooler, artillery warmer): contour_ally and contour (the default path, which the
+markers and other screens load) ally shades, contour_enemy enemy shades,
+contour_own #D9B66F and contour_tk #38B8C8 for every class.
+tools/battle_ui_ears_flash.py points each ears row at its set.
+
 Prepare writes a res_mods copy of every contour icon of the client package,
 restyled from the original pixels: a flat class colour, the native dark lines a
 darker shade of it, the alpha lifted so the body is opaque. The class comes from
@@ -24,13 +31,21 @@ import zlib
 PACKAGE = 'res/packages/gui.pkg'
 PREFIX = 'gui/maps/icons/vehicle/contour/'
 TARGET = 'res_mods/0.9.1/' + PREFIX
+FOLDER = 'res_mods/0.9.1/gui/maps/icons/vehicle/'
 LISTS = 'res/scripts/item_defs/vehicles'
 MAX_ICON_BYTES = 64 * 1024
 MAX_SIDE = 256
 # Class tag of a vehicle list -> class of the icon colour.
 CLASSES = {'lightTank': 'tank', 'mediumTank': 'tank', 'heavyTank': 'tank', 'AT-SPG': 'td', 'SPG': 'spg'}
-# Flat class colours the owner accepted (the native hues, lifted and evened).
-COLOURS = {'tank': (196, 200, 186), 'td': (140, 160, 205), 'spg': (214, 156, 110)}
+# Owner palette round 13: allies #9BAA8E, enemies #B3968F, own #D9B66F, team killer
+# #38B8C8; tank destroyers and artillery the shades of the accepted preview.
+ALLY = {'tank': (155, 170, 142), 'td': (136, 159, 175), 'spg': (179, 165, 132)}
+ENEMY = {'tank': (179, 150, 143), 'td': (177, 145, 163), 'spg': (189, 157, 132)}
+OWN, TEAM_KILLER = (217, 182, 111), (56, 184, 200)
+SETS = {'contour': ALLY, 'contour_ally': ALLY, 'contour_enemy': ENEMY,
+        'contour_own': {kind: OWN for kind in ALLY}, 'contour_tk': {kind: TEAM_KILLER for kind in ALLY}}
+# The colours of the default path, which the vehicle markers divide by.
+COLOURS = ALLY
 # Brightness of a native icon body of each class (mean of the brightest channel of
 # its opaque pixels on IS-7/113, FV215b 183/JagdPz E100, Object 261/G_E): a pixel
 # that bright or brighter is the full class colour, darker ones are its lines.
@@ -112,19 +127,19 @@ def _encode(width: int, height: int, rows) -> bytes:
             + chunk(b'IDAT', zlib.compress(raw, 9)) + chunk(b'IEND', b''))
 
 
-def restyle_pixel(r, g, b, a, kind):
-    """One native RGBA pixel in the flat style of its class."""
+def restyle_pixel(r, g, b, a, kind, colours=COLOURS):
+    """One native RGBA pixel in the flat style of its class, in `colours`."""
     if not a:
         return 0, 0, 0, 0
     shade = LINE_SHADE + (1 - LINE_SHADE) * min(1.0, max(r, g, b) / BODY[kind])
-    colour = COLOURS[kind]
+    colour = colours[kind]
     return (round(colour[0] * shade), round(colour[1] * shade), round(colour[2] * shade),
             min(255, round(a * ALPHA_GAIN)))
 
 
-def restyle(data: bytes, kind: str):
-    """PNG bytes of the icon in the flat style of `kind`, or None for a PNG of
-    another layout (left native)."""
+def restyle(data: bytes, kind: str, colours=COLOURS):
+    """PNG bytes of the icon in the flat style of `kind` in `colours`, or None for a
+    PNG of another layout (left native)."""
     decoded = _decode(data)
     if decoded is None:
         return None
@@ -133,13 +148,14 @@ def restyle(data: bytes, kind: str):
     for row in rows:
         line = bytearray()
         for x in range(width):
-            line += bytes(restyle_pixel(*row[x * 4:x * 4 + 4], kind))
+            line += bytes(restyle_pixel(*row[x * 4:x * 4 + 4], kind, colours))
         out.append(bytes(line))
     return _encode(width, height, out)
 
 
 def payloads(original: Path):
-    """({res_mods path: PNG bytes}, evidence) of every contour icon of a known class."""
+    """({res_mods path: PNG bytes}, evidence) of every contour icon of a known class,
+    in every set."""
     classes = vehicle_classes(original)
     out, skipped, unknown = {}, [], []
     with zipfile.ZipFile(Path(original) / PACKAGE) as package:
@@ -156,12 +172,14 @@ def payloads(original: Path):
             if info.file_size > MAX_ICON_BYTES:
                 skipped.append(name)
                 continue
-            styled = restyle(package.read(info), kind)
-            if styled is None:
+            native = package.read(info)
+            if _decode(native) is None:
                 skipped.append(name)
                 continue
-            out[TARGET + name + '.png'] = styled
-    evidence = {'contour_icons': len(out), 'by_class': {k: sum(1 for n in out if classes[n[len(TARGET):-4].lower()] == k)
-                                                        for k in COLOURS},
+            for folder, colours in SETS.items():
+                out[FOLDER + folder + '/' + name + '.png'] = restyle(native, kind, colours)
+    icons = [path for path in out if path.startswith(TARGET)]
+    evidence = {'contour_icons': len(icons), 'sets': sorted(SETS),
+                'by_class': {k: sum(1 for n in icons if classes[n[len(TARGET):-4].lower()] == k) for k in COLOURS},
                 'left_native_other_layout': sorted(skipped), 'left_native_no_class': sorted(unknown)}
     return out, evidence

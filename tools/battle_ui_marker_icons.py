@@ -133,7 +133,8 @@ def coverage(kind):
 
 # The glow of the damage number (battle_ui_marker_look: GlowFilter blur 6, strength
 # 6, three passes) as pixels: three box blurs of this radius, alpha times strength.
-GLOW_RADIUS, GLOW_PASSES, GLOW_STRENGTH = 3, 3, 6
+# Round 13: a little wider with the damage number (blur 8).
+GLOW_RADIUS, GLOW_PASSES, GLOW_STRENGTH = 4, 3, 6
 
 
 def _box(rows, radius):
