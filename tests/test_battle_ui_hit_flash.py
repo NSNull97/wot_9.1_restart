@@ -421,12 +421,12 @@ class ArtTests(unittest.TestCase):
     def tearDown(self):
         ABSENT.clear()
 
-    def show(self, colour=flash.RED, number='258', scale=1, shell=u'ОФ', turn=30, name=u'B-C 155 58',
+    def show(self, colour=flash.RED, number='258', scale=1, turn=30, name=u'B-C 155 58',
              note=u'Двигатель', icon='', vehicle='heavyTank', spread=0):
         machine, scope, delegate, damage, arc = loaded(flash.actions(True))
         damage.members['_rotation'] = turn
         machine.invoke(scope['_projectHitShow'], machine.root,
-                       [colour, number, name, 0xffffff, note, scale, True, shell, icon, vehicle, spread])
+                       [colour, number, name, 0xffffff, note, scale, True, icon, vehicle, spread])
         return machine, damage.members['projectHit'], damage, arc
 
     def attached(self, mc):
@@ -449,17 +449,17 @@ class ArtTests(unittest.TestCase):
         self.assertEqual(mc.members['tickMC'].members['_y'], -(flash.ART_DISC_AT + art.TICK_AT))
         self.assertEqual(mc.members['numberMC'].members['_y'], -flash.ART_DISC_AT)
         self.assertEqual(mc.members['textMC'].members['_y'], -(flash.ART_DISC_AT + flash.ART_TEXT_AT))
-        self.assertEqual([self.line(mc, line).members['_y'] for line, _, _ in flash.LINES], [-30, -10, 10])
+        self.assertEqual([self.line(mc, line).members['_y'] for line, _, _ in flash.LINES], [-20, 0])
+        self.assertNotIn('shellLine', mc.members['textMC'].members)
 
     def test_dynamic_scale_spreads_the_wings_only(self):
         mc = self.show(scale=1.5)[1]
         self.assertEqual(mc.members['wingsMC'].members['_xscale'], 150)
         self.assertEqual(mc.members['discMC'].members['_xscale'], 100)
 
-    def test_three_lines_with_a_black_halo_and_an_upright_number(self):
+    def test_two_lines_with_a_black_halo_and_an_upright_number(self):
         mc = self.show()[1]
-        for line, text, colour in (('nameLine', u'B-C 155 58', 0xffffff), ('shellLine', u'ОФ', flash.RED),
-                                   ('noteLine', u'Двигатель', flash.RED)):
+        for line, text, colour in (('nameLine', u'B-C 155 58', 0xffffff), ('noteLine', u'Двигатель', flash.RED)):
             clip = self.line(mc, line)
             self.assertEqual(clip.members['field'].members['text'], text)
             self.assertEqual(clip.members['field'].format['color'], colour)
@@ -515,7 +515,7 @@ class ArtTests(unittest.TestCase):
         hit.missing = tuple(art.SPRITES)
         damage.members['createEmptyMovieClip'] = lambda *args: (damage.members.__setitem__('projectHit', hit), hit)[1]
         machine.invoke(scope['_projectHitShow'], machine.root,
-                       [flash.RED, '120', '', 0xffffff, '', 1, True, '', '', '', 0])
+                       [flash.RED, '120', '', 0xffffff, '', 1, True, '', '', 0])
         self.assertNotIn('_visible', arc.members)
 
     def test_fade_in_and_out(self):
@@ -539,6 +539,26 @@ class ArtTests(unittest.TestCase):
         (folder / 'gunCircle.png').write_bytes(b'not a png')
         with self.assertRaises(ValueError):
             icons.load(folder)
+
+    def test_the_class_icon_gets_a_black_halo(self):
+        rgba = bytearray(4 * 4 * 4)
+        for at in range(0, len(rgba), 4):
+            rgba[at:at + 4] = bytes((255, 255, 255, 0))
+        rgba[(1 * 4 + 1) * 4:(1 * 4 + 1) * 4 + 4] = bytes((255, 255, 255, 255))
+        width, height, out = icons.haloed(4, 4, bytes(rgba))
+        self.assertEqual((width, height), (8, 8))
+        self.assertEqual(out[(3 * 8 + 3) * 4:(3 * 8 + 3) * 4 + 4], bytes((255, 255, 255, 255)))
+        ring = out[(3 * 8 + 4) * 4:(3 * 8 + 4) * 4 + 4]
+        self.assertEqual(ring[:3], bytes((0, 0, 0)))
+        self.assertEqual(ring[3], round(0.75 * 255))
+        self.assertEqual(out[3], 0)
+
+    def test_the_blocked_marker_is_almost_black(self):
+        for part in ('disc_grey', 'wings_grey'):
+            width, height, rgba = art.sprites()[part]
+            lit = [rgba[at:at + 3] for at in range(0, len(rgba), 4) if rgba[at + 3] > 128]
+            self.assertTrue(lit, part)
+            self.assertLess(max(max(pixel) for pixel in lit), 60, part)
 
     def test_icon_png_round_trip_and_bounds(self):
         rgba = bytes(range(64))

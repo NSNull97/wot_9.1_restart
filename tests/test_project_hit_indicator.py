@@ -93,15 +93,15 @@ class PolicyTests(unittest.TestCase):
                                    'dynamic': False, 'animate': False})
         event['shell'] = 'high_explosive'
         self.assertEqual(self.policy.show_args(event, 'T34', 'note', 1000, 'engineCircle', 'heavyTank'),
-                         [m.RED, '', '', m.WHITE, '', 1.0, False, '', '', '', 0])
+                         [m.RED, '', '', m.WHITE, '', 1.0, False, '', '', 0])
 
     def test_icons_follow_the_facts_and_the_options(self):
         crit = self.event(shot=20, yaw=0.5, damage=0, verdict=2, criticals=((1, 0),))
-        self.assertEqual(self.policy.show_args(crit, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[8:10],
+        self.assertEqual(self.policy.show_args(crit, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7:9],
                          ['engineCircle', 'heavyTank'])
         damaged = self.event(shot=21, yaw=2.5, criticals=((1, 0),))
-        self.assertEqual(self.policy.show_args(damaged, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[8], '')
-        self.assertEqual(self.policy.show_args(damaged, '', 'n', 1000, 'engineCircle', 'heavyTank')[9], '')
+        self.assertEqual(self.policy.show_args(damaged, 'T34', 'n', 1000, 'engineCircle', 'heavyTank')[7], '')
+        self.assertEqual(self.policy.show_args(damaged, '', 'n', 1000, 'engineCircle', 'heavyTank')[8], '')
 
     def test_markers_of_one_side_turn_apart_and_keep_their_turn(self):
         first = self.event(shot=30, yaw=1.0)
@@ -118,15 +118,11 @@ class PolicyTests(unittest.TestCase):
         self.policy.reset()
         self.assertEqual(self.policy.spreads, {})
 
-    def test_the_shell_line_comes_from_its_record_and_only_for_a_seen_shooter(self):
+    def test_no_shell_line_owner_round_4(self):
         self.policy.on_frame(frame((1, hit(shot=7, yaw=1.0, source=5)), (4, struct.pack('<IB', 7, 4))))
-        self.policy.on_frame(struct.pack('<2sBHB', b'BE', m.VERSION, 4, 1) + struct.pack('<BB', 1, 19)
-                             + hit(shot=8, yaw=2.0))
-        seen, hidden = self.policy.facts_for(1.0), self.policy.facts_for(2.0)
-        self.assertEqual(self.policy.show_args(seen, 'B-C 155 58', '', 1000)[7], u'\u041e\u0424')
-        self.assertEqual(self.policy.show_args(hidden, '', '', 1000)[7], '')
-        self.policy.apply_options({'show_vehicle': False})
-        self.assertEqual(self.policy.show_args(seen, 'B-C 155 58', '', 1000)[7], '')
+        args = self.policy.show_args(self.policy.facts_for(1.0), 'B-C 155 58', '', 1000)
+        self.assertEqual(len(args), 10)
+        self.assertNotIn(u'\u041e\u0424', args)
 
     def test_dynamic_scale_grows_with_damage_and_is_bounded(self):
         small = self.policy.show_args(self.event(damage=10), '', '', 1000)[5]

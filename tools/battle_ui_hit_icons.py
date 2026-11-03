@@ -151,6 +151,30 @@ def _paeth(left, up, corner):
     return left if a <= b and a <= c else up if b <= c else corner
 
 
+def haloed(width, height, rgba, pad=2, strength=0.75):
+    """The icon on a black halo: its alpha spread by a pixel, under it, padded."""
+    big_w, big_h = width + 2 * pad, height + 2 * pad
+    alpha = [0] * (big_w * big_h)
+    for y in range(height):
+        for x in range(width):
+            alpha[(y + pad) * big_w + x + pad] = rgba[(y * width + x) * 4 + 3]
+    out = bytearray(big_w * big_h * 4)
+    for y in range(big_h):
+        for x in range(big_w):
+            near = max(alpha[yy * big_w + xx] for yy in range(max(0, y - 1), min(big_h, y + 2))
+                       for xx in range(max(0, x - 1), min(big_w, x + 2)))
+            under = near * strength / 255.0
+            top = alpha[y * big_w + x] / 255.0
+            total = top + under * (1 - top)
+            at = (y * big_w + x) * 4
+            if total:
+                if pad <= x < pad + width and pad <= y < pad + height:
+                    src = ((y - pad) * width + x - pad) * 4
+                    out[at:at + 3] = bytes(int(round(rgba[src + k] * top / total)) for k in range(3))
+                out[at + 3] = int(round(total * 255))
+    return big_w, big_h, bytes(out)
+
+
 def _sha(data):
     return hashlib.sha256(data).hexdigest()
 

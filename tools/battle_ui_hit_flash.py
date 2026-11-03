@@ -42,9 +42,10 @@ ART_DISC_AT, ART_TEXT_AT = 256, 48
 # Owner round 3: a black halo at the text, as at the numbers of the feed.
 HALO = ((-1, -1), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1))
 HALO_ALPHA = 70
-# Text lines along the marker: vehicle (with the class icon), shell, critical note.
-LINES = (('nameLine', -30, 15), ('shellLine', -10, 14), ('noteLine', 10, 14))
-CLASS_ICON_WIDTH, MODULE_ICON_SCALE = 18, 70
+# Text lines along the marker: the vehicle with its class icon, the critical
+# note. Owner round 4: no shell line.
+LINES = (('nameLine', -20, 15), ('noteLine', 0, 14))
+CLASS_ICON_WIDTH, MODULE_ICON_SCALE = 21, 70
 
 
 class As2:
@@ -244,7 +245,7 @@ def halo_source():
 def art_show_source():
     """Owner reference 2026-11-02: a dark disc with the number, wings towards the
     shooter, a chevron on the axis, a tick towards the reticle and the text under
-    the angle of the marker: the vehicle with its class icon, the shell, the
+    the angle of the marker: the vehicle with its class icon and the
     critical note, all with a black halo. Lesta icons attach only when the movie
     has them. `spread` turns this marker off a neighbour from the same side."""
     mc = var('m')
@@ -273,11 +274,10 @@ def art_show_source():
     body += [('local', 'x', 0),
              ('if', ('not', ('==', var('vehicle'), '')),
               attach(name_line, var('vehicle'), 'classMC', 20, 100, 11)
-              + [('set', ('get', name_line, 'classMC'), '_x', 8),
+              + [('set', ('get', name_line, 'classMC'), '_x', 9),
                  ('if', ('==', ('typeof', ('get', name_line, 'classMC')), 'movieclip'),
                   [('assign', 'x', CLASS_ICON_WIDTH)])]),
              ('do', ('fn', '_projectHaloLine', [name_line, var('x'), 15, var('nameColour'), var('name')])),
-             ('do', ('fn', '_projectHaloLine', [('get', text, 'shellLine'), 0, 14, var('colour'), var('shell')])),
              ('do', ('fn', '_projectHaloLine', [('get', text, 'noteLine'), 0, 14, var('colour'), var('note')])),
              ('set', mc, 'startedAt', ('time',)), ('set', mc, 'animate', var('animate')),
              ('set', mc, 'onEnterFrame', ('func', [], art_frame_body())),
@@ -286,7 +286,7 @@ def art_show_source():
              ('if', ('==', ('typeof', ('get', mc, 'discMC')), 'movieclip'),
               [('set', ('get', var('damageMC'), 'animation'), '_visible', False)])]
     return halo_source() + function('_projectHitShow', ['colour', 'number', 'name', 'nameColour', 'note', 'scale',
-                                                        'animate', 'shell', 'icon', 'vehicle', 'spread'], body)
+                                                        'animate', 'icon', 'vehicle', 'spread'], body)
 
 
 def art_frame_body():
@@ -427,6 +427,10 @@ def payload(original, icons=None):
         raise ValueError('original indicator movie differs from the pinned #717 bytes')
     images = art_module().sprites()
     borrowed, missing = icons_module().load(icons)
+    # Owner round 4: the class icon carries the same black halo as the text.
+    for name in icons_module().VEHICLES:
+        if name in borrowed:
+            borrowed[name] = icons_module().haloed(*borrowed[name])
     images.update(borrowed)
     result = build(raw, images=images)
     if len(result) > MAX_BYTES:
