@@ -70,7 +70,7 @@ unavailable.
 ## Checks, rollback, next step
 
 The bounded verifier is
-`tools/p06e_client_collision_static_audit.py`; its targeted suite is **6/6
+`tools/client_collision_source_audit.py`; its targeted suite is **6/6
 PASS**. Receipt:
 `local/evidence/20261008-p06e-static-audit-01/receipt.json` (ignored), with
 source SHA `502581a94b4be46d4db885e5922038287b38ff155138cc37ebc24e2216ce7625`

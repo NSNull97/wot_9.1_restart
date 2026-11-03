@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 
 from game_profile_tx import TransactionError
-from p09e_full_stand import prepare, report_digest
+from purchased_vehicle_stand_plan import prepare, report_digest
 
 
 VEHICLE = "vehicle:test:SU-18"

@@ -8,7 +8,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from tools.p06e_client_collision_static_audit import AuditError, audit, parse_json
+from tools.client_collision_source_audit import AuditError, audit, parse_json
 
 
 ROOT = Path(os.environ.get("WOT091_ROOT", Path(__file__).resolve().parents[1])).resolve()

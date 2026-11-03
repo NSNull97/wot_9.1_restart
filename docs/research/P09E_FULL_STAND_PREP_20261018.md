@@ -2,7 +2,7 @@
 
 ## Результат
 
-`tools/p09e_full_stand.py` добавляет source-bound планировщик для уже купленной
+`tools/purchased_vehicle_stand_plan.py` добавляет source-bound планировщик для уже купленной
 записи P09E. Он использует существующие `assembly()` и `garage_record()` и
 собирает детерминированный JSON-отчёт с исходным descriptor, ремонтом, массой,
 пределом нагрузки и установленными компонентами. SQLite не открывается и не
@@ -26,7 +26,7 @@ Descriptor в отчёте представлен canonical hex, поэтому 
 
 ## Проверка
 
-Focused suite `tests.test_p09e_full_stand`: **4 PASS / 0 FAIL**. Проверены
+Focused suite `tests.test_purchased_vehicle_stand_plan`: **4 PASS / 0 FAIL**. Проверены
 source assembly/loadout, неизменность входной купленной записи, повторяемый
 digest, три fail-closed guards для crew/ammo/equipment, отказ battle promotion
 и отказ базового/уже runtime-qualified/несовместимого ряда.

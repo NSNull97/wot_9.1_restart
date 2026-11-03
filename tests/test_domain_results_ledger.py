@@ -2,7 +2,7 @@
 Results8 stays valid, a ledger that disagrees is refused. Store tests use real
 isolated SQLite transactions; no native or UI claim.
 
-tests/fixtures/ui04-results9-from-gateway.json is the output of the gateway test
+tests/fixtures/results9-from-gateway.json is the output of the gateway test
 ui04_ledger_of_a_real_shell_fills_totals_and_the_row_of_its_target (a real shell,
 a third vehicle holding the spot credit), so this is not a round trip of one coder.
 """
@@ -23,7 +23,7 @@ from tests import test_p04d_crew_store as crew_fixture
 from tests import test_p06t_mixed_store as previous
 from tests import test_p08c_interaction_store as interaction
 
-GATEWAY = (ROOT / "tests/fixtures/ui04-results9-from-gateway.json").read_text(encoding="utf-8")
+GATEWAY = (ROOT / "tests/fixtures/results9-from-gateway.json").read_text(encoding="utf-8")
 ALLY, ENEMY = 2, 1
 
 

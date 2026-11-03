@@ -34,7 +34,7 @@ def audit(payloads):
                 settings = {i["value"]: instructions[n - 1]["value"] for n, i in enumerate(instructions)
                             if i["opname"] == "STORE_NAME" and i["value"] != "__module__"}
     require(settings == dict(CURRENT_SHELLS=0, NEXT_SHELLS=1, AUTOROTATION_ENABLED=2, ACTIVATE_EQUIPMENT=16, RELOAD_PARTIAL_CLIP=17), "setting enum values")
-    from p06t_native_wire_audit import schema_tables, PINS, ORIGINAL
+    from damage_wire_source_audit import schema_tables, PINS, ORIGINAL
     extended = dict(payloads)
     for name in ("res/scripts/entity_defs/vehicle.def", "res/scripts/entity_defs/interfaces/chat.def"):
         path=ORIGINAL/name;count,digest=PINS[name]

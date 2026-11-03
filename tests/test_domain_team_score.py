@@ -3,7 +3,7 @@ journal without the block stays valid, a score that disagrees with the deaths is
 refused. Store tests use real isolated SQLite transactions. The contract class
 reads the original #717 bytecode as data. No native or UI claim.
 
-tests/fixtures/ui06-results10-from-gateway.json is the output of the gateway test
+tests/fixtures/results10-from-gateway.json is the output of the gateway test
 ui06_results_carry_the_battle_values_into_the_native_fields (a real shell of slot 0
 journaled on its ally, slot 2), so this is not a round trip of one coder.
 """
@@ -25,7 +25,7 @@ from tests import test_p04d_crew_store as crew_fixture
 from tests import test_p06t_mixed_store as previous
 from tests import test_p08c_interaction_store as interaction
 
-GATEWAY = (ROOT / "tests/fixtures/ui06-results10-from-gateway.json").read_text(encoding="utf-8")
+GATEWAY = (ROOT / "tests/fixtures/results10-from-gateway.json").read_text(encoding="utf-8")
 ORIGINAL = Path("C:/WoT_0.9.1_RU_0717_original/res/scripts")
 OPCODES = ROOT / "local/toolchains-py27-20261019/cpython-2.7.3-x86/Lib/opcode.py"
 KILLER = 0

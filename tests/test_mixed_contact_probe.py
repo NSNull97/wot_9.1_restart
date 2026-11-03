@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-spec = importlib.util.spec_from_file_location('p05c_mixed_contact_probe', ROOT / 'tools/p05c_mixed_contact_probe.py')
+spec = importlib.util.spec_from_file_location('mixed_contact_probe', ROOT / 'tools/mixed_contact_probe.py')
 p = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(p)
 

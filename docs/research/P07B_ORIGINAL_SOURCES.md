@@ -153,13 +153,13 @@ when the ledger labels it as project policy rather than historical fact.
 
 ## Bounded reader and evidence
 
-The reader is [tools/p07b_original_sources.py](../../tools/p07b_original_sources.py).
+The reader is [tools/spotting_source_ledger.py](../../tools/spotting_source_ledger.py).
 It creates one small JSON receipt and refuses to overwrite an existing file or
 write outside C:. Example (PowerShell):
 
 ```powershell
 New-Item -ItemType Directory -Force C:\wot091-p07b-20261017-02\evidence\source-ledger05 | Out-Null
-python -B -X utf8 C:\wot091-p07b-20261017-02\w\tools\p07b_original_sources.py `
+python -B -X utf8 C:\wot091-p07b-20261017-02\w\tools\spotting_source_ledger.py `
   --original-root C:\WoT_0.9.1_RU_0717_original `
   --evidence-root D:\WoT_9.1_Server\local\evidence `
   --out C:\wot091-p07b-20261017-02\evidence\source-ledger05\original-sources.json

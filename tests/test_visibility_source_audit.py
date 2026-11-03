@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.p07a_visibility_static_audit import (
+from tools.visibility_source_audit import (
     MAX_ITEMS,
     P07AVisibilityAuditError,
     audit,

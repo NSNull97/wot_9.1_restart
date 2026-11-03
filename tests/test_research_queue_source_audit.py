@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.p03i_static_audit import P03IStaticAuditError, _queue_rows, audit
+from tools.research_queue_source_audit import P03IStaticAuditError, _queue_rows, audit
 
 
 ROOT = Path(os.environ.get("WOT091_ROOT", Path(__file__).resolve().parents[1])).resolve()

@@ -164,7 +164,7 @@ def main():
     out=no_links(a.out).resolve();require(out.is_relative_to(ROOT / "local") and not out.exists(),"fresh owned local output only")
     out.mkdir(parents=True)
     data=audit()
-    from p06t_fire_property_audit import audit as pe_audit
+    from fire_property_pe_audit import audit as pe_audit
     pe=pe_audit(ORIGINAL)
     (out/"fire-envelope.json").write_bytes(canonical(pe)+b"\n")
     (out/"source.json").write_bytes(canonical(data)+b"\n")

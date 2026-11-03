@@ -11,7 +11,7 @@ import unittest
 from unittest import mock
 import zipfile
 
-from tools import p06f_ms1_collision_static_audit as p06f
+from tools import ms1_collision_asset_audit as p06f
 from tools.client_audit import config, read_limited
 from tools.geometry_spike import collision_mesh
 from tools.packed_xml import decode

@@ -4,7 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from tools.p08a_lifecycle_static_audit import LifecycleAuditError, audit
+from tools.battle_lifecycle_source_audit import LifecycleAuditError, audit
 
 
 ROOT = Path(os.environ.get("WOT091_ROOT", Path(__file__).resolve().parents[1])).resolve()

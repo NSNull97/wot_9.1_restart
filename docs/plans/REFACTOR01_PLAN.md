@@ -116,7 +116,7 @@
   `p09d_ammo_control`). В git на `4e46418`; в `docs/research/INDEX.md` — запись.
 - Оставлены, хотя код их не зовёт: инструменты исследования клиента (`bootstrap_research.ps1`, `extract_python273`,
   `static_extract`, `bytecode_probe`, `native_pe_probe`, `exe_startup_probe`, `research_summary`, `account_method_candidates`,
-  `p07b_original_sources`, `p06t_ammo_setting_audit`, `p09d_native_ammo_audit`) и `export_content_bundle` — нужны SHELLS-R и
+  `spotting_source_ledger`, `ammo_setting_source_audit`, `ammo_maintenance_source_audit`) и `export_content_bundle` — нужны SHELLS-R и
   контенту; `web/scripts/*` и `web/src/account_server.mjs` — точки запуска оператором.
 - `name_debt` 437 → 432. Живые проверки, которые зовут тесты или стенд (`*_acceptance`, `*_scenario` и пр.), не трогались:
   разделение «живое/архив» по каждому — после R5, когда имена скажут, что они делают.
@@ -139,3 +139,26 @@
   и др. — их исходники закреплены хешами в доказательствах (source-bound), правка требует перевыпуска привязок.
 - Стенд остаётся на установке `install-a-35` (старый код патча); переустановка клиента с новым модулем — при следующей
   установке, поведение не меняется.
+
+## R5 — частично выполнено (2026-11-03)
+
+Проверка R4 на `3d57518`: Python D: 3961 тест (+3 новых), FAIL-список = база построчно.
+
+- Переименованы 28 файлов, у которых нет закрепления байтов (`.gitattributes`, хеши исходников), их не меняют сохранённые
+  ветки (PG-01, кандидат PERF-02, UI-PREF01, SHELLS-R, DEPOT-01, ENGINE-SOUND, P04L…), и все файлы, что их зовут, тоже свободны:
+  - инструменты исследования и их тесты: `gw01_login_load` → `gateway_login_load`, `p03i_static_audit` →
+    `research_queue_source_audit`, `p05c_mixed_contact_probe` → `mixed_contact_probe`, `p06e_client_collision_static_audit` →
+    `client_collision_source_audit`, `p06f_ms1_collision_static_audit` → `ms1_collision_asset_audit`, `p06t_ammo_setting_audit`
+    → `ammo_setting_source_audit`, `p06t_fire_property_audit` → `fire_property_pe_audit`, `p06t_native_wire_audit` →
+    `damage_wire_source_audit`, `p07a_visibility_static_audit` → `visibility_source_audit`, `p07b_original_sources` →
+    `spotting_source_ledger`, `p08a_lifecycle_static_audit` → `battle_lifecycle_source_audit`, `p09d_native_ammo_audit` →
+    `ammo_maintenance_source_audit`, `p09e_full_stand` → `purchased_vehicle_stand_plan` (+ `_boundary`);
+  - тесты Domain и их образцы: `test_ui04_results_ledger` → `test_domain_results_ledger`, `test_ui06_team_score` →
+    `test_domain_team_score`, `test_res30_roster30` → `test_domain_large_roster`, `ui04-results9-from-gateway.json` →
+    `results9-from-gateway.json`, `ui06-results10-from-gateway.json` → `results10-from-gateway.json`,
+    `web/tests/res30-roster30.test.mjs` → `large-roster-bridge.test.mjs`.
+- Ссылки обновлены в коде и командах `docs/research` (исторический список `NIGHT_20261017_FILES.txt` не трогался).
+  `name_debt` 432 → 404.
+- Не переименовано (на утро): ~300 имён, закреплённых хешами/`.gitattributes` или затрагиваемых сохранёнными ветками
+  (слои экипажа `p04d…p04k`, хранилища `p04m/p06t/p08*/p09*`, `web/src/ms1-*`), и тесты, чей предмет закреплён (переименовать
+  тест без предмета — разнобой). Имена шлюза (`server/gateway`, 99) — в R6 вместе с модулями.
