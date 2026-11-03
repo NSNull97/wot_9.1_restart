@@ -611,7 +611,7 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(old_rows), len(new_rows))
         recoloured = look.recoloured(self.body, self.start)
         differ = [code for (code, b0, e0), (_, b1, e1) in zip(old_rows, new_rows) if recoloured[b0:e0] != new[b1:e1]]
-        self.assertEqual(differ, [36] * 12 + [39, 39], 'twelve fire/ammo bitmaps, the hp sprite and the icon sprite')
+        self.assertEqual(differ, [36] * 12 + [39], 'twelve fire/ammo bitmaps and the hp sprite; the icon sprite stays native')
         places = [data for code, data in self.hp_sprite(new) if code in (26, 70)]
         self.assertEqual([data[1] for data in places], [1, 1])
         for data in places:
@@ -622,47 +622,21 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(places[0][2:places[0].index(b'hpField')], old[0][1:old[0].index(b'hpField')])
         self.assertEqual(places[1][:places[1].index(b'\0', 6) + 1], old[1][:old[1].index(b'\0', 6) + 1])
 
-    def test_fire_and_ammo_icons_are_white_with_the_halo_of_the_damage_number(self):
+    def test_every_fire_and_ammo_frame_has_its_icon_with_the_glow_of_its_colour_baked_in(self):
+        import battle_ui_marker_icons as icons
         colours = look.damage_colours(self.body, self.start)
         self.assertEqual(colours['blue'].hex(), '00eaff')
-        sprite, inner = look.explosion_inner(self.body, self.start)
-        rows, at = [], 0
-        while at < len(inner):
-            head = struct.unpack_from('<H', inner, at)[0]
-            code, size, at = head >> 6, head & 63, at + 2
-            if size == 63:
-                size, at = struct.unpack_from('<I', inner, at)[0], at + 4
-            rows.append((code, inner[at:at + size]))
-            at += size
-        label, seen = None, []
-        for code, data in rows:
-            if code == 43:
-                label = data[:data.index(0)].decode('ascii')
-            elif code in (26, 70) and data[0] & 2:
-                self.assertEqual((code, data[1]), (70, 1), 'a PlaceObject3 with filters only')
-                self.assertTrue(data.endswith(look.white_halo(colours[label.split('_')[0]])), label)
-                seen.append(label)
-        self.assertEqual(len(seen), 12)
-        self.assertIn('blue_fire', seen)
-        halo = look.white_halo(colours['red'])
-        self.assertEqual(halo[:6], bytes((1, look.FILTER_GLOW)) + colours['red'] + bytes((255,)),
-                         'only the glow of the red damage number: Scaleform drew the colour matrix as a black square')
         self.assertEqual(colours['green'], look.GLOW_COLOURS['green'], 'the darker glow of damage to allies')
-
-    def test_fire_and_ammo_bitmaps_are_the_project_icons_white_on_the_native_canvas(self):
         whites = look.explosion_bitmaps(self.body, self.start)
         self.assertEqual(len(whites), 12)
-        for bitmap, data in whites.items():
-            width, height = struct.unpack_from('<HH', data, 3)
+        expected = {icons.argb(kind, tuple(colour)) for kind in (icons.FIRE, icons.AMMO) for colour in colours.values()}
+        self.assertEqual({zlib.decompress(data[7:]) for data in whites.values()}, expected,
+                         'twelve frames, each its icon and the glow of its damage colour (red and gold included)')
+        for data in whites.values():
             pixels = zlib.decompress(data[7:])
-            self.assertEqual(len(pixels), width * height * 4)
+            self.assertEqual(len(pixels), icons.CANVAS * icons.CANVAS * 4)
             for at in range(0, len(pixels), 4):
-                self.assertEqual(len(set(pixels[at:at + 4])), 1, 'white, premultiplied')
-        import battle_ui_marker_icons as icons
-        kinds = sorted({zlib.decompress(data[7:]) for data in whites.values()}, key=len)
-        self.assertEqual(sorted(kinds), sorted([icons.argb(icons.FIRE), icons.argb(icons.AMMO)]),
-                         'six fire frames share the fire icon, six ammo frames the ammo icon')
-        self.assertNotEqual(icons.argb(icons.FIRE), icons.argb(icons.AMMO))
+                self.assertTrue(all(value <= pixels[at] for value in pixels[at + 1:at + 4]), 'premultiplied')
         new = look.transform(self.body, self.start)
         self.assertEqual(sum(1 for code, b, e in tags(new, self.start) if code == 36),
                          sum(1 for code, b, e in tags(self.body, self.start) if code == 36), 'replaced, not added')

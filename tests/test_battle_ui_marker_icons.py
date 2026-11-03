@@ -29,6 +29,18 @@ class IconTests(unittest.TestCase):
         self.assertEqual(rows[middle - 4][middle - 6], 0, 'inside the triangle, beside the flame')
         self.assertEqual(rows[middle + 4][middle + 2], 255, 'the flame body beside its hollow')
 
+    def test_the_glow_is_baked_around_a_white_icon(self):
+        pixels, middle = icons.argb(icons.FIRE, (255, 55, 28)), icons.CANVAS // 2
+        def at(x, y):
+            return pixels[(y * icons.CANVAS + x) * 4:(y * icons.CANVAS + x) * 4 + 4]
+        self.assertEqual(at(middle + 2, middle + 4), bytes((255, 255, 255, 255)), 'the flame stays white')
+        rows = icons.coverage(icons.FIRE)
+        edge = next(x for x in range(icons.CANVAS) if rows[middle][x])
+        a, r, g, b = at(edge - 3, middle)
+        self.assertGreater(a, 60, 'a halo outside the triangle')
+        self.assertGreater(r, b, 'in the red of the colour')
+        self.assertEqual(at(0, 0), bytes(4), 'the corners stay clear')
+
     def test_sparks_are_uneven(self):
         lengths = {round(outer - inner, 1) for _, inner, outer in icons.SPARKS}
         self.assertGreater(len(lengths), 5)
