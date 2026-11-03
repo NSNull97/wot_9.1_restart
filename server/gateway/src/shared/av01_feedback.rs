@@ -67,6 +67,9 @@ pub fn hit_direction(velocity: [f32; 3], is_damage: bool) -> io::Result<Vec<u8>>
 pub mod hit_flags {
     pub const VEHICLE_KILLED: u32 = 1;
     pub const VEHICLE_WAS_DEAD_BEFORE_ATTACK: u32 = 2;
+    /// The target burns after this shot: Avatar.showShotResults plays
+    /// enemy_fire_started_by_player for it.
+    pub const FIRE_STARTED: u32 = 4;
     pub const RICOCHET: u32 = 8;
     pub const MATERIAL_WITH_POSITIVE_DF_PIERCED_BY_PROJECTILE: u32 = 16;
     pub const MATERIAL_WITH_POSITIVE_DF_NOT_PIERCED_BY_PROJECTILE: u32 = 32;

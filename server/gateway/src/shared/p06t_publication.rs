@@ -92,7 +92,10 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
                         Condition::Critical=>Some((if event.from_fire{12}else{4},extra_index)),
                         Condition::Destroyed=>Some((if event.from_fire{13}else{5},extra_index)),Condition::Normal=>None}},
                 Change::Crew{extra_index,before_active:true,after_active:false,..}=>Some((10,extra_index)),
-                Change::Fire{after_active,..}=>Some((if after_active{3}else{35},4)),
+                // Owner round 15: no "fire" voice. #717 FIRE (3) is a generic state code
+                // of __damageInfoNoNotification; DEVICE_STARTED_FIRE_AT_SHOT (8) is the one
+                // that plays the fire extra's voice. A fire here starts only from a shot.
+                Change::Fire{after_active,..}=>Some((if after_active{8}else{35},4)),
                 _=>None,
             };
             if let Some((code,extra))=notification{
