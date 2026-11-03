@@ -102,3 +102,21 @@
 - 48 ссылок на удалённые файлы переписаны в текст с указанием «в git на `8bda1b9`»; новых битых ссылок нет (60 старых до и
   после). Комментарии кода к удалённым планам UI — с пометкой `(git 30a6185)`.
 - `docs/STATUS.md` 726 → 62 строки (только действующее), `docs/ACTIVE_GATE.md` — карточка REFACTOR-01.
+
+## R3 — выполнено (2026-11-03)
+
+Проверка R2 на `4e46418`: gate 1993/2 базовых/21, Python D: = база построчно. Владелец ушёл на ночь: остальные этапы — без него,
+критичное — в список «на утро» в конце плана.
+
+- Удалены 18 скриптов `tools/` без единой ссылки из кода (тесты, сервер, другие инструменты, клиентский патч, web): разовые
+  проверки протокола 07.10 (`check_*_probe`, `check_server_reliable`, `check_unified_verifier`, `check_account_ready`,
+  `verify_account_capture`, `verify_native_capture`, `account_state_probe`, `portable_hangar_state`), стендовые бенчи DOM-01 и
+  FULL-TEST (`domain_stand_bench`, `domain_stand_rehearsal`, `bridge_latency_bench`), обвязки P04C/P05C/P09C/P09D
+  (`crew_configuration_harness`, `p05c_build`, `p05c_catalog_probe`, `p05c_rust_worker_probe`, `p09c_ammo_harness`,
+  `p09d_ammo_control`). В git на `4e46418`; в `docs/research/INDEX.md` — запись.
+- Оставлены, хотя код их не зовёт: инструменты исследования клиента (`bootstrap_research.ps1`, `extract_python273`,
+  `static_extract`, `bytecode_probe`, `native_pe_probe`, `exe_startup_probe`, `research_summary`, `account_method_candidates`,
+  `p07b_original_sources`, `p06t_ammo_setting_audit`, `p09d_native_ammo_audit`) и `export_content_bundle` — нужны SHELLS-R и
+  контенту; `web/scripts/*` и `web/src/account_server.mjs` — точки запуска оператором.
+- `name_debt` 437 → 432. Живые проверки, которые зовут тесты или стенд (`*_acceptance`, `*_scenario` и пр.), не трогались:
+  разделение «живое/архив» по каждому — после R5, когда имена скажут, что они делают.
