@@ -427,7 +427,18 @@ class SettingsTests(unittest.TestCase):
     def test_every_option_has_a_default_inside_its_values(self):
         for key, allowed, default in m.OPTION_SCHEMA:
             self.assertIn(default, allowed)
-        self.assertEqual(set(m.ROWS_TABLE) - set(row[0] for row in m.OPTION_SCHEMA), set())
+        self.assertEqual(set(m.ROWS_TABLE) - set(row[0] for row in m.OPTION_SCHEMA), set(m.OPTION_OF))
+        self.assertTrue(set(m.OPTION_OF.values()) <= set(row[0] for row in m.OPTION_SCHEMA))
+
+    def test_damage_taken_by_a_ram_or_a_fire_is_its_own_row_under_the_switch_of_damage_taken(self):
+        for wire, key, glyph in ((11, 'received_ram', m.CHEVRONS), (12, 'received_fire', m.FLAME)):
+            feed = m.Feed(m.default_options(), lambda: 0.0, lambda v: 'tank%d' % v, lambda v: 'heavyTank')
+            self.assertTrue(feed.add({'kind': 'feed', 'feed': wire, 'value': 120, 'vehicle': 3}))
+            self.assertEqual(feed.rows[0]['key'], key)
+            self.assertEqual(feed.render_args()[:3], [m.RED, '120', glyph])
+            options = dict(m.default_options(), received=False)
+            hidden = m.Feed(options, lambda: 0.0, lambda v: '', lambda v: '')
+            self.assertFalse(hidden.add({'kind': 'feed', 'feed': wire, 'value': 120, 'vehicle': 3}))
 
     @unittest.skipUnless(sys.version_info[0] == 3, 'prepare is a Python 3 tool')
     def test_prepare_lists_the_flag_and_needs_the_channel(self):
