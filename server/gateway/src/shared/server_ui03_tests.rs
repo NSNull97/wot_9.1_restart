@@ -189,6 +189,13 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
         Row{kind:FeedKind::Kill as u8,value:None,vehicle:id(1)}]);
 }
 
+#[test] fn ui03_spot_credit_of_a_target_out_of_sight_has_no_name() {
+    let (mut w,now)=hit_world(Instant::now(),1,0);
+    w.actors[1].position[0]=500.;let mut s=spotted(now,&w,0);open(&mut s);
+    w.push_test_spot(0,1,1000);
+    assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::Spotted as u8,value:None,vehicle:0}]);
+}
+
 #[test] fn ui03_fire_on_a_hidden_enemy_is_silent_and_own_fire_keeps_the_source_rule() {
     let now=Instant::now();let (mut terrain,now)=hit_world(now,0,1);terrain.actors[1].position[0]=500.;
     let mut s=spotted(now,&terrain,0);open(&mut s);
@@ -197,12 +204,12 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
     assert_eq!(publish(&mut s,&w,now),vec![Row{kind:FeedKind::FireReceived as u8,value:Some(10),vehicle:0}]);
 }
 
-#[test] fn ui03_spot_credit_reaches_only_its_observer_without_a_name() {
+#[test] fn ui03_spot_credit_reaches_only_its_observer_and_names_a_seen_target() {
     let (mut w,now)=hit_world(Instant::now(),1,0);
     let mut s=spotted(now,&w,0);open(&mut s);
     w.push_test_spot(0,1,1000);
     let frames={poll(&mut s,&mut w,now).unwrap();channel_frames(&all_bodies(&mut s,now))};
-    assert_eq!(rows_of(&frames),vec![Row{kind:FeedKind::Spotted as u8,value:None,vehicle:0}]);
+    assert_eq!(rows_of(&frames),vec![Row{kind:FeedKind::Spotted as u8,value:None,vehicle:id(1)}]);
     let mut other=spotted(now,&w,1);open(&mut other);
     other.shared.as_mut().unwrap().battle_events.as_mut().unwrap().cursors=Some(FeedCursors{impacts:w.impacts.len(),..FROM_START});
     let mut w2=w.clone();

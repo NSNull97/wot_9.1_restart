@@ -192,7 +192,12 @@ impl Feed<'_> {
     fn ledgers(&mut self,cursors:&FeedCursors) {
         let(c,world)=(self.c,self.world);
         for record in world.result_spots().unwrap_or(&[]).iter().skip(cursors.spots) {
-            if record.observer()==c.slot {self.push(record.tick(),FeedKind::Spotted,None,None);}
+            // Owner round 8: the spotted vehicle is named, by the rule of dealt damage:
+            // only while the recipient sees it.
+            if record.observer()==c.slot {
+                let named=c.visible().get(record.target()).copied().unwrap_or(false);
+                self.push(record.tick(),FeedKind::Spotted,None,named.then_some(record.target()));
+            }
         }
         if let Some(state)=&world.lifecycle {
             let(capture,defence)=(state.capture_points(c.slot),state.dropped_capture_points(c.slot));
