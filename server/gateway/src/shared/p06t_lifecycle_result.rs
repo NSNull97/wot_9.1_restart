@@ -30,8 +30,10 @@ pub(super) fn build(world:&World)->io::Result<Results>{
             mileage_metres:actor.mileage_metres.floor()as u32,life_time,killer_id:death.map(|event|wire::vehicle_id(event.attacker)).transpose()?.unwrap_or(0),
             death_reason:death.map_or(-1,|event|event.reason as i8),premature_leave:actor.session.is_none()});
     }
+    let(details,ledger)=project_interactions(world,&participants)?;
     let result=Results{arena_id:world.id,arena_type_id:world.map.arena_type_id()as i32,
         created_unix:world.lifecycle_created_unix.ok_or_else(||model::bad())?,winner_team:outcome.winner,
-        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(project_details(world,&participants)?),participants};
+        finish_reason:wire::finish_reason(outcome.reason),duration_seconds,interaction_details:Some(details),ledger,
+        team_score:team_score::results(world,&participants)?,participants};
     result.validate_p06t()?;Ok(result)
 }

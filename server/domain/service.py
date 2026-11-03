@@ -32,6 +32,7 @@ from server.domain import protocol  # noqa: E402
 from server.domain.protocol import SCHEMA, ProtocolError  # noqa: E402
 import p08b_battle_service as worker  # noqa: E402
 import p08c_late_results_service as late_worker  # noqa: E402
+import int_user_settings  # noqa: E402
 from p09d_ammo_projection import canonical  # noqa: E402
 from destructible_catalog import json_value, no_links, CatalogError  # noqa: E402
 
@@ -52,6 +53,7 @@ _KEY = re.compile(r"[\x21-\x7e]{1,96}\Z")
 _SHA = re.compile(r"[0-9a-f]{64}\Z")
 REQUEST_FIELDS = frozenset({"schema", "id", "op", "account_id", "key"})
 SERVICE_OPERATIONS = ("ping", "describe")
+SETTINGS_OPERATION = "int-settings"  # UI-01: outside the worker aggregate, no revision.
 # Late-result owners (bridge createLateResultService): these run tools/p08c_late_results_service.
 LATE_OPERATIONS = {"late-append": "append", "late-pending": "pending", "battle": "battle", "results": "results"}
 
@@ -239,7 +241,29 @@ class Domain:
         return {"schema": SCHEMA, "version": VERSION, "catalog_sha256": self.config.catalog_sha256,
             "accounts": [{"account_id": a, "native_database_id": self.native_ids[a], **f,
                           "catalog": self.config.catalog_sha256 is not None} for a, f in self.config.accounts.items()],
-            "operations": [*worker.OPERATIONS, "late-append", "late-pending"]}
+            "operations": [*worker.OPERATIONS, "late-append", "late-pending", SETTINGS_OPERATION]}
+
+    def int_settings(self, account, key, body):
+        if type(account) is not str or account not in self.contexts: return 403, "forbidden", b""
+        if key is not None or len(body) > 4096: return 400, "invalid_request", b""
+        try:
+            request = json_value(body, limit=4096, nodes=256, depth=4)
+            int_user_settings.validate(request)
+        except (CatalogError, ValueError): return 400, "invalid_request", b""
+        if request["account_id"] != account or request["native_database_id"] != self.native_ids[account]:
+            return 403, "forbidden", b""
+        if not self.rate.take(): return 503, "rate_limited", b""
+        try:
+            with self.lanes[account]:
+                with self.slots:
+                    token = self.watchdog.begin(SETTINGS_OPERATION)
+                    try: return 200, None, canonical(int_user_settings.execute(self.config.database, account, body))
+                    except Exception as error:  # A failed write must reach the client as refused.
+                        log("DOMAIN_OPERATION_FAILED", operation=SETTINGS_OPERATION, error=type(error).__name__ + ": " + str(error)[:200])
+                        return 503, "unavailable", b""
+                    finally: self.watchdog.end(token)
+        except Busy:
+            return 503, "busy", b""
 
     def handle(self, header, body):
         """-> (status, error, reply bytes). Never raises for request content."""
@@ -251,6 +275,7 @@ class Domain:
         if op in SERVICE_OPERATIONS:
             if account is not None or key is not None or body: return 400, "invalid_request", b""
             return 200, None, canonical({"status": "ok"} if op == "ping" else self.describe())
+        if op == SETTINGS_OPERATION: return self.int_settings(account, key, body)
         if op not in worker.OPERATIONS and op not in LATE_OPERATIONS: return 404, "not_found", b""
         if type(account) is not str or account not in self.contexts: return 403, "forbidden", b""
         context, late = self.contexts[account], self.config.accounts[account]["late"]

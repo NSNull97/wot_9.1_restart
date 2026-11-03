@@ -54,6 +54,7 @@ mod turret_publication;
 mod turret_publication_test_fixture;
 pub(crate) mod lifecycle;
 pub(crate) mod lifecycle_wire;
+mod team_score;
 mod lifecycle_result;
 mod late_results_capture;
 mod late_results_protocol;
@@ -72,6 +73,7 @@ pub(crate) mod ap;
 mod account_policy;
 mod impact_wire;
 mod av01_feedback;
+pub(crate) mod battle_events;
 pub(crate) mod terrain;
 pub(crate) mod obstacles;
 mod terrain_wire;
@@ -183,6 +185,18 @@ pub(super) struct Client {
     engine_sent: [Option<[u8; 2]>; model::MAX_ACTORS],
     stickers_sent: [Option<Vec<u64>>; model::MAX_ACTORS],
     scout_cursor: usize,
+    /// UI-02: gateway.json `battle_events` (kept across battles, like spotting)
+    /// and the channel a prepared client opened in this battle.
+    battle_events_enabled: bool,
+    battle_events: Option<battle_events::Channel>,
+    /// UI-03: gateway.json `battle_events.feed`.
+    battle_feed_enabled: bool,
+    /// UI-04: gateway.json `battle_events.history`.
+    battle_history_enabled: bool,
+    /// UI-06: what this recipient's ClientArena already holds, per slot: frags
+    /// and the team killer flag, and the journal lengths it was computed at.
+    team_score_sent: [(i16,bool); model::MAX_ACTORS],
+    team_score_journals: Option<(usize,usize,usize)>,
     return_generation: u32,
     return_mask: u8,
     join_requested: bool,
@@ -205,7 +219,7 @@ impl Client {
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
             hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:[None;model::MAX_ACTORS],armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -216,8 +230,14 @@ impl Client {
         let return_source_revision = self.return_source_revision;
         let spotting_enabled = self.spotting_enabled;
         let pose_delivery = self.pose_delivery;
+        let battle_events_enabled = self.battle_events_enabled;
+        let battle_feed_enabled = self.battle_feed_enabled;
+        let battle_history_enabled = self.battle_history_enabled;
         *self = Self::new(slot);
         self.pose_delivery = pose_delivery;
+        self.battle_events_enabled = battle_events_enabled;
+        self.battle_feed_enabled = battle_feed_enabled;
+        self.battle_history_enabled = battle_history_enabled;
         self.return_generation = generation;
         self.queue_announced = queue_announced;
         self.profile13 = profile13;
@@ -284,6 +304,11 @@ impl Client {
         self.pose_delivery=mode;Ok(())
     }
     pub(super) fn pose_delivery(&self) -> net01::PoseDelivery { self.pose_delivery }
+    /// UI-02: needs recipient visibility; chosen before a battle.
+    pub(super) fn enable_battle_events(&mut self,feed:bool,history:bool) -> io::Result<()> {
+        if self.phase!=Phase::Account || !self.spotting_enabled { return Err(bad()); }
+        self.battle_events_enabled=true;self.battle_feed_enabled=feed;self.battle_history_enabled=history;Ok(())
+    }
     /// Bodies of the newest unsent pose; empty unless latest-unreliable.
     pub(super) fn take_poses(&mut self) -> Vec<Vec<u8>> { std::mem::take(&mut self.poses_out) }
     pub(super) fn take_pose_stats(&mut self) -> net01::PoseStats { std::mem::take(&mut self.pose_stats) }
@@ -373,6 +398,14 @@ impl Client {
     pub(super) fn needs_flush(&self) -> bool { matches!(self.phase, Phase::Entities | Phase::Driving) }
 }
 
+/// UI-01: doCmdIntArr 1600/1601 from the Avatar has no callback. The map feeds
+/// the Account state of the return; the store follows from there.
+fn keep_battle_settings(session:u32,map:&mut Option<crate::int_settings091::Map>,unsaved:&mut Option<crate::int_settings091::Change>,raw:&[u8],events:&mut Vec<String>) {
+    let (Some(map),Some(change))=(map.as_mut(),raw.get(3..).and_then(crate::int_settings091::Change::from_avatar)) else {return};
+    change.apply(map);
+    match unsaved.as_mut() {Some(old)=>old.merge(&change),None=>*unsaved=Some(change)}
+    events.push(format!("INT_SETTINGS_BATTLE session={session} applied=session store=after_return"));
+}
 impl Session {
     /// Refresh from the committed authoritative world, independently of any
     /// inbound packet. No native queue or ACK changes escape this clone.
@@ -424,7 +457,11 @@ impl Session {
         if self.shared.is_none() || request.command!=100 {return Err(bad());}
         if self.shared.as_ref().is_some_and(|c|c.profile13.is_some()) {
             events.push(format!("P08B_ACCOUNT_FULL session={} request={} source=confirmed_owner_projection",self.id,request.id));
-            return crate::hangar091::response(request,self.hangar.as_ref().ok_or_else(||bad())?);
+            let fixtures=self.hangar.as_ref().ok_or_else(||bad())?;
+            return match &self.int_settings {
+                Some(map)=>crate::hangar091::response_with_settings(request,fixtures,map),
+                None=>crate::hangar091::response(request,fixtures),
+            };
         }
         let (bodies,event)=account_policy::response(self.identity.as_ref().ok_or_else(||bad())?,
             self.hangar.as_ref().ok_or_else(||bad())?,request,self.id)?;
@@ -807,6 +844,12 @@ impl Session {
                 c.damage_cursor=world.damage_events.len();c.ram_cursor=world.ram_damage_events.len();c.device_cursor=world.device_events.len();
                 c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
                 c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
+                // UI-03: a scene load is a new channel. The client says hello
+                // again, nothing of the time it was away is replayed.
+                c.battle_events = None;
+                // UI-06: the arena of a loaded scene is new and empty; unlike
+                // the feed, standing facts are sent again in full.
+                c.team_score_sent = [(0,false); model::MAX_ACTORS]; c.team_score_journals = None;
                 for slot in 0..world.actors.len() { c.ready_sent[slot] = wire::binding_ready(world, c.slot, slot); }
                 events.push(format!("SHARED_READY battle={} session={} own={} reliable_sequence={sequence} tick={}", world.id, self.id, wire::vehicle_id(c.slot)?, world.tick));
             }
@@ -831,11 +874,32 @@ impl Session {
             // INPUT-01: unframed IDs were already refused by the pre-scan.
             let size = record_size(payload, at)?.ok_or_else(|| bad())?;
             let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
+            if let Some(version)=(id==0xa1&&c.battle_events_enabled).then(||battle_events::hello(raw)).flatten() {
+                // UI-02: only this name from a prepared client opens the channel;
+                // without the gateway key the record stays an unsupported one.
+                let accepted=version==i32::from(battle_events::VERSION);
+                if accepted {c.battle_events.get_or_insert_with(battle_events::Channel::new).hello();}
+                events.push(format!("BATTLE_EVENTS_HELLO session={} version={version} accepted={accepted}",self.id));
+                continue;
+            }
+            if let Some(version)=(id==0xa1&&c.battle_feed_enabled).then(||battle_events::feed_hello(raw)).flatten() {
+                let accepted=version==i32::from(battle_events::VERSION);
+                if accepted {c.battle_events.get_or_insert_with(battle_events::Channel::new).open_feed();}
+                events.push(format!("BATTLE_FEED_HELLO session={} version={version} accepted={accepted}",self.id));
+                continue;
+            }
+            if let Some(version)=(id==0xa1&&c.battle_history_enabled).then(||battle_events::history_hello(raw)).flatten() {
+                let accepted=version==i32::from(battle_events::VERSION);
+                if accepted {c.battle_events.get_or_insert_with(battle_events::Channel::new).open_history();}
+                events.push(format!("BATTLE_HISTORY_HELLO session={} version={version} accepted={accepted}",self.id));
+                continue;
+            }
             if let Some(method)=wire::unimplemented_exposed(id) {
                 // Exposed but not implemented here: skip exactly this record.
                 // No reply is invented (Avatar onCmdResponse is unmeasured).
                 events.push(format!("SHARED_UNSUPPORTED session={} method={method} id={id:#04x} bytes={} {} domain_applied=false",
                     self.id,raw.len(),wire::unimplemented_detail(raw)));
+                if id==0x9c {keep_battle_settings(self.id,&mut self.int_settings,&mut self.int_settings_unsaved,raw,events);}
                 continue;
             }
             if id==0x87 {

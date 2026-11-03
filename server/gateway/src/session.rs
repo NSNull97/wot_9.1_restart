@@ -191,6 +191,9 @@ struct Session {
     training_ids:Vec<i16>,training_ids_generation:u64,
     received:VecDeque<(u32,Vec<u8>)>,sync_mask:u8,request_ids:Vec<i16>,
     hangar:Option<Arc<crate::hangar091::Fixtures>>,outbox:VecDeque<Vec<u8>>,chat_request_ids:Vec<i64>,
+    // UI-01: None keeps the old refusal of 1600/1601; the second holds what
+    // was changed in battle until the Account can write it.
+    int_settings:Option<crate::int_settings091::Map>,int_settings_unsaved:Option<crate::int_settings091::Change>,
     language:Option<&'static str>,
     stats_requests:u32,
     unsupported_request_ids:VecDeque<i16>,
@@ -218,10 +221,19 @@ struct Session {
     arena_source_bundle:Option<PathBuf>,
 }
 impl Session {
+    fn refuse_unavailable(&mut self,id:i16,command:i16,method:crate::hangar091::CommandMethod,argument_count:usize,events:&mut Vec<String>)->io::Result<()> {
+        if self.identity.is_none() || self.request_ids.contains(&id)
+            || self.unsupported_request_ids.contains(&id) || self.outbox.len()>=128 {return Err(invalid());}
+        self.outbox.push_back(crate::hangar091::unavailable_response(id)?);
+        self.unsupported_request_ids.push_back(id);
+        if self.unsupported_request_ids.len()>64 {self.unsupported_request_ids.pop_front();}
+        events.push(format!("APPLICATION_UNAVAILABLE session={} request={id} command={command} method={} arguments={argument_count} result=-10 state_changed=false",self.id,method.name()));
+        Ok(())
+    }
     fn new(id:u32,key:[u8;16],peer:SocketAddr,now:Instant)->Self {
         Self {id,key,login_peer:peer,base_peer:None,handoff:OsRng.next_u32(),token:OsRng.next_u32(),
             active:false,rx:0,last_rx:now,last_keepalive:now,last_heartbeat:now,tx:Window::new(),account_probe:false,account_ready:false,training_opt_in:false,training_flights:None,training_ids:Vec::new(),training_ids_generation:0,
-            received:VecDeque::new(),sync_mask:0,request_ids:Vec::new(),hangar:None,outbox:VecDeque::new(),chat_request_ids:Vec::new(),language:None,stats_requests:0,
+            received:VecDeque::new(),sync_mask:0,request_ids:Vec::new(),hangar:None,outbox:VecDeque::new(),chat_request_ids:Vec::new(),int_settings:None,int_settings_unsaved:None,language:None,stats_requests:0,
             unsupported_request_ids:VecDeque::new(),identity:None,created_at:now,account_cache_hash:None,login_attempt:None,login_account:None,
             arena_base:false,avatar_unsupported_envelopes:0,arena_space:ArenaSpaceStage::Disabled,
             arena_vehicle:ArenaVehicleStage::Disabled,arena_vehicle_seed:None,arena_vehicle_announcement:None,
@@ -1034,7 +1046,7 @@ for incoming in requests {
         Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
         |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}|Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
         Incoming::AmmoService(r)=>Some(r.id),Incoming::CrewService(r)=>Some(r.id),Incoming::CrewTransfer(r)=>Some(r.id),Incoming::CrewLearn(r)=>Some(r.id),Incoming::CrewDismiss(r)=>Some(r.id),Incoming::CrewBarracks(r)=>Some(r.id),Incoming::ResearchService(r)=>Some(r.id),
-        Incoming::Language{id}|Incoming::Unavailable{id,..}=>Some(*id),
+        Incoming::Language{id}|Incoming::Unavailable{id,..}|Incoming::IntSettings{id,..}=>Some(*id),
         Incoming::ServerStats=>Some(202),Incoming::Chat(_)=>None,
     };
     if account_id.is_some_and(|id|self.training_request_used(id)
@@ -1098,12 +1110,15 @@ for incoming in requests {
             continue;
         },
         Incoming::Unavailable{id,command,method,argument_count}=>{
-            if self.identity.is_none() || self.request_ids.contains(&id)
-                || self.unsupported_request_ids.contains(&id) || self.outbox.len()>=128 {return Err(invalid());}
-            self.outbox.push_back(crate::hangar091::unavailable_response(id)?);
-            self.unsupported_request_ids.push_back(id);
-            if self.unsupported_request_ids.len()>64 {self.unsupported_request_ids.pop_front();}
-            events.push(format!("APPLICATION_UNAVAILABLE session={} request={id} command={command} method={} arguments={argument_count} result=-10 state_changed=false",self.id,method.name()));
+            self.refuse_unavailable(id,command,method,argument_count,events)?;
+            continue;
+        },
+        Incoming::IntSettings{id,command,values}=>{
+            let change=crate::int_settings091::Change::decode(command,&values).filter(|_|ammo_session::settings_ready(self));
+            match change {
+                Some(change)=>ammo_session::enqueue_settings(self,crate::int_settings091::Request{id,change},events)?,
+                None=>self.refuse_unavailable(id,command,crate::hangar091::CommandMethod::IntArray,values.len(),events)?,
+            }
             continue;
         },
         Incoming::Language{id}=>{
@@ -1572,7 +1587,7 @@ pub fn serve_map_drive_probe(key_path:&str,digest_path:&str,config_path:&str,cap
     let capture=Recorder::open(capture_path,&config.local_root)?;
     serve_inner(key_path,digest_path,true,true,None,Some(Arc::new(config)),Some(capture),Some(control))
 }
-struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,
+struct Authenticated {identity:Arc<crate::identity091::Profile>,fixtures:Arc<crate::hangar091::Fixtures>,int_settings:Option<crate::int_settings091::Map>,
     owner_hold:Option<crate::identity091::HoldLogin>,
     drive_account_policy:Option<Arc<crate::map_drive_service091::AccountPolicy>>,
     ammo_service:Option<crate::ammo_service091::Metadata>,crew_service:bool,crew_transfer:bool,crew_cross_vehicle:bool,crew_roster_recruitment:bool,crew_progression:bool,crew_dismissal:bool,crew_barracks_recruitment:bool,research_service:bool}
@@ -1581,7 +1596,7 @@ impl Authenticated {
         // Remains inside the existing bounded auth worker. A bad primary policy
         // reaches AUTH_REJECT before Session creation or any native state bytes.
         let policy=crate::map_drive_service091::AccountPolicy::for_mode(ordinary,&identity,&fixtures)?;
-        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),drive_account_policy:policy.map(Arc::new),owner_hold:None,ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
+        Ok(Self {identity:Arc::new(identity),fixtures:Arc::new(fixtures),int_settings:None,drive_account_policy:policy.map(Arc::new),owner_hold:None,ammo_service:None,crew_service:false,crew_transfer:false,crew_cross_vehicle:false,crew_roster_recruitment:false,crew_progression:false,crew_dismissal:false,crew_barracks_recruitment:false,research_service:false})
     }
 }
 struct AuthJob {
@@ -1636,7 +1651,9 @@ fn start_auth(config:Arc<crate::identity091::Config>,request:u32,peer:SocketAddr
                 let shared=binding.ok_or_else(invalid)?;
                 crate::crew_service091::metadata(&identity.fixture_dir,&identity.account_id,identity.database_id,shared.revision,shared.wire_revision)?;
             }
+            let int_settings=if config.int_user_settings {Some(config.int_settings(&identity,&Default::default())?)} else {None};
             let mut accepted=Authenticated::new(identity,fixtures,ordinary)?;
+            accepted.int_settings=int_settings;
             accepted.ammo_service=binding;
             accepted.crew_service=config.crew_service;
             accepted.crew_transfer=config.crew_transfer;
@@ -1840,7 +1857,7 @@ fn serve_inner_drive(key_path:&str,digest_path:&str,account_probe:bool,account_r
                             created.account_probe=true;created.account_ready=true;created.tx=Window::interactive();
                             println!("SESSION_PENDING id={next_id} account={} native_database_id={} name={} allocated=1 source=website_users fixture_sizes={:?}",
                                 accepted.identity.account_id,accepted.identity.database_id,accepted.identity.name,accepted.fixtures.sizes());
-                            created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);
+                            created.identity=Some(accepted.identity);created.hangar=Some(accepted.fixtures);created.int_settings=accepted.int_settings;
                             created.arena_source_bundle=arena_source_bundle.clone();
                             created.drive_account_policy=accepted.drive_account_policy;
                             created.ammo_service=accepted.ammo_service.map(|binding|ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));

@@ -88,6 +88,21 @@ fn p06t_private_rapid_hide_reveal_without_leave_republishes_crew_and_fire() {
 }
 
 #[test]
+fn p06t_own_fire_start_is_the_voiced_code_with_the_device_that_caught_fire() {
+    let now=Instant::now();let(mut s,mut world)=fixture(now);
+    let(state,events)=fuel_damage(false);world.actors[0].devices=Some(state);
+    world.device_events.extend(events.into_iter().map(|event|(0,event)));
+    let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
+    let (own,shooter)=(wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap());
+    // Round 15: DEVICE_STARTED_FIRE_AT_SHOT (8) with the fuel tank (extra 28) plays the
+    // fire voice; FIRE (3) is a silent state code, kept for the state replay only.
+    let started=native::damage_info(own,8,28,shooter).unwrap();
+    assert!(c.private_pending.iter().any(|packet|contains(&packet.body,&started)));
+    let silent=native::damage_info(own,3,4,shooter).unwrap();
+    assert!(!c.private_pending.iter().any(|packet|contains(&packet.body,&silent)));
+}
+
+#[test]
 fn p06t_private_attacker_epoch_discards_health_and_critical_then_rebuilds_owner_state() {
     let now=Instant::now();let(mut s,mut world)=fixture(now);
     let(state,events)=fuel_damage(false);world.actors[0].devices=Some(state);

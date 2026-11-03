@@ -23,7 +23,7 @@ fn roster(n:usize)->Results{
     let victim=1;participants[victim].health=0;participants[victim].damage_received=90;
     participants[victim].killer_id=participants[killer].vehicle_id;participants[victim].death_reason=0;participants[victim].life_time=70;
     Results{arena_id:0x1_0000_0001,arena_type_id:4,created_unix:1792080000,winner_team:1,finish_reason:1,duration_seconds:75,
-        interaction_details:None,participants}
+        interaction_details:None,ledger:None,team_score:None,participants}
 }
 fn with_details(mut r:Results)->Results{
     let roster=summaries(&r.participants);
@@ -80,6 +80,10 @@ fn structural_maximum(n:usize)->Results{
         explosion_hits:u16::MAX,piercings:u16::MAX,damage_dealt:u16::MAX,damage_assisted_track:u16::MAX,damage_assisted_radio:u16::MAX,crits:u32::MAX,fire:u16::MAX};
     let rows=(0..n).map(|slot|d::Row{attacker_vehicle_id:wire::vehicle_id(slot).unwrap(),targets:(0..n).map(target).collect()}).collect();
     Results{arena_id:i64::MAX as u64,arena_type_id:4,created_unix:u32::MAX,winner_team:2,finish_reason:5,duration_seconds:3600,participants,
+        ledger:Some(Ledger{version:1,policy:LEDGER_POLICY.into(),rows:(0..n).map(|slot|LedgerRow{vehicle_id:wire::vehicle_id(slot).unwrap(),
+            blocked:i32::MAX as u32,potential_received:i32::MAX as u32,assist_spot:u32::MAX,assist_track:u32::MAX,burned:u32::MAX}).collect()}),
+        team_score:Some(TeamScore{version:1,policy:TEAM_SCORE_POLICY.into(),rows:(0..n).map(|slot|TeamScoreRow{vehicle_id:wire::vehicle_id(slot).unwrap(),
+            frags:-((n-1) as i16),team_kills:(n-1) as u8,team_damage:u32::MAX,team_hits:192,team_killer:false}).collect()}),
         interaction_details:Some(d::Details{version:1,policy:d::POLICY.into(),spotting_policy:Some(d::SPOTTING_POLICY.into()),rows})}
 }
 #[test]fn res30_result_json_budget_covers_structural_maximum(){

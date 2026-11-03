@@ -195,7 +195,7 @@ impl Flow {
             next.identity=Some(fresh.owner.clone());next.hangar=Some(fresh.fixtures.clone());
             fresh.pool.clone()
         }else{self.anchor.pool.clone()};
-        let copy=identity091::AmmoReply{serviced:reply.serviced,revision:reply.revision,wire_revision:reply.wire_revision,
+        let copy=identity091::AmmoReply{settings:None,serviced:reply.serviced,revision:reply.revision,wire_revision:reply.wire_revision,
             update:reply.update.clone(),recruitment:reply.recruitment.clone(),replayed:reply.replayed,
             result_code:reply.result_code,pool:Some(pool)};
         // apply validates delta/recruitment against OLD pool, stages0x57 before
@@ -273,7 +273,7 @@ mod tests{
     // Scalar boundary tests only. These do not manufacture ownership/Fresh
     // and are deliberately separate from the required actual HTTP producer.
     fn reply(serviced:bool,revision:u64,wire_revision:i64)->identity091::AmmoReply{
-        identity091::AmmoReply{serviced,revision,wire_revision,update:Vec::new(),recruitment:None,
+        identity091::AmmoReply{settings:None,serviced,revision,wire_revision,update:Vec::new(),recruitment:None,
             replayed:false,result_code:if serviced{0}else{-10},pool:None}
     }
     #[test]fn garage_fresh32_known_success_and_replay_preserve_both_exact_cursors(){

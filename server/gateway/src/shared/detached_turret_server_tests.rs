@@ -4,7 +4,7 @@ use super::*;
 use super::super::{turret_publication_test_fixture as f,detached_turret as dt,lifecycle_wire::{Results,Participant}};
 fn result(w:&World)->Arc<Results>{
     Arc::new(Results{arena_id:w.id,arena_type_id:4,created_unix:1792080000,winner_team:1,finish_reason:1,
-        duration_seconds:10,interaction_details:None,participants:(0..2).map(|slot|Participant{
+        duration_seconds:10,interaction_details:None,ledger:None,team_score:None,participants:(0..2).map(|slot|Participant{
             vehicle_id:wire::vehicle_id(slot).unwrap(),account_dbid:w.actors[slot].identity.database,
             name:w.actors[slot].identity.name.clone(),team:slot as u8+1,type_compact_descr:3329,health:w.actors[slot].health,
             life_time:10,death_reason:if slot==1{0}else{-1},killer_id:if slot==1{wire::vehicle_id(0).unwrap()}else{0},

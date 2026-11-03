@@ -15,6 +15,12 @@ mod batch_scene;
 use batch_scene::BatchRuntime;
 #[path="p06t_publication.rs"]
 mod p06t_publication;
+#[path="battle_events_publication.rs"]
+mod battle_events_publication;
+#[path="battle_ledger.rs"]
+pub(super) mod battle_ledger;
+#[path="team_score_publication.rs"]
+mod team_score_publication;
 #[path="sixth_sense_wire.rs"]
 mod sixth_sense_wire;
 #[cfg(test)]
@@ -62,6 +68,18 @@ mod net01_tests;
 #[cfg(test)]
 #[path="server_av01_tests.rs"]
 mod av01_tests;
+#[cfg(test)]
+#[path="server_ui02_tests.rs"]
+mod ui02_tests;
+#[cfg(test)]
+#[path="server_ui03_tests.rs"]
+mod ui03_tests;
+#[cfg(test)]
+#[path="server_ui04_tests.rs"]
+mod ui04_tests;
+#[cfg(test)]
+#[path="server_ui06_tests.rs"]
+mod ui06_tests;
 #[cfg(test)]
 #[path="server_net01_bench.rs"]
 mod net01_bench;
@@ -1616,6 +1634,18 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
     }
+    if config.results_ledger{
+        if !profile13_mode{return Err(model::bad().into());}
+        battle_template.world.enable_result_ledger()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("UI04_RESULT_LEDGER_BOUND policy={}",super::lifecycle_wire::LEDGER_POLICY);
+    }
+    if config.team_score{
+        if !profile13_mode||!config.visibility_v1{return Err(model::bad().into());}
+        battle_template.world.enable_team_score()?;
+        battle_template.select(&mut world,&mut integrated,started)?;
+        println!("UI06_TEAM_SCORE_BOUND policy={}",super::lifecycle_wire::TEAM_SCORE_POLICY);
+    }
     if config.p06t_ammo_rack_detonation{
         if !profile13_mode||!config.p06t_mixed_ammo||!config.visibility_v1||qualification.is_some(){return Err(model::bad().into());}
         battle_template.world.enable_ammo_detonation()?;
@@ -1730,9 +1760,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         };
                         s.account_probe = true; s.account_ready = true; s.tx = Window::interactive();
                         s.login_attempt = Some(job.attempt); s.login_account = Some(pending.account); s.identity = Some(accepted.identity);
-                        s.hangar = Some(accepted.fixtures); s.shared = Some(Client::new(slot));
+                        s.hangar = Some(accepted.fixtures); s.int_settings = accepted.int_settings; s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
                         s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
+                        if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events(config.battle_feed,config.battle_history)?;}
                         if profile13_mode {
                             let binding=accepted.ammo_service.ok_or_else(||model::bad())?;
                             s.ammo_service=Some(ammo_session::State::new(binding,accepted.crew_service).with_transfer(accepted.crew_transfer).with_cross_vehicle(accepted.crew_cross_vehicle).with_roster_recruitment(accepted.crew_roster_recruitment).with_progression(accepted.crew_progression).with_dismissal(accepted.crew_dismissal).with_barracks(accepted.crew_barracks_recruitment).with_research(accepted.research_service));
@@ -1974,6 +2005,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                                 template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
                                 template.world.enable_result_spots()?;
                             }
+                            if config.results_ledger {template.world.enable_result_ledger()?;}
+                            if config.team_score {template.world.enable_team_score()?;}
                             template.select(&mut a.world,&mut a.integrated,now)?;Ok(template)
                         })();
                         match switched {
@@ -2352,6 +2385,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let mut anonymous_tracers = Vec::new();
     let mut impact_from = usize::MAX;
     let mut impact_publications = Vec::new();
+    let mut battle_event_lines = Vec::new();
     let prior_projectile_count = world.projectiles.len();
     if c.phase == Phase::Driving {
         if let Some(state)=&next_world.fragiles{
@@ -2458,6 +2492,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     tracer_stops.push((projectile.sequence, projectile.slot));
                 }
             }
+            if c.spotting_enabled {battle_events_publication::publish(c,&mut next.outbox,&next_world,now,&mut battle_event_lines)?;}
             impact_from = c.impact_cursor;
             for event in next_world.impacts.iter().skip(c.impact_cursor) {
                 let shot_index = event.shot.checked_sub(1).ok_or_else(|| model::bad())? as usize;
@@ -2486,7 +2521,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                             c.owner_health_sent = Some(event.health_after);
                         }
                         if event.health_after == 0 {
-                            if !c.spotting_enabled {body.extend(wire::roster_updates(&next_world,event.target)?);}
+                            if !c.spotting_enabled {body.extend(wire::roster_updates(&next_world,event.target,c.slot)?);}
                             if next_world.lifecycle.is_some() && !c.spotting_enabled {
                                 body.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                             }
@@ -2518,7 +2553,14 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                         // No native visual category (e.g. a LAB decision the FX
                         // path refuses) falls back to the HP change alone.
                         let outcome=impact_visual(event).ok().flatten().map(|(_,outcome,_)|outcome);
-                        let flags=super::av01_feedback::shot_result_flags(outcome,he,event.health_before,event.health_after);
+                        let mut flags=super::av01_feedback::shot_result_flags(outcome,he,event.health_before,event.health_after);
+                        // Owner round 15: the shot that set its target on fire says so, as the
+                        // native voice expects; the module transitions of the shot are already
+                        // in this world step.
+                        if next_world.device_events.iter().any(|(t,e)|*t==event.target&&e.cause.shot==event.shot
+                            &&matches!(e.change,crate::p06t_device_state::Change::Fire{before_active:false,after_active:true})) {
+                            flags|=super::av01_feedback::hit_flags::FIRE_STARTED;
+                        }
                         next.outbox.push_back(super::av01_feedback::shot_results(&[(event.target,flags)])?);
                     }
                 }
@@ -2528,7 +2570,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 // still produce the original kill event without private HP,
                 // shot geometry, entity creation or shooter coordinates.
                 if !next_world.mixed_ammo()&&c.spotting_enabled && event.health_before>0 && event.health_after==0 && next_world.lifecycle.is_some() {
-                    let mut public=wire::roster_updates(&next_world,event.target)?;
+                    let mut public=wire::roster_updates(&next_world,event.target,c.slot)?;
                     public.extend(super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,0)?);
                     next.outbox.push_back(public);
                 }
@@ -2546,7 +2588,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                         let attacker = next_world.impacts.iter().rev().find(|e| e.target == target)
                             .map(|e| e.attacker).ok_or_else(|| model::bad())?;
                         body.extend(impact_wire::health_changed_for(next_world.actors[target].vehicle_kind(),target,hp,attacker)?);
-                        if hp == 0 { body.extend(wire::roster_updates(&next_world,target)?); }
+                        if hp == 0 { body.extend(wire::roster_updates(&next_world,target,c.slot)?); }
                     }
                     c.health_sent[target] = Some(hp);
                 }
@@ -2556,6 +2598,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 if !body.is_empty() { c.queue_private(&mut next.outbox,body,&[target])?; }
             }}
         }
+        // UI-06: after this pass's kill records, ahead of AFTERBATTLE below.
+        team_score_publication::publish(c,&mut next.outbox,&next_world)?;
         // AV-01 runs with recipient visibility (visibility_v1, as on the owner
         // stands); legacy all-visible laboratory publications stay byte-exact.
         if c.spotting_enabled && c.correction && c.binding.is_some_and(|(_, ack)| ack) {
@@ -2648,6 +2692,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     *world = next_world; *s = next;
     for event in turret_events{println!("{event}");}
+    for line in battle_event_lines{println!("{line}");}
     Ok(())
 }
 
@@ -2757,13 +2802,18 @@ fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
         let c = s.shared.as_mut().ok_or_else(|| model::bad())?;
         if !c.in_battle() { c.take_poses(); }
         // One reliable pose part per loop, after the bodies already queued.
-        else if !c.poses_out.is_empty() && s.tx.len() < 8 {
-            let part = c.poses_out.remove(0);
-            s.tx.enqueue_body(&part)?;
-            match s.tx.due(now, s.rx) {
-                Ok(Some((_, _, clear))) => { frames.push(clear); },
-                Ok(None) => return Err(model::bad()),
-                Err(_) => return Ok(None),
+        // CRASH-01: filtered by the visibility of now, not of its tick.
+        else if s.tx.len() < 8 {
+            let visible = c.visible();
+            while !c.poses_out.is_empty() {
+                let Some(part) = wire::retain_publication_records(&c.poses_out.remove(0), visible)? else { continue; };
+                s.tx.enqueue_body(&part)?;
+                match s.tx.due(now, s.rx) {
+                    Ok(Some((_, _, clear))) => { frames.push(clear); },
+                    Ok(None) => return Err(model::bad()),
+                    Err(_) => return Ok(None),
+                }
+                break;
             }
         }
         return Ok(Some(frames));
@@ -2772,7 +2822,9 @@ fn transmit(s: &mut Session, now: Instant) -> io::Result<Option<Vec<Vec<u8>>>> {
         // A pose left over from a battle that ended is dropped, never sent.
         let poses = c.take_poses();
         if c.in_battle() {
+            let visible = c.visible();
             for body in poses {
+                let Some(body) = wire::retain_publication_records(&body, visible)? else { continue; };
                 let clear = transport091::unreliable(s.rx, &body)?;
                 c.record_pose_packet(clear.len()); frames.push(clear);
             }

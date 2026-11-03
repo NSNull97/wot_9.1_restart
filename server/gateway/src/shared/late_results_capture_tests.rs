@@ -57,6 +57,12 @@ pub(super) fn settle_from_saved_actual_reply(f:&mut Fixture){
     f.capture.finished(0,reply.revision,&c.command_key).unwrap();
 }
 pub(super) fn final_outcome(f:&mut Fixture){f.world.detach(1).unwrap();f.world.advance_lifecycle(f.now+Duration::from_millis(1100)).unwrap();assert_eq!(f.world.lifecycle.as_ref().unwrap().outcome().unwrap().winner,2);}
+#[test]fn ui04_seal_keeps_the_ledger_with_the_journal_it_seals(){
+    let mut f=fixture();f.world.force_result_ledger_for_test();settle_from_saved_actual_reply(&mut f);final_outcome(&mut f);assert!(f.capture.capture_final(&f.world).unwrap());
+    let seal=f.capture.seal().unwrap().clone();let decoded=mixed::bounded_json(seal.raw().as_bytes(),MAX_SEAL).unwrap();
+    let journal=Results::from_json_p06t(decoded["results_json"].as_str().unwrap()).unwrap();
+    assert_eq!(journal.ledger.as_ref().unwrap().rows.len(),2);assert_eq!(&journal,seal.results().as_ref());
+}
 #[test]fn p08c_late_capture_actual_owned_pair_forfeit_seals_before_world_disposal(){
     let mut f=fixture();settle_from_saved_actual_reply(&mut f);final_outcome(&mut f);assert!(f.capture.capture_final(&f.world).unwrap());
     let seal=f.capture.seal().unwrap().clone();let decoded=mixed::bounded_json(seal.raw().as_bytes(),MAX_SEAL).unwrap();

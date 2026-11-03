@@ -3,6 +3,15 @@
 use super::*;
 use crate::{armament_wire091 as native,p06t_device_state::{Change,Condition}};
 
+/// Extra of the engine or fuel tank the igniting shot damaged on `target`; the
+/// engine's (#717 extra 26, engineHealth) when the shot left no such record.
+fn ignition_extra(world:&World,target:usize,cause:crate::p06t_device_state::Cause)->u8 {
+    world.device_events.iter().find_map(|(t,e)|match e.change {
+        Change::Device{device:crate::p06t_device_caps::Device::Engine|crate::p06t_device_caps::Device::FuelTank,extra_index,..}
+            if *t==target&&e.cause.shot==cause.shot&&e.cause.attacker_slot==cause.attacker_slot=>Some(extra_index),
+        _=>None}).unwrap_or(26)
+}
+
 fn health(world:&World,target:usize,attacker:Option<usize>,reason:u8)->io::Result<Vec<u8>>{
     let actor=world.actors.get(target).ok_or_else(||model::bad())?;
     if !(0..=actor.vehicle_kind().max_health()).contains(&actor.health)||reason>10{return Err(model::bad());}
@@ -51,7 +60,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     for event in world.damage_events.iter().skip(c.damage_cursor){
         let primary=world.impacts.iter().find(|impact|impact.shot==event.shot).map(|impact|impact.target);
         if event.lethal()&&world.lifecycle.is_some(){
-            let mut public=wire::roster_updates(world,event.target)?;
+            let mut public=wire::roster_updates(world,event.target,c.slot)?;
             public.extend(super::super::lifecycle_wire::vehicle_killed(wire::vehicle_id(event.target)?,wire::vehicle_id(event.attacker)?,event.reason)?);
             outbox.push_back(public);
         }
@@ -72,7 +81,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     }
     for event in world.ram_damage_events.iter().skip(c.ram_cursor){
         if event.health_before>0&&event.health_after==0&&world.lifecycle.is_some(){
-            let mut public=wire::roster_updates(world,event.target)?;
+            let mut public=wire::roster_updates(world,event.target,c.slot)?;
             // Source #717 ATTACK_REASONS[2] = ramming, independently of the
             // damageInfo device-notification namespace. Kill attribution is
             // public roster metadata, as for projectile kills above; no pose
@@ -92,7 +101,13 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
                         Condition::Critical=>Some((if event.from_fire{12}else{4},extra_index)),
                         Condition::Destroyed=>Some((if event.from_fire{13}else{5},extra_index)),Condition::Normal=>None}},
                 Change::Crew{extra_index,before_active:true,after_active:false,..}=>Some((10,extra_index)),
-                Change::Fire{after_active,..}=>Some((if after_active{3}else{35},4)),
+                // Owner round 15: no "fire" voice. #717 FIRE (3) is a generic state code
+                // of __damageInfoNoNotification; DEVICE_STARTED_FIRE_AT_SHOT (8) is the one
+                // that plays the fire extra's voice. A fire here starts only from a shot.
+                // Its extra is the device that caught fire (native pairing), the voice
+                // comes from the fire extra either way.
+                Change::Fire{after_active:true,..}=>Some((8,ignition_extra(world,*target,event.cause))),
+                Change::Fire{after_active:false,..}=>Some((35,4)),
                 _=>None,
             };
             if let Some((code,extra))=notification{

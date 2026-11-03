@@ -54,7 +54,8 @@ pub enum Incoming { Sync(Request), Refresh(Request), Chat(ChatRequest), Language
                     CrewBarracks(crate::crew_barracks091::Request),
                     CrewLearn(crate::crew_progression091::Request),
                     ResearchService(crate::research_service091::Request),
-                    Unavailable { id:i16, command:i16, method:CommandMethod, argument_count:usize } }
+                    Unavailable { id:i16, command:i16, method:CommandMethod, argument_count:usize },
+                    IntSettings { id:i16, command:i16, values:Vec<i32> } }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandMethod { Int3, Int4, IntArray }
@@ -80,7 +81,7 @@ fn request_id(row:&Incoming)->Option<i16> {
         Incoming::Sync(r)|Incoming::Refresh(r)|Incoming::DossierSync{request:r,..}
         |Incoming::CachedSync{request:r,..}|Incoming::CachedRefresh{request:r,..}
         |Incoming::AmmoRefresh{request:r,..}=>Some(r.id),
-        Incoming::Language{id}|Incoming::Unavailable{id,..}=>Some(*id),
+        Incoming::Language{id}|Incoming::Unavailable{id,..}|Incoming::IntSettings{id,..}=>Some(*id),
         Incoming::AmmoService(r)=>Some(r.id),
         Incoming::CrewService(r)=>Some(r.id),
         Incoming::CrewTransfer(r)=>Some(r.id),
@@ -108,6 +109,17 @@ fn unavailable(rows:&[Incoming],packet:&[u8],method:CommandMethod)->io::Result<I
     };
     if id<=0 || rows.iter().any(|row|request_id(row)==Some(id)) {return Err(invalid("unavailable command request ID"));}
     Ok(Incoming::Unavailable{id,command,method,argument_count})
+}
+/// UI-01: the gateway decides whether these are stored or refused as before.
+fn int_settings(rows:&[Incoming],packet:&[u8])->io::Result<Incoming> {
+    let payload=&packet[3..];
+    let id=i16::from_le_bytes([payload[0],payload[1]]);
+    let command=i16::from_le_bytes([payload[2],payload[3]]);
+    let count=u32::from_le_bytes(payload[4..8].try_into().map_err(|_|invalid("array count"))?) as usize;
+    if count>crate::int_settings091::MAX_ARGUMENTS || payload.len()!=8+4*count {return Err(invalid("settings array shape"));}
+    if id<=0 || rows.iter().any(|row|request_id(row)==Some(id)) {return Err(invalid("settings request ID"));}
+    let values=payload[8..].chunks_exact(4).map(|v|i32::from_le_bytes([v[0],v[1],v[2],v[3]])).collect();
+    Ok(Incoming::IntSettings{id,command,values})
 }
 fn command_of(packet:&[u8])->i16 {i16::from_le_bytes([packet[5],packet[6]])}
 /// Test view of "never dispatched to a disabled service": the whole bundle is
@@ -228,7 +240,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                     | Incoming::CachedRefresh {request:previous,..}
                     | Incoming::AmmoRefresh {request:previous,..}
                     if previous.id == r.id || previous.command == r.command)
-                    || matches!(r0, Incoming::Language { id } | Incoming::Unavailable {id,..} if *id == r.id)
+                    || matches!(r0, Incoming::Language { id } | Incoming::Unavailable {id,..} | Incoming::IntSettings {id,..} if *id == r.id)
                     || matches!(r0, Incoming::AmmoService(previous) if previous.id==r.id)
                     || matches!(r0, Incoming::CrewService(previous) if previous.id==r.id)
                     || matches!(r0, Incoming::CrewTransfer(previous) if previous.id==r.id)
@@ -277,7 +289,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                         Incoming::ResearchService(r) => r.id == id,
                         Incoming::Chat(_) => false,
                         Incoming::ServerStats => id == 202,
-                        Incoming::Unavailable {id:previous,..} => *previous==id,
+                        Incoming::Unavailable {id:previous,..}|Incoming::IntSettings {id:previous,..} => *previous==id,
                     }) {
                     return Err(invalid("unmeasured language request"));
                 }
@@ -313,13 +325,16 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                         Incoming::CrewDismiss(r)=>r.id==id,
                         Incoming::CrewBarracks(r)=>r.id==id,
                         Incoming::ResearchService(r)=>r.id==id,
-                        Incoming::Language{id:previous}|Incoming::Unavailable{id:previous,..}=>*previous==id,
+                        Incoming::Language{id:previous}|Incoming::Unavailable{id:previous,..}|Incoming::IntSettings{id:previous,..}=>*previous==id,
                         Incoming::ServerStats=>id==202,Incoming::Chat(_)=>false,
                     }) {return Err(invalid("unmeasured unavailable integer-array command"));}
                 Incoming::Unavailable {id,command,method:CommandMethod::IntArray,argument_count:count as usize}
             },
             0x90 if interactive && length==24 && UNAVAILABLE_INT4.contains(&command_of(packet)) => {
                 unavailable(&rows,packet,CommandMethod::Int4)?
+            },
+            0x97 if interactive && length>=8 && [crate::int_settings091::ADD,crate::int_settings091::DELETE].contains(&command_of(packet)) => {
+                int_settings(&rows,packet)?
             },
             0x97 if interactive && length>=8 && UNAVAILABLE_INT_ARRAY.contains(&command_of(packet)) => {
                 unavailable(&rows,packet,CommandMethod::IntArray)?
@@ -869,6 +884,12 @@ pub fn response(request: &Request, fixtures: &Fixtures) -> io::Result<Vec<Vec<u8
 /// Explicit Account-only outgoing service projection. Its caller binds the
 /// approved source and projected digest; this encoder still rejects objects,
 /// malformed roots, unbounded data and every non-Account command.
+pub(crate) fn response_with_settings(request:&Request,fixtures:&Fixtures,map:&crate::int_settings091::Map)->io::Result<Vec<Vec<u8>>> {
+    if request.id<=0 || request.command!=100 {return Err(invalid("Account request"));}
+    let state=crate::int_settings091::state_with(&fixtures.state,map)?;
+    if fixtures.research {validate_research_state(&state)?;} else {validate_pickle(&state,Kind::Dict)?;}
+    response_raw_with_budget(request,&state,if fixtures.research {crate::research_service091::MAX_SHOP_BYTES}else {MAX_FIXTURE})
+}
 pub(crate) fn response_state(request: &Request, state: &[u8]) -> io::Result<Vec<Vec<u8>>> {
     if request.id <= 0 || request.command != 100 {return Err(invalid("Account policy request"));}
     validate_pickle(state, Kind::Dict)?;

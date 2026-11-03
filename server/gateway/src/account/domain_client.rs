@@ -19,7 +19,7 @@ pub(crate) fn operation(path:&str)->Option<&'static str>{
         "/internal/native/crew-recruit-barracks"=>"recruit-barracks","/internal/native/crew-dismiss"=>"dismiss",
         "/internal/native/crew-learn"=>"learn","/internal/native/research"=>"research","/internal/native/battle"=>"battle",
         "/internal/native/battle-results"=>"results","/internal/native/late-result-append"=>"late-append",
-        "/internal/native/late-result-pending"=>"late-pending",_=>return None,
+        "/internal/native/late-result-pending"=>"late-pending","/internal/native/int-settings"=>"int-settings",_=>return None,
     })
 }
 

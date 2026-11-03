@@ -29,7 +29,7 @@ fn world(now:Instant,kind:VehicleKind)->model::World {
         assert_eq!(&binding[binding.len()-4..],&13.7f32.to_le_bytes());
     }
     let mut mixed=w.clone();mixed.actors[1]=world(now,VehicleKind::Ms1).actors[1].clone();
-    let roster=wire::roster(&mixed).unwrap();
+    let roster=wire::roster(&mixed,0).unwrap();
     assert!(roster.windows(VehicleKind::Is7.descriptor().len()).any(|v|v==VehicleKind::Is7.descriptor()));
     assert!(roster.windows(VehicleKind::Ms1.descriptor().len()).any(|v|v==VehicleKind::Ms1.descriptor()));
     let create=wire::create_vehicle(&mixed,1).unwrap();

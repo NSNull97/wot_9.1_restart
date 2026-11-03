@@ -32,7 +32,12 @@ MODULES += ('p09e_research_policy',)
 MODULES += ('project_network',)
 MODULES += ('project_sixth_sense_sound',)
 MODULES += ('project_player_kill_marker',)
+MODULES += ('project_loading_icons',)
 MODULES += ('project_pose_trace',)
+MODULES += ('project_hit_indicator',)
+MODULES += ('project_battle_feed',)
+MODULES += ('project_battle_history',)
+MODULES += ('project_battle_settings',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
 
 
@@ -119,6 +124,76 @@ def network_options(args, profile13, mixed_ammo):
     spec.loader.exec_module(policy)
     return policy.prepare_options(args.endpoint, getattr(args, 'network_policy', None),
                                   args.registration_url, profile13, mixed_ammo)
+
+
+def hit_indicator_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_hit_indicator.py'
+    spec = importlib.util.spec_from_file_location('_project_hit_indicator_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
+
+
+def battle_feed_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_feed.py'
+    spec = importlib.util.spec_from_file_location('_project_battle_feed_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
+
+
+def vehicle_markers(args, profile13_battle, original, evidence):
+    """UI-06c owner order 2026-11-02: the project look of the vehicle markers
+    replaces the native one in our client build, so it is on by default;
+    --native-vehicle-markers keeps the #717 movie for rollback and checks.
+    UI-06b --team-killer-marker paints the native bar of a team killer blue;
+    the project bar is blue for a team killer on its own.
+    The contour icons of the vehicles are restyled with them (round 11).
+    Class icons (owner 2026-11-03: the Lesta ones) come from
+    --vehicle-marker-art, by default local/ui-borrowed/vehicle-markers of this
+    checkout; no folder or no file: the native icon."""
+    native = getattr(args, 'native_vehicle_markers', False)
+    team_killer = getattr(args, 'team_killer_marker', False)
+    art = getattr(args, 'vehicle_marker_art', None)
+    if team_killer and not profile13_battle:
+        raise ValueError('--team-killer-marker requires --enable-profile13-battle')
+    if native and art is not None:
+        raise ValueError('--vehicle-marker-art belongs to the project markers, not --native-vehicle-markers')
+    if native and not team_killer:
+        return {}
+    if art is None:
+        art = Path(__file__).resolve().parents[1] / 'local/ui-borrowed/vehicle-markers'
+    import battle_ui_marker_flash
+    movie, evidence['project_vehicle_markers_movie'] = battle_ui_marker_flash.payload(
+        original, look=not native, team_killer=team_killer, art=art)
+    payloads = {battle_ui_marker_flash.TARGET: movie}
+    if not native:
+        # Owner round 11: the contour icons (markers and ears) in the flat project
+        # style by class; the project markers colour them by bar / class colour.
+        import battle_ui_contour_icons
+        icons, evidence['project_contour_icons'] = battle_ui_contour_icons.payloads(original)
+        payloads.update(icons)
+        # Round 13: the ears' row schemes (text colour, neutral icon transform).
+        import battle_ui_gui_colors
+        colours, evidence['project_gui_colors'] = battle_ui_gui_colors.payload(original)
+        payloads.update(colours)
+    return payloads
+
+
+def battle_settings_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_settings.py'
+    spec = importlib.util.spec_from_file_location('_project_battle_settings_prepare', path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def battle_history_policy():
+    path = Path(__file__).resolve().parents[1] / 'client_patch/project_battle_history.py'
+    spec = importlib.util.spec_from_file_location('_project_battle_history_prepare', path)
+    policy = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(policy)
+    return policy
 
 
 def sixth_sense_policy():
@@ -364,6 +439,72 @@ def prepare(args):
         if not profile13_battle:
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
+    payloads.update(vehicle_markers(args, profile13_battle, original, resource_evidence))
+    if not getattr(args, 'native_vehicle_markers', False):
+        # Owner round 15: the battle loading lists take the project icon sets too.
+        settings['loading_team_icons'] = True
+    # UI-02b owner order 2026-11-02: the hit indicator replaces the native one
+    # in the project's battle client by default; the flag is for a check or a
+    # rollback, `off` leaves the native indicator untouched.
+    hit_view = getattr(args, 'hit_indicator', None)
+    if hit_view is None and profile13_battle:
+        hit_view = 'extended'
+    if hit_view == 'off':
+        hit_view = None
+    if hit_view is not None:
+        # UI-02 owner order 2026-11-01: needs the gateway key `battle_events`;
+        # without it the client keeps the native arc.
+        if not profile13_battle:
+            raise ValueError('--hit-indicator requires --enable-profile13-battle')
+        import battle_ui_hit_flash
+        # Owner round 3: Lesta icons from local/ui-borrowed when that folder is
+        # there (tools/battle_ui_hit_icons.py); without it the project's own art.
+        icons = getattr(args, 'hit_indicator_icons', None)
+        if icons is None:
+            icons = paths['local_artifacts_root'] / 'ui-borrowed/hit-indicator'
+        elif str(icons) == 'none':
+            icons = None
+        movie, resource_evidence['project_hit_indicator_movie'] = battle_ui_hit_flash.payload(original, icons)
+        payloads[battle_ui_hit_flash.TARGET] = movie
+        settings['hit_indicator'] = hit_indicator_policy().prepare_settings(hit_view)
+    # UI-03b owner order 2026-11-02: the feed, the history and the sums are a part
+    # of the native battle interface, on by default wherever the battle events
+    # channel is; --no-battle-feed / --no-battle-history only roll them back.
+    feed_view = getattr(args, 'battle_feed', None) or (None if hit_view is None or getattr(args, 'no_battle_feed', False)
+                                                       else 'labels')
+    history_view = getattr(args, 'battle_history', None) or (
+        None if hit_view is None or getattr(args, 'no_battle_history', False) else 'bottom')
+    if getattr(args, 'battle_icons', None) is not None and feed_view is None and history_view is None:
+        raise ValueError('--battle-icons needs the feed or the history')
+    for name, view, off in (('feed', feed_view, 'no_battle_feed'), ('history', history_view, 'no_battle_history')):
+        if view is not None and getattr(args, off, False):
+            raise ValueError('--battle-%s and --no-battle-%s contradict each other' % (name, name))
+        if view is not None and hit_view is None:
+            # Needs gateway `battle_events.feed` / `.history` and the hit indicator's channel.
+            raise ValueError('--battle-%s requires --hit-indicator: it uses the same channel' % name)
+    if feed_view is not None:
+        settings['battle_feed'] = battle_feed_policy().prepare_settings(feed_view)
+    if history_view is not None:
+        settings['battle_history'] = battle_history_policy().prepare_settings(history_view)
+    if feed_view is not None or history_view is not None:
+        # One res_mods copy of the native battle movie, pinned to the #717 bytes:
+        # a source that differs refuses the whole prepare.
+        import battle_ui_native_flash
+        # Round 13: the owner's palette (ears icon sets, panel backgrounds, spotting
+        # messages) goes with the project markers.
+        movie, resource_evidence['project_battle_native_movie'] = battle_ui_native_flash.payload(
+            original, feed_view is not None, history_view is not None, getattr(args, 'battle_icons', None),
+            palette=not getattr(args, 'native_vehicle_markers', False))
+        payloads[battle_ui_native_flash.TARGET] = movie
+    if getattr(args, 'battle_settings', False):
+        # UI-05 owner order 2026-11-01: the tab of the native settings windows.
+        # The two movies below are the only thing this flag changes in the window.
+        if hit_view is None or feed_view is None or history_view is None:
+            raise ValueError('--battle-settings requires --hit-indicator with the feed and the history')
+        settings['battle_settings'] = battle_settings_policy().prepare_settings()
+        import battle_ui_settings_flash
+        movies, resource_evidence['project_battle_settings_movies'] = battle_ui_settings_flash.payloads(original)
+        payloads.update(movies)
     if getattr(args, 'trace_pose_10hz', False):
         # NET-01 diagnostic: read-only 10 Hz positions/time of native vehicles.
         if not profile13_battle:
@@ -585,6 +726,44 @@ def main():
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
+    prep.add_argument('--native-vehicle-markers', action='store_true',
+                      help='Rollback and checks: keep the #717 vehicle markers. Without it the project look of '
+                           'UI-06c replaces them (white damage number with a coloured halo, thin health bar with '
+                           'the HP under it)')
+    prep.add_argument('--vehicle-marker-art', type=Path,
+                      help='UI-06c folder of class icons from tools/battle_ui_marker_art.py (borrowed, never in Git); '
+                           'default local/ui-borrowed/vehicle-markers of this checkout; a missing folder or file '
+                           'keeps the native icon')
+    prep.add_argument('--team-killer-marker', action='store_true',
+                      help='Project policy, not original 0.9.1: UI-06b the native health bar of a team killer '
+                           'marker blue like its icon and name (team killers come from gateway key team_score); '
+                           'requires profile13 battle. The UI-06c bar is blue for a team killer without it')
+    prep.add_argument('--hit-indicator', choices=('standard', 'extended', 'off'),
+                      help='Project policy, not original 0.9.1: the hit indicator replaces the native one in a '
+                           'profile13 battle client by default as `extended` (facts from the gateway key '
+                           'battle_events); `standard` keeps only the native arc, `off` the native indicator')
+    prep.add_argument('--hit-indicator-icons',
+                      help='UI-02b: folder of the Lesta icons of the hit indicator (tools/battle_ui_hit_icons.py); '
+                           'default local/ui-borrowed/hit-indicator when present, `none` for the own art only')
+    prep.add_argument('--battle-feed', choices=('labels', 'icons'),
+                      help='Project policy, not original 0.9.1: UI-03 event feed inside the native battle movie, the '
+                           'last three battle events with or without their names (gateway key battle_events.feed); '
+                           'on with --hit-indicator, default labels')
+    prep.add_argument('--battle-history', choices=('bottom', 'top'),
+                      help='Project policy, not original 0.9.1: UI-04 battle history and sums inside the native battle '
+                           'movie, received damage below or at the top of the screen (gateway key '
+                           'battle_events.history); on with --hit-indicator, default bottom')
+    prep.add_argument('--battle-icons', type=Path,
+                      help='Project policy, not original 0.9.1: UI-03b local folder of feed and history icons from '
+                           'tools/battle_ui_art.py (owner order: the Lesta icons); without it the drawn icons')
+    prep.add_argument('--no-battle-feed', action='store_true',
+                      help='Roll back or check without the UI-03 feed: the native battle movie gets no feed')
+    prep.add_argument('--no-battle-history', action='store_true',
+                      help='Roll back or check without the UI-04 history and sums')
+    prep.add_argument('--battle-settings', action='store_true',
+                      help='Project policy, not original 0.9.1: UI-05 tab of the native settings windows for the '
+                           'three widgets, stored in the local profile; requires --hit-indicator with the feed and the '
+                           'history; off by default, without it both windows stay byte for byte native')
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')

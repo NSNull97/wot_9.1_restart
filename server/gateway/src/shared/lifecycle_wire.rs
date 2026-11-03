@@ -25,7 +25,7 @@ fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidDat
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Period {Waiting=1,Prebattle=2,Battle=3,Afterbattle=4}
 
-fn update(kind:u8,literal:Vec<u8>)->io::Result<Vec<u8>> {
+pub(super) fn update(kind:u8,literal:Vec<u8>)->io::Result<Vec<u8>> {
     if literal.is_empty()||literal.len()>252{return Err(bad("lifecycle arena update size"));}
     let mut out=vec![0x13,0x58,(literal.len()+2) as u8,kind,literal.len() as u8];
     out.extend(literal);Ok(out)
@@ -71,6 +71,20 @@ pub fn base_captured(team:u8,base_id:u8)->io::Result<Vec<u8>> {
     let mut out=vec![0x80,2];integer(&mut out,team as i64);integer(&mut out,base_id as i64);
     out.extend([0x86,b'.']);update(9,out)
 }
+/// Original update 5: `(vehicleID, frags)`. Negative frags are a project rule
+/// (docs/plans/UI06_EARS_TEAMKILL.md); the client prints them as they come.
+pub fn vehicle_statistics(vehicle_id:u32,frags:i16)->io::Result<Vec<u8>> {
+    if vehicle_id==0||vehicle_id>i32::MAX as u32||usize::from(frags.unsigned_abs())>=MAX_PARTICIPANTS{
+        return Err(bad("lifecycle vehicle statistics bound"));
+    }
+    let mut out=vec![0x80,2];integer(&mut out,vehicle_id as i64);integer(&mut out,i64::from(frags));
+    out.extend([0x86,b'.']);update(5,out)
+}
+/// Original update 10: a bare vehicle ID. The client has no way back from it.
+pub fn team_killer(vehicle_id:u32)->io::Result<Vec<u8>> {
+    if vehicle_id==0||vehicle_id>i32::MAX as u32{return Err(bad("lifecycle team killer bound"));}
+    let mut out=vec![0x80,2];integer(&mut out,vehicle_id as i64);out.push(b'.');update(10,out)
+}
 pub fn vehicle_killed(victim_id:u32,killer_id:u32,reason:u8)->io::Result<Vec<u8>> {
     if victim_id==0||victim_id>i32::MAX as u32||killer_id>i32::MAX as u32||reason>10 {
         return Err(bad("lifecycle killed vehicle bound"));
@@ -94,6 +108,56 @@ pub struct Results {
     pub arena_id:u64,pub arena_type_id:i32,pub created_unix:u32,pub winner_team:u8,
     pub finish_reason:u8,pub duration_seconds:u32,pub participants:Vec<Participant>,
     pub interaction_details:Option<Details>,
+    /// UI-04, Results9. Absent in every journal stored before it: the native
+    /// fields then stay zero, an honest "not counted", not a recomputed value.
+    pub ledger:Option<Ledger>,
+    /// UI-06, Results10. Absent in every journal stored before it: tkills,
+    /// tdamageDealt, directTeamHits and isTeamKiller then stay zero.
+    pub team_score:Option<TeamScore>,
+}
+/// PROJECT POLICY, not WG arithmetic: docs/plans/UI03_BATTLE_FEEDS.md.
+pub const LEDGER_POLICY:&str="project.ui04.battle-ledger.v1";
+#[derive(Clone,Debug,Default,PartialEq,Eq)]
+pub struct LedgerRow {pub vehicle_id:u32,pub blocked:u32,pub potential_received:u32,pub assist_spot:u32,pub assist_track:u32,pub burned:u32}
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct Ledger {pub version:u8,pub policy:String,pub rows:Vec<LedgerRow>}
+impl Ledger {
+    fn row(&self,vehicle_id:u32)->Option<&LedgerRow>{self.rows.iter().find(|row|row.vehicle_id==vehicle_id)}
+    /// One row per participant in roster order; assist equals the per-target
+    /// numbers of the details the native efficiency tab reads.
+    fn validate(&self,participants:&[Participant],details:&Details)->io::Result<()>{
+        if self.version!=1||self.policy!=LEDGER_POLICY||self.rows.len()!=participants.len(){return Err(bad("result ledger header"));}
+        for(row,p)in self.rows.iter().zip(participants){
+            let details_row=details.row(p.vehicle_id).ok_or_else(||bad("result ledger details row"))?;
+            let sum=|take:fn(&Target)->u16|details_row.targets.iter().map(|t|u32::from(take(t))).sum::<u32>();
+            if row.vehicle_id!=p.vehicle_id||row.blocked>row.potential_received||row.potential_received>i32::MAX as u32
+                ||row.burned>p.damage_dealt||row.assist_spot!=sum(|t|t.damage_assisted_radio)
+                ||row.assist_track!=sum(|t|t.damage_assisted_track){return Err(bad("result ledger row"));}
+        }
+        Ok(())
+    }
+}
+/// PROJECT POLICY, not WG arithmetic: docs/plans/UI06_EARS_TEAMKILL.md.
+pub const TEAM_SCORE_POLICY:&str="project.ui06.team-score.v1";
+#[derive(Clone,Debug,Default,PartialEq,Eq)]
+pub struct TeamScoreRow {pub vehicle_id:u32,pub frags:i16,pub team_kills:u8,pub team_damage:u32,pub team_hits:u16,pub team_killer:bool}
+#[derive(Clone,Debug,PartialEq,Eq)]
+pub struct TeamScore {pub version:u8,pub policy:String,pub rows:Vec<TeamScoreRow>}
+impl TeamScore {
+    fn row(&self,vehicle_id:u32)->Option<&TeamScoreRow>{self.rows.iter().find(|row|row.vehicle_id==vehicle_id)}
+    /// One row per participant in roster order. Kills are the same deaths the
+    /// participant rows name, so the ears and the native table cannot differ.
+    fn validate(&self,participants:&[Participant])->io::Result<()>{
+        if self.version!=1||self.policy!=TEAM_SCORE_POLICY||self.rows.len()!=participants.len(){return Err(bad("team score header"));}
+        for(row,p)in self.rows.iter().zip(participants){
+            let victims=|same_team:bool|participants.iter().filter(|q|q.killer_id==p.vehicle_id&&q.vehicle_id!=p.vehicle_id&&(q.team==p.team)==same_team).count();
+            let(allies,enemies)=(victims(true),victims(false));
+            if row.vehicle_id!=p.vehicle_id||usize::from(row.team_kills)!=allies||i64::from(row.frags)!=enemies as i64-allies as i64
+                ||row.team_kills>p.kills||row.team_damage>p.damage_dealt||row.team_hits>p.direct_hits
+                ||(allies>0&&!row.team_killer){return Err(bad("team score row"));}
+        }
+        Ok(())
+    }
 }
 // Keep the existing dependency set: serde's derive feature is not enabled.
 macro_rules! next_dto_field {
@@ -173,25 +237,31 @@ dto_serde!(Target,fields,{
 dto_serde!(Row,fields,{attacker_vehicle_id:u32,targets:Vec<Target> => fields.next_value::<Bounded<Target,MAX_PARTICIPANTS>>()?.0,});
 dto_serde!(Details,fields,{version:u8,policy:String,spotting_policy:Option<String>,
     rows:Vec<Row> => fields.next_value::<Bounded<Row,MAX_PARTICIPANTS>>()?.0,});
+dto_serde!(LedgerRow,fields,{vehicle_id:u32,blocked:u32,potential_received:u32,assist_spot:u32,assist_track:u32,burned:u32,});
+dto_serde!(Ledger,fields,{version:u8,policy:String,rows:Vec<LedgerRow> => fields.next_value::<Bounded<LedgerRow,MAX_PARTICIPANTS>>()?.0,});
+dto_serde!(TeamScoreRow,fields,{vehicle_id:u32,frags:i16,team_kills:u8,team_damage:u32,team_hits:u16,team_killer:bool,});
+dto_serde!(TeamScore,fields,{version:u8,policy:String,rows:Vec<TeamScoreRow> => fields.next_value::<Bounded<TeamScoreRow,MAX_PARTICIPANTS>>()?.0,});
 impl Serialize for Results{
     fn serialize<S:serde::Serializer>(&self,serializer:S)->Result<S::Ok,S::Error>{
         use serde::ser::SerializeStruct;
-        let mut state=serializer.serialize_struct("Results",7+usize::from(self.interaction_details.is_some()))?;
+        let mut state=serializer.serialize_struct("Results",7+usize::from(self.interaction_details.is_some())+usize::from(self.ledger.is_some())+usize::from(self.team_score.is_some()))?;
         state.serialize_field("arena_id",&self.arena_id)?;state.serialize_field("arena_type_id",&self.arena_type_id)?;
         state.serialize_field("created_unix",&self.created_unix)?;state.serialize_field("winner_team",&self.winner_team)?;
         state.serialize_field("finish_reason",&self.finish_reason)?;state.serialize_field("duration_seconds",&self.duration_seconds)?;
         state.serialize_field("participants",&self.participants)?;
-        if let Some(details)=&self.interaction_details{state.serialize_field("interaction_details",details)?;}state.end()
+        if let Some(details)=&self.interaction_details{state.serialize_field("interaction_details",details)?;}
+        if let Some(ledger)=&self.ledger{state.serialize_field("ledger",ledger)?;}
+        if let Some(score)=&self.team_score{state.serialize_field("team_score",score)?;}state.end()
     }
 }
 impl<'de> Deserialize<'de> for Results{
     fn deserialize<D:serde::Deserializer<'de>>(d:D)->Result<Self,D::Error>{
         struct V;impl<'de> serde::de::Visitor<'de> for V{
             type Value=Results;
-            fn expecting(&self,f:&mut std::fmt::Formatter)->std::fmt::Result{f.write_str("closed Results7 or Results8")}
+            fn expecting(&self,f:&mut std::fmt::Formatter)->std::fmt::Result{f.write_str("closed Results7, Results8, Results9 or Results10")}
             fn visit_map<M:serde::de::MapAccess<'de>>(self,mut map:M)->Result<Results,M::Error>{
                 let(mut arena_id,mut arena_type_id,mut created_unix,mut winner_team,mut finish_reason,
-                    mut duration_seconds,mut participants,mut interaction_details)=(None,None,None,None,None,None,None,None);
+                    mut duration_seconds,mut participants,mut interaction_details,mut ledger,mut team_score)=(None,None,None,None,None,None,None,None,None,None);
                 macro_rules! take{($name:ident,$ty:ty)=>{{if $name.is_some(){return Err(serde::de::Error::duplicate_field(stringify!($name)));}
                     $name=Some(map.next_value::<$ty>()?);}};}
                 while let Some(key)=map.next_key::<String>()?{match key.as_str(){
@@ -200,12 +270,14 @@ impl<'de> Deserialize<'de> for Results{
                     "finish_reason"=>take!(finish_reason,u8),"duration_seconds"=>take!(duration_seconds,u32),
                     "participants"=>{take!(participants,BoundedParticipants);},
                     "interaction_details"=>take!(interaction_details,Details),
+                    "ledger"=>take!(ledger,Ledger),
+                    "team_score"=>take!(team_score,TeamScore),
                     _=>return Err(serde::de::Error::custom("unknown result field")),
                 }}
                 macro_rules! required{($name:ident)=>{$name.ok_or_else(||serde::de::Error::missing_field(stringify!($name)))?};}
                 Ok(Results{arena_id:required!(arena_id),arena_type_id:required!(arena_type_id),created_unix:required!(created_unix),
                     winner_team:required!(winner_team),finish_reason:required!(finish_reason),duration_seconds:required!(duration_seconds),
-                    participants:required!(participants).0,interaction_details})
+                    participants:required!(participants).0,interaction_details,ledger,team_score})
             }
         }d.deserialize_map(V)
     }
@@ -257,7 +329,13 @@ impl Results {
         if ![1,2].into_iter().all(|team|self.participants.iter().any(|p|p.team==team)) {
             return Err(bad("lifecycle result requires both teams"));
         }
-        if let Some(details)=&self.interaction_details{details.validate(&summaries(&self.participants))?;}
+        match (&self.interaction_details,&self.ledger){
+            (Some(details),None)=>details.validate(&summaries(&self.participants))?,
+            (Some(details),Some(ledger))=>{details.validate_assisted(&summaries(&self.participants))?;ledger.validate(&self.participants,details)?;},
+            (None,None)=>{},
+            (None,Some(_))=>return Err(bad("result ledger without details")),
+        }
+        if let Some(score)=&self.team_score{score.validate(&self.participants)?;}
         Ok(())
     }
 }
@@ -287,6 +365,17 @@ fn field(out:&mut Vec<u8>,name:&str,p:&Participant,result:&Results)->io::Result<
         if name=="details"{bytes(out,&details.packed(p.vehicle_id)?);return Ok(());}
         if ["spotted","damaged","explosionHits"].contains(&name){integer(out,i64::from(details.outgoing(p.vehicle_id,name)));return Ok(());}
         if ["directHitsReceived","explosionHitsReceived","piercingsReceived"].contains(&name){integer(out,i64::from(details.incoming(p.vehicle_id,name)));return Ok(());}
+    }
+    if let Some(row)=result.ledger.as_ref().and_then(|ledger|ledger.row(p.vehicle_id)){
+        let counted=match name{"damageBlockedByArmor"=>Some(row.blocked),"potentialDamageReceived"=>Some(row.potential_received),
+            "damageAssistedRadio"=>Some(row.assist_spot),"damageAssistedTrack"=>Some(row.assist_track),_=>None};
+        if let Some(value)=counted{integer(out,i64::from(value));return Ok(());}
+    }
+    if let Some(row)=result.team_score.as_ref().and_then(|score|score.row(p.vehicle_id)){
+        if name=="isTeamKiller"{boolean(out,row.team_killer);return Ok(());}
+        let counted=match name{"tkills"=>Some(u32::from(row.team_kills)),"tdamageDealt"=>Some(row.team_damage),
+            "directTeamHits"=>Some(u32::from(row.team_hits)),_=>None};
+        if let Some(value)=counted{integer(out,i64::from(value));return Ok(());}
     }
     // Zero economy, empty medals/quests and unavailable ancillary statistics are
     // explicit P08C test policy, not historical rewards or imported server code.
@@ -367,7 +456,7 @@ pub fn account_result_stream(request_id:i16,first:Vec<u8>,result:&Results,own_ac
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[derive(Debug,PartialEq)]
+    #[derive(Clone,Debug,PartialEq)]
     pub(super) enum Data {Int(i64),Bool(bool),Bytes(Vec<u8>),List(Vec<Data>),Tuple(Vec<Data>),Dict(Vec<(Data,Data)>),Mark}
     // Independent, deliberately tiny reader of this test's inert output. No
     // object constructors/imports, memo, incoming client data or production use.
@@ -407,7 +496,7 @@ mod tests {
     }
     pub(super) fn result()->Results {
         Results {arena_id:0x1_0000_0001,arena_type_id:4,created_unix:1792080000,winner_team:1,
-            finish_reason:1,duration_seconds:75,interaction_details:None,participants:vec![
+            finish_reason:1,duration_seconds:75,interaction_details:None,ledger:None,team_score:None,participants:vec![
                 Participant {vehicle_id:0x09100003,account_dbid:1,name:"owner_1".into(),team:1,type_compact_descr:17,
                     health:90,shots:3,direct_hits:3,piercings:3,damage_dealt:90,kills:1,life_time:75,death_reason:-1,..Default::default()},
                 Participant {vehicle_id:0x09100005,account_dbid:2,name:"Танкист_Ёж".into(),team:2,type_compact_descr:17,
@@ -441,6 +530,23 @@ mod tests {
         let rows=too_many["participants"].as_array_mut().unwrap();
         while rows.len()<=MAX_PARTICIPANTS {rows.push(rows[0].clone());}
         assert!(serde_json::from_value::<Results>(too_many).is_err());
+    }
+    #[test] fn team_score_fills_the_native_public_fields_of_every_row() {
+        let mut r=result();
+        r.participants[1].team=1;
+        r.participants.push(Participant{vehicle_id:0x09100007,account_dbid:3,name:"third".into(),team:2,type_compact_descr:17,
+            health:100,life_time:75,death_reason:-1,..Default::default()});
+        let index=|name|PUBLIC_FIELDS.iter().position(|f|*f==name).unwrap();
+        let fields=["tkills","tdamageDealt","directTeamHits","isTeamKiller","kills"].map(index);
+        let vehicle=|r:&Results|{let root=inert(&compact_results(r,1).unwrap());let Data::Bytes(shared)=&tuple(&root)[2]else{panic!("shared")};
+            let shared=inert(shared);let Data::Dict(rows)=&tuple(&shared)[2]else{panic!("vehicles")};
+            let row=list(&rows[0].1).to_vec();fields.map(|at|row[at].clone())};
+        assert_eq!(vehicle(&r),[Data::Int(0),Data::Int(0),Data::Int(0),Data::Bool(false),Data::Int(1)],"no block: the old zero fields");
+        r.team_score=Some(TeamScore{version:1,policy:TEAM_SCORE_POLICY.into(),rows:vec![
+            TeamScoreRow{vehicle_id:0x09100003,frags:-1,team_kills:1,team_damage:90,team_hits:3,team_killer:true},
+            TeamScoreRow{vehicle_id:0x09100005,..Default::default()},TeamScoreRow{vehicle_id:0x09100007,..Default::default()}]});
+        r.validate().unwrap();
+        assert_eq!(vehicle(&r),[Data::Int(1),Data::Int(90),Data::Int(3),Data::Bool(true),Data::Int(1)]);
     }
     #[test] fn original_stream_100_and_account_request_scopes_are_distinct() {
         let r=result();let avatar=avatar_result_stream(&r,1).unwrap();

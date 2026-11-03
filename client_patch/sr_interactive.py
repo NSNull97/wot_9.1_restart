@@ -84,8 +84,18 @@ import project_sixth_sense_sound
 project_sixth_sense_sound.validate_settings(_settings)
 import project_player_kill_marker
 project_player_kill_marker.validate_settings(_settings)
+import project_loading_icons
+project_loading_icons.validate_settings(_settings)
 import project_pose_trace
 project_pose_trace.validate_settings(_settings)
+import project_hit_indicator
+project_hit_indicator.validate_settings(_settings)
+import project_battle_feed
+project_battle_feed.validate_settings(_settings, project_hit_indicator.SETTING)
+import project_battle_history
+project_battle_history.validate_settings(_settings, project_hit_indicator.SETTING)
+import project_battle_settings
+project_battle_settings.validate_settings(_settings)
 _runtime = owned(_settings['trace_dir'], _settings['local_root'])
 if not os.path.isdir(_runtime):
     raise ValueError('prepared local runtime directory missing')
@@ -1068,9 +1078,28 @@ def init(*args):
         if _settings.get(project_player_kill_marker.SETTING) is True:
             # Project policy, not original #717 behaviour: see the module docstring.
             project_player_kill_marker.install(record)
+        if _settings.get(project_loading_icons.SETTING) is True:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_loading_icons.install(record)
         if _settings.get(project_pose_trace.SETTING) is True:
             # NET-01 diagnostic, read-only: see the module docstring.
             project_pose_trace.install(record)
+        if _settings.get(project_hit_indicator.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_hit_indicator.install(record, _settings[project_hit_indicator.SETTING])
+        if _settings.get(project_battle_feed.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_battle_feed.install(record, _settings[project_battle_feed.SETTING], project_hit_indicator.policy())
+        if _settings.get(project_battle_history.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_battle_history.install(record, _settings[project_battle_history.SETTING], project_hit_indicator.policy())
+        if _settings.get(project_battle_settings.SETTING) is not None:
+            # Project policy, not original #717 behaviour: see the module docstring.
+            project_battle_settings.install(
+                record, {project_hit_indicator.SETTING: project_hit_indicator.policy().apply_options,
+                         project_battle_feed.SETTING: project_battle_feed.policy().apply_options,
+                         project_battle_history.SETTING: project_battle_history.policy().apply_options},
+                dict((name, _settings[name]) for name in project_battle_settings.WIDGETS))
         from ConnectionManager import connectionManager
         connectionManager.connectionStatusCallbacks += connection_status
         _ready = True
@@ -2318,8 +2347,18 @@ def fini():
             sys.modules['project_sixth_sense_sound'].restore(record)
         if 'project_player_kill_marker' in sys.modules:
             sys.modules['project_player_kill_marker'].restore(record)
+        if 'project_loading_icons' in sys.modules:
+            sys.modules['project_loading_icons'].restore(record)
         if 'project_pose_trace' in sys.modules:
             sys.modules['project_pose_trace'].restore(record)
+        if 'project_battle_settings' in sys.modules:
+            sys.modules['project_battle_settings'].restore(record)
+        if 'project_battle_history' in sys.modules:
+            sys.modules['project_battle_history'].restore(record)
+        if 'project_battle_feed' in sys.modules:
+            sys.modules['project_battle_feed'].restore(record)
+        if 'project_hit_indicator' in sys.modules:
+            sys.modules['project_hit_indicator'].restore(record)
         if 'Account' in sys.modules:
             sys.modules['Account']._delAccountRepository()
             record('account_repository_closed')

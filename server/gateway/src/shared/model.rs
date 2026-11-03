@@ -280,6 +280,9 @@ pub struct World {
     owner_hold:bool,
     /// SPAWN-15: place teams on `team_spawn` formations instead of LAB lanes.
     team_base_spawn:bool,
+    /// UI-04: gateway.json `results_ledger` (absent: results stay Results8).
+    result_ledger:bool,
+    team_score:bool,
     lab_loadouts:[Option<extended::LabLoadout>;MAX_ACTORS],
     pub damage_events:super::journal::Journal<DamageRecord>,
     pub device_events:super::journal::Journal<(usize,crate::p06t_device_state::Transition)>,
@@ -305,8 +308,8 @@ pub struct World {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): World
 impl crate::bw_wire::Wire for World {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{id,vehicle_kind,expected_actors,team_plan,mixed_profiles,map,actors,started,last,tick,shots,projectiles,impact,lifecycle,lifecycle_created_unix,result_spots,result_spot_tick,original_spotting,mixed_ammo,ammo_detonation,turret_flights,turret_visual_ms,turret_jolt,extended_lab,owner_hold,team_base_spawn,lab_loadouts,damage_events,device_events,rng_state,rng_draws,geometry,geometries,generated_geometries,contacts,ap_test_lab,impacts,terrain,terrain_contacts,ram_damage_events,active_ram_pairs,destructible,fragiles,contact_sources,contact_sequences,bots}=self;W::put(id,bw_o);W::put(vehicle_kind,bw_o);W::put(expected_actors,bw_o);W::put(team_plan,bw_o);W::put(mixed_profiles,bw_o);W::put(map,bw_o);W::put(actors,bw_o);W::put(started,bw_o);W::put(last,bw_o);W::put(tick,bw_o);W::put(shots,bw_o);W::put(projectiles,bw_o);W::put(impact,bw_o);W::put(lifecycle,bw_o);W::put(lifecycle_created_unix,bw_o);W::put(result_spots,bw_o);W::put(result_spot_tick,bw_o);W::put(original_spotting,bw_o);W::put(mixed_ammo,bw_o);W::put(ammo_detonation,bw_o);W::put(turret_flights,bw_o);W::put(turret_visual_ms,bw_o);W::put(turret_jolt,bw_o);W::put(extended_lab,bw_o);W::put(owner_hold,bw_o);W::put(team_base_spawn,bw_o);W::put(lab_loadouts,bw_o);W::put(damage_events,bw_o);W::put(device_events,bw_o);W::put(rng_state,bw_o);W::put(rng_draws,bw_o);W::put(geometry,bw_o);W::put(geometries,bw_o);W::put(generated_geometries,bw_o);W::put(contacts,bw_o);W::put(ap_test_lab,bw_o);W::put(impacts,bw_o);W::put(terrain,bw_o);W::put(terrain_contacts,bw_o);W::put(ram_damage_events,bw_o);W::put(active_ram_pairs,bw_o);W::put(destructible,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_sequences,bw_o);W::put(bots,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{id:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,expected_actors:W::get(bw_i)?,team_plan:W::get(bw_i)?,mixed_profiles:W::get(bw_i)?,map:W::get(bw_i)?,actors:W::get(bw_i)?,started:W::get(bw_i)?,last:W::get(bw_i)?,tick:W::get(bw_i)?,shots:W::get(bw_i)?,projectiles:W::get(bw_i)?,impact:W::get(bw_i)?,lifecycle:W::get(bw_i)?,lifecycle_created_unix:W::get(bw_i)?,result_spots:W::get(bw_i)?,result_spot_tick:W::get(bw_i)?,original_spotting:W::get(bw_i)?,mixed_ammo:W::get(bw_i)?,ammo_detonation:W::get(bw_i)?,turret_flights:W::get(bw_i)?,turret_visual_ms:W::get(bw_i)?,turret_jolt:W::get(bw_i)?,extended_lab:W::get(bw_i)?,owner_hold:W::get(bw_i)?,team_base_spawn:W::get(bw_i)?,lab_loadouts:W::get(bw_i)?,damage_events:W::get(bw_i)?,device_events:W::get(bw_i)?,rng_state:W::get(bw_i)?,rng_draws:W::get(bw_i)?,geometry:W::get(bw_i)?,geometries:W::get(bw_i)?,generated_geometries:W::get(bw_i)?,contacts:W::get(bw_i)?,ap_test_lab:W::get(bw_i)?,impacts:W::get(bw_i)?,terrain:W::get(bw_i)?,terrain_contacts:W::get(bw_i)?,ram_damage_events:W::get(bw_i)?,active_ram_pairs:W::get(bw_i)?,destructible:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_sequences:W::get(bw_i)?,bots:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{id,vehicle_kind,expected_actors,team_plan,mixed_profiles,map,actors,started,last,tick,shots,projectiles,impact,lifecycle,lifecycle_created_unix,result_spots,result_spot_tick,original_spotting,mixed_ammo,ammo_detonation,turret_flights,turret_visual_ms,turret_jolt,extended_lab,owner_hold,team_base_spawn,result_ledger,team_score,lab_loadouts,damage_events,device_events,rng_state,rng_draws,geometry,geometries,generated_geometries,contacts,ap_test_lab,impacts,terrain,terrain_contacts,ram_damage_events,active_ram_pairs,destructible,fragiles,contact_sources,contact_sequences,bots}=self;W::put(id,bw_o);W::put(vehicle_kind,bw_o);W::put(expected_actors,bw_o);W::put(team_plan,bw_o);W::put(mixed_profiles,bw_o);W::put(map,bw_o);W::put(actors,bw_o);W::put(started,bw_o);W::put(last,bw_o);W::put(tick,bw_o);W::put(shots,bw_o);W::put(projectiles,bw_o);W::put(impact,bw_o);W::put(lifecycle,bw_o);W::put(lifecycle_created_unix,bw_o);W::put(result_spots,bw_o);W::put(result_spot_tick,bw_o);W::put(original_spotting,bw_o);W::put(mixed_ammo,bw_o);W::put(ammo_detonation,bw_o);W::put(turret_flights,bw_o);W::put(turret_visual_ms,bw_o);W::put(turret_jolt,bw_o);W::put(extended_lab,bw_o);W::put(owner_hold,bw_o);W::put(team_base_spawn,bw_o);W::put(result_ledger,bw_o);W::put(team_score,bw_o);W::put(lab_loadouts,bw_o);W::put(damage_events,bw_o);W::put(device_events,bw_o);W::put(rng_state,bw_o);W::put(rng_draws,bw_o);W::put(geometry,bw_o);W::put(geometries,bw_o);W::put(generated_geometries,bw_o);W::put(contacts,bw_o);W::put(ap_test_lab,bw_o);W::put(impacts,bw_o);W::put(terrain,bw_o);W::put(terrain_contacts,bw_o);W::put(ram_damage_events,bw_o);W::put(active_ram_pairs,bw_o);W::put(destructible,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_sequences,bw_o);W::put(bots,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{id:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,expected_actors:W::get(bw_i)?,team_plan:W::get(bw_i)?,mixed_profiles:W::get(bw_i)?,map:W::get(bw_i)?,actors:W::get(bw_i)?,started:W::get(bw_i)?,last:W::get(bw_i)?,tick:W::get(bw_i)?,shots:W::get(bw_i)?,projectiles:W::get(bw_i)?,impact:W::get(bw_i)?,lifecycle:W::get(bw_i)?,lifecycle_created_unix:W::get(bw_i)?,result_spots:W::get(bw_i)?,result_spot_tick:W::get(bw_i)?,original_spotting:W::get(bw_i)?,mixed_ammo:W::get(bw_i)?,ammo_detonation:W::get(bw_i)?,turret_flights:W::get(bw_i)?,turret_visual_ms:W::get(bw_i)?,turret_jolt:W::get(bw_i)?,extended_lab:W::get(bw_i)?,owner_hold:W::get(bw_i)?,team_base_spawn:W::get(bw_i)?,result_ledger:W::get(bw_i)?,team_score:W::get(bw_i)?,lab_loadouts:W::get(bw_i)?,damage_events:W::get(bw_i)?,device_events:W::get(bw_i)?,rng_state:W::get(bw_i)?,rng_draws:W::get(bw_i)?,geometry:W::get(bw_i)?,geometries:W::get(bw_i)?,generated_geometries:W::get(bw_i)?,contacts:W::get(bw_i)?,ap_test_lab:W::get(bw_i)?,impacts:W::get(bw_i)?,terrain:W::get(bw_i)?,terrain_contacts:W::get(bw_i)?,ram_damage_events:W::get(bw_i)?,active_ram_pairs:W::get(bw_i)?,destructible:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_sequences:W::get(bw_i)?,bots:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -585,7 +588,7 @@ impl World {
         Ok(Self { id, map, vehicle_kind:kind, expected_actors:CAPACITY,team_plan:None,mixed_profiles:false,actors: Vec::new(), started: None, last: now, tick: 1000,
             shots: Vec::new().into(), projectiles: Vec::new(), impact: impact::Trace::new_for_vehicle(map,kind), lifecycle: None, lifecycle_created_unix: None,
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,turret_jolt:false,
-            extended_lab:false,owner_hold:false,team_base_spawn:false,lab_loadouts:[None;MAX_ACTORS],
+            extended_lab:false,owner_hold:false,team_base_spawn:false,result_ledger:false,team_score:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new().into(),device_events:Vec::new().into(),rng_state:id,rng_draws:Vec::new().into(),
             result_spots:None,result_spot_tick:None,original_spotting:None,
             geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new().into(), ap_test_lab: false, impacts: Vec::new().into(),
@@ -612,6 +615,21 @@ impl World {
         self.team_base_spawn=true;Ok(())
     }
     pub fn team_base_spawn(&self)->bool{self.team_base_spawn}
+    pub fn enable_result_ledger(&mut self)->io::Result<()>{
+        if self.result_ledger||self.started.is_some()||!self.actors.is_empty(){return Err(bad());}
+        self.result_ledger=true;Ok(())
+    }
+    pub fn result_ledger(&self)->bool{self.result_ledger}
+    #[cfg(test)]
+    pub(super) fn force_result_ledger_for_test(&mut self){self.result_ledger=true;}
+    /// UI-06: frags and the team killer flag of docs/plans/UI06_EARS_TEAMKILL.md.
+    pub fn enable_team_score(&mut self)->io::Result<()>{
+        if self.team_score||self.started.is_some()||!self.actors.is_empty(){return Err(bad());}
+        self.team_score=true;Ok(())
+    }
+    pub fn team_score(&self)->bool{self.team_score}
+    #[cfg(test)]
+    pub(super) fn force_team_score_for_test(&mut self){self.team_score=true;}
     pub fn enable_original_spotting(&mut self, rules: super::spotting::Rules) -> io::Result<()> {
         if self.original_spotting.is_some() || self.started.is_some() || !self.actors.is_empty()
             || self.terrain.is_none() { return Err(bad()); }
@@ -688,6 +706,19 @@ impl World {
         self.result_spots=Some(Vec::new());Ok(())
     }
     pub(super) fn result_spots(&self)->Option<&[result_spots::SpotRecord]>{self.result_spots.as_deref()}
+    /// Slots 0 and 2 against slot 1, whatever the roster template said.
+    #[cfg(test)]
+    pub(super) fn push_test_team_plan(&mut self){
+        self.team_plan=Some(super::p10b_team_plan::TeamPlan::new(&[1,2,1]).unwrap());
+    }
+    #[cfg(test)]
+    pub(super) fn set_test_teams(&mut self,teams:&[u8]){
+        self.team_plan=Some(super::p10b_team_plan::TeamPlan::new(teams).unwrap());
+    }
+    #[cfg(test)]
+    pub(super) fn push_test_spot(&mut self,observer:usize,target:usize,tick:u32){
+        self.result_spots.get_or_insert_with(Vec::new).push(result_spots::SpotRecord::for_test(observer,target,tick));
+    }
     /// Explicit frozen roster teams are set once, before actor identities or
     /// any simulation/Trace events exist. Caller must bind the frozen roster's
     /// identity order before transport attachment; arrival order is not a plan.
