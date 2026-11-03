@@ -50,9 +50,9 @@ PALETTE = tuple((tint, tint, GOLD if tint == GOLD else TEXT_COLOUR)
                 for tint in (RED, GOLD, GREY, GREEN, ASSIST, DETECT, EFFECT_GOLD))
 
 
-def gold_icon_filter():
-    """[ColorMatrixFilter] that lays a borrowed icon's green channel on EFFECT_GOLD."""
-    gold = (EFFECT_GOLD >> 16 & 255, EFFECT_GOLD >> 8 & 255, EFFECT_GOLD & 255)
+def gold_icon_filter(colour=EFFECT_GOLD):
+    """[ColorMatrixFilter] that lays a borrowed icon's green channel on `colour`."""
+    gold = (colour >> 16 & 255, colour >> 8 & 255, colour & 255)
     rows = []
     for channel in gold:
         rows += [0, round(channel * 1000 / ICON_GOLD_REFERENCE), 0, 0, 0]
@@ -61,10 +61,17 @@ def gold_icon_filter():
     return ('new', 'Array', [('newm', ('get', var('flash'), 'filters'), 'ColorMatrixFilter', [('new', 'Array', values)])])
 
 
+# Owner round 15: the borrowed ram icon is green; on a row of damage taken it is red.
+RED_ICONS = ('ribbonsRam',)
+
+
 def gold_icon(clip):
-    """Statements: an attached icon of a gold row takes the gold filter."""
+    """Statements: an attached icon of a gold row takes the gold filter, a green
+    borrowed icon of a red row the red one."""
+    red = [('if', ('==', var('icon'), name), [('set', clip, 'filters', gold_icon_filter(RED))]) for name in RED_ICONS]
     return [('if', ('==', var('colour'), EFFECT_GOLD),
-             [('if', not_empty(var('icon')), [('set', clip, 'filters', gold_icon_filter())])])]
+             [('if', not_empty(var('icon')), [('set', clip, 'filters', gold_icon_filter())])]),
+            ('if', ('==', var('colour'), RED), red)]
 # Halo: four soft dark copies around a field instead of one hard shadow.
 HALO = ((-1, -1), (1, -1), (-1, 1), (1, 1))
 HALO_ALPHA = 45

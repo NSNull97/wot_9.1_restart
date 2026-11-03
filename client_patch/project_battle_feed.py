@@ -53,6 +53,10 @@ RADIO, DIAMOND, DIAMOND_OUTLINE, LEAF, RING, BURST, SHELL_HIT, MODULE_TRACK = ra
 # (owner round 3: the icons are the Lesta ones when the movie carries them).
 ROWS_TABLE = {'received': (RED, SHELL_HIT, 'Получен урон', False, RING, 'ribbonsDamageEnemy'),
               'received_critical': (GOLD, GEAR, 'Критическое повреждение', False, GEAR, 'ribbonsCritsEnemy'),
+              # Owner round 15: damage taken by a ram or a fire is its own row, under the
+              # switch of damage taken (OPTION_OF).
+              'received_ram': (RED, CHEVRONS, 'Таран', False, RING, 'ribbonsRam'),
+              'received_fire': (RED, FLAME, 'Пожар', False, RING, 'ribbonsBurnEnemy'),
               'blocked': (GREY, SHIELD, 'Удар сдержан', True, SHIELD, 'ribbonsArmor'),
               'defence': (ALLY, FLAG, 'Очки защиты', False, LEAF, 'ribbonsDefence'),
               'capture': (ALLY, FLAG, 'Очки захвата', False, LEAF, 'ribbonsCapture'),
@@ -88,16 +92,19 @@ CLASS_ICONS = (('lightTank', 'whiteIconLightTank16x16'), ('mediumTank', 'whiteIc
                ('heavyTank', 'whiteIconHeavyTank16x16'), ('SPG', 'whiteIconSPG16x16'), ('AT-SPG', 'whiteIconAt-SPG16x16'))
 # Wire numbers of battle_events::FeedKind.
 FEED_ROWS = {1: 'shot', 2: 'ram', 3: 'kill', 4: 'spotted', 5: 'capture', 6: 'defence', 7: 'ignition',
-             8: 'ignition', 9: 'critical', 10: 'track', 11: 'received', 12: 'received', 13: 'received_critical',
+             8: 'ignition', 9: 'critical', 10: 'track', 11: 'received_ram', 12: 'received_fire', 13: 'received_critical',
              14: 'assist_spot', 15: 'assist_track'}
 
 # Values for UI-05: key, allowed values, default; one switch per row, as in the
 # owner's target settings, plus the two text switches. Runtime.apply_options
 # changes the screen at once; storage is project_battle_settings.
+# A row variant shown under the switch of another row; no switch of its own, so the
+# stored settings keep their keys.
+OPTION_OF = {'received_ram': 'received', 'received_fire': 'received'}
 OPTION_SCHEMA = (('enabled', (True, False), True),
                  ('show_label', (True, False), True),
                  ('show_vehicle', (True, False), True)) + tuple(
-    (key, (True, False), True) for key in sorted(ROWS_TABLE))
+    (key, (True, False), True) for key in sorted(ROWS_TABLE) if key not in OPTION_OF)
 
 FLASH_CONTRACTS = (('__init__', 11, ('self', 'swf', 'className', 'args', 'path'),
                     '8287cf26c60448af2a728aa1a5dc7d8cabe5b596c5dd505752be76d8360f2fe9'),
@@ -309,7 +316,7 @@ class Feed(object):
         one row "440 Уничтожил name", as the owner asked."""
         changed = False
         for key, value, count, vehicle in rows_of(event):
-            if not (self.options['enabled'] and self.options[key]):
+            if not (self.options['enabled'] and self.options[OPTION_OF.get(key, key)]):
                 continue
             changed = True
             expires = self.clock() + LIFETIME
@@ -343,7 +350,7 @@ class Feed(object):
         """Rows the options no longer allow leave the screen."""
         if not self.options['enabled']:
             del self.rows[:]
-        self.rows[:] = [row for row in self.rows if self.options[row['key']]]
+        self.rows[:] = [row for row in self.rows if self.options[OPTION_OF.get(row['key'], row['key'])]]
 
     def expire(self):
         now = self.clock()
