@@ -46,6 +46,8 @@ FILTER_GLOW = 2
 # The damage halo: the native GlowFilter of each colour frame is blur 11, strength
 # 3; owner 2026-11-03 asked for a more contrasting one, so it is tighter and denser.
 DAMAGE_GLOW_BLUR, DAMAGE_GLOW_STRENGTH = 6, 6.0
+# Glow flags of the native damage number: composite source, three passes.
+DAMAGE_GLOW_FLAGS = bytes((0x23,))
 BAR_WIDTH = 70          # HealthBar.HEALTH_BAR_WIDTH of #717
 BAR_HEIGHT = 5
 PLATE, PLATE_ALPHA = 0x0e1216, 70
@@ -54,6 +56,7 @@ PLATE, PLATE_ALPHA = 0x0e1216, 70
 RISE, NUMBER_AT = 6, 4
 DEPTH = 2               # between the native bar clip (1) and hitSplash (3)
 LABELS = ('green', 'red', 'gold', 'blue', 'yellow', 'purple')
+LABEL_BLUE = 'blue'
 # The native splash band is 12 px tall from its origin, like the native bar.
 SPLASH_SCALE = BAR_HEIGHT * 100 / 12
 # DropShadowFilter, distance 0: colour, blur, strength. The native HP halo of the
@@ -69,6 +72,13 @@ NATIVE_UPDATE, NATIVE_LABEL = 'projectLookNativeUpdate', 'projectLookNativeLabel
 NATIVE_LAYOUT, NATIVE_TEXT = 'projectLookNativeLayout', 'projectLookNativeText'
 NATIVE_CLASS = 'projectLookNativeClass'
 ABOVE_BAR = ('vNameField', 'pNameField', 'levelIcon', 'iconLoader', 'actionMarker')
+NATIVE_MARKER_LABEL, NATIVE_STATE = 'projectLookNativeMarkerLabel', 'projectLookNativeState'
+NATIVE_ICON_LOADER, NATIVE_HEALTH = 'projectLookNativeIconLoader', 'projectLookNativeHealth'
+# Owner round 7: the damage sources of VehicleMarkerFlags.DAMAGE_COLOR; #717 sends
+# damage to a team killer (label blue) to the green frames, the owner wants blue.
+DAMAGE_FLAGS = ('FROM_PLAYER', 'FROM_SQUAD', 'FROM_ENEMY', 'FROM_ALLY', 'FROM_UNKNOWN')
+EXPLOSION_EXPORT = 'HitExplosion'
+FILTER_COLOR_MATRIX = 6
 
 
 # ---------------------------------------------------------------- SWF reading
@@ -217,6 +227,65 @@ def damage_edits(body, start):
     return edits
 
 
+def damage_colours(body, start):
+    """{label: rgb bytes} of the native damage number of each colour frame."""
+    sprites = _sprites(body, start)
+    holder = sprites[_export(body, start, HIT_LABEL_EXPORT)]
+    inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
+                 if code == 26 and data[0] & 2)
+    texts = {}
+    for code, begin, end in tags(body, start):
+        if code == 37:
+            data_at = begin + _head(body, begin)
+            texts[struct.unpack_from('<H', body, data_at)[0]] = data_at
+    colours, label = {}, None
+    for code, data in _inner(body, *sprites[inner]):
+        if code == 43:
+            label = data[:data.index(0)].decode('ascii')
+        elif code == 70 and label:
+            text_at = texts[_place3(data)[0]]
+            colour_at = text_at + 2 + _rect_bytes(body, text_at + 2) + 2 + 4
+            colours[label] = body[colour_at:colour_at + 3]
+    if set(colours) != set(LABELS):
+        raise ValueError('label sprite differs from six colour frames')
+    return colours
+
+
+def white_halo(colour):
+    """Filter list: a ColorMatrixFilter that turns every pixel white and keeps its
+    alpha, then the damage number's glow in `colour` (owner round 7: the fire and
+    ammo icons in the style of the flying damage)."""
+    matrix = (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 1, 0)
+    return (bytes((2, FILTER_COLOR_MATRIX)) + struct.pack('<20f', *matrix)
+            + bytes((FILTER_GLOW,)) + colour + bytes((255,))
+            + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16, round(DAMAGE_GLOW_STRENGTH * 256))
+            + DAMAGE_GLOW_FLAGS)
+
+
+def explosion_inner(body, start):
+    """(sprite id, new inner tags) of the fire and ammo icon sprite: every icon
+    placement becomes a PlaceObject3 with white_halo of its label's colour."""
+    sprites = _sprites(body, start)
+    holder = sprites[_export(body, start, EXPLOSION_EXPORT)]
+    inner = next(struct.unpack_from('<H', data, 3)[0] for code, data in _inner(body, *holder)
+                 if code == 26 and data[0] & 2)
+    colours = damage_colours(body, start)
+    out, label, changed = bytearray(), None, 0
+    for code, data in _inner(body, *sprites[inner]):
+        if code == 43:
+            label = data[:data.index(0)].decode('ascii')
+        elif code == 26 and data[0] & 2:
+            colour = (label or '').split('_')[0]
+            if data[0] & 0xd8 or colour not in colours:
+                raise ValueError('explosion icon placement differs from the #717 layout')
+            data = data[:1] + bytes((1,)) + data[1:] + white_halo(colours[colour])
+            code, changed = 70, changed + 1
+        out += tag(code, data)
+    if changed != 12:
+        raise ValueError('explosion sprite differs from twelve icons')
+    return inner, bytes(out)
+
+
 def recoloured(body, start):
     out = bytearray(body)
     for at, value in damage_edits(body, start).items():
@@ -318,8 +387,13 @@ def transform(body, start, names=None):
         for at, value in name_edits(body, start, names).items():
             out[at:at + 4] = value
         body = bytes(out)
+    explosion, explosion_tags = explosion_inner(body, start)
     out, changed = bytearray(body[:start]), 0
     for code, begin, end in tags(body, start):
+        if code == 39 and struct.unpack_from('<H', body, begin + _head(body, begin))[0] == explosion:
+            sprite_at = begin + _head(body, begin)
+            out += tag(39, body[sprite_at:sprite_at + 4] + explosion_tags)
+            continue
         if code == 39:
             inner = _haloed(_inner(body, begin, end))
             if inner is not None:
@@ -546,6 +620,56 @@ def _icon():
     return _native_call(NATIVE_CLASS) + stmt(('local', 'h', host)) + _if(var('h'), found)
 
 
+def _paint_icon():
+    """function(m): the contour icon of a living vehicle in the colour of its bar.
+    The native colours it by the scheme transform (ally mult 0.76 1 0.2, offset
+    +25 green), not the bar colour; the icon is white and grey, so multipliers of
+    the bar colour make its white the bar's colour and keep its shading."""
+    m, tint = var('m'), var('t')
+    look = ('get', var('_global'), 'projectMarkerLook')
+    paint = (stmt(('local', 't', ('get', ('get', look, 'tints'), ('get', m, 'm_markerLabel')))))
+    make = (As2.push('ct') + b''.join(expr(arg) for arg in reversed(
+                [('/', ('get', tint, 'r'), 1000), ('/', ('get', tint, 'g'), 1000), ('/', ('get', tint, 'b'), 1000),
+                 1, 0, 0, 0, 0])) + As2.push(8) + expr(('get', var('flash'), 'geom')) + As2.push('ColorTransform')
+            + As2.record(0x53) + As2.record(0x3c)
+            + As2.push('tr') + expr(var('il')) + As2.push(1) + expr(('get', var('flash'), 'geom')) + As2.push('Transform')
+            + As2.record(0x53) + As2.record(0x3c)
+            + stmt(('set', var('tr'), 'colorTransform', var('ct'))))
+    alive = _if(('not', ('call', m, '__get__vehicleDestroyed', [])),
+                paint + _if(('not', ('==', ('typeof', tint), 'undefined')), make))
+    return stmt(('local', 'il', ('get', m, 'iconLoader'))) + _if(var('il'), alive)
+
+
+def _raise():
+    """function(m): owner round 7, the flying damage over every other marking. The
+    marker goes above its neighbours, its number and fire/ammo icon above its own
+    parts; a clip already on top is left where it is."""
+    m = var('m')
+
+    def up(clip, holder):
+        top = ('call', holder, 'getNextHighestDepth', [])
+        return (stmt(('local', 'top', top))
+                + _if(('<', ('call', clip, 'getDepth', []), ('-', var('top'), 1)),
+                      stmt(('do', ('call', clip, 'swapDepths', [var('top')])))))
+    body = stmt(('local', 'p', ('get', m, '_parent'))) + _if(var('p'), up(m, var('p')))
+    for part in ('hitLbl', 'hitExplosion'):
+        body += stmt(('local', 'c', ('get', m, part))) + _if(var('c'), up(var('c'), m))
+    return body
+
+
+def _blue_damage():
+    """DAMAGE_COLOR[source].blue = 'blue' for every source (owner round 7: damage
+    to a team killer in his blue; #717 has the blue frames but sends it to green)."""
+    flags = ('get', ('get', ('get', ('get', ('get', var('_global'), 'net'), 'wargaming'), 'ingame'), 'damagePanel'),
+             'VehicleMarkerFlags')
+    table = ('get', flags, 'DAMAGE_COLOR')
+    body = b''
+    for source in DAMAGE_FLAGS:
+        row = ('get', var('dc'), source)
+        body += _if(row, stmt(('set', row, LABEL_BLUE, LABEL_BLUE)))
+    return _if(flags, stmt(('local', 'dc', table)) + _if(var('dc'), body))
+
+
 def actions(colours, icons=False):
     """The DoAction. `colours` is {label: rgb}; `icons`: borrowed icons are embedded."""
     ingame = ('get', ('get', ('get', var('_global'), 'net'), 'wargaming'), 'ingame')
@@ -554,7 +678,16 @@ def actions(colours, icons=False):
     table += stmt(('set', look, 'colours', ('new', 'Object', [])))
     for label in LABELS:
         table += stmt(('set', ('get', look, 'colours'), label, colours[label]))
+    table += stmt(('set', look, 'tints', ('new', 'Object', [])))
+    for label in LABELS:
+        rgb = colours[label]
+        tint = ('get', ('get', look, 'tints'), label)
+        table += stmt(('set', ('get', look, 'tints'), label, ('new', 'Object', [])))
+        for channel, value in zip('rgb', (rgb >> 16 & 255, rgb >> 8 & 255, rgb & 255)):
+            table += stmt(('set', tint, channel, round(value * 1000 / 255)))
     table += _method(look, 'group', ['n'], _group())
+    table += _method(look, 'paintIcon', ['m'], _paint_icon())
+    table += _method(look, 'raise', ['m'], _raise())
     bar_proto = ('get', ('get', ingame, 'HealthBar'), 'prototype')
     marker_proto = ('get', ('get', ingame, 'VehicleMarker'), 'prototype')
     draw = _draw(colours['green'])
@@ -564,9 +697,16 @@ def actions(colours, icons=False):
     marker = (stmt(('local', 'mp', marker_proto))
               + _wrap(var('mp'), 'layoutParts', NATIVE_LAYOUT, [], _layout())
               + _wrap(var('mp'), 'getHelthText', NATIVE_TEXT, [], _text()))
+    paint = stmt(('do', ('call', look, 'paintIcon', [var('this')])))
+    for name, native in (('updateMarkerLabel', NATIVE_MARKER_LABEL), ('setMarkerState', NATIVE_STATE),
+                         ('setupIconLoader', NATIVE_ICON_LOADER)):
+        marker += _if(('get', var('mp'), name), _wrap(var('mp'), name, native, [], _native_call(native) + paint))
+    marker += _if(('get', var('mp'), 'updateHealth'),
+                  _wrap(var('mp'), 'updateHealth', NATIVE_HEALTH, [],
+                        _native_call(NATIVE_HEALTH) + stmt(('do', ('call', look, 'raise', [var('this')])))))
     if icons:
         marker += _wrap(var('mp'), 'setVehicleClass', NATIVE_CLASS, [], _icon())
-    code = (_if(('not', look), table)
+    code = (_if(('not', look), table) + _blue_damage()
             + _if(('get', ingame, 'HealthBar'), bar)
             + _if(('get', ingame, 'VehicleMarker'), marker))
     return code + b'\0'
