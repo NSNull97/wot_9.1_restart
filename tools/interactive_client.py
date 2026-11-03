@@ -32,6 +32,7 @@ MODULES += ('p09e_research_policy',)
 MODULES += ('project_network',)
 MODULES += ('project_sixth_sense_sound',)
 MODULES += ('project_player_kill_marker',)
+MODULES += ('project_loading_icons',)
 MODULES += ('project_pose_trace',)
 MODULES += ('project_hit_indicator',)
 MODULES += ('project_battle_feed',)
@@ -439,6 +440,9 @@ def prepare(args):
             raise ValueError('--player-kill-marker requires --enable-profile13-battle')
         settings['player_kill_marker'] = True
     payloads.update(vehicle_markers(args, profile13_battle, original, resource_evidence))
+    if not getattr(args, 'native_vehicle_markers', False):
+        # Owner round 15: the battle loading lists take the project icon sets too.
+        settings['loading_team_icons'] = True
     # UI-02b owner order 2026-11-02: the hit indicator replaces the native one
     # in the project's battle client by default; the flag is for a check or a
     # rollback, `off` leaves the native indicator untouched.
