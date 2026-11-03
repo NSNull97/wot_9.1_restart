@@ -252,8 +252,21 @@ def world(icons=False):
         icon.set('_visible', not this.get('m_hunt'))
     marker_proto.set('layoutParts', Native('layoutParts', native_layout))
     marker_proto.set('setVehicleClass', Native('setVehicleClass', native_class))
-    ingame = {'HealthBar': {'prototype': bar_proto}, 'VehicleMarker': {'prototype': marker_proto}}
-    scope = {'_global': {'net': {'wargaming': {'ingame': ingame}}}, 'Object': lambda: Obj(),
+    for name in ('updateMarkerLabel', 'setMarkerState', 'setupIconLoader', 'updateHealth'):
+        marker_proto.set(name, Native(name))
+
+    def transform(this, clip):
+        made = Obj(clip=clip)
+        if clip.get('transforms') is UNDEFINED:
+            clip.set('transforms', [])
+        clip.get('transforms').append(made)
+        return made
+    geom = {'ColorTransform': Native('ColorTransform', lambda this, *args: Obj(args=args)),
+            'Transform': Native('Transform', transform)}
+    damage = {source: {label: 'green' for label in look.LABELS} for source in look.DAMAGE_FLAGS}
+    ingame = {'HealthBar': {'prototype': bar_proto}, 'VehicleMarker': {'prototype': marker_proto},
+              'damagePanel': {'VehicleMarkerFlags': {'DAMAGE_COLOR': damage}}}
+    scope = {'_global': {'net': {'wargaming': {'ingame': ingame}}}, 'Object': lambda: Obj(), 'flash': {'geom': geom},
              'Math': {'round': Native('round', lambda this, v: math.floor(v + 0.5))},
              'String': Native('String', lambda this, v: text(v))}
     vm = Vm()
@@ -408,6 +421,57 @@ class TextTests(unittest.TestCase):
         self.assertEqual((dict(self.marker_proto.members), dict(self.bar_proto.members)), before)
 
 
+class RoundSevenTests(unittest.TestCase):
+    def setUp(self):
+        self.vm, self.scope, self.bar_proto, self.marker_proto = world()
+
+    def marker(self, label='red', destroyed=False):
+        clip = Clip('VehicleMarker', m_markerLabel=label, iconLoader=Clip('iconLoader'))
+        clip.set('__get__vehicleDestroyed', Native('destroyed', lambda this: destroyed))
+        clip.proto = self.marker_proto
+        return clip
+
+    def test_the_contour_icon_takes_the_colour_of_the_bar_after_every_native_repaint(self):
+        red = COLOURS['red']
+        expected = tuple(round(v * 1000 / 255) / 1000 for v in (red >> 16 & 255, red >> 8 & 255, red & 255))
+        for method in ('updateMarkerLabel', 'setMarkerState', 'setupIconLoader'):
+            clip = self.marker('red')
+            self.vm.invoke(self.marker_proto.get(method), clip, ['alive'])
+            self.assertEqual(clip.calls[0][0], method, 'the native first')
+            made = clip.get('iconLoader').get('transforms')
+            self.assertEqual(len(made), 1, method)
+            self.assertEqual(made[0].get('colorTransform').get('args'), expected + (1, 0, 0, 0, 0))
+
+    def test_a_destroyed_vehicle_keeps_the_native_dead_colour(self):
+        clip = self.marker('red', destroyed=True)
+        self.vm.invoke(self.marker_proto.get('setMarkerState'), clip, ['dead'])
+        self.assertIs(clip.get('iconLoader').get('transforms'), UNDEFINED)
+
+    def test_a_hit_raises_the_marker_and_then_its_number_and_icon(self):
+        parent = Clip('canvas', getNextHighestDepth=Native('next', lambda this: 40))
+        clip = self.marker()
+        clip.set('_parent', parent)
+        clip.set('getDepth', Native('getDepth', lambda this: 7))
+        clip.set('getNextHighestDepth', Native('next', lambda this: 12))
+        clip.set('swapDepths', Native('swapDepths'))
+        number = Clip('hitLbl', getDepth=Native('getDepth', lambda this: 5), swapDepths=Native('swapDepths'))
+        icon = Clip('hitExplosion', getDepth=Native('getDepth', lambda this: 11), swapDepths=Native('swapDepths'))
+        clip.set('hitLbl', number)
+        clip.set('hitExplosion', icon)
+        self.vm.invoke(self.marker_proto.get('updateHealth'), clip, [100, 0, 'attack'])
+        self.assertEqual(clip.calls[0][0], 'updateHealth')
+        self.assertIn(('swapDepths', 40), clip.calls)
+        self.assertEqual([call for call in number.calls if call[0] == 'swapDepths'], [('swapDepths', 12)])
+        self.assertEqual([call for call in icon.calls if call[0] == 'swapDepths'], [], 'already on top')
+
+    def test_damage_to_a_team_killer_takes_the_blue_frames(self):
+        ingame = self.scope['_global']['net']['wargaming']['ingame']
+        table = ingame['damagePanel']['VehicleMarkerFlags']['DAMAGE_COLOR']
+        for source in look.DAMAGE_FLAGS:
+            self.assertEqual(table[source]['blue'], 'blue', source)
+            self.assertEqual(table[source]['red'], 'green', 'other labels stay native')
+
+
 class Host(Clip):
     """The native `marker.marker` clip: attachMovie knows only the exported icons."""
 
@@ -527,7 +591,7 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(old_rows), len(new_rows))
         recoloured = look.recoloured(self.body, self.start)
         differ = [code for (code, b0, e0), (_, b1, e1) in zip(old_rows, new_rows) if recoloured[b0:e0] != new[b1:e1]]
-        self.assertEqual(differ, [39])
+        self.assertEqual(differ, [39, 39], 'the hp sprite and the fire/ammo icon sprite')
         places = [data for code, data in self.hp_sprite(new) if code in (26, 70)]
         self.assertEqual([data[1] for data in places], [1, 1])
         for data in places:
@@ -537,6 +601,34 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(places[0][0], old[0][0])
         self.assertEqual(places[0][2:places[0].index(b'hpField')], old[0][1:old[0].index(b'hpField')])
         self.assertEqual(places[1][:places[1].index(b'\0', 6) + 1], old[1][:old[1].index(b'\0', 6) + 1])
+
+    def test_fire_and_ammo_icons_are_white_with_the_halo_of_the_damage_number(self):
+        colours = look.damage_colours(self.body, self.start)
+        self.assertEqual(colours['blue'].hex(), '00eaff')
+        sprite, inner = look.explosion_inner(self.body, self.start)
+        rows, at = [], 0
+        while at < len(inner):
+            head = struct.unpack_from('<H', inner, at)[0]
+            code, size, at = head >> 6, head & 63, at + 2
+            if size == 63:
+                size, at = struct.unpack_from('<I', inner, at)[0], at + 4
+            rows.append((code, inner[at:at + size]))
+            at += size
+        label, seen = None, []
+        for code, data in rows:
+            if code == 43:
+                label = data[:data.index(0)].decode('ascii')
+            elif code in (26, 70) and data[0] & 2:
+                self.assertEqual((code, data[1]), (70, 1), 'a PlaceObject3 with filters only')
+                self.assertTrue(data.endswith(look.white_halo(colours[label.split('_')[0]])), label)
+                seen.append(label)
+        self.assertEqual(len(seen), 12)
+        self.assertIn('blue_fire', seen)
+        halo = look.white_halo(colours['red'])
+        self.assertEqual(halo[:2], bytes((2, look.FILTER_COLOR_MATRIX)))
+        self.assertEqual(struct.unpack_from('<20f', halo, 2),
+                         (0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 0, 255, 0, 0, 0, 1, 0))
+        self.assertEqual(halo[83:87], colours['red'] + bytes((255,)), 'the glow of the red damage number')
 
     def test_halo_is_black_and_a_little_thicker_than_the_native(self):
         native = [data for code, data in self.hp_sprite(self.body) if code == 70][0]
