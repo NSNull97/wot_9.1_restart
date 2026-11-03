@@ -45,7 +45,8 @@ WHITE = b'\xff\xff\xff\xff'
 FILTER_GLOW = 2
 # The damage halo: the native GlowFilter of each colour frame is blur 11, strength
 # 3; owner 2026-11-03 asked for a more contrasting one, so it is tighter and denser.
-DAMAGE_GLOW_BLUR, DAMAGE_GLOW_STRENGTH = 6, 6.0
+# Owner round 13: "ореол урона чуть шире": blur 8 (was 6).
+DAMAGE_GLOW_BLUR, DAMAGE_GLOW_STRENGTH = 8, 6.0
 BAR_WIDTH = 70          # HealthBar.HEALTH_BAR_WIDTH of #717
 BAR_HEIGHT = 5
 PLATE, PLATE_ALPHA = 0x0e1216, 70
@@ -86,9 +87,18 @@ EXPLOSION_EXPORT = 'HitExplosion'
 # its bar colour with the same details: the multipliers are bar / class colour.
 # Native class names of VehicleMarker._getVehicleClassName.
 ICON_CLASSES = {'lightTank': 'tank', 'mediumTank': 'tank', 'heavyTank': 'tank', 'AT-SPG': 'td', 'SPG': 'spg'}
-# Owner round 9: the glow of damage to allies (the green frames) a little darker
-# than the native 95ff00; the fire and ammo icons of those frames take it too.
-GLOW_COLOURS = {'green': b'\x70\xc0\x00'}
+# Owner palette round 13: the glow of a damage number by its target, ally #A8D177,
+# enemy #F07870, a team killer #38B8C8, and the player's own damage #E2A53D (#E8B866
+# a little darker) whatever the target; the fire and ammo icons of a frame take it too.
+GLOW_COLOURS = {'green': bytes.fromhex('a8d177'), 'red': bytes.fromhex('f07870'), 'gold': bytes.fromhex('e2a53d'),
+                'blue': bytes.fromhex('38b8c8')}
+# The bar, the names and the contour of a marker: allies, enemies, a team killer.
+MARKER_PALETTE = {'green': 0xa8d177, 'red': 0xf07870, 'blue': 0x38b8c8}
+# DAMAGE_COLOR rows: the player's damage takes the gold frames (#E2A53D) on every
+# target; any other source the frame of the target's label (#717 sends a team
+# killer to green and the squad's damage to an enemy to gold).
+PLAYER_SOURCE, PLAYER_FRAME = 'FROM_PLAYER', 'gold'
+TARGET_LABELS = ('green', 'red', 'blue')
 
 
 # ---------------------------------------------------------------- SWF reading
@@ -705,15 +715,18 @@ def _raise():
 
 
 def _blue_damage():
-    """DAMAGE_COLOR[source].blue = 'blue' for every source (owner round 7: damage
-    to a team killer in his blue; #717 has the blue frames but sends it to green)."""
+    """The DAMAGE_COLOR rows of the owner's palette (round 13; round 7 began with the
+    team killer's blue): the player's damage gold on every target, any other source
+    the target's own frame. Colour-blind labels stay native."""
     flags = ('get', ('get', ('get', ('get', ('get', var('_global'), 'net'), 'wargaming'), 'ingame'), 'damagePanel'),
              'VehicleMarkerFlags')
     table = ('get', flags, 'DAMAGE_COLOR')
     body = b''
     for source in DAMAGE_FLAGS:
         row = ('get', var('dc'), source)
-        body += _if(row, stmt(('set', row, LABEL_BLUE, LABEL_BLUE)))
+        sets = b''.join(stmt(('set', row, label, PLAYER_FRAME if source == PLAYER_SOURCE else label))
+                        for label in TARGET_LABELS)
+        body += _if(row, sets)
     return _if(flags, stmt(('local', 'dc', table)) + _if(var('dc'), body))
 
 
@@ -830,6 +843,8 @@ def marker_colours(body, start, images=None):
     colours = native_colours(body, start)
     colours.update(native_icon_colours(body, start))
     colours.update(battle_ui_marker_art.label_colours(images or {}))
+    # Owner palette round 13 over the icon colours.
+    colours.update(MARKER_PALETTE)
     return colours
 
 

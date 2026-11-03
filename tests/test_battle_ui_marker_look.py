@@ -483,12 +483,13 @@ class RoundSevenTests(unittest.TestCase):
         self.assertEqual([call for call in number.calls if call[0] == 'swapDepths'], [('swapDepths', 12)])
         self.assertEqual([call for call in icon.calls if call[0] == 'swapDepths'], [], 'already on top')
 
-    def test_damage_to_a_team_killer_takes_the_blue_frames(self):
+    def test_damage_glows_by_its_target_and_the_players_own_in_gold(self):
         ingame = self.scope['_global']['net']['wargaming']['ingame']
         table = ingame['damagePanel']['VehicleMarkerFlags']['DAMAGE_COLOR']
         for source in look.DAMAGE_FLAGS:
-            self.assertEqual(table[source]['blue'], 'blue', source)
-            self.assertEqual(table[source]['red'], 'green', 'other labels stay native')
+            for label in ('green', 'red', 'blue'):
+                self.assertEqual(table[source][label], 'gold' if source == 'FROM_PLAYER' else label, (source, label))
+            self.assertEqual(table[source]['purple'], 'green', 'colour-blind labels stay native')
 
 
 class Host(Clip):
@@ -566,9 +567,10 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(len(whites), 6)
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in whites),
                          sorted(['95ff00ff', 'ff371cff', 'ffb21cff', '00eaffff', 'ffff00ff', '9086ffff']))
+        palette = {'95ff00ff': 'a8d177ff', 'ff371cff': 'f07870ff', 'ffb21cff': 'e2a53dff', '00eaffff': '38b8c8ff'}
         self.assertEqual(sorted(value[:4].hex() for value in glows.values()),
-                         sorted('70c000ff' if self.body[at:at + 4].hex() == '95ff00ff' else self.body[at:at + 4].hex()
-                                for at in whites), 'the old text colour; green a little darker (owner round 9)')
+                         sorted(palette.get(self.body[at:at + 4].hex(), self.body[at:at + 4].hex()) for at in whites),
+                         'the palette of round 13 (ally, enemy, own damage, team killer); colour-blind frames native')
         self.assertEqual(sorted(self.body[at:at + 4].hex() for at in glows),
                          sorted(['144200ff', '500000ff', '631700ff', '003c40ff', '633600ff', '1e004fff']))
 
@@ -625,8 +627,7 @@ class MovieTests(unittest.TestCase):
     def test_every_fire_and_ammo_frame_has_its_icon_with_the_glow_of_its_colour_baked_in(self):
         import battle_ui_marker_icons as icons
         colours = look.damage_colours(self.body, self.start)
-        self.assertEqual(colours['blue'].hex(), '00eaff')
-        self.assertEqual(colours['green'], look.GLOW_COLOURS['green'], 'the darker glow of damage to allies')
+        self.assertEqual({label: colours[label] for label in look.GLOW_COLOURS}, look.GLOW_COLOURS)
         whites = look.explosion_bitmaps(self.body, self.start)
         self.assertEqual(len(whites), 12)
         expected = {icons.argb(kind, tuple(colour)) for kind in (icons.FIRE, icons.AMMO) for colour in colours.values()}
@@ -671,8 +672,8 @@ class MovieTests(unittest.TestCase):
         self.assertEqual(set(icons), {'green', 'blue', 'red', 'purple'})
         colours = look.marker_colours(self.body, self.start)
         for label in icons:
-            self.assertEqual(colours[label], icons[label])
-            self.assertNotEqual(colours[label], COLOURS[label], 'the splash colour is not the icon colour')
+            self.assertEqual(colours[label], look.MARKER_PALETTE.get(label, icons[label]), 'round 13: the palette first')
+        self.assertEqual(colours['purple'], icons['purple'])
         self.assertEqual((colours['gold'], colours['yellow']), (COLOURS['gold'], COLOURS['yellow']))
         green = icons['green']
         self.assertLess(abs((green >> 8 & 255) - 0xbc), 16, 'native green icon is about 67bc00')
@@ -681,8 +682,9 @@ class MovieTests(unittest.TestCase):
         art = __import__('battle_ui_marker_art')
         image = bytes((0x70, 0xc1, 0x07, 255)) * (39 * 50)
         colours = look.marker_colours(self.body, self.start, {art.linkage('green_heavyTank'): (39, 50, image)})
-        self.assertEqual(colours['green'], 0x70c107)
-        self.assertEqual(colours['red'], look.native_icon_colours(self.body, self.start)['red'])
+        self.assertEqual(colours['green'], look.MARKER_PALETTE['green'], 'round 13: the palette over a borrowed icon')
+        colours = look.marker_colours(self.body, self.start, {art.linkage('purple_heavyTank'): (39, 50, image)})
+        self.assertEqual(colours['purple'], 0x70c107, 'a label outside the palette takes its borrowed icon')
 
     def test_names_of_every_label_frame_take_the_colour_and_only_those_bytes_change(self):
         colours = look.marker_colours(self.body, self.start)

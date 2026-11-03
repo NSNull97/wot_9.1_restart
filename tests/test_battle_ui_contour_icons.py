@@ -40,6 +40,17 @@ class ClientTests(unittest.TestCase):
         self.assertEqual((classes['ussr-is-7'], classes['uk-gb48_fv215b_183'], classes['ussr-object_261']),
                          ('tank', 'td', 'spg'))
 
+    def test_every_icon_has_one_set_per_colour_of_an_ears_row(self):
+        for folder, colours in contour.SETS.items():
+            path = contour.FOLDER + folder + '/uk-GB48_FV215b_183.png'
+            width, height, rows = contour._decode(self.payloads[path])
+            body = [tuple(row[x * 4:x * 4 + 3]) for row in rows for x in range(width) if row[x * 4 + 3] == 255]
+            self.assertIn(colours['td'], body, folder)
+        self.assertEqual(len(self.payloads), len(contour.SETS) * self.evidence['contour_icons'])
+        self.assertEqual(contour.SETS['contour'], contour.SETS['contour_ally'], 'the default path is the ally set')
+        self.assertEqual(set(contour.SETS['contour_own'].values()), {contour.OWN})
+        self.assertEqual(set(contour.SETS['contour_tk'].values()), {contour.TEAM_KILLER})
+
     def test_a_restyled_icon_keeps_the_native_size_and_shape(self):
         with zipfile.ZipFile(ORIGINAL / contour.PACKAGE) as package:
             native = contour._decode(package.read(contour.PREFIX + 'ussr-IS-7.png'))

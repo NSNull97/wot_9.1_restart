@@ -172,6 +172,10 @@ def vehicle_markers(args, profile13_battle, original, evidence):
         import battle_ui_contour_icons
         icons, evidence['project_contour_icons'] = battle_ui_contour_icons.payloads(original)
         payloads.update(icons)
+        # Round 13: the ears' row schemes (text colour, neutral icon transform).
+        import battle_ui_gui_colors
+        colours, evidence['project_gui_colors'] = battle_ui_gui_colors.payload(original)
+        payloads.update(colours)
     return payloads
 
 
