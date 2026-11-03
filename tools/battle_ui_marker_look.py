@@ -43,6 +43,9 @@ HIT_LABEL_EXPORT = 'HitLbl'
 HEALTH_BAR_EXPORT = 'HealthBar'
 WHITE = b'\xff\xff\xff\xff'
 FILTER_GLOW = 2
+# The damage halo: the native GlowFilter of each colour frame is blur 11, strength
+# 3; owner 2026-11-03 asked for a more contrasting one, so it is tighter and denser.
+DAMAGE_GLOW_BLUR, DAMAGE_GLOW_STRENGTH = 6, 6.0
 BAR_WIDTH = 70          # HealthBar.HEALTH_BAR_WIDTH of #717
 BAR_HEIGHT = 5
 PLATE, PLATE_ALPHA = 0x0e1216, 70
@@ -204,7 +207,10 @@ def damage_edits(body, start):
         if flags & 0x8005 != 0x0005:
             raise ValueError('label text has no font or colour')
         colour_at = text_at + 2 + rect + 2 + 4
-        edits[data_at + glow] = body[colour_at:colour_at + 3] + b'\xff'
+        # Glow: colour, blurX, blurY (16.16), strength (8.8); the flags byte stays.
+        edits[data_at + glow] = (body[colour_at:colour_at + 3] + b'\xff'
+                                 + struct.pack('<IIH', DAMAGE_GLOW_BLUR << 16, DAMAGE_GLOW_BLUR << 16,
+                                               round(DAMAGE_GLOW_STRENGTH * 256)))
         edits[colour_at] = WHITE
     if len(edits) != 12:
         raise ValueError('label sprite differs from six colour frames')
@@ -214,7 +220,7 @@ def damage_edits(body, start):
 def recoloured(body, start):
     out = bytearray(body)
     for at, value in damage_edits(body, start).items():
-        out[at:at + 4] = value
+        out[at:at + len(value)] = value
     return bytes(out)
 
 
@@ -261,9 +267,57 @@ def _haloed(inner):
     return bytes(out) if changed else None
 
 
-def transform(body, start):
-    """The movie body with the damage label recoloured and the halo fields rewritten."""
+NAME_FIELDS = ('pNameField', 'vNameField')
+MARKER_EXPORTS = ('VehicleMarkerAlly', 'VehicleMarkerEnemy')
+
+
+def _text_colour_at(body, text_at):
+    rect = _rect_bytes(body, text_at + 2)
+    flags = struct.unpack_from('<H', body, text_at + 2 + rect)[0]
+    if flags & 0x8005 != 0x0005:
+        raise ValueError('name text has no font or colour')
+    return text_at + 2 + rect + 2 + 4
+
+
+def name_edits(body, start, colours):
+    """{absolute offset: new 4 bytes}: the name fields of every label frame of the
+    ally and enemy markers take the colour of that label."""
+    texts = {}
+    for code, begin, end in tags(body, start):
+        if code == 37:
+            at = begin + _head(body, begin)
+            texts[struct.unpack_from('<H', body, at)[0]] = at
+    edits = {}
+    for export in MARKER_EXPORTS:
+        begin, end = _sprites(body, start)[_export(body, start, export)]
+        label = None
+        for code, data in _inner(body, begin, end):
+            if code == 43:
+                label = data[:data.index(0)].decode('ascii')
+            elif code == 70 and data[0] & 0x22 == 0x22 and not data[1] & 8:
+                character = struct.unpack_from('<H', data, 4)[0]
+                at = 6 + _matrix_bytes(data, 6) if data[0] & 4 else 6
+                at += _cxform_bytes(data, at) if data[0] & 8 else 0
+                at += 2 if data[0] & 0x10 else 0
+                name = data[at:data.index(0, at)].decode('latin-1')
+                if name in NAME_FIELDS and label in colours:
+                    colour = colours[label]
+                    edits[_text_colour_at(body, texts[character])] = bytes(
+                        (colour >> 16 & 255, colour >> 8 & 255, colour & 255, 255))
+    if len(edits) != 12:
+        raise ValueError('marker names differ from two fields in six label frames')
+    return edits
+
+
+def transform(body, start, names=None):
+    """The movie body with the damage label recoloured, the halo fields rewritten
+    and, with `names` {label: rgb}, the name fields in the colour of their label."""
     body = recoloured(body, start)
+    if names:
+        out = bytearray(body)
+        for at, value in name_edits(body, start, names).items():
+            out[at:at + 4] = value
+        body = bytes(out)
     out, changed = bytearray(body[:start]), 0
     for code, begin, end in tags(body, start):
         if code == 39:
@@ -518,10 +572,80 @@ def actions(colours, icons=False):
     return code + b'\0'
 
 
+# Native class icon sprites and the label each one paints; the team killer frames
+# (`tk_` prefix) of the green sprite are the blue icon.
+ICON_EXPORTS = {'Vehicle_green_ico': 'green', 'Vehicle_red_ico': 'red', 'Vehicle_purple_ico': 'purple'}
+
+
+def _mean_bright(pixels):
+    """Mean rgb of opaque bright pixels of premultiplied ARGB rows, or None."""
+    total, count = [0, 0, 0], 0
+    for at in range(0, len(pixels), 4):
+        if pixels[at] == 255 and max(pixels[at + 1:at + 4]) > 120:
+            for i in range(3):
+                total[i] += pixels[at + 1 + i]
+            count += 1
+    return (total, count)
+
+
+def native_icon_colours(body, start):
+    """{label: rgb} of the native class icons: mean of their opaque bright pixels."""
+    shapes, bitmaps = {}, {}
+    for code, begin, end in tags(body, start):
+        at = begin + _head(body, begin)
+        if code in (2, 22):
+            shapes[struct.unpack_from('<H', body, at)[0]] = body[at:end]
+        elif code == 36:
+            bitmaps[struct.unpack_from('<H', body, at)[0]] = body[at:end]
+
+    def bitmaps_of(shape):
+        data = shapes.get(shape)
+        if data is None:
+            return []
+        at = 2 + _rect_bytes(data, 2)
+        count, at, found = data[at], at + 1, []
+        for _ in range(count):
+            if not 0x40 <= data[at] <= 0x43:
+                break
+            found.append(struct.unpack_from('<H', data, at + 1)[0])
+            at += 3 + _matrix_bytes(data, at + 3)
+        return [bid for bid in found if bid in bitmaps and bitmaps[bid][2] == 5]
+
+    sums = {}
+    for export, label in ICON_EXPORTS.items():
+        begin, end = _sprites(body, start)[_export(body, start, export)]
+        frame = None
+        for code, data in _inner(body, begin, end):
+            if code == 43:
+                frame = data[:data.index(0)].decode('ascii')
+            elif code == 26 and data[0] & 2:
+                target = 'blue' if frame and frame.startswith('tk_') else label
+                for bid in bitmaps_of(struct.unpack_from('<H', data, 3)[0]):
+                    raw = bitmaps[bid]
+                    width, height = struct.unpack_from('<HH', raw, 3)
+                    total, count = _mean_bright(zlib.decompressobj().decompress(raw[7:], width * height * 4))
+                    row = sums.setdefault(target, [0, 0, 0, 0])
+                    for i in range(3):
+                        row[i] += total[i]
+                    row[3] += count
+    return {label: (r // n) << 16 | (g // n) << 8 | (b // n) for label, (r, g, b, n) in sums.items() if n}
+
+
+def marker_colours(body, start, images=None):
+    """{label: rgb} for the bar and the names: the colour of the class icon of the
+    label (the borrowed one where embedded, else the native one), the native splash
+    colour for a label without an icon colour (gold, yellow without borrowed icons)."""
+    import battle_ui_marker_art
+    colours = native_colours(body, start)
+    colours.update(native_icon_colours(body, start))
+    colours.update(battle_ui_marker_art.label_colours(images or {}))
+    return colours
+
+
 def frame_tags(body, start, images=None):
     """Tags added before the only ShowFrame: borrowed icons, their export, the DoAction."""
     images = images or {}
     if images and max_character(body, start) >= FIRST_CHARACTER:
         raise ValueError('marker movie characters reach the icon range')
     definitions, export = art_tags(images)
-    return definitions + export + tag(12, actions(native_colours(body, start), bool(images)))
+    return definitions + export + tag(12, actions(marker_colours(body, start, images), bool(images)))

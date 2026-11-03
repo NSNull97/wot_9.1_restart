@@ -65,6 +65,13 @@ class ArtTests(unittest.TestCase):
             (Path(folder) / 'other.png').write_bytes(art.write_png(1, 1, bytes(4)))
             self.assertEqual(set(art.load(folder)), {'ProjectMarkerIcon_green_heavyTank'})
 
+    def test_label_colour_is_the_mean_of_opaque_bright_pixels(self):
+        bright, dark, clear = bytes((200, 100, 0, 255)), bytes((20, 20, 20, 255)), bytes((255, 255, 255, 0))
+        images = {art.linkage('red_heavyTank'): (3, 1, bright + dark + clear),
+                  art.linkage('red_SPG'): (1, 1, bytes((100, 200, 0, 255)))}
+        self.assertEqual(art.label_colours(images), {'red': (150 << 16) | (150 << 8)})
+        self.assertEqual(art.label_colours({}), {})
+
     def test_other_atlas_bytes_are_refused(self):
         with tempfile.TemporaryDirectory() as folder:
             package = Path(folder) / art.PACKAGE
