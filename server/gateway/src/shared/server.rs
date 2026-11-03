@@ -2553,7 +2553,14 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                         // No native visual category (e.g. a LAB decision the FX
                         // path refuses) falls back to the HP change alone.
                         let outcome=impact_visual(event).ok().flatten().map(|(_,outcome,_)|outcome);
-                        let flags=super::av01_feedback::shot_result_flags(outcome,he,event.health_before,event.health_after);
+                        let mut flags=super::av01_feedback::shot_result_flags(outcome,he,event.health_before,event.health_after);
+                        // Owner round 15: the shot that set its target on fire says so, as the
+                        // native voice expects; the module transitions of the shot are already
+                        // in this world step.
+                        if next_world.device_events.iter().any(|(t,e)|*t==event.target&&e.cause.shot==event.shot
+                            &&matches!(e.change,crate::p06t_device_state::Change::Fire{before_active:false,after_active:true})) {
+                            flags|=super::av01_feedback::hit_flags::FIRE_STARTED;
+                        }
                         next.outbox.push_back(super::av01_feedback::shot_results(&[(event.target,flags)])?);
                     }
                 }
