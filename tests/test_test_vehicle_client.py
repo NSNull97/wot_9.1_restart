@@ -1,4 +1,4 @@
-"""Raw Packed XML writer round trip and the client patch showing the stand T-62A as T-62A (T).
+"""Raw Packed XML writer round trip and the T-62A (T) client resource patch.
 
 Reads the local original client (read only); skips when it is absent.
 The client payloads are derived in a temporary directory and never committed.
@@ -64,20 +64,39 @@ class TestVehicleClientTests(unittest.TestCase):
     def tree(self, name):
         return packed_xml.decode(self.payloads[tv.OUT_DEFS + name])
 
-    def test_list_changes_only_the_t62a_names_and_level(self):
+    def test_list_keeps_every_original_vehicle_and_adds_one_tier_eleven_entry(self):
         before = dict(packed_xml.walk(packed_xml.decode((DEFS / 'list.xml').read_bytes())))
         after = dict(packed_xml.walk(self.tree('list.xml')))
-        self.assertEqual(set(before), set(after))
-        changed = {k for k in before if before[k] != after[k]}
-        self.assertEqual(changed, {'/T62A[1]/userString[1]', '/T62A[1]/shortUserString[1]',
-                                   '/T62A[1]/description[1]', '/T62A[1]/level[1]'})
-        self.assertEqual(after['/T62A[1]/level[1]'], 11)
-        self.assertEqual(after['/T62A[1]/id[1]'], 54)
-        self.assertEqual(after['/T62A[1]/userString[1]'], '#ussr_vehicles:' + tv.KEY)
+        added = {k: v for k, v in after.items() if k not in before}
+        self.assertTrue(all(after[k] == v for k, v in before.items()))
+        self.assertEqual(added['/T62A_T[1]/id[1]'], 50)
+        self.assertEqual(added['/T62A_T[1]/level[1]'], 11)
+        self.assertEqual(added['/T62A_T[1]/userString[1]'], '#ussr_vehicles:T62A_T')
+        self.assertEqual(added['/T62A_T[1]/tags[1]'], before['/T62A[1]/tags[1]'] + ' secret')
+        self.assertIs(added['/T62A_T[1]/notInShop[1]'], True)
+        self.assertEqual(added['/T62A_T[1]/price[1]'], 0)
+        ids = [v for k, v in after.items() if k.endswith('/id[1]')]
+        self.assertEqual(len(ids), len(set(ids)))
 
-    def test_payload_set_is_exactly_list_loader_text_and_icons(self):
-        self.assertEqual(set(self.payloads), {tv.OUT_DEFS + 'list.xml', tv.MO,
-                         'res_mods/0.9.1/scripts/common/items/vehicles.pyc', *tv.ICONS.values()})
+    def test_components_get_their_own_unique_ids(self):
+        for name, (_, new, wanted) in (('components/chassis.xml', tv.CHASSIS), ('components/turrets.xml', tv.TURRET)):
+            after = dict(packed_xml.walk(self.tree(name)))
+            self.assertEqual(after[f'/ids[1]/{new}[1]'], wanted)
+            ids = [v for k, v in after.items() if k.startswith('/ids[1]/')]
+            self.assertEqual(len(ids), len(set(ids)), name)
+
+    def test_definition_is_the_original_renamed_with_only_armour_raised(self):
+        original = list(packed_xml.walk(packed_xml.decode((DEFS / 't62a.xml').read_bytes())))
+        renamed = list(packed_xml.walk(self.tree('t62a_t.xml')))
+        undo = [(p.replace(tv.CHASSIS[1] + '[', tv.CHASSIS[0] + '[').replace(tv.TURRET[1] + '[', tv.TURRET[0] + '['), v)
+                for p, v in renamed]
+        self.assertEqual([p for p, _ in undo], [p for p, _ in original])
+        changed = [(p, a, b) for (p, a), (_, b) in zip(original, undo) if a != b]
+        self.assertTrue(changed)
+        for path, before, after in changed:
+            self.assertRegex(path, r'^/(hull|turrets0)\[1\].*/armor\[1\]/[A-Za-z_0-9]+\[1\]$')
+            self.assertTrue(before > 0 and after == tv.ARMOR_MM, path)
+        self.assertNotIn('Track', ' '.join(p for p, _, _ in changed))
 
     def test_localization_adds_three_keys_and_keeps_originals(self):
         before = gettext.GNUTranslations(io.BytesIO((ORIGINAL / tv.MO).read_bytes()))
@@ -99,7 +118,13 @@ class TestVehicleClientTests(unittest.TestCase):
     def test_icons_are_pinned_to_their_provenance(self):
         for target in tv.ICONS.values():
             self.assertTrue(self.payloads[target].startswith(b'\x89PNG'))
-        self.assertEqual(set(self.evidence['overwrites_original']), {tv.MO})
+        self.assertEqual(set(self.evidence['overwrites_original']), {tv.MO, tv.TOOLTIPS_MO})
+
+    def test_tier_eleven_label_is_added_beside_the_original_tier_ten(self):
+        before = gettext.GNUTranslations(io.BytesIO((ORIGINAL / tv.TOOLTIPS_MO).read_bytes()))
+        after = gettext.GNUTranslations(io.BytesIO(self.payloads[tv.TOOLTIPS_MO]))
+        self.assertEqual((before.gettext('level/10'), before.gettext('level/11')), ('X', 'level/11'))
+        self.assertEqual((after.gettext('level/10'), after.gettext('level/11')), ('X', 'XI'))
 
 
 if __name__ == '__main__':
