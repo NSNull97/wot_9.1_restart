@@ -1,9 +1,9 @@
-"""Client resource patch for the stand-only test vehicle T-62A (T).
+"""Client resource patch: the stand's own T-62A shown as test vehicle "Т-62А (Т)", tier 11.
 
-Owner order 2026-11-04: a fully separate vehicle copied from the 0.9.1 T-62A,
-named "Т-62А (Т)", tier 11. Server-side armour (1000 mm) is a separate catalog
-layer; the client copy keeps the original armour values because the server is
-authoritative for hits.
+Owner decision 2026-11-04: on the stand, the 0.9.1 T-62A (id 54) itself is the
+test tank (server armour 1000 mm via a stand-only gateway flag); no separate
+vehicle type, so no catalogue or database change. The client only relabels the
+list entry and shows tier 11; the server keeps the source tier.
 
 Everything is derived at install time from the local original client and
 written as ignored install payloads; nothing from the client is committed.
@@ -11,11 +11,8 @@ written as ignored install payloads; nothing from the client is committed.
 Payloads (relative to the client root):
 - res_mods/0.9.1/scripts/common/items/vehicles.pyc: `_readLevel` bound 1..11
   (VERIFIED original bound 1..10 rejects tier 11), via client_level_bound27.py.
-- res_mods/0.9.1/scripts/item_defs/vehicles/ussr/list.xml: original list plus
-  T62A_T (copy of T62A: new id, own name keys, level 11).
-- .../ussr/components/chassis.xml, turrets.xml: original ids plus the test
-  vehicle's own chassis/turret names (as T62A_sport has its own pair).
-- .../ussr/t62a_t.xml: T62A definition with the chassis/turret renamed.
+- res_mods/0.9.1/scripts/item_defs/vehicles/ussr/list.xml: original list with
+  the T62A entry's three name keys and level changed; nothing else.
 - res/text/LC_MESSAGES/ussr_vehicles.mo: original catalog plus three new keys
   (replaced in place like menu.mo: a res_mods text dir would shadow every domain).
 - res_mods/0.9.1/gui/maps/icons/levels/tank_level_11.png and
@@ -23,7 +20,6 @@ Payloads (relative to the client root):
   local/assets/lesta-level11 (provenance.json), never committed.
 """
 import argparse
-import copy
 import gettext
 import hashlib
 import io
@@ -37,17 +33,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import packed_xml_writer as pxml  # noqa: E402
 
-SCHEMA = 'wot091-test-vehicle-client.v1'
+SCHEMA = 'wot091-test-vehicle-client.v2'
 BASE = 'T62A'
-NAME = 'T62A_T'
-VEHICLE_ID = 50
-CHASSIS = ('Chassis_T62A', 'Chassis_T62A_T', 62)
-TURRET = ('Turret_1_T62A', 'Turret_1_T62A_T', 50)
+KEY = 'T62A_T'
 LEVEL = 11
 TEXT = {
-    'T62A_T': 'Т-62А (Т)',
-    'T62A_T_short': 'Т-62А (Т)',
-    'T62A_T_descr': 'Тестовая машина стенда: копия Т-62А, броня 1000 мм. Не историческая машина.',
+    KEY: 'Т-62А (Т)',
+    KEY + '_short': 'Т-62А (Т)',
+    KEY + '_descr': 'Тестовая машина стенда: Т-62А с бронёй 1000 мм. Не историческая машина.',
 }
 DEFS = 'scripts/item_defs/vehicles/ussr/'
 OUT_DEFS = 'res_mods/0.9.1/' + DEFS
@@ -71,43 +64,15 @@ def read(path, limit=16 * 1024 * 1024):
     return raw
 
 
-def ids_of(document):
-    node = document['root'].child('ids')
-    return {name: pxml.value_int(value) for name, value in node.children}
-
-
-def add_id(raw, name, wanted):
-    document = pxml.parse(raw)
-    ids = ids_of(document)
-    if name in ids or wanted in ids.values():
-        raise ValueError(f'component {name} or id {wanted} already present')
-    document['root'].child('ids').children.append((name, pxml.integer(wanted)))
-    return pxml.encode(document)
-
-
 def vehicle_list(raw):
     document = pxml.parse(raw)
-    root = document['root']
-    used = {pxml.value_int(entry.child('id')) for _, entry in root.children}
-    if root.has(NAME) or VEHICLE_ID in used:
-        raise ValueError('test vehicle name or id already in the original list')
-    entry = copy.deepcopy(root.child(BASE))
-    if pxml.value_int(entry.child('level')) != 10:
-        raise ValueError('unmeasured base level')
-    entry.replace('id', pxml.integer(VEHICLE_ID))
-    entry.replace('userString', pxml.text('#ussr_vehicles:' + NAME))
-    entry.replace('shortUserString', pxml.text('#ussr_vehicles:' + NAME + '_short'))
-    entry.replace('description', pxml.text('#ussr_vehicles:' + NAME + '_descr'))
+    entry = document['root'].child(BASE)
+    if pxml.value_int(entry.child('level')) != 10 or pxml.value_text(entry.child('userString')) != '#ussr_vehicles:' + BASE:
+        raise ValueError('unmeasured base entry')
+    entry.replace('userString', pxml.text('#ussr_vehicles:' + KEY))
+    entry.replace('shortUserString', pxml.text('#ussr_vehicles:' + KEY + '_short'))
+    entry.replace('description', pxml.text('#ussr_vehicles:' + KEY + '_descr'))
     entry.replace('level', pxml.integer(LEVEL))
-    root.children.append((NAME, entry))
-    return pxml.encode(document)
-
-
-def vehicle_definition(raw):
-    document = pxml.parse(raw)
-    root = document['root']
-    root.child('chassis').rename(CHASSIS[0], CHASSIS[1])
-    root.child('turrets0').rename(TURRET[0], TURRET[1])
     return pxml.encode(document)
 
 
@@ -169,12 +134,8 @@ def build(original, python27=DEFAULT_PY27, icons=DEFAULT_ICONS, scratch=None):
     scratch.mkdir(parents=True, exist_ok=True)
     defs = original / 'res' / DEFS
     payloads, sources = {}, {}
-    for name in ('list.xml', 'components/chassis.xml', 'components/turrets.xml', 't62a.xml'):
-        sources[DEFS + name] = read(defs / name)
+    sources[DEFS + 'list.xml'] = read(defs / 'list.xml')
     payloads[OUT_DEFS + 'list.xml'] = vehicle_list(sources[DEFS + 'list.xml'])
-    payloads[OUT_DEFS + 'components/chassis.xml'] = add_id(sources[DEFS + 'components/chassis.xml'], CHASSIS[1], CHASSIS[2])
-    payloads[OUT_DEFS + 'components/turrets.xml'] = add_id(sources[DEFS + 'components/turrets.xml'], TURRET[1], TURRET[2])
-    payloads[OUT_DEFS + 't62a_t.xml'] = vehicle_definition(sources[DEFS + 't62a.xml'])
     payloads['res_mods/0.9.1/scripts/common/items/vehicles.pyc'] = level_pyc(original, python27, scratch)
     sources[MO] = read(original / MO, 8 * 1024 * 1024)
     payloads[MO] = add_mo_keys(sources[MO], TEXT)
@@ -186,8 +147,7 @@ def build(original, python27=DEFAULT_PY27, icons=DEFAULT_ICONS, scratch=None):
             raise ValueError('icon does not match its provenance pin: ' + stored)
         payloads[target] = raw
     evidence = {
-        'schema': SCHEMA, 'vehicle': NAME, 'base': BASE, 'vehicle_id': VEHICLE_ID, 'level': LEVEL,
-        'chassis': list(CHASSIS), 'turret': list(TURRET), 'text': TEXT,
+        'schema': SCHEMA, 'vehicle': BASE, 'name_key': KEY, 'level': LEVEL, 'text': TEXT,
         'sources': {k: sha(v) for k, v in sources.items()},
         'payloads': {k: sha(v) for k, v in sorted(payloads.items())},
         'icons_provenance': provenance.get('note'),
