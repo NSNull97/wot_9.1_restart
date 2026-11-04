@@ -198,3 +198,52 @@ fn role_mask(role:&str)->u8 {match role{"commander"=>1,"gunner"=>2,"driver"=>4,"
     let loaders=proxy::select(Profile::Wt128,proxy::Component::Turret,b,[0.69,0.5,0.5],[0.95,0.5,0.5]).unwrap();
     assert_eq!(loaders.iter().map(|hit|hit.target).collect::<Vec<_>>(),[Target::Seat(4),Target::Seat(5)]);
 }
+
+#[test] fn p06t_device_v2_destroyed_track_shows_crashed_and_is_repaired() {
+    for (track,extra) in [(Device::LeftTrack,30u8),(Device::RightTrack,31u8)] {
+        let mut state=State::new_v2(Profile::Ms1).unwrap();
+        let h=context(Profile::Ms1);
+        let shell=shell(Mount::WtE100128,0);
+        state.apply_hits(&[ModuleHit{shell,..hit(1,Target::Device(track),0,0.99)}],h).unwrap();
+        assert_eq!(state.health()[track as usize],0);
+        assert_eq!(state.public_modifiers(),[extra]);
+        assert_eq!((state.capabilities().drive_scale,state.capabilities().steer_scale),(0.,0.));
+        assert!(state.advance_fire(MODULE_REPAIR_DELAY_MS-1,h).unwrap().is_empty());
+        assert_eq!(state.public_modifiers(),[extra]);
+        let events=state.advance_fire(MODULE_REPAIR_DELAY_MS,h).unwrap();
+        let regen=CAPS[Profile::Ms1.index()][track as usize].regen;
+        assert_eq!(state.health()[track as usize],regen);
+        assert!(state.public_modifiers().is_empty());
+        assert!(state.capabilities().drive_scale>0.);
+        assert_eq!(events.len(),1);
+        assert!(matches!(events[0].change,Change::Device{device,extra_index,before:0,repair:true,before_condition:Condition::Destroyed,..}
+            if device==track&&extra_index==extra));
+    }
+}
+
+#[test] fn p06t_device_v2_every_destroyed_module_but_ammo_bay_is_repaired() {
+    assert!(Device::ALL.iter().all(|d|d.repairable()==(*d!=Device::AmmoBay)));
+    for device in [Device::Radio,Device::Gun,Device::TurretRotator,Device::SurveyingDevice] {
+        let mut state=State::new_v2(Profile::Ms1).unwrap();
+        let h=context(Profile::Ms1);
+        let shell=shell(Mount::WtE100128,0);
+        state.apply_hits(&[ModuleHit{shell,..hit(1,Target::Device(device),0,0.99)}],h).unwrap();
+        assert_eq!(state.health()[device as usize],0,"{device:?}");
+        assert!(state.public_modifiers().is_empty());
+        let events=state.advance_fire(MODULE_REPAIR_DELAY_MS,h).unwrap();
+        assert_eq!(state.health()[device as usize],CAPS[Profile::Ms1.index()][device as usize].regen,"{device:?}");
+        assert!(events.iter().any(|e|matches!(e.change,Change::Device{device:d,repair:true,..} if d==device)));
+    }
+}
+
+#[test] fn p06t_device_v2_fire_and_both_tracks_share_one_modifier_set() {
+    let mut state=State::new_v2(Profile::Ms1).unwrap();
+    let h=context(Profile::Ms1);
+    let shell=shell(Mount::WtE100128,0);
+    state.apply_hits(&[ModuleHit{shell,..hit(1,Target::Device(Device::LeftTrack),0,0.99)},
+        ModuleHit{shell,ordinal:1,..hit(1,Target::Device(Device::RightTrack),0,0.99)}],h).unwrap();
+    assert_eq!(state.public_modifiers(),[30,31]);
+    state.apply_hits(&[ModuleHit{shell,..hit(2,Target::Device(Device::FuelTank),0,0.99)}],h).unwrap();
+    assert!(state.fire_active());
+    assert_eq!(state.public_modifiers(),[4,30,31]);
+}

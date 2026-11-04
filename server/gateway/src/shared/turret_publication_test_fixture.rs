@@ -33,7 +33,7 @@ pub(super) fn fixture_for(now:Instant,own:usize)->(Session,World){
     let creation=s.tx.enqueue_body_tracked(&[wire::create_vehicle(&world,0).unwrap(),wire::create_vehicle(&world,1).unwrap()].concat()).unwrap();
     for slot in 0..2{c.creations[slot]=Some((creation,false));c.creation_announcements[slot]=Some(enter);}
     s.shared=Some(c);ack_all(&mut s,now);
-    let c=s.shared.as_mut().unwrap();c.health_sent=std::array::from_fn(|_|Some(90));c.crew_sent=std::array::from_fn(|_|Some(true));c.fire_sent=std::array::from_fn(|_|Some(false));
+    let c=s.shared.as_mut().unwrap();c.health_sent=std::array::from_fn(|_|Some(90));c.crew_sent=std::array::from_fn(|_|Some(true));c.fire_sent=std::array::from_fn(|_|Some(Vec::new()));
     c.owner_health_sent=Some(90);c.devices_snapshot_sent=true;c.view=Some(world.clone());(s,world)
 }
 pub(super) fn mask(enemy:bool)->[bool;super::model::MAX_ACTORS]{std::array::from_fn(|slot|slot==0||slot==1&&enemy)}

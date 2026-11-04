@@ -149,6 +149,14 @@ impl State {
     pub fn crew(&self)->&[bool] {&self.crew[..self.profile.crew().len()]}
     pub fn crew_active(&self)->bool {self.crew().iter().any(|a|*a)}
     pub fn fire_active(&self)->bool {self.fire.is_some()}
+    /// Public state extras of the vehicle (#717 Vehicle.publicStateModifiers):
+    /// fire (4) and each destroyed track (30/31), which the client's
+    /// TrackHealth extra shows as a crashed track on the model.
+    pub fn public_modifiers(&self)->Vec<u8> {
+        let mut out=Vec::new();if self.fire_active(){out.push(4);}
+        for track in [Device::LeftTrack,Device::RightTrack] {if self.health[track as usize]==0{out.push(track.extra());}}
+        out
+    }
     pub fn frozen(&self)->bool {self.frozen}
     pub fn sequence(&self)->u32 {self.sequence}
     pub fn fire_ticks(&self)->u32 {self.fire_ticks}
@@ -169,14 +177,14 @@ impl State {
             self.health[index]=after;
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
                 before_condition:condition(before,max),after_condition:condition(after,max),repair:false})?;
-            if after==0 && matches!(device,Device::Engine|Device::FuelTank) {
+            if after==0 && device.repairable() {
                 self.repair_due[index]=Some(at.checked_add(MODULE_REPAIR_DELAY_MS).ok_or_else(||bad("module repair clock overflow"))?);
                 self.repair_cause[index]=Some(cause);
             }
         } Ok(())
     }
     fn repair_due_devices(&mut self,out:&mut Vec<Transition>,now:u64)->io::Result<()> {
-        for device in [Device::Engine,Device::FuelTank] {
+        for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
             if self.health[index]!=0 || self.repair_due[index].is_none_or(|due|due>now) {continue;}
             let cause=self.repair_cause[index].ok_or_else(||bad("module repair cause missing"))?;
@@ -197,7 +205,7 @@ impl State {
     fn defer_repairs_after_fire(&mut self,at:u64)->io::Result<()> {
         let due=at.checked_add(MODULE_REPAIR_DELAY_MS)
             .ok_or_else(||bad("module post-fire repair clock overflow"))?;
-        for device in [Device::Engine,Device::FuelTank] {
+        for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
             if self.health[index]==0 && self.repair_due[index].is_some() {
                 self.repair_due[index]=Some(self.repair_due[index].unwrap().max(due));
