@@ -53,3 +53,15 @@ Python 3 и CPython 2.7.3 для клиентских модулей, полны
   `Settings.Settings(args…)`, как оригинальная personality.
 - Не проверено: изменение графики через окно настроек и применение «на лету»; два одновременно работающих клиента с одним
   файлом (родной писатель перезаписывает файл целиком при применении/выходе).
+
+## Решение владельца и установка (2026-11-04)
+
+- Владелец: «Свой файл на клиент», «Перенести». Клиент a — `../../GAYmDev Studio/SteelFrontier/preferences-a.xml`,
+  клиент b — `preferences-b.xml`. `install` один раз переносит Python-часть `profile-<x>/sr_preferences.xml` в
+  `scriptsPreferences` нового файла; существующий файл не заменяется, прежний профиль остаётся для отката.
+- Установки: `install-a-37` (флаги `install-a-36` + путь a), `install-b-15` (флаги a с путями b — прежняя b-12 была без
+  флагов BATTLE-UI). Перенос `SEEDED` у обоих.
+- OBSERVED, самопроверка клиента a (pid 22244): `existed_at_startup` true, запуск и закрытие окна — файл 16,7 КБ:
+  `scriptsPreferences` 13 (FOV 95 = прежнему, вкладка боя на месте), `graphicsPreferences` 34, `devicePreferences` 20.
+- Тесты: `tests/test_native_preferences.py` 6 OK; `test_project_preferences` Python 3 и CPython 2.7.3 OK.
+- Ждёт владельца: поменять графику и FOV в окне настроек, перезапустить — значения на месте; то же на b.
