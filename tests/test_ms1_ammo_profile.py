@@ -16,6 +16,8 @@ from tools.destructible_catalog import configured_paths, no_links
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE = os.path.join(ROOT, 'client_patch', 'sr_interactive.py')
+sys.path.insert(0, os.path.join(ROOT, 'tests', 'helpers'))
+import client_trace_source  # noqa: E402
 PANEL = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.py'
 META = 'scripts/client/gui/Scaleform/daapi/view/meta/AmmunitionPanelMeta.py'
 
@@ -31,12 +33,8 @@ def execute_trusted(code, namespace):
 
 
 def load_functions(events):
-    with open(SOURCE, 'rb') as stream:
-        module = ast.parse(stream.read(), filename=SOURCE)
-    wanted = set(('primitive', 'ammo_projection', 'profile_calls'))
-    body = [node for node in module.body if isinstance(node, ast.FunctionDef) and node.name in wanted]
-    if set(node.name for node in body) != wanted or len(body) != len(wanted):
-        raise AssertionError('expected exactly the three trusted project observer functions')
+    # R7: ammo_projection and profile_calls live in native_call_trace.py now.
+    body = client_trace_source.nodes(['primitive', 'ammo_projection', 'profile_calls'])
     extracted = ast.Module(body=body, type_ignores=[]) if sys.version_info[0] >= 3 else ast.Module(body=body)
     namespace = {'json': json, '_profile_call_id': 0, '_profile_frames': {},
                  '_settings': {},
@@ -44,6 +42,7 @@ def load_functions(events):
                  '_fini': False, '_control': None}
     if sys.version_info[0] >= 3:
         namespace.update({'long': int, 'str': bytes, 'unicode': str, 'basestring': (str, bytes)})
+    client_trace_source.bind_host(namespace)
     # Only this repository's three named functions are compiled, never input data.
     execute_trusted(compile(extracted, SOURCE, 'exec'), namespace)
     return namespace

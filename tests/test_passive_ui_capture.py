@@ -2,24 +2,27 @@
 import ast
 import os
 from pathlib import Path
+import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
 SOURCE = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'helpers'))
+import client_trace_source  # noqa: E402
 
 
 def load_scheduler(**settings):
-    nodes = [node for node in ast.parse(SOURCE.read_bytes()).body
-             if isinstance(node, ast.FunctionDef) and node.name == 'schedule_tooltip_screenshot']
-    assert len(nodes) == 1
+    # R7: the scheduler moved to native_call_trace.py; host stubs via _host.
+    nodes = client_trace_source.nodes(['schedule_tooltip_screenshot'])
     callbacks = []
     # No navigation, login, input or quit methods are supplied.
     namespace = dict(_settings=settings, _control=None, _fini=False, _capture_done=True,
                      _tooltip_capture_count=0, _tooltip_callbacks={},
                      _passive_capture_counts={'tooltip': 0, 'awards': 0},
                      BigWorld=SimpleNamespace(callback=lambda delay, fn: callbacks.append((delay, fn))))
+    client_trace_source.bind_host(namespace)
     exec(compile(ast.Module(body=nodes, type_ignores=[]), str(SOURCE), 'exec'), namespace)
     return namespace, callbacks
 

@@ -8,18 +8,18 @@ regression remain separate checks.
 import ast
 import json
 from pathlib import Path
+import sys
 import unittest
 
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'helpers'))
+import client_trace_source  # noqa: E402
 
 SOURCE = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
 
 
 def load_primitive(name='primitive'):
-    module = ast.parse(SOURCE.read_bytes(), filename=str(SOURCE))
-    functions = [node for node in module.body if isinstance(node, ast.FunctionDef)
-                 and node.name == name]
-    if len(functions) != 1:
-        raise AssertionError('expected one original project diagnostic function')
+    # R7: the uint arrays moved to native_call_trace.py with the profiler.
+    functions = client_trace_source.nodes([name])
     namespace = {'json': json, 'long': int, 'str': bytes, 'unicode': str,
                  'basestring': (str, bytes)}
     code = compile(ast.Module(body=functions, type_ignores=[]), str(SOURCE), 'exec')
