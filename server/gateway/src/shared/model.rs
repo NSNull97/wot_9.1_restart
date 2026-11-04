@@ -1405,7 +1405,10 @@ impl World {
                             let mut tracks:Vec<super::collision::Candidate>=Vec::new();
                             if projectile.shell.is_some()&&target.alive() {
                                 if let Some(chassis)=bundle.chassis_mesh(&target,target_slot,tick)? {
-                                    let limit=hits.first().map_or(f32::INFINITY,|hit|hit.t);
+                                    // Before the nearest vehicle triangle and strictly before terrain
+                                    // (terrain wins a shared f32 bucket, as against the hull).
+                                    let limit=hits.first().map_or(f32::INFINITY,|hit|hit.t)
+                                        .min(ground.as_ref().map_or(f32::INFINITY,|g|g.t as f32));
                                     let done=impact_trace.tracks_hit(projectile.sequence);
                                     for crossing in super::collision::query(&chassis,start_point,end_point)? {
                                         if crossing.t>=limit {break;}
@@ -1415,11 +1418,23 @@ impl World {
                                     }
                                 }
                             }
-                            let nearest_t=tracks.first().map(|c|c.t).or(hits.first().map(|h|h.t));
+                            for crossing in &tracks {
+                                let pass=self.track_mixed(&mut next_actors,&mut impact_trace,projectile,target_slot,tick,&bundle,crossing)?;
+                                if pass.stopped {
+                                    let point=std::array::from_fn(|i|start_point[i]+crossing.t*(end_point[i]-start_point[i]));
+                                    projectile.terminal=point;projectile.stopped=true;
+                                    // HE detonates on the track; the target itself is not excluded from the splash.
+                                    self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,point,tick,None,next_fragiles.as_ref())?;
+                                    impact_trace.terminal(self.id,projectile.sequence,tick,impact::TerminalReason::TestLabTrackImpact)?;
+                                    continue 'projectile_loop;
+                                }
+                            }
+                            // A shell that passed a track still meets the terrain or hull behind it
+                            // in this same segment (road wheels sit at ground level).
                             // Both candidates refer to the same original flight chord.
                             // Compare in the vehicle query's f32 parameter domain:
                             // terrain wins a shared rounding bucket, no epsilon.
-                            if ground.as_ref().is_some_and(|g| nearest_t.is_none_or(|v| (g.t as f32) <= v)) {
+                            if ground.as_ref().is_some_and(|g| hits.first().is_none_or(|v| (g.t as f32) <= v.t)) {
                                 if terrain_contacts.len() >= self.shot_limit() { return Err(bad()); }
                                 let hit = impact_trace.terrain_contact(self.id, projectile.sequence, tick)?;
                                 let chord: [f64; 3] = std::array::from_fn(|i| f64::from(end_point[i])-f64::from(start_point[i]));
@@ -1444,17 +1459,6 @@ impl World {
                                 if projectile.shell.is_some(){self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,hit.point,tick,None,next_fragiles.as_ref())?;}
                                 impact_trace.terminal(self.id, projectile.sequence, tick, impact::TerminalReason::TerrainCollision)?;
                                 continue 'projectile_loop;
-                            }
-                            for crossing in &tracks {
-                                let pass=self.track_mixed(&mut next_actors,&mut impact_trace,projectile,target_slot,tick,&bundle,crossing)?;
-                                if pass.stopped {
-                                    let point=std::array::from_fn(|i|start_point[i]+crossing.t*(end_point[i]-start_point[i]));
-                                    projectile.terminal=point;projectile.stopped=true;
-                                    // HE detonates on the track; the target itself is not excluded from the splash.
-                                    self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,point,tick,None,next_fragiles.as_ref())?;
-                                    impact_trace.terminal(self.id,projectile.sequence,tick,impact::TerminalReason::TestLabTrackImpact)?;
-                                    continue 'projectile_loop;
-                                }
                             }
                             if let Some(nearest) = hits.first() {
                                 let endpoint = std::array::from_fn(|i|

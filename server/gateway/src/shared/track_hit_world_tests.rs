@@ -10,12 +10,12 @@ fn ms1_chassis()->Arc<super::super::super::chassis_armor::ChassisArmor>{
     Arc::new(super::super::super::chassis_armor::ChassisArmor::load(&root().join("local"),
         &root().join("local/evidence/shell-01-chassis-20261104-02/bundles/ussr-MS-1.json")).unwrap())
 }
-fn template(now:Instant,id:u64,chassis:bool)->World{
+fn template(now:Instant,id:u64,chassis:bool,ground:f32)->World{
     let mut w=World::new_for_roster(id,now,crate::map_profile091::MapId::Karelia,2).unwrap();
     let ms1=super::super::super::geometry::tests::bundle();
     w.bind_geometry(Arc::new(if chassis{ms1.with_chassis(ms1_chassis()).unwrap()}else{ms1})).unwrap();
     w.bind_geometry(Arc::new(super::super::super::geometry::tests::is7_bundle())).unwrap();
-    w.enable_ap_test_lab().unwrap();w.bind_terrain(Arc::new(super::super::super::terrain::tests::fixture(-1000.,2000.,2,vec![-100.;4]))).unwrap();
+    w.enable_ap_test_lab().unwrap();w.bind_terrain(Arc::new(super::super::super::terrain::tests::fixture(-1000.,2000.,2,vec![ground;4]))).unwrap();
     w.enable_mixed_ammo().unwrap();w.enable_lifecycle(super::super::super::lifecycle::Rules{
         prebattle_ms:1000,battle_ms:60000,..super::super::super::lifecycle::Rules::prohorovka()}).unwrap();w
 }
@@ -28,11 +28,13 @@ fn lab_attach(w:&mut World,slot:usize,counts:[u16;3]){
     w.actors[slot].fire=fire::State::with_typed(source::Mount::Ms1Stock,counts,shell.compact_descr).unwrap();
     w.actors[slot].devices=Some(device::State::new(caps::Profile::Ms1).unwrap());
 }
-fn ready(chassis:bool,counts:[u16;3],id:u64,now:Instant)->World{
-    let mut w=template(now,id,chassis);lab_attach(&mut w,0,[4,4,4]);lab_attach(&mut w,1,[1,1,1]);
+fn ready(chassis:bool,counts:[u16;3],id:u64,now:Instant)->World{ready_at(chassis,counts,id,now,-100.,20.)}
+/// `ground`: flat terrain height; `target_z`: distance of the side-on target.
+fn ready_at(chassis:bool,counts:[u16;3],id:u64,now:Instant,ground:f32,target_z:f32)->World{
+    let mut w=template(now,id,chassis,ground);lab_attach(&mut w,0,[4,4,4]);lab_attach(&mut w,1,[1,1,1]);
     w.actors[0].fire=fire::State::with_typed(source::Mount::Ms1Stock,counts,
         source::PROFILES[0].shots[counts.iter().position(|v|*v>0).unwrap()].compact_descr).unwrap();
-    for(slot,p)in [[0.;3],[0.,0.,20.]].into_iter().enumerate(){w.actors[slot].position=p;w.actors[slot].origin=p;}
+    for(slot,p)in [[0.;3],[0.,0.,target_z]].into_iter().enumerate(){w.actors[slot].position=p;w.actors[slot].origin=p;}
     // Side-on target: its chassis covers the lower hull side toward the shooter.
     w.actors[1].direction=[std::f32::consts::FRAC_PI_2,0.,0.];w.actors[1].yaw=std::f32::consts::FRAC_PI_2;
     w.start(now).unwrap();w.lifecycle_created_unix=Some(1792152000);
@@ -153,4 +155,48 @@ fn track(device:caps::Device)->bool{matches!(device,caps::Device::LeftTrack|caps
     assert!(back.geometry_for(VehicleKind::Ms1).unwrap().chassis().is_some());
     assert_eq!(track_rows(&back),track_rows(&w));
     assert_eq!(crate::bw_wire::encode(&back,now,&mut crate::bw_wire::Arcs::new(false)).unwrap(),bytes);
+}
+
+fn ticks_of(w:&World)->(Vec<u32>,Vec<u32>){
+    let track=w.impact.events().iter().filter_map(|e|match e{impact::Event::TrackContact{target:1,server_tick,..}=>Some(*server_tick),_=>None}).collect();
+    let hull=w.impact.events().iter().filter_map(|e|match e{impact::Event::MixedResolution{target:1,server_tick,..}=>Some(*server_tick),_=>None}).collect();
+    (track,hull)
+}
+fn terminal_of(w:&World)->Option<impact::TerminalReason>{
+    w.impact.events().iter().find_map(|e|match e{impact::Event::Terminal{shot_id:1,reason,..}=>Some(*reason),_=>None})
+}
+
+/// Owner battle 04.11 (stand -12): a shell through the road wheels with the ground right
+/// behind them in the same segment failed the battle with "impact segment facts".
+#[test]fn a_shell_through_the_track_meets_the_terrain_behind_it_in_the_same_segment(){
+    let now=Instant::now();let base=ready_at(true,[4,0,0],408,now,0.,20.);
+    let mut found=None;
+    'search: for y in [0.05,0.1,0.15,0.2,0.25,0.3]{for x in [-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2]{for z in [19.,20.,21.,22.]{
+        let w=shoot(&base,[x,y,z],now);
+        if !track_rows(&w).is_empty()&&hull_rows(&w).is_empty()&&terminal_of(&w)==Some(impact::TerminalReason::TerrainCollision){
+            found=Some(w);break 'search;
+        }
+    }}}
+    let w=found.expect("a low shot must pass the source track and stop on the ground behind it");
+    let(track,_)=ticks_of(&w);assert_eq!(track.len(),1);
+    assert_eq!(w.terrain_contacts.len(),1);assert_eq!(w.terrain_contacts[0].tick,track[0],"same segment as the track");
+    assert_eq!(w.actors[1].health,base.actors[1].health,"a track never changes HP");
+}
+
+/// The track is crossed in one segment and the hull plate in the next one: the flight
+/// continues, the residual power is kept, and collideOnceOnly still holds.
+#[test]fn a_track_pass_keeps_flying_and_reaches_the_hull_on_a_later_tick(){
+    let now=Instant::now();let mut found=None;
+    'search: for step in 0..120{let z=31.+0.05*step as f32;
+        let base=ready_at(true,[4,0,0],409,now,-100.,z);
+        for y in [0.3,0.4,0.5]{for x in [-0.3,0.,0.3]{
+            let w=shoot(&base,[x,y,z-1.],now);
+            let(track,hull)=ticks_of(&w);
+            if track.len()==1&&hull.len()==1&&hull[0]>track[0]{found=Some(w);break 'search;}
+        }}
+    }
+    let w=found.expect("a segment boundary between the track and the hull plate");
+    let rows=track_rows(&w);assert_eq!(rows.len(),1);assert!(!rows[0].2.stopped);
+    assert_eq!(hull_rows(&w)[0].0.nominal_power_mm,rows[0].2.power_after_mm,"residual power carried across segments");
+    assert_eq!(terminal_of(&w),Some(impact::TerminalReason::TestLabMixedImpact));
 }
