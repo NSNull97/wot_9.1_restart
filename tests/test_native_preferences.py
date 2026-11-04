@@ -1,6 +1,6 @@
 """UI-PREF01: the engine's own preferences writer on a relative path, and the one-time carry-over.
 
-Measured on client b 04.11 (docs/plans/UI_PREF01_NATIVE_PREFERENCES.md): the engine
+Measured on client b 04.11 (plan in git at a960537): the engine
 resolves the relative path itself and writes graphics, device and script sections.
 These tests cover our part: the path rule, the seed layout, and that the client patch
 keeps the native Settings and writer in that mode. The engine is not run here.

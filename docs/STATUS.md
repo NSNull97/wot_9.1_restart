@@ -6,7 +6,7 @@
 ## Сейчас: REFACTOR-01 — очистка и порядок в исходниках
 
 Ветка `codex/refactor-01-plan`, [план](plans/REFACTOR01_PLAN.md) утверждён владельцем 03.11. Поведение не меняется.
-R0–R5 влиты в main 04.11 (`0bfa63c`, владелец: «Да, влить»); R7 — в ветке UI-PREF01 (`279ecf7`); R6 ждёт решения.
+R0–R5 влиты в main 04.11 (`0bfa63c`, владелец: «Да, влить»); R7 влит с UI-PREF01 04.11; R6 ждёт решения.
 
 - R0 `8bda1b9`: `check_layout.py` с правилом имён (437 имён-долгов в `server/layout.json`, список только сокращается)
   входит в полный gate; карта привязок к байтам — `local/evidence/20261103-refactor01-r0/pin-map.json`.
@@ -27,6 +27,7 @@ R0–R5 влиты в main 04.11 (`0bfa63c`, владелец: «Да, влит�
 
 | Дата | Карточки |
 |---|---|
+| 04.11 | UI-PREF01: настройки клиента (графика, FOV) сохраняются между запусками, свой файл на клиент; REFACTOR R7 |
 | 04.11 | CLIENT-PERF-01: глобальный профилировщик клиента только в диагностике |
 | 03.11 | BATTLE-UI: UI-01…06 (настройки, индикатор обстрела, лента и история боя, итоги, уши, маркеры), CRASH-01 |
 | 01.11 | PERF-02 (тир X и остаток, MALINOVKA-STEP), LATE-BOTS, LATE-NOTICE-01, CAT-NATIONS-02 |
@@ -39,6 +40,12 @@ R0–R5 влиты в main 04.11 (`0bfa63c`, владелец: «Да, влит�
 
 Факты, нужные дальше:
 
+- UI-PREF01 (владелец 04.11 проверил a и b: графика и FOV сохраняются после перезапуска): `prepare --native-preferences
+  <относительный путь>` — файл настроек пишет сам движок (`engine_config <preferences>`, путь от
+  `%APPDATA%/Wargaming.net/WorldOfTanks`, только внутри `GAYmDev Studio/SteelFrontier`); при первой установке Python-часть
+  прежнего профиля переносится в `scriptsPreferences` один раз, пароли и токены отвергаются. Клиенты a `install-a-38`
+  (`preferences-a.xml`), b `install-b-17` (`preferences-b.xml`). В `%APPDATA%/Wargaming.net/WorldOfTanks/` (современный клиент)
+  наши клиенты не пишут. Без флага — прежний режим. План — `docs/plans/UI_PREF01_NATIVE_PREFERENCES.md` в git на `a960537`.
 - CLIENT-PERF-01 (владелец 04.11, стенд -12, клиент a `install-a-36`: «фпс в районе 90-100 держится», прежде 84 в аудите):
   `sys.setprofile(profile_calls)` ставится только при `test_control`, `capture_ui_passive` или `prepare --trace-native-calls`;
   в трассе `native_call_trace`. Диагностика родных вызовов в бою — только с этим флагом. План — `docs/plans/CLIENT_PERF01_PROFILER.md`
