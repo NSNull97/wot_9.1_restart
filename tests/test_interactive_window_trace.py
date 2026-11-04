@@ -2,9 +2,12 @@
 import ast
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 import unittest
 
 SOURCE = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'helpers'))
+import client_trace_source  # noqa: E402
 PREFIX = 'scripts/client/gui/Scaleform/daapi/view/lobby/'
 TARGETS = (
     (PREFIX + 'customization/VehicleCustomization.py', '_populate', 62),
@@ -16,15 +19,14 @@ TARGETS = (
 
 class WindowTraceTests(unittest.TestCase):
     def setUp(self):
-        tree = ast.parse(SOURCE.read_bytes())
-        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name == 'profile_calls']
-        self.assertEqual(len(functions), 1)
+        # R7: the profiler lives in native_call_trace.py; host stubs via _host.
+        functions = client_trace_source.nodes(['profile_calls'])
         self.events = []
         self.namespace = {'_profile_call_id': 0, '_profile_frames': {}, '_control': None,
                           '_settings': {},
                           'record': lambda event, **fields: self.events.append((event, fields))}
         # Only trusted repository function code, no imported personality or input data.
+        client_trace_source.bind_host(self.namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(SOURCE), 'exec'), self.namespace)
         self.observe = self.namespace['profile_calls']
 

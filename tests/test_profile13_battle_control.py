@@ -164,7 +164,7 @@ class CombinedCleanupTests(unittest.TestCase):
         ns = functions({'fini'}, dict(sys=sys, traceback=__import__('traceback'),
             _fini=False, _ready=False, _exception_hook=sys.excepthook,
             _settings={'enable_profile13_battle': True},
-            _tooltip_callbacks={}, clear_relogin_credentials=lambda: None,
+            native_call_trace=NS(_tooltip_callbacks={}), clear_relogin_credentials=lambda: None,
             clear_account_switch_credentials=lambda: None,
             record=lambda event, **data: calls.append(event)))
         with patch.dict(sys.modules, mods), patch.dict(sys.modules, {'Account': NS(_delAccountRepository=lambda: None)}):

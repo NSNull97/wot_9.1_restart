@@ -9,13 +9,15 @@ import unittest
 from unittest.mock import Mock, patch
 
 SOURCE = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'helpers'))
+import client_trace_source  # noqa: E402
 
 
 def trusted_functions(names, namespace):
     namespace.setdefault('_settings', {})
-    tree = ast.parse(SOURCE.read_bytes())
-    found = [node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name in names]
-    assert len(found) == len(names)
+    # R7: profile_calls lives in native_call_trace.py and reads host stubs via _host.
+    found = client_trace_source.nodes(names)
+    client_trace_source.bind_host(namespace)
     exec(compile(ast.Module(body=found, type_ignores=[]), str(SOURCE), 'exec'), namespace)
 
 

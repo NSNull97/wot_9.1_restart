@@ -2,20 +2,24 @@
 import ast
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 import unittest
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / 'helpers'))
+import client_trace_source  # noqa: E402
 
 
 class SharedControlTests(unittest.TestCase):
     def test_fallen_tree_callback_is_bounded_and_read_only(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
-        tree = ast.parse(source.read_bytes())
-        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name in ('_bounded_uint32_array', '_bounded_uint16_array', 'profile_calls')]
+        # R7: the profiler lives in native_call_trace.py; host stubs via _host.
+        functions = client_trace_source.nodes(['_bounded_uint32_array', '_bounded_uint16_array', 'profile_calls'])
         calls = []
         namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
                          _profile_call_id=0, _profile_frames={}, long=int,
                          primitive=lambda value, **kwargs: value,
                          record=lambda event, **fields: calls.append((event, fields)))
+        client_trace_source.bind_host(namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
         bounded = namespace['_bounded_uint32_array']
         self.assertEqual(bounded([0, 0xffffffff]), [0, 0xffffffff])
@@ -45,14 +49,14 @@ class SharedControlTests(unittest.TestCase):
 
     def test_fallen_tree_consumer_path_copies_only_bounded_scalars(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
-        tree = ast.parse(source.read_bytes())
-        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name == 'profile_calls']
+        # R7: the profiler lives in native_call_trace.py; host stubs via _host.
+        functions = client_trace_source.nodes(['profile_calls'])
         calls = []
         namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
                          _profile_call_id=0, _profile_frames={}, long=int,
                          primitive=lambda value, **kwargs: value,
                          record=lambda event, **fields: calls.append((event, fields)))
+        client_trace_source.bind_host(namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
         instance = SimpleNamespace()
         frame = SimpleNamespace(
@@ -136,14 +140,14 @@ class SharedControlTests(unittest.TestCase):
 
     def test_aim_receipt_pairs_original_callbacks_without_gameplay_writes_or_private_locals(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
-        tree = ast.parse(source.read_bytes())
-        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name == 'profile_calls']
+        # R7: the profiler lives in native_call_trace.py; host stubs via _host.
+        functions = client_trace_source.nodes(['profile_calls'])
         calls = []
         namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
                          _profile_call_id=0, _profile_frames={},
                          primitive=lambda value, **kwargs: value,
                          record=lambda event, **fields: calls.append((event, fields)))
+        client_trace_source.bind_host(namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
         for method, name in [('set_gunAnglesPacked', 'Vehicle'), ('updateTargetingInfo', 'Avatar')]:
             instance = SimpleNamespace(id=152043525, gunAnglesPacked=32895)
@@ -167,14 +171,14 @@ class SharedControlTests(unittest.TestCase):
 
     def test_passive_shot_receipt_reads_only_bounded_original_handler_fields(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
-        tree = ast.parse(source.read_bytes())
-        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name == 'profile_calls']
+        # R7: the profiler lives in native_call_trace.py; host stubs via _host.
+        functions = client_trace_source.nodes(['profile_calls'])
         calls = []
         namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
                          _profile_call_id=0, _profile_frames={},
                          primitive=lambda value, **kwargs: value,
                          record=lambda event, **fields: calls.append((event, fields)))
+        client_trace_source.bind_host(namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
         instance = SimpleNamespace(id=152043525, isStarted=True, isPlayer=False)
         frame = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/Vehicle.py',
@@ -198,14 +202,14 @@ class SharedControlTests(unittest.TestCase):
 
     def test_passive_tracer_and_mover_receipts_keep_fixed_arguments_only(self):
         source = Path(__file__).resolve().parents[1] / 'client_patch/sr_interactive.py'
-        tree = ast.parse(source.read_bytes())
-        functions = [node for node in tree.body if isinstance(node, ast.FunctionDef)
-                     and node.name == 'profile_calls']
+        # R7: the profiler lives in native_call_trace.py; host stubs via _host.
+        functions = client_trace_source.nodes(['profile_calls'])
         calls = []
         namespace = dict(_settings={'enable_shared_lab': True}, _control=None,
                          _profile_call_id=0, _profile_frames={}, _shared_vector=lambda value: list(value),
                          primitive=lambda value, **kwargs: value,
                          record=lambda event, **fields: calls.append((event, fields)))
+        client_trace_source.bind_host(namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
         avatar = SimpleNamespace(id=152043524, playerVehicleID=152043525)
         show = SimpleNamespace(f_code=SimpleNamespace(co_filename='scripts/client/Avatar.py',
@@ -245,6 +249,7 @@ class SharedControlTests(unittest.TestCase):
                      and node.name == 'shared_login_control']
         self.assertEqual(len(functions), 1)
         namespace = {}
+        client_trace_source.bind_host(namespace)
         exec(compile(ast.Module(body=functions, type_ignores=[]), str(source), 'exec'), namespace)
         check = namespace['shared_login_control']
         control = {'username': 'owned@example.invalid', 'password': 'unit-only', 'submit_via': 'python'}
