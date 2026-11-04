@@ -5,7 +5,7 @@
 
 | Шаг | Статус |
 |---|---|
-| 1 пакет ходовой отдельным файлом (`tools/chassis_armor_export.py`) | NOT_RUN |
+| 1 пакет ходовой отдельным файлом (`tools/chassis_armor_export.py`) | PASS — 370/374 пакетов, все боевые машины; 13 тестов; повтор байт-в-байт |
 | 2 загрузчик `shared/chassis_armor.rs` | NOT_RUN |
 | 3 запрос `armor_layers` (все слои по порядку) | NOT_RUN |
 | 4 калибр 182.9 на копии клиента | NOT_RUN |
