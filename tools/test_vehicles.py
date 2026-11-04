@@ -60,10 +60,7 @@ def load(path=SPEC_PATH):
             m = v[part]
             require(type(m) is dict and set(m) == {"base", "name", "id"} and type(m["id"]) is int
                     and 0 <= m["id"] <= 254, "module spec: " + part)
-    # Line endings follow the checkout (core.autocrlf); the pin is over LF bytes.
-    return spec, hashlib.sha256(raw.replace(b"
-", b"
-")).hexdigest()
+    return spec, hashlib.sha256(raw).hexdigest()
 
 
 def activate():
