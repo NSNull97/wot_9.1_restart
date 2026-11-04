@@ -397,6 +397,9 @@ def prepare(args):
                 'test_control':str(control) if control else None,
                 'capture_hangar':bool(args.capture_hangar or args.capture_ui_passive),
                 'capture_ui_passive':bool(args.capture_ui_passive),
+                # CLIENT-PERF-01: the global native-call profiler only on request
+                # (a test control file or the passive capture turn it on too).
+                'trace_native_calls':bool(getattr(args, 'trace_native_calls', False)),
                 'enable_map_drive':bool(args.enable_map_drive)}
     if network.get('network_policy') is not None:
         settings['network_policy'] = network['network_policy']
@@ -721,6 +724,9 @@ def main():
     prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
                       help='Project policy, not original 0.9.1: one existing GUI FX cue when '
                            'the Sixth Sense lamp lights; requires a battle mode; off by default')
+    prep.add_argument('--trace-native-calls', action='store_true',
+                      help='CLIENT-PERF-01 diagnostic: the global profiler that records original native calls '
+                           '(about -20%% fps in battle); off in ordinary play, on with a test control file')
     prep.add_argument('--trace-pose-10hz', action='store_true',
                       help='NET-01 diagnostic: record native vehicle positions, BigWorld.time and serverTime '
                            'every 0.1 s in battle (read-only); requires profile13 battle')

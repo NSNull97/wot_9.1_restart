@@ -26,6 +26,7 @@ R0–R5 влиты в main 04.11 (`0bfa63c`, владелец: «Да, влит�
 
 | Дата | Карточки |
 |---|---|
+| 04.11 | CLIENT-PERF-01: глобальный профилировщик клиента только в диагностике |
 | 03.11 | BATTLE-UI: UI-01…06 (настройки, индикатор обстрела, лента и история боя, итоги, уши, маркеры), CRASH-01 |
 | 01.11 | PERF-02 (тир X и остаток, MALINOVKA-STEP), LATE-BOTS, LATE-NOTICE-01, CAT-NATIONS-02 |
 | 31.10 | IMPACT-01, CAT-NATIONS |
@@ -37,6 +38,10 @@ R0–R5 влиты в main 04.11 (`0bfa63c`, владелец: «Да, влит�
 
 Факты, нужные дальше:
 
+- CLIENT-PERF-01 (владелец 04.11, стенд -12, клиент a `install-a-36`: «фпс в районе 90-100 держится», прежде 84 в аудите):
+  `sys.setprofile(profile_calls)` ставится только при `test_control`, `capture_ui_passive` или `prepare --trace-native-calls`;
+  в трассе `native_call_trace`. Диагностика родных вызовов в бою — только с этим флагом. План — `docs/plans/CLIENT_PERF01_PROFILER.md`
+  в git на `4182d0f`. Фризы загрузки и ангара (движок, аудит `codex/client-stutter-audit`) не решены — CLIENT-PERF-02…05.
 - BATTLE-UI включён по умолчанию; откат `--native-vehicle-markers`, `--hit-indicator off`, `--no-battle-feed`,
   `--no-battle-history`. Шлюз: `battle_events {version 1, feed, history}`, `int_user_settings`, `results_ledger`, `team_score`.
   Иконки классов и событий — локальная копия Lesta (`local/ui-borrowed/`, не в Git).

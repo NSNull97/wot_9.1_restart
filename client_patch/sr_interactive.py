@@ -78,6 +78,8 @@ if (type(_settings.get('enable_catalog_v1', False)) is not bool
 if (type(_settings.get('enable_crew_any', False)) is not bool
         or (_settings.get('enable_crew_any') and _settings.get('enable_catalog_v1') is not True)):
     raise ValueError('CREW-ANY requires the CAT-01 catalog mode')
+if type(_settings.get('trace_native_calls', False)) is not bool:
+    raise ValueError('trace_native_calls must be a Boolean')
 import project_network
 project_network.validate_settings(_settings)
 import project_sixth_sense_sound
@@ -330,6 +332,22 @@ def _bounded_uint16_array(value, limit=125):
     except (TypeError, ValueError, AttributeError):
         return {'unrecognized': True, 'reason': 'uint16_array_type'}
     return result
+
+
+def native_call_trace_wanted(settings):
+    """CLIENT-PERF-01: the global profiler (profile_calls) only in diagnostic runs.
+
+    It only records native calls; what acts on them needs a test control file
+    or the passive UI capture. Ordinary play goes without it (fps 84 -> ~103 in
+    the 2026-10-26 audit). Returns the reason, or None when it stays off.
+    """
+    if settings.get('test_control'):
+        return 'test_control'
+    if settings.get('capture_ui_passive') is True:
+        return 'capture_ui_passive'
+    if settings.get('trace_native_calls') is True:
+        return 'trace_native_calls'
+    return None
 
 
 def profile_calls(frame, phase, value):
@@ -1033,7 +1051,10 @@ def init(*args):
            personality='sr_interactive', control_configured=bool(_settings.get('test_control')))
     BigWorld.serverDiscovery.searching = False
     sys.excepthook = exception
-    sys.setprofile(profile_calls)
+    reason = native_call_trace_wanted(_settings)
+    record('native_call_trace', enabled=reason is not None, reason=reason)
+    if reason is not None:
+        sys.setprofile(profile_calls)
     try:
         import project_preferences
         project_preferences.install(args, _settings, record)
