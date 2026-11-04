@@ -12,6 +12,10 @@
 - [FULL_TEST_20261020.md](FULL_TEST_20261020.md) — отрыв башни (#717 SynchronousDetachment), поворот, zero-economy/100 слотов, бой на купленных пуловых танках, звук лампы; gate1685/1
 - [FULL_TEST_20261019.md](FULL_TEST_20261019.md) — физика из чужого checkout, выстрел в упор, паузы gateway; gate1684/1, стенд одного checkout, native NOT_RUN
 
+## Механика снарядов
+
+- [SHELL_MECH.md](SHELL_MECH.md) — исследование #717 (Codex 27.10) и сверка с main 04.11: броня и ходовая, неизвестные внутренние объёмы и законы сервера, инварианты 6/4/275, декали AV-01; native NOT_RUN
+
 ## Карты
 
 - [MAPS01_MAP_PIPELINE.md](MAPS01_MAP_PIPELINE.md) — конвейер 44 карт, реестр, статический native-индекс разрушаемого
