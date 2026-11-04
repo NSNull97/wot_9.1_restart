@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PROJECT POLICY, not original 0.9.1: the UI-05 tab of the native settings window.
-docs/plans/UI05_NATIVE_SETTINGS.md.
+docs/plans/UI05_NATIVE_SETTINGS.md (git 30a6185).
 
 One table below drives everything: tools/battle_ui_settings_flash.py builds the
 tab of both native windows from it (lobby AS3, battle AS2) and this module keeps
@@ -284,12 +284,8 @@ class Controller(object):
 
 
 def _check(function, filename, name, line, args, digest):
-    code = getattr(function, 'func_code', getattr(function, '__code__', None))
-    if (code is None or code.co_filename.replace('\\', '/') != filename or code.co_name != name
-            or code.co_firstlineno != line or code.co_argcount != len(args)
-            or tuple(code.co_varnames[:len(args)]) != args
-            or hashlib.sha256(code.co_code).hexdigest() != digest):
-        raise RuntimeError('original #717 settings host differs: ' + name)
+    from native_contract import check
+    check(function, filename, name, line, args, digest, 'settings host', flags=False)
 
 
 def wrap_window(window, controller, record):

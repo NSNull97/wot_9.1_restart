@@ -1,7 +1,7 @@
 # P06F MS-1 collision static correlation
 
 Дата проверки: 2026-10-09. Источник — только hash-pinned research copy клиента
-v.0.9.1 #717 RU. Аудит `tools/p06f_ms1_collision_static_audit.py` прочитал
+v.0.9.1 #717 RU. Аудит `tools/ms1_collision_asset_audit.py` прочитал
 активный `ms-1.xml` и девять collision members из
 `res/packages/vehicles_russian.pkg`.
 

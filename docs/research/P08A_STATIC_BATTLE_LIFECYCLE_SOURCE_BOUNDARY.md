@@ -22,7 +22,7 @@ Inputs:
 
 ## Result
 
-Bounded verifier `tools/p08a_lifecycle_static_audit.py` повторно проверяет
+Bounded verifier `tools/battle_lifecycle_source_audit.py` повторно проверяет
 четыре входа по exact SHA-256/размеру: lifecycle `f4b8e847…20fbcf`, contracts
 `c9bd0893…a70a6e5`, resource-facts `817a9c01…9c5d71` и sources
 `67a4d821…f53eb9a`. Он фиксирует 3 Account, 11 Avatar и 4 Vehicle source

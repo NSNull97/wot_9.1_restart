@@ -3,7 +3,7 @@
 Дата: 2026-10-04, Asia/Yekaterinburg. Run: `20261004-p02-server-reliable`.
 **Карточка PASS; общий надёжный канал и полный gate P02 NOT_RUN.**
 Владелец попросил сообщить готовность и продолжить после
-[P02_CHANNEL_ACK](P02_CHANNEL_ACK.md). Граница — [план](../plans/P02_server_reliable.md).
+[P02_CHANNEL_ACK](P02_CHANNEL_ACK.md). Граница — план (`docs/plans/P02_server_reliable.md` в git на `1eaff5e`).
 
 ## Результат
 

@@ -72,7 +72,7 @@ pub fn base_captured(team:u8,base_id:u8)->io::Result<Vec<u8>> {
     out.extend([0x86,b'.']);update(9,out)
 }
 /// Original update 5: `(vehicleID, frags)`. Negative frags are a project rule
-/// (docs/plans/UI06_EARS_TEAMKILL.md); the client prints them as they come.
+/// (docs/plans/UI06_EARS_TEAMKILL.md (git 30a6185)); the client prints them as they come.
 pub fn vehicle_statistics(vehicle_id:u32,frags:i16)->io::Result<Vec<u8>> {
     if vehicle_id==0||vehicle_id>i32::MAX as u32||usize::from(frags.unsigned_abs())>=MAX_PARTICIPANTS{
         return Err(bad("lifecycle vehicle statistics bound"));
@@ -115,7 +115,7 @@ pub struct Results {
     /// tdamageDealt, directTeamHits and isTeamKiller then stay zero.
     pub team_score:Option<TeamScore>,
 }
-/// PROJECT POLICY, not WG arithmetic: docs/plans/UI03_BATTLE_FEEDS.md.
+/// PROJECT POLICY, not WG arithmetic: docs/plans/UI03_BATTLE_FEEDS.md (git 30a6185).
 pub const LEDGER_POLICY:&str="project.ui04.battle-ledger.v1";
 #[derive(Clone,Debug,Default,PartialEq,Eq)]
 pub struct LedgerRow {pub vehicle_id:u32,pub blocked:u32,pub potential_received:u32,pub assist_spot:u32,pub assist_track:u32,pub burned:u32}
@@ -137,7 +137,7 @@ impl Ledger {
         Ok(())
     }
 }
-/// PROJECT POLICY, not WG arithmetic: docs/plans/UI06_EARS_TEAMKILL.md.
+/// PROJECT POLICY, not WG arithmetic: docs/plans/UI06_EARS_TEAMKILL.md (git 30a6185).
 pub const TEAM_SCORE_POLICY:&str="project.ui06.team-score.v1";
 #[derive(Clone,Debug,Default,PartialEq,Eq)]
 pub struct TeamScoreRow {pub vehicle_id:u32,pub frags:i16,pub team_kills:u8,pub team_damage:u32,pub team_hits:u16,pub team_killer:bool}

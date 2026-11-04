@@ -147,7 +147,7 @@ events emits one explicit truncation marker; truncated evidence cannot close
 acceptance. Any source mismatch or malformed observed shape raises a diagnostic
 error, never fabricates success. `as_setDataS` also records actual Flash binding.
 
-`tools/p09d_native_ammo_audit.py` verifies eight original service files plus the
+`tools/ammo_maintenance_source_audit.py` verifies eight original service files plus the
 nine P09C resource pins, statically decodes .def and bytecode with the existing
 bounded readers, and checks the original command constants. It executes no
 client bytecode. Original root is `C:\WoT_0.9.1_RU_0717_original`, read-only.
@@ -158,7 +158,7 @@ Full paths, file/code SHA256, selected disassembly and .def shapes are saved in:
 Run from this worktree:
 
 ```powershell
-python -B -X utf8 tools/p09d_native_ammo_audit.py --original-root C:\WoT_0.9.1_RU_0717_original --opcode-file D:\WoT_9.1_Server\local\vendor\cpython-2.7.18\opcode.py --out local/evidence/20261013-p09d-native-ammo-service/native-source-repeat
+python -B -X utf8 tools/ammo_maintenance_source_audit.py --original-root C:\WoT_0.9.1_RU_0717_original --opcode-file D:\WoT_9.1_Server\local\vendor\cpython-2.7.18\opcode.py --out local/evidence/20261013-p09d-native-ammo-service/native-source-repeat
 python -B -X utf8 -m unittest tests.test_p09d_ammo_ui tests.test_hangar_window_capabilities -v
 ```
 

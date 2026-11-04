@@ -18,10 +18,10 @@ modified.
 | Server interest set filters hidden state per recipient | `NOT_RUN` | No server/runtime change | Required P07 implementation gate |
 
 The static claims above were independently rechecked by the bounded
-`tools/p07a_visibility_static_audit.py` reader. Its receipt is
+`tools/visibility_source_audit.py` reader. Its receipt is
 `local/evidence/20261008-p07a-static-audit-01/receipt.json` (SHA-256
 `8dd8bfab40f7b9a53cb2e28da8b4e8b38a09c1f06a632fc157d7801ba4d25c76`), and
-`tests/test_p07a_visibility_static_audit.py` is **9/9 PASS**. The reader
+`tests/test_visibility_source_audit.py` is **9/9 PASS**. The reader
 rejects duplicate keys, non-finite JSON, excessive depth/items, path escapes,
 duplicate manifest rows and mutated declaration/manifest values. Both
 permitted #717 copies match all six selected manifest rows. This strengthens
@@ -82,8 +82,8 @@ For acceptance, rerun the reader, recompute the receipt SHA, and verify the
 source hashes before merging. The actual commands for this recheck were:
 
 ```powershell
-python -B -X utf8 -m unittest tests.test_p07a_visibility_static_audit
-python -B -X utf8 tools/p07a_visibility_static_audit.py --root . \
+python -B -X utf8 -m unittest tests.test_visibility_source_audit
+python -B -X utf8 tools/visibility_source_audit.py --root . \
   --out local/evidence/20261008-p07a-static-audit-01/receipt.json
 ```
 

@@ -4,7 +4,7 @@ Scope: test infrastructure and evidence for the existing candidate09 logical100m
 correction, using candidate14 Jolt workers and both source-bound vehicle
 profiles. Production runtime remains checkpoint `1ceb392`; no native client,
 input, installation, service or live database operation is part of this phase.
-Plan: [real-worker cadence](../plans/P05B_REAL_WORKER_CADENCE.md).
+Plan: real-worker cadence (`docs/plans/P05B_REAL_WORKER_CADENCE.md` в git на `1eaff5e`).
 
 `E` below means `local/evidence/20261013-p05b-tracked-handling-01`.
 The earlier full755 gateway gate and all candidate14 movement/fracture evidence

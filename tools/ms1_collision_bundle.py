@@ -22,7 +22,7 @@ import zipfile
 TOOLS = Path(__file__).resolve().parent
 if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
-import p06f_ms1_collision_static_audit as source  # noqa: E402
+import ms1_collision_asset_audit as source  # noqa: E402
 from geometry_spike import collision_mesh  # noqa: E402
 from packed_xml import decode, walk  # noqa: E402
 

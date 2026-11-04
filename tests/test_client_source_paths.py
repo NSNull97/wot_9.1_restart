@@ -9,8 +9,8 @@ import unittest
 from unittest.mock import patch
 
 from tools import destructible_catalog as config
-from tools import p03i_static_audit as queue
-from tools import p07a_visibility_static_audit as visibility
+from tools import research_queue_source_audit as queue
+from tools import visibility_source_audit as visibility
 
 
 class ClientSourcePathsTests(unittest.TestCase):

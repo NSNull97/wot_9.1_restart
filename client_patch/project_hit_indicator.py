@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """PROJECT POLICY, not original 0.9.1: the UI-02 hit indicator and the client
-end of the battle events channel. docs/plans/UI02_HIT_INDICATOR.md.
+end of the battle events channel. docs/plans/UI02_HIT_INDICATOR.md (git 30a6185).
 
 The server sends a frame through the native Avatar.updateArena with a project
 type (#717 ClientArena.update ignores unknown types) only after this module
@@ -359,13 +359,8 @@ class Policy(object):
 
 
 def _contract(function, expected):
-    filename, name, line, args, digest = expected
-    code = getattr(function, 'func_code', getattr(function, '__code__', None))
-    if (code is None or code.co_filename.replace('\\', '/') != filename or code.co_name != name
-            or code.co_firstlineno != line or code.co_argcount != len(args)
-            or tuple(code.co_varnames[:len(args)]) != args or code.co_flags & 12
-            or hashlib.sha256(code.co_code).hexdigest() != digest):
-        raise RuntimeError('original #717 hit indicator differs: ' + name)
+    from native_contract import check
+    check(function, *(tuple(expected) + ('hit indicator',)))
 
 
 def indicator_class(base, policy, facts_args, record):

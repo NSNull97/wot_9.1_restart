@@ -1,7 +1,7 @@
 # P02 — штатный ангар с серверными данными игрока
 
 2026-10-04. Проект GAYmDev Stutio / «Стальной рубеж».
-План: [P02_hangar](../plans/P02_hangar.md). Продолжение
+План: P02_hangar (`docs/plans/P02_hangar.md` в git на `1eaff5e`). Продолжение
 [P02_ACCOUNT_READY](P02_ACCOUNT_READY.md) по прямому разрешению владельца
 дойти до ангара со статистикой и ресурсами, затем остановиться перед ареной.
 Evidence root: `local/evidence/20261004-p02-hangar/` (далее E).

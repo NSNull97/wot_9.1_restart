@@ -3,7 +3,7 @@
 Goal: replace the individually selected crate with reusable resource import,
 independent per-object state and matching movement/projectile/native removal.
 Branch `codex/p06o-destructible-import`; accepted base `main5f38525`.
-Plan: [P06O_DESTRUCTIBLE_IMPORT](../plans/P06O_DESTRUCTIBLE_IMPORT.md).
+Plan: P06O_DESTRUCTIBLE_IMPORT (`docs/plans/P06O_DESTRUCTIBLE_IMPORT.md` в git на `1eaff5e`).
 Evidence root: `local/evidence/20261012-p06o-destructible-import-01/`.
 
 ## Verified scope and source identity

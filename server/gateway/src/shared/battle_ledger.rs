@@ -1,7 +1,7 @@
 //! UI-03 ledger: blocked and potential damage, assist and burned HP, derived
 //! only from committed journals, so a live feed row and a final total agree.
 //! Nothing here decides a hit or changes the world. Every formula is PROJECT
-//! POLICY, not WG behaviour: docs/plans/UI03_BATTLE_FEEDS.md.
+//! POLICY, not WG behaviour: docs/plans/UI03_BATTLE_FEEDS.md (git 30a6185).
 use super::*;
 use crate::p06t_device_caps::Device;
 use crate::p06t_device_state::{Change,Condition};

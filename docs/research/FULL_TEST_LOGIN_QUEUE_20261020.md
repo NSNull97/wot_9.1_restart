@@ -4,7 +4,7 @@
 Наблюдение владельца: клиент B не может войти, пока A не дошёл до ангара.
 Первая версия (ограниченная очередь, `3d7ec55`) по решению владельца заменена
 независимым входом по аккаунтам (`ec51d48`, `726b536`); план —
-[docs/plans/FULL_TEST_PER_ACCOUNT_LOGIN.md](../plans/FULL_TEST_PER_ACCOUNT_LOGIN.md).
+docs/plans/FULL_TEST_PER_ACCOUNT_LOGIN.md (`docs/plans/FULL_TEST_PER_ACCOUNT_LOGIN.md` в git на `8bda1b9`).
 
 ## Причина
 

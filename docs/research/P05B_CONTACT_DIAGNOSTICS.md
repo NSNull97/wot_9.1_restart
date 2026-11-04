@@ -2,7 +2,7 @@
 
 Date:2026-10-14 local. Branch:`codex/p05b-tracked-handling`.
 Starting HEAD:`2d662031889a23d40b82759578c47619e9e73b26`.
-Plan:[contact diagnostics](../plans/P05B_CONTACT_DIAGNOSTICS.md).
+Plan:contact diagnostics (`docs/plans/P05B_CONTACT_DIAGNOSTICS.md` в git на `1eaff5e`).
 Evidence root E:`local/evidence/20261013-p05b-tracked-handling-01/`.
 This is a diagnostic continuation of P05B, not native acceptance or a new
 gameplay policy. Candidate14 and its production dependencies remain unchanged.

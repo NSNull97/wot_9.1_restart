@@ -3,7 +3,7 @@
 2026-10-13. Branch `codex/p04f-native-crew-transfer`, based on accepted P04E
 main `06582030050c7b6720f4616dffa50b2be61e4abc`. The owner requested crew
 unloading and reassignment through the original interface. The execution plan
-is [P04F_NATIVE_CREW_TRANSFER.md](../plans/P04F_NATIVE_CREW_TRANSFER.md).
+is P04F_NATIVE_CREW_TRANSFER.md (`docs/plans/P04F_NATIVE_CREW_TRANSFER.md` в git на `1eaff5e`).
 
 **Initial native gate: PASS_NATIVE_CREW_TRANSFER_WIRE_RELOGIN**, run02 plus
 fresh relogin04, with separate scoped native pixel acceptance. This result is

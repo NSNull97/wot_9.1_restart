@@ -30,7 +30,7 @@ presence does not turn a static extraction into a native acceptance result.
 
 ## 2026-10-08 static source-hash recheck
 
-`tools/p03i_static_audit.py` rechecked both permitted #717 client copies, the
+`tools/research_queue_source_audit.py` rechecked both permitted #717 client copies, the
 hash-bound `Account.def` extraction, the four tree-predicate sources and all
 seven capture-audit source hashes. Receipt:
 `local/evidence/20261008-p03i-static-audit-01/receipt.json`, status

@@ -9,7 +9,7 @@ pressure simulation or new destructible-family coverage.
 Evidence root below is
 `local/evidence/20261013-p05b-tracked-handling-01/`.
 Frozen design and prerequisites:
-[plan](../plans/P05B_ANGULAR_FENCE_CONTACT.md),
+plan (`docs/plans/P05B_ANGULAR_FENCE_CONTACT.md` в git на `1eaff5e`),
 [IPC6 contract](P05B_ANGULAR_FENCE_IPC.md),
 [scalar acceptance](P05B_ANGULAR_SCALAR_GATE.md).
 

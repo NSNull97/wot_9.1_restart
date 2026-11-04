@@ -94,9 +94,9 @@ the historical P07A plan's repository-only source-path statement.
 Final combined check, after all source-path changes:
 
 ```powershell
-python -B -X utf8 -m unittest -v tests.test_client_source_paths tests.test_p03i_static_audit tests.test_p07a_visibility_static_audit tests.test_ms1_ammo_probe tests.test_ms1_ammo_profile tests.test_destructible_catalog tests.test_destructible_catalog_probe tests.test_tree_contact_catalog tests.test_shared_lab_control tests.test_interactive_primitive tests.test_shared_client_copy
-python -B -X utf8 tools/p03i_static_audit.py
-python -B -X utf8 tools/p07a_visibility_static_audit.py
+python -B -X utf8 -m unittest -v tests.test_client_source_paths tests.test_research_queue_source_audit tests.test_visibility_source_audit tests.test_ms1_ammo_probe tests.test_ms1_ammo_profile tests.test_destructible_catalog tests.test_destructible_catalog_probe tests.test_tree_contact_catalog tests.test_shared_lab_control tests.test_interactive_primitive tests.test_shared_client_copy
+python -B -X utf8 tools/research_queue_source_audit.py
+python -B -X utf8 tools/visibility_source_audit.py
 python -B -X utf8 server/check_layout.py --out local/evidence/20261012-p06p-prohorovka-01/tests/treeobserve10-closeout/layout-final.json
 ```
 

@@ -1,7 +1,7 @@
 # P05B angular response: completed scalar gate
 
 2026-10-14 local; root branch `codex/p05b-tracked-handling`.
-Scope: Stage A of [the angular contact plan](../plans/P05B_ANGULAR_FENCE_CONTACT.md).
+Scope: Stage A of the angular contact plan (`docs/plans/P05B_ANGULAR_FENCE_CONTACT.md` в git на `1eaff5e`).
 Runtime remains candidate14 at this checkpoint. Pure unused helpers were
 created in the isolated angular-worker and angular-gateway worktrees; neither
 was connected to a worker, domain or running service. Stage B is a separate

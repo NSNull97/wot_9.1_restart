@@ -2,7 +2,7 @@
 
 Дата: 2026-10-04. EXE: `v.0.9.1 #717`, RU. Продолжение по разрешению владельца
 после [локального gateway/session рубежа](P02_LAB_GATEWAY.md).
-План: [P02_native_account](../plans/P02_native_account.md).
+План: P02_native_account (`docs/plans/P02_native_account.md` в git на `1eaff5e`).
 
 **Приёмка wire creation: PASS. Полная инициализация Account: FAIL;
 карточка Account и общий P02: PARTIAL.** Настоящий клиент принял сообщение

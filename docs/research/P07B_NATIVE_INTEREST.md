@@ -178,7 +178,7 @@ occlusion/disappearance/reappearance control in the morning.
 Owner authorized overnight dependent work without stopping for native checks.
 While root owns P05C, these new files were prepared without modifying existing
 runtime modules, module declarations, Session, native codec or server loops:
-`shared/visibility.rs`, `shared/interest_wire.rs` and [P07B plan](../plans/P07B.md).
+`shared/visibility.rs`, `shared/interest_wire.rs` and P07B plan (`docs/plans/P07B.md` в git на `8bda1b9`).
 They remain uncommitted for integration in the later dependent P07B branch.
 No behavior of the running gateway changes merely by adding these files.
 

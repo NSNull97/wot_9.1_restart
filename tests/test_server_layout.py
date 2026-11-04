@@ -7,7 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from server.check_layout import check, relative_path
+from server.check_layout import check, name_breaks_rule, relative_path
 
 
 class LayoutTests(unittest.TestCase):
@@ -71,6 +71,32 @@ class LayoutTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'Version/phase'):
                     check(self.root)
                 path.unlink()
+
+    def test_card_phase_and_version_names_break_the_rule_and_vehicle_names_do_not(self):
+        for name in ['p06t_damage.rs', 'server_ui03_tests.rs', 'net01.rs', 'test_p04j_crew.py', 'store_v3.py',
+                     'gateway091.rs', 'spawn15_formation.py', 'p08b-owner-hold.mjs']:
+            self.assertTrue(name_breaks_rule(name), name)
+        for name in ['damage.rs', 'battle_ui_marker_look.py', 'is7-physics-profile.json', 'ms1_crew_state.py',
+                     't34_profile.json', 'test_feed.py']:
+            self.assertFalse(name_breaks_rule(name), name)
+
+    def test_a_new_card_name_fails_and_a_listed_one_is_debt(self):
+        (self.root / 'tools/p06t_new_helper.py').write_text('# breaks the rule')
+        with self.assertRaisesRegex(ValueError, 'Card/phase/version in file name'):
+            check(self.root)
+        self.manifest['name_debt'] = ['tools/p06t_new_helper.py']
+        self.write_manifest()
+        self.assertEqual(check(self.root)['name_debt'], 1)
+
+    def test_a_debt_entry_for_a_renamed_file_fails_so_the_list_only_shrinks(self):
+        self.manifest['name_debt'] = ['tools/p06t_gone.py']
+        self.write_manifest()
+        with self.assertRaisesRegex(ValueError, 'Stale name_debt entry'):
+            check(self.root)
+
+    def test_the_repository_follows_its_layout_rules(self):
+        result = check(ROOT)
+        self.assertEqual('PASS_SERVER_SOURCE_LAYOUT', result['status'])
 
     def test_manifest_traversal_and_absolute_paths_are_refused(self):
         for name in ['../escape', '/absolute', 'D:/absolute', 'folder\\escape', 'a//b', './source']:

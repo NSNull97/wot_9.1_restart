@@ -176,9 +176,9 @@ legacy — та же команда с `--legacy`. Публикация complete
 делается только из фактически собранных файлов с отдельным source proof.
 Все текущие outputs на C; D и старые артефакты не изменяются.
 
-Проверки: `python -B -X utf8 -m unittest discover -s tests -p test_p05c_mixed_contact_probe.py -v`;
+Проверки: `python -B -X utf8 -m unittest discover -s tests -p test_mixed_contact_probe.py -v`;
 точные dotnet argv/source hashes — в validation/command receipts соответствующих
-новых outputs. `tools/p05c_mixed_contact_probe.py` по умолчанию PLAN_ONLY;
+новых outputs. `tools/mixed_contact_probe.py` по умолчанию PLAN_ONLY;
 запуск требует exact artifact/log SHA, свежий owned output и `--execute`.
 P05B — `tools/tracked_handling_matrix.py` с pinnedconfig/worker, repeats2,
 diagnostics; точные параметры/сценарии сохранены в `plan.json` каждой матрицы.

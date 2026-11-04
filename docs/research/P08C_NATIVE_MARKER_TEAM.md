@@ -108,7 +108,7 @@ Checker имел7 offline authored tests PASS и actual historical negative cont
 полного результата у раннего manual leaverA. Эти изменения не входят в marker
 fix и не объявлены нормальной исторической работой клиента.
 
-План — [P08C_NATIVE_MARKER_TEAM](../plans/P08C_NATIVE_MARKER_TEAM.md).
+План — P08C_NATIVE_MARKER_TEAM (`docs/plans/P08C_NATIVE_MARKER_TEAM.md` в git на `8bda1b9`).
 Evidence — local/evidence/20261016-corev7-morning01 и
 local/evidence/20261016-p08c-marker-team01. Узкий marker gate PASS.
 Вся P08C и родительская цепочка пока не приняты и остаются вне main.

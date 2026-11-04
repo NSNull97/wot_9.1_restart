@@ -9,6 +9,7 @@ import re
 import shutil
 import subprocess
 import stat
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -348,6 +349,11 @@ def main():
                                          'rustc_sha256': sha(rust / 'bin/rustc.exe')})
             if args.cargo_temp_target:
                 save(out, 'cargo-temp-environment.json', temp_environment(env))
+            if args.test and not args.legacy and not args.test_filter:
+                # REFACTOR-01 R0: the full gate also holds the source layout and the
+                # file-name rule (no new card/phase names; server/layout.json name_debt).
+                command(out, 'layout', [sys.executable, '-B', '-X', 'utf8', 'server/check_layout.py'], env)
+                result['source_layout'] = json.loads((out / 'layout.stdout.log').read_text(encoding='utf-8'))['status']
             if args.test:
                 test_argv = [str(cargo), 'test', '--offline', '--locked', '--manifest-path', manifest]
                 if args.test_filter:

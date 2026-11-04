@@ -1,6 +1,6 @@
 # CREW-ANY: экипаж и БК для любой машины каталога (2026-10-21)
 
-Ветка `codex/crew-any` от main `4b46f7e`. План — [CREW_ANY](../plans/CREW_ANY.md); шаг 4
+Ветка `codex/crew-any` от main `4b46f7e`. План — CREW_ANY (`docs/plans/CREW_ANY.md` в git на `8bda1b9`); шаг 4
 [ARCH01_MIGRATION](../plans/ARCH01_MIGRATION.md). Native-приёмка 2026-10-24 — частичный native PASS, полная приёмка NOT_ACCEPTED.
 
 ## Native gate 2026-10-24 (VERIFIED / OBSERVED)

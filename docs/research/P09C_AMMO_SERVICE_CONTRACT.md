@@ -143,7 +143,7 @@ economic rules. Old source `buyPrice/defaultPrice=0` observations are not prices
 
 ## Evidence, limitations and rollback
 
-See [P09C evidence index](../evidence-index/P09C_AMMO_SERVICE.md) for final
+See P09C evidence index (`docs/evidence-index/P09C_AMMO_SERVICE.md` в git на `1eaff5e`) for final
 commands, counts, receipts and source hashes. The local scenario retains an
 isolated DB with both test tanks, service/replay/change and shared reservation.
 Deterministic failpoints prove transaction rollback; they are not OS power-loss

@@ -1,7 +1,7 @@
 # MAPS-01 — конвейер экспорта карт и реестр карт
 
 Карточка MAPS-01 (одобрена владельцем 2026-10-20), ветка `codex/maps-01-map-pipeline` от
-main `2b835b7`. План — [MAPS01_MAP_PIPELINE](../plans/MAPS01_MAP_PIPELINE.md).
+main `2b835b7`. План — MAPS01_MAP_PIPELINE (`docs/plans/MAPS01_MAP_PIPELINE.md` в git на `8bda1b9`).
 Evidence: `local/evidence/20261020-maps01/` (итоговый прогон `final01/`).
 Native-приёмка владельцем — **NOT_RUN**.
 
