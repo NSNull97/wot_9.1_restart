@@ -84,8 +84,8 @@ class TestVehicleClientTests(unittest.TestCase):
             self.assertEqual(len(ids), len(set(ids)), name)
 
     def test_definition_is_the_original_with_only_chassis_and_turret_renamed(self):
-        original = list(packed_xml.walk(packed_xml.decode((DEFS / (tv.BASE.lower() + '.xml')).read_bytes())))
-        renamed = list(packed_xml.walk(self.tree(tv.NAME.lower() + '.xml')))
+        original = list(packed_xml.walk(packed_xml.decode((DEFS / 't62a.xml').read_bytes())))
+        renamed = list(packed_xml.walk(self.tree('t62a_t.xml')))
         undo = [(p.replace(tv.CHASSIS[1] + '[', tv.CHASSIS[0] + '[').replace(tv.TURRET[1] + '[', tv.TURRET[0] + '['), v)
                 for p, v in renamed]
         self.assertEqual(undo, original)
