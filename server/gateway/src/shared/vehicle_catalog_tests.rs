@@ -34,8 +34,9 @@ const ACCOUNT:&str="0f1e2d3c-4b5a-4968-8776-655443322110";
 
 const LEGACY:[&str;5]=["ms1","is7","t26","t34","t3485"];
 /// BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows after the legacy five.
-const PILOT:[&str;7]=["ussr-KV-3","usa-M4_Sherman","germany-Waffentrager_E100","japan-Chi_Ri",
-    "uk-GB48_FV215b_183","china-Ch22_113","france-Bat_Chatillon25t"];
+// TESTVEH-01: ussr-T62A is the stand test tank (its 1000 mm is a manifest flag, not catalogue data).
+const PILOT:[&str;8]=["ussr-KV-3","usa-M4_Sherman","germany-Waffentrager_E100","japan-Chi_Ri",
+    "uk-GB48_FV215b_183","china-Ch22_113","france-Bat_Chatillon25t","ussr-T62A"];
 fn legacy_rows()->impl Iterator<Item=&'static Vehicle>{VEHICLES.iter().filter(|v|LEGACY.contains(&v.kind))}
 
 #[test] fn catalog_equals_retained_closed_rust_lists() {
