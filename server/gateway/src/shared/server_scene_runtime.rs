@@ -33,7 +33,12 @@ fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Inp
         speed=50;if !duty_active(tick,0.5) {throttle=0;}
     }
     if throttle==0 {speed=100;}
-    Ok(Input {throttle,steer,brake:throttle==0&&steer==0,speed_percent:speed})
+    // Brake only on the player's own idle input. A steer or reverse row skipped by the LAB duty
+    // cycle coasts instead: braking on the off ticks made a damaged-track or wounded-driver pivot
+    // stutter (owner battle 2026-11-04).
+    // A vehicle that cannot move at all (destroyed track/engine) stays braked.
+    let immobile=caps.drive_scale<=0.&&caps.steer_scale<=0.;
+    Ok(Input {throttle,steer,brake:throttle==0&&steer==0&&(immobile||input.throttle==0&&input.steer==0),speed_percent:speed})
 }
 
 pub(super) struct BatchRuntime {

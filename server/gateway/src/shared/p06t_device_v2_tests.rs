@@ -152,7 +152,7 @@ fn role_mask(role:&str)->u8 {match role{"commander"=>1,"gunner"=>2,"driver"=>4,"
     let events=state.advance_fire(MODULE_REPAIR_DELAY_MS,h).unwrap();
     assert_eq!(state.health()[Device::Engine as usize],CAPS[Profile::Ms1.index()][Device::Engine as usize].regen);
     assert!(state.capabilities().drive_scale>0.);
-    assert!(events.iter().any(|event|matches!(event.change,Change::Device{device:Device::Engine,before:0,repair:true,after_condition:Condition::Normal,..})));
+    assert!(events.iter().any(|event|matches!(event.change,Change::Device{device:Device::Engine,before:0,repair:true,after_condition:Condition::Critical,..})));
 }
 
 #[test] fn p06t_device_v2_fuel_fire_recovers_fuel_after_fire_stops() {
@@ -216,7 +216,7 @@ fn role_mask(role:&str)->u8 {match role{"commander"=>1,"gunner"=>2,"driver"=>4,"
         assert!(state.public_modifiers().is_empty());
         assert!(state.capabilities().drive_scale>0.);
         assert_eq!(events.len(),1);
-        assert!(matches!(events[0].change,Change::Device{device,extra_index,before:0,repair:true,before_condition:Condition::Destroyed,..}
+        assert!(matches!(events[0].change,Change::Device{device,extra_index,before:0,repair:true,before_condition:Condition::Destroyed,after_condition:Condition::Critical,..}
             if device==track&&extra_index==extra));
     }
 }

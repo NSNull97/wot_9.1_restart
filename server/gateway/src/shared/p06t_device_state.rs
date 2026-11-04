@@ -183,6 +183,9 @@ impl State {
             }
         } Ok(())
     }
+    /// A repaired module comes back damaged (#717 DEVICE_REPAIRED_TO_CRITICAL, code 18): it is at its
+    /// source maxRegenHealth, below maxHealth. INFERRED from the client codes; the historical server
+    /// timer and full-repair rule are UNKNOWN (LAB).
     fn repair_due_devices(&mut self,out:&mut Vec<Transition>,now:u64)->io::Result<()> {
         for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
@@ -193,7 +196,7 @@ impl State {
             if after==0 || after>max {return Err(bad("module repair health bounds"));}
             self.health[index]=after;self.repair_due[index]=None;self.repair_cause[index]=None;
             self.emit(out,now,cause,true,Change::Device {device,extra_index:device.extra(),max_health:max,
-                before:0,after,before_condition:Condition::Destroyed,after_condition:condition(after,max),repair:true})?;
+                before:0,after,before_condition:Condition::Destroyed,after_condition:Condition::Critical,repair:true})?;
         }
         Ok(())
     }
