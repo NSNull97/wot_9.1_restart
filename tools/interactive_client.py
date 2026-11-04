@@ -634,6 +634,16 @@ def prepare(args):
     entries = []
     overwrite_allowed = {'res/engine_config.xml', 'paths.xml', 'res/text/LC_MESSAGES/menu.mo',
                          'res/text/LC_MESSAGES/system_messages.mo'}
+    if getattr(args, 'test_vehicle_label', False):
+        # TESTVEH-01 (owner 2026-11-04): stand T-62A shown as "Т-62А (Т)", tier 11.
+        import test_vehicle_client
+        vehicle_payloads, vehicle_evidence = test_vehicle_client.build(original, scratch=out/'test-vehicle-scratch')
+        clash = set(vehicle_payloads) & set(payloads)
+        if clash:
+            raise ValueError('test vehicle payload overlaps another payload: ' + ', '.join(sorted(clash)))
+        payloads.update(vehicle_payloads)
+        overwrite_allowed.update(vehicle_evidence['overwrites_original'])
+        resource_evidence['test_vehicle_label'] = vehicle_evidence
     if disable_dialog:
         overwrite_allowed.add('version.xml')
     if 'project_sixth_sense_sample' in resource_evidence:
@@ -818,6 +828,8 @@ def main():
     prep.add_argument('--trace-pose-10hz', action='store_true',
                       help='NET-01 diagnostic: record native vehicle positions, BigWorld.time and serverTime '
                            'every 0.1 s in battle (read-only); requires profile13 battle')
+    prep.add_argument('--test-vehicle-label', action='store_true',
+                      help='TESTVEH-01: show the stand T-62A as Т-62А (Т), tier 11 (client level bound 1..11)')
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')
