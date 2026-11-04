@@ -155,10 +155,13 @@ impl crate::bw_wire::Wire for SplashDamage {
 pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<SplashDamage>> {
     source_shell(shell)?;
     if shell.family!=Family::HighExplosive || targets.len()>MAX_TARGETS {return Err(bad("damage splash family/count"));}
-    let mut seen=[false;MAX_TARGETS];let mut out=Vec::with_capacity(targets.len());
+    // Target identity is any actor slot of the battle (RES-30: 30 actors); MAX_TARGETS
+    // only bounds the count per call. The old slot<6 bound failed 30-actor battles.
+    use crate::gateway091::shared::model::MAX_ACTORS;
+    let mut seen=[false;MAX_ACTORS];let mut out=Vec::with_capacity(targets.len());
     for target in targets {
         let slot=usize::from(target.slot);
-        if slot>=MAX_TARGETS || seen[slot] || !target.distance_m.is_finite() || !(0. ..=100_000.).contains(&target.distance_m) {
+        if slot>=MAX_ACTORS || seen[slot] || !target.distance_m.is_finite() || !(0. ..=100_000.).contains(&target.distance_m) {
             return Err(bad("damage splash identity/distance"));
         }
         valid_armor(target.armor_mm)?;seen[slot]=true;
