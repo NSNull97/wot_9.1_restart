@@ -107,13 +107,69 @@ def native_preferences_path(value, appdata=None):
     if ('\\' in value or ':' in value or value.startswith('/') or not value.endswith('.xml')
             or any(not re.fullmatch(r'[A-Za-z0-9 _.-]{1,64}', part) or part == '.' for part in parts)):
         raise ValueError('--native-preferences must be a plain relative path with / separators')
+    native_preferences_file(value, appdata)
+    return value
+
+
+def native_preferences_file(value, appdata=None):
+    """The file the engine resolves the relative path to (measured 04.11: it
+    takes '..' and lands exactly here)."""
     base = Path(appdata or os.environ['APPDATA']) / 'Wargaming.net' / 'WorldOfTanks'
-    resolved = Path(os.path.normpath(base.joinpath(*parts)))
+    resolved = Path(os.path.normpath(base.joinpath(*value.split('/'))))
     allowed = (Path(os.path.normpath(base.parent.parent / 'GAYmDev Studio' / 'SteelFrontier')),
                Path(os.path.normpath(base / 'SteelFrontier')))
     if not any(resolved.is_relative_to(root) and resolved != root for root in allowed):
         raise ValueError('--native-preferences must stay in GAYmDev Studio/SteelFrontier or WorldOfTanks/SteelFrontier')
-    return value
+    return resolved
+
+
+MAX_PREFERENCES_BYTES = 4 * 1024 * 1024
+SECRET_PREFERENCES = ('password', 'pwd', 'token2')
+
+
+def native_preferences_seed(owned_xml):
+    """The engine's file layout for the Python settings of an owned profile
+    (its root children go into scriptsPreferences); graphics and device
+    sections are left to the engine. Refuses entities and stored secrets."""
+    if len(owned_xml) > MAX_PREFERENCES_BYTES:
+        raise ValueError('owned preferences too large')
+    if b'<!DOCTYPE' in owned_xml.upper() or b'<!ENTITY' in owned_xml.upper():
+        raise ValueError('preferences entity declarations refused')
+    owned_root = ET.fromstring(owned_xml)
+    for node in owned_root.iter():
+        if node.tag.lower() in SECRET_PREFERENCES and (node.text or '').strip():
+            raise ValueError('secret field in preferences refused')
+    root = ET.Element('root')
+    scripts = ET.SubElement(root, 'scriptsPreferences')
+    scripts.extend(list(owned_root))
+    return ET.tostring(root, encoding='utf-8')
+
+
+def seed_native_preferences(settings, appdata=None):
+    """UI-PREF01, owner 04.11 «Перенести»: once, before the first start with
+    the engine's own file, carry the client's current Python settings over.
+    An existing file is never replaced; the owned profile stays for rollback."""
+    native = settings.get('native_preferences')
+    if native is None:
+        return None
+    destination = native_preferences_file(native, appdata)
+    source = Path(settings['profile_dir']) / settings['preferences_resource']
+    if destination.exists():
+        return {'status':'KEPT_EXISTING', 'target':str(destination)}
+    if not source.exists():
+        return {'status':'NO_SOURCE', 'target':str(destination)}
+    owned = read_limited(source, MAX_PREFERENCES_BYTES)
+    payload = native_preferences_seed(owned)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    pending = destination.with_name(destination.name + '.seed-pending')
+    if pending.exists():
+        raise ValueError('unfinished preferences seed exists; preserve for inspection')
+    pending.write_bytes(payload)
+    pending.rename(destination)
+    if destination.read_bytes() != payload:
+        raise IOError('seeded preferences verification failed')
+    return {'status':'SEEDED', 'source':str(source), 'source_sha256':digest(owned),
+            'target':str(destination), 'sha256':digest(payload)}
 
 
 def xml_bytes(element):
@@ -664,7 +720,9 @@ def install(args):
             shutil.copy2(out/'bundle'/entry['path'],current)
             if sha256(current) != entry['installed_sha256']:
                 raise ValueError('installed artifact verification failed')
-        save_json(out/'install.json',{'status':'PASS','files':len(plan['files']), 'client_exe_modified':False})
+        seed = seed_native_preferences(plan['settings'])
+        save_json(out/'install.json',{'status':'PASS','files':len(plan['files']), 'client_exe_modified':False,
+                                     'native_preferences_seed':seed})
     print(json.dumps({'status':'INSTALLED','ledger':str(out/'patch-ledger.json')}))
 
 
