@@ -3,14 +3,16 @@
 //! The chassis bundle is a separate pinned file per vehicle (tools/chassis_armor_export.py);
 //! the existing Hull/Turret/Gun bundles are unchanged. `armor_layers` lists every crossing
 //! of a shot segment with all four components in segment order. It assigns no armour
-//! outcome: penetration, ricochet and track damage are SHELL-02 and later. The live hit
-//! path (`Bundle::impact_segment`) does not use it yet.
-// Consumed by the SHELL-02 resolver; until then only tests call it.
+//! outcome. SHELL-02: a bundle bound to its geometry (`geometry::Bundle::with_chassis`,
+//! optional `chassis` reference of the profile13 manifest) puts the tracks into the live
+//! hit (`model.rs` → `impact::Trace::track_contact` → `p06t_damage::track_pass`).
+// `armor_layers` is still test-only (the ordered all-layer resolver is a later card).
 #![allow(dead_code)]
 use std::{collections::BTreeMap, fs, io::{self, Read}, path::Path, sync::OnceLock};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use super::{collision::{self, Mesh, Triangle}, geometry::{non_reparse, Bundle}, materials::MaterialFacts, model::{bad, Actor}, pose, vehicle_profile::VehicleKind};
+use crate::p06t_device_caps::Device;
 
 include!("chassis_armor_pins.rs");
 const TABLE: &[u8] = include_bytes!("../../../../config/catalog/chassis_armor.v1.json");
@@ -63,6 +65,12 @@ pub struct TrackMaterial {
     pub use_armor_homogenization: bool, pub use_hit_angle: bool, pub use_antifragmentation_lining: bool,
     pub may_ricochet: bool, pub collide_once_only: bool, pub continue_trace_if_no_hit: bool,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): TrackMaterial
+impl crate::bw_wire::Wire for TrackMaterial {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{name,kind,armor_mm,extra,damage_kind,auto_damage_kind,vehicle_damage_factor,chance_to_hit_by_projectile,chance_to_hit_by_explosion,use_armor_homogenization,use_hit_angle,use_antifragmentation_lining,may_ricochet,collide_once_only,continue_trace_if_no_hit}=self;W::put(name,bw_o);W::put(kind,bw_o);W::put(armor_mm,bw_o);W::put(extra,bw_o);W::put(damage_kind,bw_o);W::put(auto_damage_kind,bw_o);W::put(vehicle_damage_factor,bw_o);W::put(chance_to_hit_by_projectile,bw_o);W::put(chance_to_hit_by_explosion,bw_o);W::put(use_armor_homogenization,bw_o);W::put(use_hit_angle,bw_o);W::put(use_antifragmentation_lining,bw_o);W::put(may_ricochet,bw_o);W::put(collide_once_only,bw_o);W::put(continue_trace_if_no_hit,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{name:W::get(bw_i)?,kind:W::get(bw_i)?,armor_mm:W::get(bw_i)?,extra:W::get(bw_i)?,damage_kind:W::get(bw_i)?,auto_damage_kind:W::get(bw_i)?,vehicle_damage_factor:W::get(bw_i)?,chance_to_hit_by_projectile:W::get(bw_i)?,chance_to_hit_by_explosion:W::get(bw_i)?,use_armor_homogenization:W::get(bw_i)?,use_hit_angle:W::get(bw_i)?,use_antifragmentation_lining:W::get(bw_i)?,may_ricochet:W::get(bw_i)?,collide_once_only:W::get(bw_i)?,continue_trace_if_no_hit:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct ChassisArmor {
@@ -72,6 +80,12 @@ pub struct ChassisArmor {
     /// A mesh label without a record here has no MaterialInfo (missing is not armour 0).
     pub materials: Vec<TrackMaterial>,
 }
+// BW-01 wire codec (tools/bw01_wire_gen.py): ChassisArmor
+impl crate::bw_wire::Wire for ChassisArmor {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle_id,sha256,type_compact_id,descriptor_hex,hull_position,mesh,vertices,triangles,materials}=self;W::put(vehicle_id,bw_o);W::put(sha256,bw_o);W::put(type_compact_id,bw_o);W::put(descriptor_hex,bw_o);W::put(hull_position,bw_o);W::put(mesh,bw_o);W::put(vertices,bw_o);W::put(triangles,bw_o);W::put(materials,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle_id:W::get(bw_i)?,sha256:W::get(bw_i)?,type_compact_id:W::get(bw_i)?,descriptor_hex:W::get(bw_i)?,hull_position:W::get(bw_i)?,mesh:W::get(bw_i)?,vertices:W::get(bw_i)?,triangles:W::get(bw_i)?,materials:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 
 fn exact(value: &Value, keys: &[&str]) -> io::Result<()> {
     let map = value.as_object().ok_or_else(bad)?;
@@ -181,6 +195,29 @@ impl ChassisArmor {
     }
 
     pub fn material(&self, label: &str) -> Option<&TrackMaterial> { self.materials.iter().find(|m| m.name == label) }
+
+    /// SHELL-02: the device of a track material label (`leftTrackHealth`/`rightTrackHealth`).
+    pub fn side(label: &str) -> Option<Device> {
+        match label { "leftTrack" => Some(Device::LeftTrack), "rightTrack" => Some(Device::RightTrack), _ => None }
+    }
+
+    /// Farthest chassis vertex from the vehicle origin; a rotation keeps the length.
+    pub fn reach_m(&self) -> f32 {
+        self.vertices.iter().map(|v| v.iter().map(|x| f64::from(*x).powi(2)).sum::<f64>().sqrt()).fold(0., f64::max) as f32
+    }
+
+    /// World chassis mesh of a checked pose: vehicle frame (`direction`), no turret rotation.
+    /// The caller (`geometry::Bundle::chassis_mesh`) validates the pose first.
+    pub(crate) fn world_mesh_unchecked(&self, position: [f32; 3], direction: [f32; 3], transform_revision: String) -> io::Result<Mesh> {
+        let vertices = self.vertices.iter().map(|&v| {
+            let rotated = pose::rotate(v, direction);
+            std::array::from_fn(|axis| position[axis] + rotated[axis])
+        }).collect();
+        Mesh::new(vertices, self.triangles.clone(), self.geometry_revision(), transform_revision)
+    }
+
+    /// Bounded identity of the pinned chassis bundle in a collision query.
+    pub fn geometry_revision(&self) -> String { format!("chassis-v1:{}", self.sha256) }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

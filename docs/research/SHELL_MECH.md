@@ -333,6 +333,32 @@ material IDs, но tracks/gun/gunBreech/optics присутствуют.
 это не установленный факт. Внешняя геометрия части устройств и именованные
 MaterialInfo не доказывают наличие всей внутренней модели в клиенте.
 
+**SHELL-02, полная перепись collision-visual (04.11, `tools/collision_device_census.py`,
+`local/evidence/shell-02-census-20261104-01.json`).** VERIFIED: все **2522** `*/collision/*.visual` семи
+пакетов машин, `materialKind` каждой primitiveGroup через закреплённый `material_kinds.xml`. Группы
+материалов-устройств (engine 21, ammoBay 22, turretRotator 26, fuelTank 29, radio 30, экипаж 41–48) есть
+только в **5** visual четырёх машин: `A18_M41` Hull (полный набор), `F67_Bat_Chatillon155_55` Turret,
+`G73_E50_Ausf_M` Hull+Turret, `R59_A44` Hull (только turretRotator). Все четыре отказаны в боевом реестре
+(M41 и Bat.-Chât. 155 55 — SPG, E-50M — SUPPORT_SOURCE_UNRESOLVED, A-44 — материал turretRotator).
+**Ни у одной из 232 боевых машин внутренних объёмов в клиенте нет.** INFERRED: эти пять — остатки
+разработки, а не рабочая модель 0.9.1; формат допускает объёмы в collision-модели, но для боевых машин
+они UNKNOWN (возможно, только на сервере). Следствие: внутренние модули остаются LAB-коробками; частое
+уничтожение БК — артефакт LAB-коробки (большая центральная коробка `[0.25..0.75]×[0.25..0.75]×[0.4..0.65]`,
+две ближайшие, урон модулю без шанса), а не исторический факт. VERIFIED данные `chanceToHitByProjectile`
+(ammoBay 0.27, engine 0.45 и др.) LAB-путь не применяет: их смысл в серверной механике UNKNOWN — решение
+владельца (SHELL-04).
+
+**SHELL-02, гусеницы в живом попадании.** VERIFIED: в клиентском байткоде `collideOnceOnly`,
+`continueTraceIfNoHit`, `vehicleDamageFactor` встречаются только в загрузчике `vehicles.pyc`
+(`_readMaterials`); ASCII-поиск в `WorldOfTanks.exe` их не находит. Клиент не решает, что происходит со снарядом
+после гусеницы. Данные гусениц VERIFIED (общий `vehicle.xml` + локальная броня): `vehicleDamageFactor` 0,
+`useHitAngle` false, `mayRicochet` false, `collideOnceOnly` true, `chanceToHitByProjectile` 1.0, броня
+5–40 мм. Правило LAB `test_lab.shell02.track-spaced-nominal-armour.v1` (INFERRED из этих флагов и заметок
+8.6 «гусеницы — экран»): модульное попадание по гусенице уроном `device_damage` без урона HP; одна запись
+на гусеницу за выстрел (`collideOnceOnly`); номинальная броня гусеницы снимается с пробития без угла и
+рикошета; остаток ≤ 0 — снаряд остановлен; HE взрывается на гусенице; остаток идёт в корпус обычным
+законом. Потеря HEAT за экраном (8.6) не применяется — вопрос 4 владельцу.
+
 ## Снаряды, углы, HEAT, HE/HESH и разброс
 
 V `_readShell` record84021, co_code SHA

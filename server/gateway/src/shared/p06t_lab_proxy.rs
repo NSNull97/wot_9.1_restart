@@ -32,6 +32,13 @@ fn entry(start:[f64;3],end:[f64;3],low:[f64;3],high:[f64;3])->Option<f64> {
 /// impact segment's AABB entry, which can precede the exterior surface.
 /// Numeric validity alone does not establish that provenance.
 pub fn select(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3])->io::Result<Vec<Hit>> {
+    select_with(profile,component,bounds,start,end,false)
+}
+/// SHELL-02: with `chassis_tracks` the target's tracks are hit through the source chassis
+/// mesh (`impact::Trace::track_contact`), so the invented hull track boxes are left out.
+/// The remaining boxes stay invented LAB volumes: the #717 client carries no internal
+/// device volumes for any battle-registry vehicle (SHELL-02 census).
+pub fn select_with(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool)->io::Result<Vec<Hit>> {
     if bounds.into_iter().flatten().chain(start).chain(end).any(|v|!v.is_finite()||v.abs()>100_000.)
         || (0..3).any(|i|bounds[0][i]>=bounds[1][i])
         || start==end || (0..3).any(|i|start[i]<bounds[0][i]-0.0002||start[i]>bounds[1][i]+0.0002
@@ -47,8 +54,10 @@ pub fn select(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;
             device(Device::FuelTank,[0.,0.25,0.2],[0.2,0.75,0.55]);
             device(Device::AmmoBay,[0.25,0.25,0.4],[0.75,0.75,0.65]);
             device(Device::Radio,[0.6,0.6,0.7],[0.9,0.9,0.9]);
-            device(Device::LeftTrack,[0.,0.,0.],[0.15,0.25,1.]);
-            device(Device::RightTrack,[0.85,0.,0.],[1.,0.25,1.]);
+            if !chassis_tracks {
+                device(Device::LeftTrack,[0.,0.,0.],[0.15,0.25,1.]);
+                device(Device::RightTrack,[0.85,0.,0.],[1.,0.25,1.]);
+            }
             for (seat,c) in profile.crew().iter().enumerate() {
                 if c.primary_driver {boxes.push((Target::Seat(seat as u8),[0.2,0.3,0.7],[0.45,0.6,0.95]));}
                 else if c.primary_radioman {boxes.push((Target::Seat(seat as u8),[0.55,0.3,0.7],[0.8,0.6,0.95]));}

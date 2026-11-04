@@ -16,7 +16,9 @@ fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidDat
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Reference {path:PathBuf,sha256:String}
 #[derive(Clone,Debug,PartialEq,Eq)]
-struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference}
+struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference,
+    /// SHELL-02: optional pinned chassis bundle (`chassis-armor.v1`); absent keeps the old hit path.
+    chassis:Option<Reference>}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Manifest {version:u8,map:MapId,catalog:Reference,profiles:Vec<Profile>,shared_physics:Option<Reference>}
 
@@ -49,18 +51,19 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
     else if rows.len()!=count{return Err(bad("exact curated source profile count"));}
     let mut profiles:Vec<Option<Profile>>=vec![None;count];let mut generated:Vec<Profile>=Vec::new();
     for row in rows {
-        keys(row,&["kind","pool","geometry"])?;
+        let chassis=if row.get("chassis").is_some(){keys(row,&["kind","pool","geometry","chassis"])?;Some(reference(&row["chassis"])?)}
+            else{keys(row,&["kind","pool","geometry"])?;None};
         let label=text(row,"kind")?;
         if version==Some(5)&&VehicleKind::from_label(label).is_none(){
             let kind=VehicleKind::from_owned_label(label).filter(|k|k.is_generated()).ok_or_else(||bad("unknown vehicle profile"))?;
             if generated.iter().any(|p|p.kind==kind){return Err(bad("duplicate vehicle profile"));}
-            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});continue;
+            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis});continue;
         }
         let kind=if version==Some(4){VehicleKind::from_extended_label(label)}else{VehicleKind::from_label(label)}
             .ok_or_else(||bad("unknown vehicle profile"))?;
         let index=kind.index();if index>=count{return Err(bad("kind requires version3 curated pool"));}
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
-        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?});
+        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis});
     }
     generated.sort_by(|a,b|a.kind.label().cmp(b.kind.label()));
     let profiles:Vec<Profile>=profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?;
@@ -162,7 +165,17 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
             return Err(bad("extended/generated profile requires its shared-only pool and resource version"));
         }
         super::server::selected_pool_config(&pool,map)?;
-        let geometry=Arc::new(Bundle::load(local_root,&geometry_path)?);
+        let geometry=Bundle::load(local_root,&geometry_path)?;
+        let geometry=Arc::new(match &profile.chassis {
+            Some(reference)=>{
+                let path=pin(local_root,reference,512*1024)?;
+                let chassis=super::chassis_armor::ChassisArmor::load(local_root,&path)?;
+                println!("SHELL02_CHASSIS_BOUND kind={} chassis_sha256={} vehicle={} policy={}",profile.kind.label(),chassis.sha256,
+                    chassis.vehicle_id,crate::p06t_damage::TRACK_PASS_POLICY);
+                geometry.with_chassis(Arc::new(chassis))?
+            },
+            None=>geometry,
+        });
         super::server::validate_vehicle_binding(profile.kind,&pool,Some(&geometry))?;
         let terrain=super::server::terrain_for_pool_for_map(&pool,map)?;
         catalog.bind_geometry(&terrain)?;
@@ -220,6 +233,17 @@ mod tests {
             0=>{rows.truncate(5);},1=>rows.push(row("ussr-KV-3")),2=>rows.push(row("ussr-Object_261")),3=>rows.push(row("wt-e100-128")),
             4=>{rows.remove(2);},5=>w["version"]=3.into(),6=>rows.push(row("ms1")),_=>unreachable!()}
             assert!(parse(&serde_json::to_vec(&w).unwrap()).is_err(),"mutation={mutation}");}
+    }
+    /// SHELL-02: a profile row may carry one optional pinned chassis reference.
+    #[test]fn profile13_templates_accept_an_optional_chassis_reference_only(){
+        let base=value();
+        let mut v=base.clone();v["profiles"][0]["chassis"]=base["profiles"][0]["geometry"].clone();
+        let m=parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(m.profiles[0].chassis.is_some()&&m.profiles[1].chassis.is_none());
+        assert!(parse(&serde_json::to_vec(&base).unwrap()).unwrap().profiles.iter().all(|p|p.chassis.is_none()));
+        let mut bad=v.clone();bad["profiles"][0]["extra"]=1.into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+        let mut bad=v.clone();bad["profiles"][0]["chassis"]["sha256"]="x".into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+        let mut bad=v;bad["profiles"][0]["chassis"]["path"]="relative.json".into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
     }
     #[test]fn profile13_templates_require_two_exact_homogeneous_source_profiles(){
         let value=value();let expected=parse(&serde_json::to_vec(&value).unwrap()).unwrap();

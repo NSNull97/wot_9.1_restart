@@ -102,8 +102,10 @@ impl World {
         let before=actors.get(slot).ok_or_else(||bad())?.health;let crew_before=actors[slot].alive();
         let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
         let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(projectile.origin[i])).powi(2)).sum::<f64>().sqrt();
-        let resolution=impact::resolve_mixed_for(actors[slot].vehicle_kind(),&contact.material_facts,shell,
-            chord,contact.triangle.normal,distance,trace.extended_breech_lab())?;
+        // SHELL-02: track armour this shot already passed (0 without a TrackContact).
+        let spent=trace.track_spent(projectile.sequence)?;
+        let resolution=impact::resolve_mixed_spent(actors[slot].vehicle_kind(),&contact.material_facts,shell,
+            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent)?;
         let after=(i32::from(before)-i32::from(resolution.damage_hp)).max(0)as i16;
         trace.mixed_resolution_source(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after,bundle,&actors[slot])?;
         let facts=&contact.material_facts;
@@ -134,7 +136,8 @@ impl World {
                 let component=match ray.component{super::super::materials::Component::Hull=>crate::p06t_lab_proxy::Component::Hull,
                     super::super::materials::Component::Turret01=>crate::p06t_lab_proxy::Component::Turret,
                     super::super::materials::Component::Gun01|super::super::materials::Component::Gun02=>crate::p06t_lab_proxy::Component::Gun};
-                let hits=crate::p06t_lab_proxy::select(profile,component,[ray.bbox_min,ray.bbox_max],ray.start,ray.end)?;
+                let hits=crate::p06t_lab_proxy::select_with(profile,component,[ray.bbox_min,ray.bbox_max],ray.start,ray.end,
+                    bundle.chassis().is_some())?;
                 let mut inputs=Vec::new();
                 for (ordinal,hit)in hits.iter().enumerate(){inputs.push(device::ModuleHit{
                     cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},ordinal:ordinal as u8,
@@ -157,6 +160,27 @@ impl World {
         self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
             crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced)?;
         Ok(resolution)
+    }
+    /// SHELL-02: one chassis track crossing of a live target. The Trace re-queries
+    /// and records it; the track takes the shell's device damage (source track HP,
+    /// classic module HP, no chance gate: source chanceToHitByProjectile is 1.0).
+    /// No vehicle HP changes. Returns the pass so the caller stops or continues.
+    pub(super) fn track_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,slot:usize,
+        tick:u32,bundle:&geometry::Bundle,candidate:&super::super::collision::Candidate)->io::Result<crate::p06t_damage::TrackPass>{
+        let shell=projectile.shell.ok_or_else(||bad())?;
+        let actor=actors.get(slot).ok_or_else(||bad())?;
+        let pass=trace.track_contact(self.id,projectile.sequence,tick,slot,bundle,actor,candidate)?;
+        let device=super::super::chassis_armor::ChassisArmor::side(&candidate.material).ok_or_else(||bad())?;
+        let ordinal=if device==caps::Device::LeftTrack{device::TRACK_ORDINALS[0]}else{device::TRACK_ORDINALS[1]};
+        let input=device::ModuleHit{cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},
+            ordinal,at_ms:u64::from(tick.checked_sub(1000).ok_or_else(||bad())?)*100,target:crate::p06t_lab_proxy::Target::Device(device),
+            shell,ignition_roll:0.};
+        let actor=&mut actors[slot];
+        let health=device::Health{hp:actor.health as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
+        let events=actor.devices.as_mut().ok_or_else(||bad())?.apply_hits(&[input],health)?;
+        if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+        self.device_events.extend(events.into_iter().map(|event|(slot,event)));
+        Ok(pass)
     }
     fn apply_rack_transition(&mut self,actors:&mut[Actor],slot:usize,events:&[device::Transition],
         health_before:u16,residual_hp:u16,shot:u32,attacker:usize,tick:u32)->io::Result<u16>{
@@ -275,6 +299,9 @@ fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,ros
 #[cfg(test)]
 #[path="ammo_detonation_world_tests.rs"]
 mod ammo_detonation_world_tests;
+#[cfg(test)]
+#[path="track_hit_world_tests.rs"]
+mod track_hit_world_tests;
 
 #[cfg(test)]
 impl World{

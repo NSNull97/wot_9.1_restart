@@ -148,6 +148,14 @@
 "Plan"
 ],
 [
+"shared/chassis_armor.rs",
+"ChassisArmor"
+],
+[
+"shared/chassis_armor.rs",
+"TrackMaterial"
+],
+[
 "shared/collision.rs",
 "Candidate"
 ],
@@ -330,6 +338,10 @@
 [
 "shared/p06t_damage.rs",
 "SplashDamage"
+],
+[
+"shared/p06t_damage.rs",
+"TrackPass"
 ],
 [
 "shared/p06t_device_caps.rs",
