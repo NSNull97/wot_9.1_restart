@@ -112,3 +112,19 @@ fn resources()->Vec<super::super::super::profile13_templates::Resources> {
     assert!(moved(0)<0.5,"destroyed engine must remain physically parked (settling allowed): {}",moved(0));
     assert!(world.actors.iter().all(|a|a.health==90));
 }
+
+/// Owner battle 2026-11-04: a damaged track or wounded driver pivot stuttered because the LAB
+/// duty cycle sent braking rows on its off ticks. Skipped steer rows now coast; idle still brakes.
+#[test] fn p06t_scene_damaged_track_pivot_coasts_on_duty_off_ticks() {
+    // MS-1 stock shot destroys an MS-1 track outright; the wounded driver takes the same duty path.
+    for target in [Target::Seat(1)] {
+        let mut a=actor();a.devices=Some(damaged(target));
+        let caps=a.devices.as_ref().unwrap().capabilities();assert!(caps.steer_scale>0.&&caps.steer_scale<1.,"{target:?}");
+        a.input=model::Input{throttle:0,steer:1,speed_percent:100};
+        let rows:Vec<Input>=(1000..1008).map(|tick|actor_input(&a,tick,true).unwrap()).collect();
+        assert!(rows.iter().all(|r|!r.brake&&legal(*r)),"{target:?} {rows:?}");
+        assert!(rows.iter().any(|r|r.steer==1)&&rows.iter().any(|r|r.steer==0));
+        a.input=model::Input{throttle:0,steer:0,speed_percent:100};
+        assert!(actor_input(&a,1001,true).unwrap().brake);
+    }
+}

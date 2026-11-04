@@ -149,6 +149,14 @@ impl State {
     pub fn crew(&self)->&[bool] {&self.crew[..self.profile.crew().len()]}
     pub fn crew_active(&self)->bool {self.crew().iter().any(|a|*a)}
     pub fn fire_active(&self)->bool {self.fire.is_some()}
+    /// Public state extras of the vehicle (#717 Vehicle.publicStateModifiers):
+    /// fire (4) and each destroyed track (30/31), which the client's
+    /// TrackHealth extra shows as a crashed track on the model.
+    pub fn public_modifiers(&self)->Vec<u8> {
+        let mut out=Vec::new();if self.fire_active(){out.push(4);}
+        for track in [Device::LeftTrack,Device::RightTrack] {if self.health[track as usize]==0{out.push(track.extra());}}
+        out
+    }
     pub fn frozen(&self)->bool {self.frozen}
     pub fn sequence(&self)->u32 {self.sequence}
     pub fn fire_ticks(&self)->u32 {self.fire_ticks}
@@ -169,14 +177,17 @@ impl State {
             self.health[index]=after;
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
                 before_condition:condition(before,max),after_condition:condition(after,max),repair:false})?;
-            if after==0 && matches!(device,Device::Engine|Device::FuelTank) {
+            if after==0 && device.repairable() {
                 self.repair_due[index]=Some(at.checked_add(MODULE_REPAIR_DELAY_MS).ok_or_else(||bad("module repair clock overflow"))?);
                 self.repair_cause[index]=Some(cause);
             }
         } Ok(())
     }
+    /// A repaired module comes back damaged (#717 DEVICE_REPAIRED_TO_CRITICAL, code 18): it is at its
+    /// source maxRegenHealth, below maxHealth. INFERRED from the client codes; the historical server
+    /// timer and full-repair rule are UNKNOWN (LAB).
     fn repair_due_devices(&mut self,out:&mut Vec<Transition>,now:u64)->io::Result<()> {
-        for device in [Device::Engine,Device::FuelTank] {
+        for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
             if self.health[index]!=0 || self.repair_due[index].is_none_or(|due|due>now) {continue;}
             let cause=self.repair_cause[index].ok_or_else(||bad("module repair cause missing"))?;
@@ -185,7 +196,7 @@ impl State {
             if after==0 || after>max {return Err(bad("module repair health bounds"));}
             self.health[index]=after;self.repair_due[index]=None;self.repair_cause[index]=None;
             self.emit(out,now,cause,true,Change::Device {device,extra_index:device.extra(),max_health:max,
-                before:0,after,before_condition:Condition::Destroyed,after_condition:condition(after,max),repair:true})?;
+                before:0,after,before_condition:Condition::Destroyed,after_condition:Condition::Critical,repair:true})?;
         }
         Ok(())
     }
@@ -197,7 +208,7 @@ impl State {
     fn defer_repairs_after_fire(&mut self,at:u64)->io::Result<()> {
         let due=at.checked_add(MODULE_REPAIR_DELAY_MS)
             .ok_or_else(||bad("module post-fire repair clock overflow"))?;
-        for device in [Device::Engine,Device::FuelTank] {
+        for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
             if self.health[index]==0 && self.repair_due[index].is_some() {
                 self.repair_due[index]=Some(self.repair_due[index].unwrap().max(due));
@@ -300,7 +311,9 @@ impl State {
         let live=crew_active&&!self.frozen;
         let mut c=Capabilities {crew_active,can_fire:live&&!destroyed(Device::Gun),
             drive_scale:if !live||track||destroyed(Device::Engine){0.}else if critical(Device::Engine){0.5}else{1.},
-            steer_scale:if !live||track||destroyed(Device::Engine){0.}else if critical(Device::LeftTrack)||critical(Device::RightTrack){0.5}else{1.},
+            // A damaged (critical) track keeps full steering: only a destroyed one immobilises. The earlier LAB
+            // 0.5 duty-cycled the steer row and a repaired (now damaged) track could not pivot (owner 2026-11-04).
+            steer_scale:if !live||track||destroyed(Device::Engine){0.}else{1.},
             turret_scale:if !live||destroyed(Device::TurretRotator){0.}else if critical(Device::TurretRotator){0.5}else{1.},
             aim_speed_scale:if live{1.}else{0.},dispersion_scale:if critical(Device::Gun){2.}else{1.},
             reload_scale:if destroyed(Device::AmmoBay){2.}else if critical(Device::AmmoBay){1.5}else{1.},
