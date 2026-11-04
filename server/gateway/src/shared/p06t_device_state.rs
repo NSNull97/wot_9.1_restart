@@ -311,7 +311,9 @@ impl State {
         let live=crew_active&&!self.frozen;
         let mut c=Capabilities {crew_active,can_fire:live&&!destroyed(Device::Gun),
             drive_scale:if !live||track||destroyed(Device::Engine){0.}else if critical(Device::Engine){0.5}else{1.},
-            steer_scale:if !live||track||destroyed(Device::Engine){0.}else if critical(Device::LeftTrack)||critical(Device::RightTrack){0.5}else{1.},
+            // A damaged (critical) track keeps full steering: only a destroyed one immobilises. The earlier LAB
+            // 0.5 duty-cycled the steer row and a repaired (now damaged) track could not pivot (owner 2026-11-04).
+            steer_scale:if !live||track||destroyed(Device::Engine){0.}else{1.},
             turret_scale:if !live||destroyed(Device::TurretRotator){0.}else if critical(Device::TurretRotator){0.5}else{1.},
             aim_speed_scale:if live{1.}else{0.},dispersion_scale:if critical(Device::Gun){2.}else{1.},
             reload_scale:if destroyed(Device::AmmoBay){2.}else if critical(Device::AmmoBay){1.5}else{1.},

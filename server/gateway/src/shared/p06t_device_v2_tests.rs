@@ -247,3 +247,14 @@ fn role_mask(role:&str)->u8 {match role{"commander"=>1,"gunner"=>2,"driver"=>4,"
     assert!(state.fire_active());
     assert_eq!(state.public_modifiers(),[4,30,31]);
 }
+
+#[test] fn p06t_device_v2_damaged_or_repaired_track_keeps_full_steering() {
+    for track in [Device::LeftTrack,Device::RightTrack] {
+        let mut state=State::new_v2(Profile::Ms1).unwrap();let h=context(Profile::Ms1);
+        state.apply_hits(&[ModuleHit{shell:shell(Mount::WtE100128,0),..hit(1,Target::Device(track),0,0.99)}],h).unwrap();
+        assert_eq!(state.capabilities().steer_scale,0.);
+        state.advance_fire(MODULE_REPAIR_DELAY_MS,h).unwrap();
+        assert!(state.health()[track as usize]>0);
+        assert_eq!((state.capabilities().drive_scale,state.capabilities().steer_scale),(1.,1.));
+    }
+}
