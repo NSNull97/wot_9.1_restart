@@ -4,18 +4,15 @@ Owner order 2026-11-04: T-62A (T), a copy of the 0.9.1 T-62A with tier 11 and
 1000 mm armour, for checks where damage to the own vehicle gets in the way.
 It is TEST_LAB data, never presented as a historical vehicle.
 
-The default catalogues and their hashes do not change. A process activates the
-overlay only through catalog_v1.activate() with the hash of the test catalog
-document (the same --catalog-sha256 flag a stand already passes); then the
-research catalogue gains the derived rows below.
+Owner 2026-11-05: the test vehicles are part of the server research catalogue
+(p09e_research_catalog.load_catalog applies research_overlay after the client
+document); they are out of the client tree and shop (tools/test_vehicle_client.py).
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
-import sys
-import types
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,13 +22,6 @@ MAX_BYTES = 16 * 1024
 VEHICLE_KEYS = {"vehicle_id", "base_vehicle_id", "resource_name", "base_resource_name", "native_type_id", "tier",
                 "label", "description", "chassis", "turret", "armor_mm", "armored_parts", "tracks"}
 KIND_CODE = {"chassis": 2, "turret": 3}
-# One activation state per process even when this file is imported both as
-# `test_vehicles` and as `tools.test_vehicles` (two module objects).
-_STATE = sys.modules.setdefault("_wot091_test_vehicles_state", types.ModuleType("_wot091_test_vehicles_state"))
-if not hasattr(_STATE, "active"):
-    _STATE.active = False
-
-
 class TestVehicleError(ValueError):
     pass
 
@@ -62,18 +52,6 @@ def load(path=SPEC_PATH):
                     and 0 <= m["id"] <= 254, "module spec: " + part)
     # Line endings follow the checkout (core.autocrlf); the pin is over LF bytes.
     return spec, hashlib.sha256(raw.replace(b"\r\n", b"\n")).hexdigest()
-
-
-def activate():
-    _STATE.active = True
-
-
-def active():
-    return _STATE.active
-
-
-def deactivate_for_tests():
-    _STATE.active = False
 
 
 def _module_id(nation, kind, name):
