@@ -200,3 +200,29 @@ fn terminal_of(w:&World)->Option<impact::TerminalReason>{
     assert_eq!(hull_rows(&w)[0].0.nominal_power_mm,rows[0].2.power_after_mm,"residual power carried across segments");
     assert_eq!(terminal_of(&w),Some(impact::TerminalReason::TestLabMixedImpact));
 }
+
+pub(super) fn track_hit_world(now:Instant,body:bool)->World{
+    let base=ready(true,[4,0,0],410,now);
+    track_shot_where(&base,now,|w|hull_rows(w).is_empty()!=body).0
+}
+
+/// The track row is an AppliedImpact beside the hull row, with a chassis-local
+/// presentation ray that the native component-0 packing accepts.
+#[test]fn a_track_crossing_is_an_applied_impact_with_a_chassis_presentation_ray(){
+    let now=Instant::now();
+    for body in [false,true]{
+        let w=track_hit_world(now,body);
+        let tracks:Vec<_>=w.impacts.iter().filter(|e|e.is_track()).collect();
+        assert_eq!(tracks.len(),track_rows(&w).len());
+        let e=tracks[0];assert_eq!((e.attacker,e.target,e.health_before),(0,1,e.health_after));
+        let ImpactOutcome::Track(track)=&e.outcome else{unreachable!()};
+        assert!(matches!(track.device,caps::Device::LeftTrack|caps::Device::RightTrack)&&!track.stopped);
+        let segment=track.segment.as_ref().expect("an honest chassis-local ray");
+        let chassis=w.geometry_for(VehicleKind::Ms1).unwrap().chassis().unwrap();
+        assert_eq!(segment.bounds,chassis.visual_bounds);
+        let packed=super::super::super::impact_wire::packed_segment(0,segment.bounds,segment.start,segment.end,
+            super::super::super::impact_wire::ShotOutcome::CriticalHit).unwrap();
+        assert_eq!((packed[0],packed[1]),(4,0),"CRITICAL_HIT on the chassis, native component 0");
+        assert_eq!(w.impacts.iter().filter(|e|!e.is_track()).count(),usize::from(body));
+    }
+}

@@ -17,11 +17,12 @@ fn bad(reason: &'static str) -> io::Error {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ShotOutcome { Ricochet, NotPierced, Pierced }
+/// VEHICLE_HIT_EFFECT (#717 constants.pyc): RICOCHET0 ARMOR_NOT_PIERCED1 ARMOR_PIERCED3 CRITICAL_HIT4.
+pub enum ShotOutcome { Ricochet, NotPierced, Pierced, CriticalHit }
 
 impl ShotOutcome {
     fn code(self) -> u8 {
-        match self { Self::Ricochet => 0, Self::NotPierced => 1, Self::Pierced => 3 }
+        match self { Self::Ricochet => 0, Self::NotPierced => 1, Self::Pierced => 3, Self::CriticalHit => 4 }
     }
 }
 
@@ -29,7 +30,7 @@ impl TryFrom<u8> for ShotOutcome {
     type Error = io::Error;
     fn try_from(value: u8) -> io::Result<Self> {
         match value {
-            0 => Ok(Self::Ricochet), 1 => Ok(Self::NotPierced), 3 => Ok(Self::Pierced),
+            0 => Ok(Self::Ricochet), 1 => Ok(Self::NotPierced), 3 => Ok(Self::Pierced), 4 => Ok(Self::CriticalHit),
             _ => Err(bad("unsupported laboratory shot outcome")),
         }
     }
@@ -308,7 +309,7 @@ mod tests {
             assert!(show_damage(attacker, target, 1, BOX, [0.0; 3], [1.0; 3], ShotOutcome::Pierced).is_err());
         }
         for code in 0..=255 {
-            assert_eq!(ShotOutcome::try_from(code).is_ok(), [0, 1, 3].contains(&code));
+            assert_eq!(ShotOutcome::try_from(code).is_ok(), [0, 1, 3, 4].contains(&code));
         }
     }
 }

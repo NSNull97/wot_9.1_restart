@@ -76,14 +76,17 @@ impl crate::bw_wire::Wire for TrackMaterial {
 pub struct ChassisArmor {
     pub vehicle_id: String, pub sha256: String, pub type_compact_id: u32, pub descriptor_hex: String,
     pub hull_position: [f32; 3], pub mesh: String,
+    /// Collision `.visual` boundingBox, the bbox of the native chassis presentation
+    /// segment (the same source class the Hull/Turret/Gun bundles use).
+    pub visual_bounds: [[f32; 3]; 2],
     vertices: Vec<[f32; 3]>, triangles: Vec<Triangle>,
     /// A mesh label without a record here has no MaterialInfo (missing is not armour 0).
     pub materials: Vec<TrackMaterial>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): ChassisArmor
 impl crate::bw_wire::Wire for ChassisArmor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle_id,sha256,type_compact_id,descriptor_hex,hull_position,mesh,vertices,triangles,materials}=self;W::put(vehicle_id,bw_o);W::put(sha256,bw_o);W::put(type_compact_id,bw_o);W::put(descriptor_hex,bw_o);W::put(hull_position,bw_o);W::put(mesh,bw_o);W::put(vertices,bw_o);W::put(triangles,bw_o);W::put(materials,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle_id:W::get(bw_i)?,sha256:W::get(bw_i)?,type_compact_id:W::get(bw_i)?,descriptor_hex:W::get(bw_i)?,hull_position:W::get(bw_i)?,mesh:W::get(bw_i)?,vertices:W::get(bw_i)?,triangles:W::get(bw_i)?,materials:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle_id,sha256,type_compact_id,descriptor_hex,hull_position,mesh,visual_bounds,vertices,triangles,materials}=self;W::put(vehicle_id,bw_o);W::put(sha256,bw_o);W::put(type_compact_id,bw_o);W::put(descriptor_hex,bw_o);W::put(hull_position,bw_o);W::put(mesh,bw_o);W::put(visual_bounds,bw_o);W::put(vertices,bw_o);W::put(triangles,bw_o);W::put(materials,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle_id:W::get(bw_i)?,sha256:W::get(bw_i)?,type_compact_id:W::get(bw_i)?,descriptor_hex:W::get(bw_i)?,hull_position:W::get(bw_i)?,mesh:W::get(bw_i)?,visual_bounds:W::get(bw_i)?,vertices:W::get(bw_i)?,triangles:W::get(bw_i)?,materials:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -159,6 +162,9 @@ impl ChassisArmor {
         let c = &value["component"];
         exact(c, &["excluded_degenerate_triangle_ids", "materials", "mesh_bounds", "name", "triangles", "vertex_format", "vertices", "visual_bounds"])?;
         let mesh = text(&c["name"])?;
+        let visual = c["visual_bounds"].as_array().filter(|r| r.len() == 2).ok_or_else(bad)?;
+        let visual_bounds = [vector(&visual[0], 10.)?, vector(&visual[1], 10.)?];
+        if (0..3).any(|i| visual_bounds[0][i] >= visual_bounds[1][i]) { return Err(bad()); }
         let vertices = c["vertices"].as_array().filter(|r| !r.is_empty() && r.len() <= MAX_VERTICES).ok_or_else(bad)?
             .iter().map(|v| vector(v, 10.)).collect::<io::Result<Vec<_>>>()?;
         let excluded = c["excluded_degenerate_triangle_ids"].as_array().ok_or_else(bad)?
@@ -182,7 +188,7 @@ impl ChassisArmor {
         // Mesh validation (bounds, indices, degenerate area) without trusting the export.
         Mesh::new(vertices.clone(), triangles.clone(), sha256.clone(), "chassis-local-v1")?;
         Ok(Self { vehicle_id: pin.vehicle_id, sha256, type_compact_id: pin.type_compact_id, descriptor_hex: pin.descriptor_hex,
-            hull_position, mesh, vertices, triangles, materials })
+            hull_position, mesh, visual_bounds, vertices, triangles, materials })
     }
 
     /// The chassis must belong to the same vehicle and frame as the Hull/Turret/Gun bundle.
@@ -214,6 +220,31 @@ impl ChassisArmor {
             std::array::from_fn(|axis| position[axis] + rotated[axis])
         }).collect();
         Mesh::new(vertices, self.triangles.clone(), self.geometry_revision(), transform_revision)
+    }
+
+    /// SHELL-02 presentation: the chassis-local (vehicle frame) ray of one world track
+    /// crossing at `t` of `start..end`, clipped to `visual_bounds` and continued behind
+    /// the segment start only as far as `t`. The unquantized ray's first local surface
+    /// must be the crossing point; otherwise there is no honest native segment (Err).
+    pub fn visual_segment(&self, position: [f32; 3], direction: [f32; 3], start: [f32; 3], end: [f32; 3], t: f32)
+        -> io::Result<super::geometry::VisualSegment> {
+        use super::geometry::{clipped_line, CONTACT_TOLERANCE};
+        if !t.is_finite() || !(0. ..=1.).contains(&t) { return Err(bad()); }
+        let delta: [f32; 3] = std::array::from_fn(|i| end[i] - start[i]);
+        let world: [f32; 3] = std::array::from_fn(|i| start[i] + t * delta[i] - position[i]);
+        let point = pose::inverse_rotate(world, direction);
+        let local_direction = pose::inverse_rotate(delta, direction);
+        let length = local_direction.iter().map(|&x| f64::from(x).powi(2)).sum::<f64>().sqrt();
+        let (from, to) = clipped_line(point, local_direction, self.visual_bounds, Some(-f64::from(t) * length))?;
+        let mesh = Mesh::new(self.vertices.clone(), self.triangles.clone(), self.geometry_revision(), "chassis-component-local-v1")?;
+        // The native decoder extends the decoded segment 1% at both ends.
+        let a: [f32; 3] = std::array::from_fn(|i| from[i] - 0.01 * (to[i] - from[i]));
+        let b: [f32; 3] = std::array::from_fn(|i| to[i] + 0.01 * (to[i] - from[i]));
+        let first = collision::query(&mesh, a, b)?.into_iter().next().ok_or_else(bad)?;
+        let at: [f32; 3] = std::array::from_fn(|i| a[i] + first.t * (b[i] - a[i]));
+        // f32 pose round trip: allow the same order of error as the world query.
+        if (0..3).any(|i| (f64::from(at[i]) - f64::from(point[i])).abs() > 100. * CONTACT_TOLERANCE) { return Err(bad()); }
+        Ok(super::geometry::VisualSegment { bounds: self.visual_bounds, start: from, end: to })
     }
 
     /// Bounded identity of the pinned chassis bundle in a collision query.

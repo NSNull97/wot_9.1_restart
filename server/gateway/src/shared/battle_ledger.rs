@@ -103,6 +103,8 @@ pub(super) fn totals(world:&World,slot:usize)->io::Result<Totals> {totals_from(w
 pub(in super::super) fn totals_from(world:&World,slot:usize,credits:&[Credit])->io::Result<Totals> {
     let mut sum=Totals::default();
     for event in world.impacts.iter().filter(|e|e.target==slot&&e.health_before>0) {
+        // SHELL-02: a shell counts once per target, on its body row when it reached one.
+        if event.is_track()&&world.impacts.iter().any(|o|o.shot==event.shot&&o.target==slot&&!o.is_track()){continue;}
         let Some(hp)=nominal(world,event.shot).map(u32::from) else {continue;};
         sum.potential_received+=hp;
         if armor_stopped(event) {sum.blocked+=hp;}

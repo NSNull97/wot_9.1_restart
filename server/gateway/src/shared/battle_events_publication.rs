@@ -34,7 +34,8 @@ fn criticals(c:&Client,world:&World,shot:u32)->Vec<Critical> {
 }
 fn verdict(event:&model::AppliedImpact)->Verdict {
     match impact_visual(event).ok().flatten().map(|(_,outcome,_)|outcome){
-        Some(impact_wire::ShotOutcome::Pierced)=>Verdict::Pierced,
+        // SHELL-02: a track hit pierces a zero-damage-factor material (no HP).
+        Some(impact_wire::ShotOutcome::Pierced|impact_wire::ShotOutcome::CriticalHit)=>Verdict::Pierced,
         Some(impact_wire::ShotOutcome::NotPierced)=>Verdict::NotPierced,
         Some(impact_wire::ShotOutcome::Ricochet)=>Verdict::Ricochet,
         None=>Verdict::Unknown,
@@ -55,6 +56,8 @@ fn hit_events(c:&Client,world:&World)->io::Result<Vec<(u32,Event)>> {
     let mut rows=Vec::new();
     for event in world.impacts.iter().skip(c.impact_cursor){
         if event.target!=c.slot||event.health_before<=0{continue;}
+        // SHELL-02: one row per shot and target; a track row only when the shell went no further.
+        if event.is_track()&&world.impacts.iter().any(|o|o.shot==event.shot&&o.target==event.target&&!o.is_track()){continue;}
         let Some(yaw)=heading(world,event.shot) else {continue;};
         let damage=u16::try_from((event.health_before-event.health_after).max(0)).map_err(|_|model::bad())?;
         let verdict=verdict(event);

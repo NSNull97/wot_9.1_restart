@@ -306,5 +306,8 @@ mod track_hit_world_tests;
 #[cfg(test)]
 impl World{
     /// BW-01 x TURRET-01 fixture for tests outside this module.
+    /// SHELL-02 fixture: an MS-1 AP shot through the source track of a side-on MS-1;
+    /// `body`: the shell also reaches the hull plate.
+    pub(crate) fn track_hit_for_test(now:Instant,body:bool)->(World,Instant){let w=track_hit_world_tests::track_hit_world(now,body);let last=w.last;(w,last)}
     pub(crate) fn turret01_jolt_detonation_for_test(now:Instant)->(World,Instant){let w=ammo_detonation_world_tests::jolt_detonation_world(now);let last=w.last;(w,last)}
 }

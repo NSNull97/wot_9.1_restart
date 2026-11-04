@@ -359,6 +359,18 @@ MaterialInfo не доказывают наличие всей внутренн�
 рикошета; остаток ≤ 0 — снаряд остановлен; HE взрывается на гусенице; остаток идёт в корпус обычным
 законом. Потеря HEAT за экраном (8.6) не применяется — вопрос 4 владельцу.
 
+**SHELL-02, показ попадания в гусеницу.** VERIFIED (`VehicleEffects.pyc` `DamageFromShotDecoder.decodeSegment`
+record18440): индекс компонента 0 → `TankComponentNames.CHASSIS`, bbox — `vehicleDescr.chassis['hitTester'].bbox`;
+`decodeHitPoints` ищет точку `localHitTest` хиттестера шасси. VERIFIED `constants.pyc` `VEHICLE_HIT_EFFECT`:
+RICOCHET0, ARMOR_NOT_PIERCED1, ARMOR_PIERCED_NO_DAMAGE2, ARMOR_PIERCED3, CRITICAL_HIT4 (декодер: 4 → armorCriticalHit).
+Сервер шлёт попадание в гусеницу как `showDamageFromShot` с компонентом 0 и кодом 4 тем же получателям и с теми
+же заборами видимости, что попадание в корпус. INFERRED: код 4 для модульного попадания без HP; bbox шасси —
+boundingBox collision-visual ходовой (тот же класс источника, что у корпуса; совпадение с нативным
+`hitTester.bbox` — NOT_RUN). Голос стрелку — `showShotResults` с флагом ARMOR_WITH_ZERO_DF_PIERCED_BY_PROJECTILE
+(INFERRED по имени флага: материал с `vehicleDamageFactor` 0). Наклейка (`damageStickers`) на гусеницу не ставится.
+Уведомления об устройствах (`damageInfo` 4/5 на extra 30/31) по-прежнему только владельцу повреждённой машины;
+получал ли стрелок в 0.9.1 уведомление о модуле противника — **UNKNOWN**.
+
 ## Снаряды, углы, HEAT, HE/HESH и разброс
 
 V `_readShell` record84021, co_code SHA

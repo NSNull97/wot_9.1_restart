@@ -2247,10 +2247,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                     "t":contact.triangle.t, "normal":contact.triangle.normal,
                     "geometry_revision":contact.geometry_revision, "transform_revision":contact.transform_revision,
                     "material_facts":contact.material_facts.json(),
-                    "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot).map(|e| &e.outcome) {
+                    "terminal":match world.impacts.iter().find(|event| event.shot==contact.shot&&!event.is_track()).map(|e| &e.outcome) {
                         Some(model::ImpactOutcome::Ap(_)) => "test_lab_impact",
                         Some(model::ImpactOutcome::Mixed(_)) => "test_lab_mixed_impact",
                         Some(model::ImpactOutcome::WreckBlocked) => "test_lab_wreck_impact",
+                        Some(model::ImpactOutcome::Track(_)) => "test_lab_track_impact",
                         None => "unresolved_collision"},
                     "damage_applied":world.impacts.iter().any(|event| event.shot==contact.shot && event.health_after<event.health_before)}));
             }
@@ -2280,6 +2281,12 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         "policy_revision":model::wreck_policy_revision_for(world.vehicle_kind()),"historical_fidelity":"approximate",
                         "outcome":"wreck_blocked","health_before":event.health_before,"health_after":event.health_after,
                         "damage":0,"native_effect_available":event.segment.is_some()}));
+                    continue;
+                }
+                if let model::ImpactOutcome::Track(track)=&event.outcome{
+                    println!("SHELL02_TRACK_IMPACT battle={} shot={} attacker={} target={} tick={} device={:?} stopped={} hp={} native_effect_available={} policy={}",
+                        world.id,event.shot,event.attacker,event.target,event.tick,track.device,track.stopped,event.health_after,
+                        track.segment.is_some(),crate::p06t_damage::TRACK_PASS_POLICY);
                     continue;
                 }
                 if let model::ImpactOutcome::Mixed(resolution)=&event.outcome{
@@ -2543,7 +2550,9 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 // AV-01: the owner's hit indicator (any shooter visibility; the
                 // yaw comes from the shell flight) and the shooter's result
                 // voice (vehicle ID and flags only, also for blind fire).
-                if c.spotting_enabled && event.health_before > 0 && (event.target == c.slot || event.attacker == c.slot) {
+                // SHELL-02: one indicator/voice per shot and target; the body row speaks when the shell got that far.
+                let superseded=event.is_track()&&next_world.impacts.iter().any(|o|o.shot==event.shot&&o.target==event.target&&!o.is_track());
+                if c.spotting_enabled && !superseded && event.health_before > 0 && (event.target == c.slot || event.attacker == c.slot) {
                     let projectile=next_world.projectiles.iter().find(|projectile|projectile.sequence==event.shot).ok_or_else(||model::bad())?;
                     if event.target == c.slot && c.visible()[c.slot] {
                         next.outbox.push_back(super::av01_feedback::hit_direction(projectile.velocity,event.health_after<event.health_before)?);
@@ -2698,7 +2707,14 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
 
 /// Native visual category and component of one vehicle impact; None without
 /// a native segment. Presentation only, never the damage decision.
-fn impact_visual(event:&model::AppliedImpact)->io::Result<Option<(&super::geometry::ImpactSegment,impact_wire::ShotOutcome,u8)>> {
+fn impact_visual(event:&model::AppliedImpact)->io::Result<Option<(super::geometry::VisualSegment,impact_wire::ShotOutcome,u8)>> {
+    // SHELL-02: a track crossing is shown on the chassis, native component 0
+    // (VERIFIED VehicleEffects decodeSegment: compIdx0 = CHASSIS, chassis hitTester
+    // bbox). CRITICAL_HIT (4, armorCriticalHit) is INFERRED for a module hit without
+    // HP; the original server's code choice is UNKNOWN.
+    if let model::ImpactOutcome::Track(track)=&event.outcome {
+        return Ok(track.segment.clone().map(|segment|(segment,impact_wire::ShotOutcome::CriticalHit,0)));
+    }
     let Some(segment) = &event.segment else { return Ok(None); };
     let outcome = match &event.outcome {
         // Explicit laboratory policy: a wreck blocks the shell.
@@ -2721,13 +2737,14 @@ fn impact_visual(event:&model::AppliedImpact)->io::Result<Option<(&super::geomet
             crate::p06t_damage::Decision::UnarmoredDevice=>impact_wire::ShotOutcome::Pierced,
             _=>return Err(model::bad()),
         },
+        model::ImpactOutcome::Track(_)=>return Err(model::bad()),
     };
     let component = match segment.component {
         super::materials::Component::Hull => 1,
         super::materials::Component::Turret01 => 2,
         super::materials::Component::Gun02 | super::materials::Component::Gun01 => 3,
     };
-    Ok(Some((segment,outcome,component)))
+    Ok(Some((super::geometry::VisualSegment{bounds:segment.bounds,start:segment.start,end:segment.end},outcome,component)))
 }
 /// Original effects index frozen at launch.
 fn projectile_effects(projectile:&super::projectile::Projectile)->io::Result<u8> {
@@ -2774,7 +2791,8 @@ fn publish_av01(c:&mut Client,outbox:&mut std::collections::VecDeque<Vec<u8>>,wo
 /// category or a quantizable segment gets none instead of failing the battle.
 fn sticker_codes(world:&World,target:usize)->io::Result<Vec<u64>> {
     let mut codes:Vec<u64>=Vec::new();
-    for event in world.impacts.iter().rev().filter(|e|e.target==target) {
+    // SHELL-02: no decal on a track (a chassis sticker is not established for #717).
+    for event in world.impacts.iter().rev().filter(|e|e.target==target&&!e.is_track()) {
         if codes.len()==super::av01_feedback::MAX_STICKERS {break;}
         let Some((segment,outcome,component))=impact_visual(event).ok().flatten() else {continue;};
         let projectile=world.projectiles.iter().find(|p|p.sequence==event.shot).ok_or_else(||model::bad())?;

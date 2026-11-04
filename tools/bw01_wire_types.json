@@ -212,6 +212,10 @@
 "ImpactSegment"
 ],
 [
+"shared/geometry.rs",
+"VisualSegment"
+],
+[
 "shared/impact.rs",
 "Event"
 ],
@@ -306,6 +310,10 @@
 [
 "shared/model.rs",
 "TerrainContact"
+],
+[
+"shared/model.rs",
+"TrackImpact"
 ],
 [
 "shared/model.rs",

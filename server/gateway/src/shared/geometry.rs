@@ -66,7 +66,7 @@ VehicleKind::T3485=>SourceSpec{names:["Hull", "Turret_01", "Gun_01"],counts:[(30
 _=>return None,
 })}
 // Allows f32 pose/mesh rounding at the native AABB boundary, not hitbox growth.
-const CONTACT_TOLERANCE: f64 = 0.0002;
+pub(crate) const CONTACT_TOLERANCE: f64 = 0.0002;
 
 fn same_surface(a:&super::collision::Candidate,b:&super::collision::Candidate)->bool {
     a.triangle_id==b.triangle_id && a.mesh==b.mesh && a.group==b.group && a.material==b.material
@@ -172,6 +172,18 @@ pub struct ImpactSegment {
 impl crate::bw_wire::Wire for ImpactSegment {
     fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{component,bounds,start,end}=self;W::put(component,bw_o);W::put(bounds,bw_o);W::put(start,bw_o);W::put(end,bw_o);}
     fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{component:W::get(bw_i)?,bounds:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+
+/// SHELL-02: a component-local presentation ray for a component that is not one
+/// of the three `materials::Component`s (the chassis, native component index 0).
+/// Same contract as `ImpactSegment`: bounds-local, line extended across the bbox.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VisualSegment { pub bounds: [[f32; 3]; 2], pub start: [f32; 3], pub end: [f32; 3] }
+// BW-01 wire codec (tools/bw01_wire_gen.py): VisualSegment
+impl crate::bw_wire::Wire for VisualSegment {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{bounds,start,end}=self;W::put(bounds,bw_o);W::put(start,bw_o);W::put(end,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{bounds:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -341,7 +353,7 @@ pub(super) fn transform_revision(position: [f32; 3], direction: [f32; 3], aim: [
     format!("pose-v1:{slot}:{tick}:{:x}", hash.finalize())
 }
 
-fn clipped_line(point: [f32; 3], direction: [f32; 3], bounds: [[f32; 3]; 2], minimum: Option<f64>)
+pub(crate) fn clipped_line(point: [f32; 3], direction: [f32; 3], bounds: [[f32; 3]; 2], minimum: Option<f64>)
     -> io::Result<([f32; 3], [f32; 3])> {
     if point.into_iter().chain(direction).chain(bounds.into_iter().flatten())
         .any(|x| !x.is_finite()) { return Err(bad()); }
