@@ -158,7 +158,12 @@ def load_catalog(original_root, manifest_path=PIN_PATH, cache_dir=_DEFAULT):
     if cache_dir is _DEFAULT:
         cache_dir = CACHE_DIR if CACHE_DIR.parent.parent.is_dir() else None
     try:
-        return _load_catalog(original_root, manifest_path, cache_dir)
+        result = _load_catalog(original_root, manifest_path, cache_dir)
+        # TESTVEH-01 (owner 2026-11-05): the stand-only test vehicles of
+        # config/test_vehicles.json are part of the server catalogue, derived
+        # after the cached client document (374 client vehicles + test rows).
+        from tools import test_vehicles
+        return Catalog(test_vehicles.research_overlay(result.document))
     except ResearchCatalogError:
         raise
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as error:

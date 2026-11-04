@@ -7,7 +7,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / 'tools' / 'p08c_late_results_service.py'
-CATALOG = '17dc1b3fa6059186e1bd4661a53409c267d8556471546e48ce44f8714d4376ea'
+CATALOG = 'c449a4d1d427a1407b1227b69281ed222d9e5df1148c4b74c9889dd11d5ea4df'
 ARGS = ['--database', 'never-opened.sqlite', '--original-root', 'never-read',
         '--account-id', '12345678-1234-4234-8234-123456789000', '--shell-catalog', 'never-read',
         '--terminal-policy', 'never-read', '--ammo-rack-loss']

@@ -4,7 +4,7 @@ Server-side Python 3 binding. The legacy closed lists stay the default;
 this data is used only when the worker receives ``--catalog-sha256``.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = '17dc1b3fa6059186e1bd4661a53409c267d8556471546e48ce44f8714d4376ea'
+CATALOG_SHA256 = 'c449a4d1d427a1407b1227b69281ed222d9e5df1148c4b74c9889dd11d5ea4df'
 VEHICLES = (
     {
         'ammo_capacity': 96,
@@ -1713,8 +1713,8 @@ VEHICLES = (
                 'seat': 3,
             },
         ),
-        'descriptor_hex': '01367b005100cd0019006600690000',
-        'descriptor_sha256': 'a007e062ee59f1967b74dffaa1c7e66d2e7f445be9705003f03eeae11e844e34',
+        'descriptor_hex': '01323e005100cd0019003200690000',
+        'descriptor_sha256': 'd1fe62a51658d0664aadef7d3db207502fab749ca648c35c16f04ffb9add892e',
         'devices': (
             {
                 'device': 'engine',
@@ -1762,13 +1762,13 @@ VEHICLES = (
                 'max_regen_health': 60,
             },
         ),
-        'kind': 'ussr-T62A',
+        'kind': 'ussr-T62A_T',
         'legacy_inventory': None,
         'max_hp': 1950,
         'modules': {
             'chassis': {
-                'module_id': 'module:ussr:chassis:Chassis_T62A',
-                'native_compact_id': 31490,
+                'module_id': 'module:ussr:chassis:Chassis_T62A_T',
+                'native_compact_id': 15874,
             },
             'engine': {
                 'module_id': 'module:ussr:engine:V-55',
@@ -1787,21 +1787,21 @@ VEHICLES = (
                 'native_compact_id': 6407,
             },
             'turret': {
-                'module_id': 'module:ussr:turret:Turret_1_T62A',
-                'native_compact_id': 26115,
+                'module_id': 'module:ussr:turret:Turret_1_T62A_T',
+                'native_compact_id': 12803,
             },
         },
         'nation': 'ussr',
         'nation_id': 0,
-        'native_compact_id': 13825,
-        'resource_name': 'T62A',
+        'native_compact_id': 12801,
+        'resource_name': 'T62A_T',
         'shells': (
             {
                 'family': 'ARMOR_PIERCING_CR',
                 'item_id': 77,
                 'native_compact_id': 19722,
                 'resource_name': '_100mm_UBR-412PB',
-                'shell_definition_id': 'shell:ussr-T62A-stock-apcr',
+                'shell_definition_id': 'shell:ussr-T62A_T-stock-apcr',
                 'suffix': 'apcr',
             },
             {
@@ -1809,7 +1809,7 @@ VEHICLES = (
                 'item_id': 101,
                 'native_compact_id': 25866,
                 'resource_name': '_100mm_3UBK4M',
-                'shell_definition_id': 'shell:ussr-T62A-stock-heat',
+                'shell_definition_id': 'shell:ussr-T62A_T-stock-heat',
                 'suffix': 'heat',
             },
             {
@@ -1817,13 +1817,13 @@ VEHICLES = (
                 'item_id': 100,
                 'native_compact_id': 25610,
                 'resource_name': '_100mm_3UOF10',
-                'shell_definition_id': 'shell:ussr-T62A-stock-he',
+                'shell_definition_id': 'shell:ussr-T62A_T-stock-he',
                 'suffix': 'he',
             },
         ),
-        'tier': 10,
-        'type_id': 54,
+        'tier': 11,
+        'type_id': 50,
         'vehicle_class': 'mediumTank',
-        'vehicle_id': 'vehicle:ussr:T62A',
+        'vehicle_id': 'vehicle:ussr:T62A_T',
     },
 )

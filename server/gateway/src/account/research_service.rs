@@ -7,7 +7,7 @@ use serde_json::Value;
 use sha2::{Digest,Sha256};
 
 pub const POLICY_SHA256:&str="46875923affb6bd307ad4d35397880fae1dd16fb1992ae2bfbfed607d132361c";
-pub const CATALOG_SHA256:&str="1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80";
+pub const CATALOG_SHA256:&str="ede8f682bc5aafe23a00369d373aed08d783115bba588128b10e5ddbeca57855";
 pub const SHOP_REVISION:i64=5;
 pub const MAX_STATE_BYTES:usize=32768;
 pub const MAX_SHOP_BYTES:usize=32768;

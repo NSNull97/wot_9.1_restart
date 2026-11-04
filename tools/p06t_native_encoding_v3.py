@@ -19,7 +19,7 @@ from py27_static import parse_pyc,records
 from vehicle_physics_profile import no_links
 
 SCHEMA='native-item-encoding.717.v2'
-SEMANTIC_SHA256='1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80'
+SEMANTIC_SHA256='ede8f682bc5aafe23a00369d373aed08d783115bba588128b10e5ddbeca57855'
 NATIONS=('ussr','germany','usa','china','france','uk','japan')
 TYPES={'vehicle':1,'chassis':2,'turret':3,'gun':4,'engine':5,'fuelTank':6,'radio':7}
 MODULE_ORDER=('chassis','engine','fuelTank','radio','turret','gun')
