@@ -4,7 +4,7 @@ Server-side Python 3 binding. The legacy closed lists stay the default;
 this data is used only when the worker receives ``--catalog-sha256``.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = '76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe'
+CATALOG_SHA256 = '17dc1b3fa6059186e1bd4661a53409c267d8556471546e48ce44f8714d4376ea'
 VEHICLES = (
     {
         'ammo_capacity': 96,
@@ -1687,5 +1687,143 @@ VEHICLES = (
         'type_id': 14,
         'vehicle_class': 'mediumTank',
         'vehicle_id': 'vehicle:france:Bat_Chatillon25t',
+    },
+    {
+        'ammo_capacity': 50,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '01367b005100cd0019006600690000',
+        'descriptor_sha256': 'a007e062ee59f1967b74dffaa1c7e66d2e7f445be9705003f03eeae11e844e34',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 210,
+                'max_regen_health': 140,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'gun',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'ussr-T62A',
+        'legacy_inventory': None,
+        'max_hp': 1950,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_T62A',
+                'native_compact_id': 31490,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-55',
+                'native_compact_id': 20741,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Large',
+                'native_compact_id': 52486,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_100mm_D54_TS',
+                'native_compact_id': 26884,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:R123',
+                'native_compact_id': 6407,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_T62A',
+                'native_compact_id': 26115,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 13825,
+        'resource_name': 'T62A',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 77,
+                'native_compact_id': 19722,
+                'resource_name': '_100mm_UBR-412PB',
+                'shell_definition_id': 'shell:ussr-T62A-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 101,
+                'native_compact_id': 25866,
+                'resource_name': '_100mm_3UBK4M',
+                'shell_definition_id': 'shell:ussr-T62A-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 100,
+                'native_compact_id': 25610,
+                'resource_name': '_100mm_3UOF10',
+                'shell_definition_id': 'shell:ussr-T62A-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 54,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:ussr:T62A',
     },
 )

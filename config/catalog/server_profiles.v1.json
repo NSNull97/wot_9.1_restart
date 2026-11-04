@@ -38,6 +38,9 @@
      "client_ui": {"crew": false, "ammo": false}},
     {"kind": "france-Bat_Chatillon25t", "vehicle_id": "vehicle:france:Bat_Chatillon25t", "device_profile": "battle-any",
      "battle_admission": "always", "legacy_inventory": null,
+     "client_ui": {"crew": false, "ammo": false}},
+    {"kind": "ussr-T62A", "vehicle_id": "vehicle:ussr:T62A", "device_profile": "battle-any",
+     "battle_admission": "always", "legacy_inventory": null,
      "client_ui": {"crew": false, "ammo": false}}
   ]
 }
