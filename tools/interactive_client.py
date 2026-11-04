@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 import hashlib
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -93,6 +94,26 @@ def file_hash(path):
     if not path.is_file():
         raise ValueError('expected regular file: ' + str(path))
     return sha256(path)
+
+
+def native_preferences_path(value, appdata=None):
+    """UI-PREF01: a relative engine preferences path the engine itself resolves
+    from %APPDATA%/Wargaming.net/WorldOfTanks. Only the owner's folder
+    (GAYmDev Studio/SteelFrontier) or the project's SteelFrontier subfolder;
+    never the modern client's own files in that directory."""
+    if value is None:
+        return None
+    parts = value.split('/')
+    if ('\\' in value or ':' in value or value.startswith('/') or not value.endswith('.xml')
+            or any(not re.fullmatch(r'[A-Za-z0-9 _.-]{1,64}', part) or part == '.' for part in parts)):
+        raise ValueError('--native-preferences must be a plain relative path with / separators')
+    base = Path(appdata or os.environ['APPDATA']) / 'Wargaming.net' / 'WorldOfTanks'
+    resolved = Path(os.path.normpath(base.joinpath(*parts)))
+    allowed = (Path(os.path.normpath(base.parent.parent / 'GAYmDev Studio' / 'SteelFrontier')),
+               Path(os.path.normpath(base / 'SteelFrontier')))
+    if not any(resolved.is_relative_to(root) and resolved != root for root in allowed):
+        raise ValueError('--native-preferences must stay in GAYmDev Studio/SteelFrontier or WorldOfTanks/SteelFrontier')
+    return value
 
 
 def xml_bytes(element):
@@ -368,7 +389,9 @@ def prepare(args):
     resource_evidence['project_greeting_localization'] = greeting_evidence
     engine = to_element('engine_config.xml', decode(read_limited(root/'res/engine_config.xml')))
     engine.find('personality').text = 'sr_interactive'
-    engine.find('preferences').text = str(profile/'sr_preferences.xml').replace('\\','/')
+    native_preferences = native_preferences_path(getattr(args, 'native_preferences', None))
+    engine.find('preferences').text = (native_preferences if native_preferences is not None
+                                       else str(profile/'sr_preferences.xml').replace('\\','/'))
     search_paths_raw = read_limited(root/'paths.xml', 65536)
     search_paths = ET.fromstring(search_paths_raw)
     search_list = search_paths.find('Paths')
@@ -401,6 +424,8 @@ def prepare(args):
                 # (a test control file or the passive capture turn it on too).
                 'trace_native_calls':bool(getattr(args, 'trace_native_calls', False)),
                 'enable_map_drive':bool(args.enable_map_drive)}
+    if native_preferences is not None:
+        settings['native_preferences'] = native_preferences
     if network.get('network_policy') is not None:
         settings['network_policy'] = network['network_policy']
     if ammo_service:
@@ -724,6 +749,10 @@ def main():
     prep.add_argument('--sixth-sense-sound', choices=sorted(sixth_sense_policy().CANDIDATES),
                       help='Project policy, not original 0.9.1: one existing GUI FX cue when '
                            'the Sixth Sense lamp lights; requires a battle mode; off by default')
+    prep.add_argument('--native-preferences',
+                      help='UI-PREF01 experiment: relative engine preferences path (from '
+                           '%%APPDATA%%/Wargaming.net/WorldOfTanks) the engine writes itself, e.g. '
+                           '../../GAYmDev Studio/SteelFrontier/preferences.xml; without it the owned profile XML')
     prep.add_argument('--trace-native-calls', action='store_true',
                       help='CLIENT-PERF-01 diagnostic: the global profiler that records original native calls '
                            '(about -20%% fps in battle); off in ordinary play, on with a test control file')

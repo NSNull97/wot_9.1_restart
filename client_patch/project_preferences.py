@@ -105,6 +105,21 @@ def install(args, settings, record):
     import BigWorld
     import ResMgr
     import Settings
+    native = settings.get('native_preferences')
+    if native is not None:
+        # UI-PREF01 experiment: engine_config holds a relative path the engine
+        # resolves itself, so its own writer saves every section (graphics and
+        # device too). Nothing is replaced; record what the engine resolved.
+        actual = BigWorld.wg_getPreferencesFilePath()
+        if isinstance(actual, text_type):
+            actual = actual.encode('utf8')
+        record('preferences_native', configured=native, native_path=actual,
+               existed_at_startup=bool(BigWorld.wg_preferencesExistedAtStartup()),
+               native_writer_used=True)
+        # As the original personality does: the engine's own userPreferences
+        # section (scriptsPreferences of that file) and its own writer.
+        Settings.g_instance = Settings.Settings(args[0], args[1], args[2])
+        return Settings.g_instance
     directory = owned(settings['profile_dir'], settings['local_root'])
     if not os.path.isdir(directory):
         raise ValueError('prepared local profile directory missing')

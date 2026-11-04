@@ -80,6 +80,8 @@ if (type(_settings.get('enable_crew_any', False)) is not bool
     raise ValueError('CREW-ANY requires the CAT-01 catalog mode')
 if type(_settings.get('trace_native_calls', False)) is not bool:
     raise ValueError('trace_native_calls must be a Boolean')
+if not isinstance(_settings.get('native_preferences', u''), basestring):
+    raise ValueError('native_preferences must be the prepared relative path')
 import project_network
 project_network.validate_settings(_settings)
 import project_sixth_sense_sound
