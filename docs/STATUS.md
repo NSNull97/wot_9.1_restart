@@ -18,13 +18,6 @@
 - R6 (модули шлюза) и R7 (клиентский патч) не начаты: пересекаются с PG-01, кандидатом PERF-02 и UI-PREF01 — решения владельца
   в списке «На утро» [плана](plans/REFACTOR01_PLAN.md).
 
-## Дальше: CLIENT-PERF-01 — в ветке, ждёт проверки владельца
-
-Ветка `codex/client-perf-01-profiler-flag` (от REFACTOR `17b5242`), [план](plans/CLIENT_PERF01_PROFILER.md): глобальный
-профилировщик клиента (`sys.setprofile`, аудит 26.10: fps 102–105 → 84 в бою) ставится только при файле управления тестом,
-пассивной съёмке UI или `prepare --trace-native-calls`. Python D: 3966 тестов (+5), FAIL-список = база; CPython 2.7.3
-компиляция PASS. Native NOT_RUN: переустановка клиента владельца и бой (fps, экипаж и БК в ангаре как раньше).
-
 После REFACTOR (порядок владельца 03.11): CLIENT-PERF-01 → UI-PREF01 → снаряды (сначала SHELLS-R) → PG-01 и NET-02/LOAD-200
 → контент (все машины, карты, разрушаемость).
 
@@ -32,6 +25,7 @@
 
 | Дата | Карточки |
 |---|---|
+| 04.11 | CLIENT-PERF-01: глобальный профилировщик клиента только в диагностике |
 | 03.11 | BATTLE-UI: UI-01…06 (настройки, индикатор обстрела, лента и история боя, итоги, уши, маркеры), CRASH-01 |
 | 01.11 | PERF-02 (тир X и остаток, MALINOVKA-STEP), LATE-BOTS, LATE-NOTICE-01, CAT-NATIONS-02 |
 | 31.10 | IMPACT-01, CAT-NATIONS |
@@ -43,6 +37,10 @@
 
 Факты, нужные дальше:
 
+- CLIENT-PERF-01 (владелец 04.11, стенд -12, клиент a `install-a-36`: «фпс в районе 90-100 держится», прежде 84 в аудите):
+  `sys.setprofile(profile_calls)` ставится только при `test_control`, `capture_ui_passive` или `prepare --trace-native-calls`;
+  в трассе `native_call_trace`. Диагностика родных вызовов в бою — только с этим флагом. План — `docs/plans/CLIENT_PERF01_PROFILER.md`
+  в git на `4182d0f`. Фризы загрузки и ангара (движок, аудит `codex/client-stutter-audit`) не решены — CLIENT-PERF-02…05.
 - BATTLE-UI включён по умолчанию; откат `--native-vehicle-markers`, `--hit-indicator off`, `--no-battle-feed`,
   `--no-battle-history`. Шлюз: `battle_events {version 1, feed, history}`, `int_user_settings`, `results_ledger`, `team_score`.
   Иконки классов и событий — локальная копия Lesta (`local/ui-borrowed/`, не в Git).
