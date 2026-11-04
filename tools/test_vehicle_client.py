@@ -37,18 +37,18 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'tools'))
 import packed_xml_writer as pxml  # noqa: E402
 
+import test_vehicles  # noqa: E402
+
 SCHEMA = 'wot091-test-vehicle-client.v1'
-BASE = 'T62A'
-NAME = 'T62A_T'
-VEHICLE_ID = 50
-CHASSIS = ('Chassis_T62A', 'Chassis_T62A_T', 62)
-TURRET = ('Turret_1_T62A', 'Turret_1_T62A_T', 50)
-LEVEL = 11
-TEXT = {
-    'T62A_T': 'Т-62А (Т)',
-    'T62A_T_short': 'Т-62А (Т)',
-    'T62A_T_descr': 'Тестовая машина стенда: копия Т-62А, броня 1000 мм. Не историческая машина.',
-}
+# One source with the server overlay: config/test_vehicles.json.
+_SPEC = test_vehicles.load()[0]['vehicles'][0]
+BASE = _SPEC['base_resource_name']
+NAME = _SPEC['resource_name']
+VEHICLE_ID = _SPEC['native_type_id']
+CHASSIS = (_SPEC['chassis']['base'], _SPEC['chassis']['name'], _SPEC['chassis']['id'])
+TURRET = (_SPEC['turret']['base'], _SPEC['turret']['name'], _SPEC['turret']['id'])
+LEVEL = _SPEC['tier']
+TEXT = {NAME: _SPEC['label'], NAME + '_short': _SPEC['label'], NAME + '_descr': _SPEC['description']}
 DEFS = 'scripts/item_defs/vehicles/ussr/'
 OUT_DEFS = 'res_mods/0.9.1/' + DEFS
 ICONS = {
@@ -169,12 +169,12 @@ def build(original, python27=DEFAULT_PY27, icons=DEFAULT_ICONS, scratch=None):
     scratch.mkdir(parents=True, exist_ok=True)
     defs = original / 'res' / DEFS
     payloads, sources = {}, {}
-    for name in ('list.xml', 'components/chassis.xml', 'components/turrets.xml', 't62a.xml'):
+    for name in ('list.xml', 'components/chassis.xml', 'components/turrets.xml', BASE.lower() + '.xml'):
         sources[DEFS + name] = read(defs / name)
     payloads[OUT_DEFS + 'list.xml'] = vehicle_list(sources[DEFS + 'list.xml'])
     payloads[OUT_DEFS + 'components/chassis.xml'] = add_id(sources[DEFS + 'components/chassis.xml'], CHASSIS[1], CHASSIS[2])
     payloads[OUT_DEFS + 'components/turrets.xml'] = add_id(sources[DEFS + 'components/turrets.xml'], TURRET[1], TURRET[2])
-    payloads[OUT_DEFS + 't62a_t.xml'] = vehicle_definition(sources[DEFS + 't62a.xml'])
+    payloads[OUT_DEFS + NAME.lower() + '.xml'] = vehicle_definition(sources[DEFS + BASE.lower() + '.xml'])
     payloads['res_mods/0.9.1/scripts/common/items/vehicles.pyc'] = level_pyc(original, python27, scratch)
     sources[MO] = read(original / MO, 8 * 1024 * 1024)
     payloads[MO] = add_mo_keys(sources[MO], TEXT)

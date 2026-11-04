@@ -158,7 +158,14 @@ def load_catalog(original_root, manifest_path=PIN_PATH, cache_dir=_DEFAULT):
     if cache_dir is _DEFAULT:
         cache_dir = CACHE_DIR if CACHE_DIR.parent.parent.is_dir() else None
     try:
-        return _load_catalog(original_root, manifest_path, cache_dir)
+        result = _load_catalog(original_root, manifest_path, cache_dir)
+        # Stand-only test vehicles (tools/test_vehicles.py): derived after the
+        # cached client document, only in a process that activated the test
+        # catalog; otherwise the document and its hash are unchanged.
+        from tools import test_vehicles
+        if test_vehicles.active():
+            result = Catalog(test_vehicles.research_overlay(result.document))
+        return result
     except ResearchCatalogError:
         raise
     except (OSError, ValueError, KeyError, TypeError, OverflowError) as error:
