@@ -59,6 +59,51 @@ const LINE_RECHECK_TICKS: u32 = 5;
 /// A target the team shows but this bot cannot see for 2 s: keep advancing
 /// along the route (turret on the target) instead of waiting behind a hill.
 const BLOCKED_ADVANCE_TICKS: u32 = 20;
+/// BOT-02 behaviour on top of the BOT-01 configuration policy (whose
+/// `POLICY` string the stand configs bind). Explicit PROJECT policy.
+pub const BEHAVIOUR: &str = "project.bot02.fire-line-hull-reposition.v1";
+/// Fire line: the server's projectile flight is cut into 0.1 s segments up to
+/// the target's range plus a margin; at most this many are queried.
+const FIRE_LINE_SEGMENTS: u32 = 12;
+const FIRE_LINE_MARGIN_M: f32 = 6.;
+/// Limited turret traverse: the hull turns until the needed turret yaw lies in
+/// the sector shrunk to 70 % (and at least 2 degrees inside each limit).
+const TRAVERSE_SHRINK: f32 = 0.7;
+const TRAVERSE_MARGIN: f32 = 2. * PI / 180.;
+const TRAVERSE_MIN_HALF: f32 = 0.5 * PI / 180.;
+/// A target this bot cannot shoot from here (gun angles or an ally in the
+/// fire line) for 3 s: move to a new position for at most 6 s.
+const REPOSITION_TICKS: u32 = 30;
+const REPOSITION_TTL_TICKS: u32 = 60;
+const REPOSITION_BACK_M: f32 = 35.;
+const REPOSITION_BACK_DEG: f32 = 30.;
+const REPOSITION_SIDE_M: f32 = 20.;
+/// No progress: wants to move but neither moved 3 m nor turned 20 degrees in 5 s.
+const PROGRESS_TICKS: u32 = 50;
+const PROGRESS_M: f32 = 3.;
+const PROGRESS_YAW: f32 = 20. * PI / 180.;
+/// Less rushing: a seeded pause at the first route point while nothing is in
+/// contact, and no advance into a team-shown fight without nearby support.
+const DWELL_MIN_TICKS: u32 = 150;
+const DWELL_SPAN_TICKS: u32 = 250;
+const SUPPORT_M: f32 = 120.;
+/// Why a bot cannot shoot its target from here (`Brain::unhittable`).
+const UNHITTABLE_ANGLES: u8 = 1;
+const UNHITTABLE_ALLY: u8 = 2;
+
+/// Turret yaw limits of the vehicle's gun from its battle profile (None: full circle).
+fn turret_yaw_limits(kind: VehicleKind) -> Option<(f32, f32)> {
+    kind.source_aim().and_then(|s| s.envelope.yaw_limits()).map(|l| (l.min, l.max))
+}
+/// BOT-02: hull steer (-1, 0, +1) that brings a turret yaw `required` (target
+/// bearing minus hull yaw) into the shrunk traverse sector; 0 for a full turret.
+fn hull_turn_for(required: f32, limits: Option<(f32, f32)>) -> i8 {
+    let Some((lo, hi)) = limits else { return 0; };
+    let (centre, half) = (0.5 * (lo + hi), 0.5 * (hi - lo));
+    let inner = (half * TRAVERSE_SHRINK).min(half - TRAVERSE_MARGIN).max(TRAVERSE_MIN_HALF);
+    let off = aim::wrap(required - centre);
+    if off > inner { 1 } else if off < -inner { -1 } else { 0 }
+}
 
 /// Client `arena_defs` playable bounds (min x, min z, max x, max z) carried by
 /// the MAPS-01 packages' `arena.json` `playable_bounds_xz` (see BOT01 plan).
@@ -102,18 +147,28 @@ struct Brain {
     stuck_spot: Option<([f32; 2], u8)>,
     /// Lead: (target, tick, last position, smoothed velocity).
     track: Option<(usize, u32, [f32; 3], [f32; 3])>,
+    /// BOT-02: (target, since tick, UNHITTABLE_*) while it cannot be shot from here.
+    unhittable: Option<(usize, u32, u8)>,
+    /// BOT-02: a new firing position and the tick it expires.
+    reposition: Option<([f32; 2], u32)>,
+    /// BOT-02: progress anchor (place, hull yaw, tick) while the bot wants to move.
+    progress: Option<([f32; 2], f32, u32)>,
+    /// BOT-02: seeded pause at the first route point; the tick it ends once started.
+    dwell: u32, dwell_until: Option<u32>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Brain
 impl crate::bw_wire::Wire for Brain {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{slot,rng,route,waypoint,stuck,unstick,unstick_steer,target,settle_tick,error,turret_yaw,sent_input,sent_aim,line,side,avoid,probe_tick,detour,stuck_spot,track}=self;W::put(slot,bw_o);W::put(rng,bw_o);W::put(route,bw_o);W::put(waypoint,bw_o);W::put(stuck,bw_o);W::put(unstick,bw_o);W::put(unstick_steer,bw_o);W::put(target,bw_o);W::put(settle_tick,bw_o);W::put(error,bw_o);W::put(turret_yaw,bw_o);W::put(sent_input,bw_o);W::put(sent_aim,bw_o);W::put(line,bw_o);W::put(side,bw_o);W::put(avoid,bw_o);W::put(probe_tick,bw_o);W::put(detour,bw_o);W::put(stuck_spot,bw_o);W::put(track,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{slot:W::get(bw_i)?,rng:W::get(bw_i)?,route:W::get(bw_i)?,waypoint:W::get(bw_i)?,stuck:W::get(bw_i)?,unstick:W::get(bw_i)?,unstick_steer:W::get(bw_i)?,target:W::get(bw_i)?,settle_tick:W::get(bw_i)?,error:W::get(bw_i)?,turret_yaw:W::get(bw_i)?,sent_input:W::get(bw_i)?,sent_aim:W::get(bw_i)?,line:W::get(bw_i)?,side:W::get(bw_i)?,avoid:W::get(bw_i)?,probe_tick:W::get(bw_i)?,detour:W::get(bw_i)?,stuck_spot:W::get(bw_i)?,track:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{slot,rng,route,waypoint,stuck,unstick,unstick_steer,target,settle_tick,error,turret_yaw,sent_input,sent_aim,line,side,avoid,probe_tick,detour,stuck_spot,track,unhittable,reposition,progress,dwell,dwell_until}=self;W::put(slot,bw_o);W::put(rng,bw_o);W::put(route,bw_o);W::put(waypoint,bw_o);W::put(stuck,bw_o);W::put(unstick,bw_o);W::put(unstick_steer,bw_o);W::put(target,bw_o);W::put(settle_tick,bw_o);W::put(error,bw_o);W::put(turret_yaw,bw_o);W::put(sent_input,bw_o);W::put(sent_aim,bw_o);W::put(line,bw_o);W::put(side,bw_o);W::put(avoid,bw_o);W::put(probe_tick,bw_o);W::put(detour,bw_o);W::put(stuck_spot,bw_o);W::put(track,bw_o);W::put(unhittable,bw_o);W::put(reposition,bw_o);W::put(progress,bw_o);W::put(dwell,bw_o);W::put(dwell_until,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{slot:W::get(bw_i)?,rng:W::get(bw_i)?,route:W::get(bw_i)?,waypoint:W::get(bw_i)?,stuck:W::get(bw_i)?,unstick:W::get(bw_i)?,unstick_steer:W::get(bw_i)?,target:W::get(bw_i)?,settle_tick:W::get(bw_i)?,error:W::get(bw_i)?,turret_yaw:W::get(bw_i)?,sent_input:W::get(bw_i)?,sent_aim:W::get(bw_i)?,line:W::get(bw_i)?,side:W::get(bw_i)?,avoid:W::get(bw_i)?,probe_tick:W::get(bw_i)?,detour:W::get(bw_i)?,stuck_spot:W::get(bw_i)?,track:W::get(bw_i)?,unhittable:W::get(bw_i)?,reposition:W::get(bw_i)?,progress:W::get(bw_i)?,dwell:W::get(bw_i)?,dwell_until:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<u32>, digest: u64, shots: u32,
-    /// Engaged decisions without a shot: [not aimed, aiming time, reload/ammo, terrain line].
-    held: [u32; 4],
+    /// Engaged decisions without a shot: [not aimed, aiming time, reload/ammo, terrain line, vehicle in the fire line].
+    held: [u32; 5],
+    /// BOT-02 moves to a new firing position.
+    repositions: u32,
     /// Stuck reversals (each starts a side detour).
     stucks: u32,
     /// Wall time spent in bot decisions (diagnostic only; not in the digest).
@@ -122,8 +177,8 @@ pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<
     pairing: Option<(u8, u8)> }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Bots
 impl crate::bw_wire::Wire for Bots {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,stucks,think_ns,pairing}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,repositions,stucks,think_ns,pairing}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(repositions,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,repositions:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -160,7 +215,7 @@ impl World {
             if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
             self.geometry_for(*kind)?;
         }
-        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 4], stucks: 0, think_ns: 0, pairing: None });
+        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 5], repositions: 0, stucks: 0, think_ns: 0, pairing: None });
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
@@ -245,12 +300,14 @@ impl World {
                 clamp_box([enemy[0] + jitter[0] * 25., enemy[1] + jitter[1] * 25.], inner)];
             let error = disc(&mut rng);
             let side = if splitmix(&mut rng) & 1 == 0 { 1. } else { -1. };
+            let dwell = DWELL_MIN_TICKS + (unit(&mut rng) * DWELL_SPAN_TICKS as f32) as u32;
             brains.push(Brain { slot, rng, route, waypoint: 0, stuck: 0, unstick: 0, unstick_steer: 0, target: None,
                 settle_tick: 1000, error, turret_yaw: 0., sent_input: Input::STOP, sent_aim: None, line: None,
-                side, avoid: 0., probe_tick: 0, detour: None, stuck_spot: None, track: None });
+                side, avoid: 0., probe_tick: 0, detour: None, stuck_spot: None, track: None,
+                unhittable: None, reposition: None, progress: None, dwell, dwell_until: None });
         }
         next.bots.as_mut().ok_or_else(bad)?.brains = brains;
-        println!("BOT01_FILL battle={} humans={} bots={count} kinds={:?} seed={} policy={POLICY} accounts=none domain_writes=none",
+        println!("BOT01_FILL battle={} humans={} bots={count} kinds={:?} seed={} policy={POLICY} behaviour={BEHAVIOUR} accounts=none domain_writes=none",
             self.id, plan.human_places, next.actors[plan.human_places..].iter().map(|a| a.vehicle_kind().label()).collect::<Vec<_>>(), plan.seed);
         *self = next;
         Ok(count)
@@ -313,8 +370,10 @@ impl World {
             let slot = state.brains[index].slot;
             let actor = self.actors.get(slot).ok_or_else(bad)?;
             if actor.bot.is_none() || !actor.ready || !actor.alive() { continue; }
+            let had_reposition = state.brains[index].reposition.is_some();
             let (commands, aimed_for) = self.think(&mut state.brains[index], now, &mut state.held)?;
             if state.brains[index].unstick == UNSTICK_TICKS { state.stucks = state.stucks.saturating_add(1); }
+            if !had_reposition && state.brains[index].reposition.is_some() { state.repositions = state.repositions.saturating_add(1); }
             if commands.is_empty() { continue; }
             let outcomes = self.apply(slot, SESSION_BASE + slot as u32, &commands, now)?;
             let shot = outcomes.iter().any(|o| matches!(o, fire::Outcome::AcceptedShot { .. }
@@ -334,15 +393,15 @@ impl World {
             let engaged = state.brains.iter().filter(|b| b.target.is_some() && self.actors[b.slot].alive()).count();
             let hits = self.damage_events.iter().filter(|e| self.is_bot(e.attacker)).count()
                 + self.impacts.iter().filter(|e| self.is_bot(e.attacker)).count();
-            println!("BOT01_STATS battle={} tick={} bots={} alive={alive} engaged={engaged} shots={} damage_rows={hits} held_aim={} held_settle={} held_reload={} held_terrain={} stucks={} think_ms={:.0}",
-                self.id, self.tick, state.brains.len(), state.shots, state.held[0], state.held[1], state.held[2], state.held[3], state.stucks, state.think_ns as f64 / 1e6);
+            println!("BOT01_STATS battle={} tick={} bots={} alive={alive} engaged={engaged} shots={} damage_rows={hits} held_aim={} held_settle={} held_reload={} held_terrain={} held_fire_line={} repositions={} stucks={} think_ms={:.0}",
+                self.id, self.tick, state.brains.len(), state.shots, state.held[0], state.held[1], state.held[2], state.held[3], state.held[4], state.repositions, state.stucks, state.think_ns as f64 / 1e6);
         }
         self.bots = Some(state);
         Ok(issued)
     }
 
     /// Pure decision from this World snapshot and the bot's own RNG.
-    fn think(&self, brain: &mut Brain, now: Instant, held: &mut [u32; 4]) -> io::Result<(Vec<Command>, Option<(usize, f32, f32)>)> {
+    fn think(&self, brain: &mut Brain, now: Instant, held: &mut [u32; 5]) -> io::Result<(Vec<Command>, Option<(usize, f32, f32)>)> {
         let slot = brain.slot;
         let actor = &self.actors[slot];
         let team = self.team(slot)?;
@@ -388,18 +447,45 @@ impl World {
                 clear || self.tick.saturating_sub(since) < BLOCKED_ADVANCE_TICKS
             },
         };
-        let input = if target.is_some() && hold {
-            brain.stuck = 0; brain.unstick = 0; Input::STOP
+        if brain.reposition.is_some_and(|(point, until)| self.tick >= until || distance(here, point) < DETOUR_REACHED_M) { brain.reposition = None; }
+        // BOT-02: a team-shown fight this bot has no line into: without nearby
+        // support it moves sideways for a line instead of driving deeper.
+        if let (Some((enemy, _)), false, None) = (target, hold, brain.reposition) {
+            let near = |a: &Actor, radius: f32| a.alive() && distance(here, [a.position[0], a.position[2]]) <= radius;
+            // Allies count this bot itself.
+            let (mut enemies, mut allies) = (0usize, 0usize);
+            for (other, a) in self.actors.iter().enumerate() {
+                if self.team(other)? == team { if near(a, SUPPORT_M) { allies += 1; } }
+                else if visible[other] && near(a, ENGAGE_M) { enemies += 1; }
+            }
+            if enemies > allies {
+                brain.reposition = Some((self.bot_side_point(here, self.actors[enemy].position, brain.side, 1.5 * REPOSITION_SIDE_M, inner), self.tick + REPOSITION_TTL_TICKS));
+            }
+        }
+        // BOT-02: limited or no turret traverse: the hull turns the gun onto the target.
+        let hull_turn = target.map_or(0, |(enemy, _)| {
+            let p = self.actors[enemy].position;
+            hull_turn_for(aim::wrap((p[0] - here[0]).atan2(p[2] - here[1]) - actor.yaw), turret_yaw_limits(actor.vehicle_kind()))
+        });
+        let input = if target.is_some() && hold && brain.reposition.is_none() {
+            brain.stuck = 0; brain.unstick = 0; brain.progress = None;
+            if hull_turn != 0 { Input { throttle: 0, steer: hull_turn, speed_percent: 100 } } else { Input::STOP }
         } else if brain.unstick > 0 {
-            brain.unstick -= 1; Input { throttle: -1, steer: brain.unstick_steer, speed_percent: 100 }
+            brain.unstick -= 1; brain.progress = None; Input { throttle: -1, steer: brain.unstick_steer, speed_percent: 100 }
         } else {
-            while brain.waypoint + 1 < brain.route.len() && distance(here, brain.route[brain.waypoint]) < WAYPOINT_M { brain.waypoint += 1; }
+            while brain.waypoint + 1 < brain.route.len() && distance(here, brain.route[brain.waypoint]) < WAYPOINT_M {
+                brain.waypoint += 1;
+                // First route point reached: the seeded pause starts (once).
+                if brain.waypoint == 1 && brain.dwell_until.is_none() { brain.dwell_until = Some(self.tick + brain.dwell); }
+            }
             if brain.detour.is_some_and(|(point, until)| self.tick >= until || distance(here, point) < DETOUR_REACHED_M) { brain.detour = None; }
             let outside = !inside(here, inner);
             let route_goal = if outside { clamp_box([0.5 * (inner[0] + inner[2]), 0.5 * (inner[1] + inner[3])], inner) } else { brain.route[brain.waypoint] };
-            let goal = brain.detour.map_or(route_goal, |(point, _)| point);
-            if !outside && brain.detour.is_none() && brain.waypoint + 1 == brain.route.len() && distance(here, goal) < HOLD_M {
-                brain.stuck = 0; Input::STOP
+            let goal = brain.detour.or(brain.reposition).map_or(route_goal, |(point, _)| point);
+            let dwelling = target.is_none() && brain.dwell_until.is_some_and(|until| self.tick < until);
+            if !outside && brain.detour.is_none() && brain.reposition.is_none()
+                && (dwelling || brain.waypoint + 1 == brain.route.len() && distance(here, goal) < HOLD_M) {
+                brain.stuck = 0; brain.progress = None; Input::STOP
             } else {
                 let bearing = (goal[0] - here[0]).atan2(goal[1] - here[1]);
                 if self.tick >= brain.probe_tick + PROBE_TICKS || self.tick < brain.probe_tick {
@@ -426,8 +512,16 @@ impl World {
                 });
                 if blocked { throttle = 0; }
                 if throttle == 1 && actor.speed.abs() < STUCK_SPEED { brain.stuck += 1; } else { brain.stuck = 0; }
-                if brain.stuck >= STUCK_TICKS {
-                    brain.stuck = 0; brain.unstick = UNSTICK_TICKS;
+                // BOT-02: progress, not only speed: turning in place against an
+                // obstacle, waiting behind a blocked ally or pushing a wall while
+                // the wheels report speed all count once nothing changes for 5 s.
+                let no_progress = match brain.progress {
+                    Some((spot, yaw, since)) if distance(spot, here) < PROGRESS_M && aim::wrap(actor.yaw - yaw).abs() < PROGRESS_YAW =>
+                        self.tick.saturating_sub(since) >= PROGRESS_TICKS,
+                    _ => { brain.progress = Some((here, actor.yaw, self.tick)); false },
+                };
+                if brain.stuck >= STUCK_TICKS || no_progress {
+                    brain.stuck = 0; brain.unstick = UNSTICK_TICKS; brain.progress = None; brain.reposition = None;
                     let repeats = match brain.stuck_spot { Some((spot, n)) if distance(spot, here) < STUCK_SPOT_M => n.saturating_add(1), _ => 1 };
                     brain.stuck_spot = Some((here, repeats));
                     // Same spot again: try the other side; the third time give up this waypoint.
@@ -481,8 +575,29 @@ impl World {
             let reloaded = actor.fire.reload_until().is_none_or(|until| until <= now) && actor.fire.ammo() > 0
                 && actor.devices.as_ref().is_none_or(|d| d.capabilities().can_fire);
             let sighted = brain.line.is_some_and(|(e, _, clear, _)| e == enemy && clear);
-            let clear = aimed && reloaded && aim_s >= tau && sighted;
-            if !clear { held[if !aimed { 0 } else if aim_s < tau { 1 } else if !reloaded { 2 } else { 3 }] += 1; }
+            let ready = aimed && reloaded && aim_s >= tau && sighted;
+            // BOT-02: the shell's own path, against every vehicle, as the server will resolve it.
+            let fire_line = !ready || self.bot_fire_line_safe(slot, enemy, now)?;
+            let clear = ready && fire_line;
+            if !clear { held[if !aimed { 0 } else if aim_s < tau { 1 } else if !reloaded { 2 } else if !sighted { 3 } else { 4 }] += 1; }
+            // BOT-02: the gun cannot reach the target (elevation/depression limits)
+            // or an ally sits in the fire line: after a while, move elsewhere.
+            let reason = if !fire_line { UNHITTABLE_ALLY }
+                else if sighted && hull_turn == 0 && !(min - AIM_TOLERANCE..=max + AIM_TOLERANCE).contains(&pitch) { UNHITTABLE_ANGLES }
+                else { 0 };
+            if reason == 0 { brain.unhittable = None; } else {
+                let since = match brain.unhittable { Some((e, since, r)) if e == enemy && r == reason => since, _ => self.tick };
+                brain.unhittable = Some((enemy, since, reason));
+                if self.tick.saturating_sub(since) >= REPOSITION_TICKS && brain.reposition.is_none() {
+                    let p = self.actors[enemy].position;
+                    let point = if reason == UNHITTABLE_ALLY { self.bot_side_point(here, p, brain.side, REPOSITION_SIDE_M, inner) } else {
+                        let away = (here[0] - p[0]).atan2(here[1] - p[2]) + REPOSITION_BACK_DEG.to_radians() * brain.side;
+                        clamp_box([here[0] + REPOSITION_BACK_M * away.sin(), here[1] + REPOSITION_BACK_M * away.cos()], inner)
+                    };
+                    brain.reposition = Some((point, self.tick + REPOSITION_TTL_TICKS));
+                    brain.unhittable = None;
+                }
+            }
             if clear {
                 commands.push(Command::Fire(fire::Command::Shoot));
                 brain.error = disc(&mut brain.rng);
@@ -490,7 +605,7 @@ impl World {
             }
             aim::Intent::Point(point)
         } else {
-            brain.target = None;
+            brain.target = None; brain.unhittable = None;
             aim::Intent::Hold { yaw: 0., pitch: 0. }
         };
         let changed = match (brain.sent_aim, intent) {
@@ -524,6 +639,47 @@ impl World {
             let across = to[0] * left[0] + to[1] * left[1];
             along > 0. && along < length && across.abs() < 2. * PROBE_HALF_WIDTH_M
         }))
+    }
+    /// BOT-02: a point `metres` to the `side` (+1 left, -1 right) of the line
+    /// from `here` to `target`, inside the playable inset.
+    fn bot_side_point(&self, here: [f32; 2], target: [f32; 3], side: f32, metres: f32, inner: [f32; 4]) -> [f32; 2] {
+        let bearing = (target[0] - here[0]).atan2(target[2] - here[1]) - side * PI / 2.;
+        clamp_box([here[0] + metres * bearing.sin(), here[1] + metres * bearing.cos()], inner)
+    }
+    /// BOT-02: true when a shell fired now along the current gun pose meets
+    /// `target` before any other vehicle (or meets none before passing it).
+    /// The flight is the server's own `Projectile` for the selected shell, cut
+    /// into the server's 0.1 s segments; each segment asks every other vehicle
+    /// the hit path's `segment_misses`, `world_mesh` and `collision::query`.
+    fn bot_fire_line_safe(&self, slot: usize, target: usize, now: Instant) -> io::Result<bool> {
+        let actor = &self.actors[slot];
+        let probe = match actor.fire.typed().map(|state| state.current()) {
+            Some(shell) => Projectile::launch_shell_for_limit(1, slot, actor, now, self.shot_limit(), shell)?,
+            None if self.mixed_profiles => Projectile::launch_for_limit(1, slot, actor, now, self.shot_limit())?,
+            None => Projectile::launch(1, slot, actor, now)?,
+        };
+        let goal = self.actors[target].position;
+        let horizontal = probe.velocity[0].hypot(probe.velocity[2]);
+        if !(horizontal > 1.) { return Ok(true); }
+        let range = (goal[0] - probe.origin[0]).hypot(goal[2] - probe.origin[2]) + FIRE_LINE_MARGIN_M;
+        let seconds = (range / horizontal).min(probe.flight_time.as_secs_f32()).min(FIRE_LINE_SEGMENTS as f32 * 0.1);
+        let segments = ((seconds / 0.1).ceil() as u32).clamp(1, FIRE_LINE_SEGMENTS);
+        let at = |t: f32| super::super::projectile::position_at(probe.origin, probe.velocity, probe.gravity, t);
+        for k in 0..segments {
+            let (start, end) = (at(k as f32 * 0.1), at(((k + 1) as f32 * 0.1).min(seconds)));
+            let mut first: Option<(f32, usize)> = None;
+            for (other, vehicle) in self.actors.iter().enumerate() {
+                if other == slot { continue; }
+                let geometry = self.geometry_for(vehicle.vehicle_kind())?;
+                if geometry.segment_misses(vehicle, other, self.tick, start, end)? { continue; }
+                let mesh = geometry.world_mesh(vehicle, other, self.tick)?;
+                if let Some(hit) = super::super::collision::query(&mesh, start, end)?.first() {
+                    if first.is_none_or(|(t, s)| hit.t < t || hit.t == t && other < s) { first = Some((hit.t, other)); }
+                }
+            }
+            if let Some((_, hit)) = first { return Ok(hit == target); }
+        }
+        Ok(true)
     }
     /// The bot does not fire into a hill: the sight line to its aim point must
     /// clear the terrain (same query and exclusions as spotting).
