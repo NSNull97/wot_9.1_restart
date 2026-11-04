@@ -31,6 +31,17 @@
 4. Тесты Rust (трасса, остаток, collideOnceOnly, HE, без ходовой = как было), полный gate шлюза.
    Python-набор — только в D: по разрешению главной сессии (NOT_RUN до него).
 
+## Сделано 04.11 (`6ebd1ca`)
+
+- Шаг 2: `Bundle::with_chassis`/`chassis_mesh` (`geometry.rs`), ключ `chassis` манифеста (`profile13_templates.rs`,
+  `tools/chassis_manifest.py`), выбор цели и «земля раньше» с гусеницей (`model.rs`), `Trace::track_contact` и
+  `TrackContact`/`TestLabTrackImpact` (`impact.rs`), `track_pass` + `resolve_direct_spent` (`p06t_damage.rs`),
+  `World::track_mixed` (`p06t_world.rs`), порядковые номера 2/3 гусениц (`p06t_device_state.rs`),
+  `select_with` без коробок гусениц (`p06t_lab_proxy.rs`). 9 тестов Rust (`track_hit_world_tests.rs`, шаблон).
+  Клиент: флаги гусениц читает только загрузчик `vehicles.pyc`; поведение после гусеницы — INFERRED (SHELL_MECH).
+- Шаг 3: `tools/collision_device_census.py` — 2522 visual, устройства только у M41, Bat.-Chât. 155 55, E-50M,
+  A-44 (все вне боевого реестра) → UNKNOWN для боевых машин, коробки LAB остаются.
+
 ## Не входит
 
 Визуал попадания в ходовую у клиента (компонент 0 в `showDamageFromShot`), потеря пробития HEAT за экраном (вопрос 4
