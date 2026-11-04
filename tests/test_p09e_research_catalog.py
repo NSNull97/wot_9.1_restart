@@ -43,7 +43,8 @@ class OriginalSourceTests(unittest.TestCase):
 
     def test_complete_pinned_source_coverage_and_native_ids(self):
         c = self.catalog
-        self.assertEqual((374, 2120, 2062, 426),
+        # 374 client vehicles + TESTVEH-01 T62A_T (own chassis/turret modules, spec source).
+        self.assertEqual((375, 2122, 2062, 427),
                          (len(c.vehicles), len(c.modules), len(c.unlocks), len(c.document["sources"])))
         self.assertEqual(402, sum(pin["historical_catalog_baseline_match"] for pin in c.document["sources"].values()))
         native_ids = [row["native_compact_id"] for row in [*c.vehicles.values(), *c.modules.values()]]
@@ -111,7 +112,8 @@ class OriginalSourceTests(unittest.TestCase):
     def test_all_290_ordinary_credit_vehicles_reachable_without_unlock_all(self):
         c = self.catalog
         unlocked = set(c.initial_unlocked)
-        self.assertEqual(7, len([key for key in unlocked if key.startswith("vehicle:")]))
+        # 7 client starters + the stand test vehicle T62A_T (initially unlocked, TESTVEH-01).
+        self.assertEqual(8, len([key for key in unlocked if key.startswith("vehicle:")]))
         self.assertNotIn("vehicle:ussr:IS-7", unlocked)
         for _ in range(128):
             before = len(unlocked)
