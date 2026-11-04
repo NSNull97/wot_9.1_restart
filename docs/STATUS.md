@@ -3,7 +3,7 @@
 Снимок 2026-11-04, main `5816c24`. Только действующее: история разделов, прежние NOT_RUN и снимки карточек —
 `git show 8bda1b9:docs/STATUS.md` (сокращено в REFACTOR-01 R2). Порядок карточек — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md).
 
-## Сейчас: SHELL-01 — броня целиком (не начата)
+## Сейчас: SHELL-01 — броня целиком (начата 04.11, [план](plans/SHELL01_ARMOR.md))
 
 SHELLS-R принята 04.11: исследование снарядов в main, конфигурация владельца Shell Mechanics 2.0
 ([SHELL_MECH](research/SHELL_MECH.md); конфигурация владельца — [Shell Mechanics 2.0](decisions/SHELL_MECHANICS_2_0.md), заменяет v1). Следующая — SHELL-01: ходовая и все
