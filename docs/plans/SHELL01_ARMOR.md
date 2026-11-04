@@ -24,6 +24,11 @@ SHELL-02 их подключает вместе с новым законом.
    вершины/треугольники/группы, материалы ходовой (`leftTrack`/`rightTrack`, armor, factor, флаги) с различием
    «нет записи / armor 0 / factor 0», SHA пакета и member. Схема `chassis-armor.v1`, `battle_admission=false`.
    Для 7 закрытых видов и 232 сгенерированных; отказы — с кодом, как в BATTLE-ANY.
+   Проба 04.11 (scratch, оригинал только чтение): `material_kinds.xml` даёт `leftTrack`=23, `rightTrack`=24;
+   общий разбор материалов (`ms1_contact_bundle.EXPECTED_KINDS`, `_common_materials`, `p04m_battle_profiles._effective`)
+   знает только armor_1..16/gun/surveyingDevice/gunBreech — гусеницы как материалы-устройства (`extra`, `damageKind
+   device`) им не читаются («missing common material default»). Новый инструмент читает записи гусениц из
+   `common/vehicle.xml` сам, не меняя эти модули: их байты выхода закреплены SHA пакетов.
 2. **Загрузчик в шлюзе** — `shared/chassis_armor.rs`: закрытый реестр SHA (таблица генерируется тем же
    инструментом), лимиты размера/количества, отказ при несовпадении идентичности машины.
    Поза ходовой = поза машины (без башни); проверка, что `hullPosition` пакета BATTLE-ANY та же.
