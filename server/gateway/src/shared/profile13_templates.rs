@@ -36,7 +36,7 @@ fn reference(value:&Value)->io::Result<Reference> {
     Ok(Reference{path,sha256:sha256.into()})
 }
 fn parse(raw:&[u8])->io::Result<Manifest> {
-    let value=profile13::bounded_json(raw,profile13::MAX_REPLY_BYTES)?;
+    let value=profile13::bounded_json(raw,profile13::MAX_MANIFEST_BYTES)?;
     let version=value["version"].as_u64();
     if matches!(version,Some(2|3|4|5)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
     else{keys(&value,&["version","map","catalog","profiles"])?;}
@@ -148,7 +148,7 @@ pub(super) fn require_source_wire_support(kind:VehicleKind)->io::Result<()> {
 }
 
 pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resources>> {
-    let path=owned(local_root,manifest_path)?;let manifest=parse(&read(&path,profile13::MAX_REPLY_BYTES)?)?;
+    let path=owned(local_root,manifest_path)?;let manifest=parse(&read(&path,profile13::MAX_MANIFEST_BYTES)?)?;
     let catalog_path=owned(local_root,&manifest.catalog.path)?;
     let catalog=Arc::new(Catalog::load(local_root,&catalog_path,&manifest.catalog.sha256)?);
     let worker_path=catalog_path.parent().ok_or_else(||bad("catalog parent"))?.join(&catalog.worker_file);
@@ -244,6 +244,21 @@ mod tests {
         let mut bad=v.clone();bad["profiles"][0]["extra"]=1.into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
         let mut bad=v.clone();bad["profiles"][0]["chassis"]["sha256"]="x".into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
         let mut bad=v;bad["profiles"][0]["chassis"]["path"]="relative.json".into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    /// SHELL-02: a stand manifest with chassis references outgrows the 8 KiB writer-reply
+    /// bound; the manifest has its own bounded limit (`profile13::MAX_MANIFEST_BYTES`).
+    #[test]fn profile13_templates_manifest_has_its_own_byte_bound_above_the_reply_bound(){
+        let raw=serde_json::to_vec(&value()).unwrap();
+        let padded=|size:usize|{let mut r=raw.clone();r.resize(size,b' ');r};
+        assert!(parse(&padded(profile13::MAX_REPLY_BYTES+1100)).is_ok(),"9 KiB manifest parses");
+        assert!(parse(&padded(profile13::MAX_MANIFEST_BYTES)).is_ok());
+        assert!(parse(&padded(profile13::MAX_MANIFEST_BYTES+1)).is_err(),"above the manifest bound is refused");
+        let dir=std::env::temp_dir().join(format!("wot091-manifest-bound-{}",std::process::id()));fs::create_dir_all(&dir).unwrap();
+        let (fits,over)=(dir.join("fits.json"),dir.join("over.json"));
+        fs::write(&fits,padded(profile13::MAX_REPLY_BYTES+1100)).unwrap();fs::write(&over,padded(profile13::MAX_MANIFEST_BYTES+1)).unwrap();
+        assert!(parse(&read(&fits,profile13::MAX_MANIFEST_BYTES).unwrap()).is_ok());
+        assert!(read(&over,profile13::MAX_MANIFEST_BYTES).is_err());
+        fs::remove_dir_all(&dir).unwrap();
     }
     #[test]fn profile13_templates_require_two_exact_homogeneous_source_profiles(){
         let value=value();let expected=parse(&serde_json::to_vec(&value).unwrap()).unwrap();
@@ -364,7 +379,7 @@ mod tests {
     #[test]fn p04m_real_source_geometry_cannot_bind_to_another_kind_pool() {
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
         let (path,_)=crate::portable_test_fixtures::verified(&root.join("stands/p08b-profile13-01/battle-profiles.json"),None);
-        let old=parse(&read(&path,profile13::MAX_REPLY_BYTES).unwrap()).unwrap();
+        let old=parse(&read(&path,profile13::MAX_MANIFEST_BYTES).unwrap()).unwrap();
         let pool=Pool::load(&root,&old.profiles[0].pool.path).unwrap();assert_eq!(pool.vehicle_kind(),VehicleKind::Ms1);
         let geometry=Bundle::load(&root,&root.join("evidence/20261016-p04m-source-import01/t26-stock.json")).unwrap();
         assert!(super::super::server::validate_vehicle_binding(VehicleKind::T26,&pool,Some(&geometry)).is_err());
