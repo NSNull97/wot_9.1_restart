@@ -809,7 +809,7 @@ impl Trace {
         if super::shot_trace::enabled(){
             let spent=self.track_spent(shot_id)?;
             let(input,unarmored)=mixed_direct_input(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab,spent)?;
-            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,&input,spent,unarmored,&computed);
+            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&input,spent,unarmored,&computed);
         }
         self.push(Event::MixedResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
             shell,contact:contact.clone(),resolution:computed,health_before,health_after})?;
@@ -939,7 +939,7 @@ impl Trace {
         let computed=crate::p06t_damage::resolve_splash(shell,&[input])?[0];
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("splash recomputed damage/health/capacity"));}
-        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,&shell,&input,&computed);}
+        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&shell,&input,&computed);}
         self.push(Event::SplashResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,
             contact:contact.clone(),distance_m:distance,terrain_revision:terrain.source_revision(),excluded_instances:excluded,los_start,terrain_blocker:blocker,
             los_policy:SPLASH_LOS_POLICY,resolution:computed,health_before,health_after})?;
@@ -1434,7 +1434,7 @@ impl Trace {
         let distance_m = (0..3).map(|i| (f64::from(point[i]) - f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
         let pass = crate::p06t_damage::track_pass(shell, distance_m, spent, material.armor_mm)?;
         if super::shot_trace::enabled() {
-            super::shot_trace::track(battle_id, shot_id, server_tick, attacker, target, &shell, distance_m, spent, material.armor_mm, &pass);
+            super::shot_trace::track(battle_id, shot_id, server_tick, attacker, target, self.kind_for_slot(attacker)?, &shell, distance_m, spent, material.armor_mm, &pass);
         }
         // Keep room for the outcome and terminal rows the batch reserved.
         if self.events.len() + 3 > self.event_limit() || self.next_order.checked_add(3).is_none() {

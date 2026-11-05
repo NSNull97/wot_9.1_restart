@@ -16,7 +16,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use serde_json::{json, Value};
 use crate::p06t_damage::{self as law, DirectInput, Plate, Resolution, SplashDamage, SplashTarget, TrackPass};
-use crate::p06t_shells091::{Family, Shell, PROFILES};
+use crate::p06t_shells091::{Family, Shell};
+use super::vehicle_profile::VehicleKind;
 
 pub const SCHEMA: &str = "wot091-shot-trace.v1";
 const ENV_DIR: &str = "WOT091_STAB_DIAGNOSTICS_DIR";
@@ -74,20 +75,25 @@ fn resolution_json(r: &Resolution) -> Value {
            "effective_armor_mm": fbo(r.effective_armor_mm), "nominal_power_mm": fb(r.nominal_power_mm), "normalization_deg": fb(r.normalization_degrees)})
 }
 fn pass_json(p: &TrackPass) -> Value { json!({"power_before_mm": fb(p.power_before_mm), "power_after_mm": fb(p.power_after_mm), "stopped": p.stopped}) }
-fn context(kind: &str, battle: u64, shot: u32, tick: u32, attacker: usize, target: usize) -> Value {
+/// A shell compact id is not unique: #717 gives piercing power per gun, so the same
+/// shell has different power on different guns. The record names the attacker's
+/// vehicle kind; replay takes the shell from that kind's gun profile, as the battle did.
+#[allow(clippy::too_many_arguments)]
+fn context(kind: &str, battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind) -> Value {
     json!({"kind": kind, "battle_id": battle, "shot_id": shot, "server_tick": tick, "attacker": attacker, "target": target,
+           "attacker_kind": attacker_kind.label(), "gun": crate::p06t_shells091::profile(attacker_kind.mount()).gun_compact_descr,
            "accuracy": Value::Null, "rng": Value::Null})
 }
 
 #[allow(clippy::too_many_arguments)]
-pub fn direct(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, input: &DirectInput, spent_mm: f64,
+pub fn direct(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, input: &DirectInput, spent_mm: f64,
               unarmored_device: bool, result: &Resolution) {
-    write(direct_record(battle, shot, tick, attacker, target, input, spent_mm, unarmored_device, result));
+    write(direct_record(battle, shot, tick, attacker, target, attacker_kind, input, spent_mm, unarmored_device, result));
 }
 #[allow(clippy::too_many_arguments)]
-fn direct_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, input: &DirectInput, spent_mm: f64,
+fn direct_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, input: &DirectInput, spent_mm: f64,
                  unarmored_device: bool, result: &Resolution) -> Value {
-    let mut v = context("direct", battle, shot, tick, attacker, target);
+    let mut v = context("direct", battle, shot, tick, attacker, target, attacker_kind);
     v["shell"] = shell_json(&input.shell);
     v["input"] = json!({"armor_mm": fbo(input.plate.armor_mm), "ordinary": input.plate.ordinary, "chord": f3(input.chord),
                         "winding_normal": f3(input.winding_normal), "distance_m": fb(input.distance_m), "spent_mm": fb(spent_mm),
@@ -96,38 +102,38 @@ fn direct_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usi
     v
 }
 #[allow(clippy::too_many_arguments)]
-pub fn track(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, shell: &Shell, distance_m: f64,
+pub fn track(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, distance_m: f64,
              spent_before_mm: f64, armor_mm: f64, pass: &TrackPass) {
-    write(track_record(battle, shot, tick, attacker, target, shell, distance_m, spent_before_mm, armor_mm, pass));
+    write(track_record(battle, shot, tick, attacker, target, attacker_kind, shell, distance_m, spent_before_mm, armor_mm, pass));
 }
 #[allow(clippy::too_many_arguments)]
-fn track_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, shell: &Shell, distance_m: f64,
+fn track_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, distance_m: f64,
                 spent_before_mm: f64, armor_mm: f64, pass: &TrackPass) -> Value {
-    let mut v = context("track", battle, shot, tick, attacker, target);
+    let mut v = context("track", battle, shot, tick, attacker, target, attacker_kind);
     v["shell"] = shell_json(shell);
     v["input"] = json!({"distance_m": fb(distance_m), "spent_before_mm": fb(spent_before_mm), "armor_mm": fb(armor_mm)});
     v["result"] = pass_json(pass);
     v
 }
 #[allow(clippy::too_many_arguments)]
-pub fn splash(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, shell: &Shell, input: &SplashTarget, result: &SplashDamage) {
-    write(splash_record(battle, shot, tick, attacker, target, shell, input, result));
+pub fn splash(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, input: &SplashTarget, result: &SplashDamage) {
+    write(splash_record(battle, shot, tick, attacker, target, attacker_kind, shell, input, result));
 }
 #[allow(clippy::too_many_arguments)]
-fn splash_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, shell: &Shell, input: &SplashTarget, result: &SplashDamage) -> Value {
-    let mut v = context("splash", battle, shot, tick, attacker, target);
+fn splash_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, input: &SplashTarget, result: &SplashDamage) -> Value {
+    let mut v = context("splash", battle, shot, tick, attacker, target, attacker_kind);
     v["shell"] = shell_json(shell);
     v["input"] = json!({"slot": input.slot, "distance_m": fb(input.distance_m), "armor_mm": fb(input.armor_mm), "los_clear": input.los_clear});
     v["result"] = json!({"slot": result.slot, "damage_hp": result.damage_hp});
     v
 }
 
-/// Every shell the law can meet: curated mounts and the verified generated registry.
-pub fn shell_by_compact(compact: u64) -> Option<Shell> {
+/// The shell of a vehicle kind's gun profile (the source the battle admitted).
+pub fn shell_of(kind_label: &str, compact: u64) -> Option<Shell> {
+    // Every closed kind (SUPPORTED, incl. WT E 100 / FV215b) and every generated kind.
+    let kind = VehicleKind::SUPPORTED.into_iter().find(|k| k.label() == kind_label).or_else(|| VehicleKind::from_owned_label(kind_label))?;
     let compact = u16::try_from(compact).ok()?;
-    PROFILES.iter().flat_map(|p| p.shots).find(|s| s.compact_descr == compact).or_else(|| {
-        crate::gateway091::shared::generated_vehicles::registry().ok()?.entries().iter().flat_map(|e| e.gun.shots).find(|s| s.compact_descr == compact)
-    })
+    crate::p06t_shells091::profile(kind.mount()).shots.iter().copied().find(|s| s.compact_descr == compact)
 }
 
 fn bits(v: &Value, width: usize) -> io::Result<u64> {
@@ -148,7 +154,13 @@ fn vec3(v: &Value, key: &str) -> io::Result<[f32; 3]> {
 
 /// Recompute one record; `Ok(true)` when the law gives exactly the recorded result.
 pub fn replay_record(record: &Value) -> io::Result<bool> {
-    let shell = shell_by_compact(record["shell"]["compact"].as_u64().ok_or_else(|| bad("shell"))?).ok_or_else(|| bad("unknown shell"))?;
+    Ok(recompute(record)? == bits_only(&record["result"]))
+}
+
+/// The law result of a record's inputs, readable decimals dropped.
+fn recompute(record: &Value) -> io::Result<Value> {
+    let kind = record["attacker_kind"].as_str().ok_or_else(|| bad("attacker kind"))?;
+    let shell = shell_of(kind, record["shell"]["compact"].as_u64().ok_or_else(|| bad("shell"))?).ok_or_else(|| bad("unknown kind/shell"))?;
     let input = &record["input"];
     let recomputed = match record["kind"].as_str() {
         Some("direct") => {
@@ -167,7 +179,7 @@ pub fn replay_record(record: &Value) -> io::Result<bool> {
         }
         _ => return Err(bad("record kind")),
     };
-    Ok(bits_only(&recomputed) == bits_only(&record["result"]))
+    Ok(bits_only(&recomputed))
 }
 
 /// The readable decimal `v` of a float is dropped; its `bits` decide.
@@ -181,7 +193,9 @@ fn bits_only(value: &Value) -> Value {
 }
 
 #[derive(Debug, Default, PartialEq)]
-pub struct Report { pub records: u64, pub equal: u64, pub mismatched: u64, pub foreign_rules: u64, pub limit_marker: bool }
+pub struct Report { pub records: u64, pub equal: u64, pub mismatched: u64, pub foreign_rules: u64, pub limit_marker: bool,
+    /// The first mismatches: line, kind, recorded and recomputed result.
+    pub examples: Vec<Value> }
 
 pub fn replay(path: &Path) -> io::Result<Report> {
     let rules = crate::gateway091::shared::shell_rules::rules()?;
@@ -196,7 +210,14 @@ pub fn replay(path: &Path) -> io::Result<Report> {
         if record["kind"] == "limit" { report.limit_marker = true; continue; }
         report.records += 1;
         if record["rules_hash"] != rules.rules_hash.as_str() { report.foreign_rules += 1; continue; }
-        if replay_record(&record)? { report.equal += 1 } else { report.mismatched += 1 }
+        let recomputed = recompute(&record)?;
+        if recomputed == bits_only(&record["result"]) { report.equal += 1 } else {
+            report.mismatched += 1;
+            if report.examples.len() < 5 {
+                report.examples.push(json!({"line": n + 1, "kind": record["kind"], "input": record["input"],
+                    "recorded": record["result"], "recomputed": recomputed}));
+            }
+        }
     }
     Ok(report)
 }
@@ -206,7 +227,8 @@ pub fn replay_command(path: &str) -> io::Result<()> {
     let report = replay(Path::new(path))?;
     let rules = crate::gateway091::shared::shell_rules::rules()?;
     println!("{}", json!({"schema": "wot091-shot-replay.v1", "rules_hash": rules.rules_hash, "records": report.records, "equal": report.equal,
-        "mismatched": report.mismatched, "foreign_rules": report.foreign_rules, "limit_marker": report.limit_marker}));
+        "mismatched": report.mismatched, "foreign_rules": report.foreign_rules, "limit_marker": report.limit_marker,
+        "examples": report.examples}));
     if report.mismatched != 0 || report.foreign_rules != 0 { return Err(bad("replay differs")); }
     Ok(())
 }
