@@ -45,10 +45,11 @@ _SUFFIX = "_test_lab" if TEST_LAB else ""
 PROFILES_PATH = ROOT / _DIR / "server_profiles.v1.json"
 CATALOG_PATH = ROOT / _DIR / "catalog.v1.json"
 BINDINGS = {
+    # test_lab bindings carry no version in their names (server/check_layout.py name rule).
     "rust": ROOT / ("server/gateway/src/shared/vehicle_catalog%s.rs" % _SUFFIX),
-    "python": ROOT / ("tools/catalog_v1_data%s.py" % _SUFFIX),
-    "js": ROOT / ("web/src/catalog-v1%s.mjs" % _SUFFIX.replace("_", "-")),
-    "py27": ROOT / ("client_patch/catalog_v1_hints%s.py" % _SUFFIX),
+    "python": ROOT / ("tools/catalog_test_lab_data.py" if TEST_LAB else "tools/catalog_v1_data.py"),
+    "js": ROOT / ("web/src/catalog-test-lab.mjs" if TEST_LAB else "web/src/catalog-v1.mjs"),
+    "py27": ROOT / ("client_patch/catalog_test_lab_hints.py" if TEST_LAB else "client_patch/catalog_v1_hints.py"),
 }
 ADMISSION = ("always", "zero_economy_policy", "none")
 FAMILY_SUFFIX = {"ARMOR_PIERCING": "ap", "ARMOR_PIERCING_CR": "apcr",
@@ -323,7 +324,7 @@ def render_python(document, digest):
 PY_SWITCH = ("\n# TESTVEH-01: a test_lab stand (WOT091_TEST_LAB=1) uses the test_lab variant.\n"
              "import test_vehicles as _test_vehicles  # noqa: E402\n"
              "if _test_vehicles.enabled():\n"
-             "    from catalog_v1_data_test_lab import SCHEMA, CATALOG_SHA256, VEHICLES  # noqa: E402,F401,F811\n")
+             "    from catalog_test_lab_data import SCHEMA, CATALOG_SHA256, VEHICLES  # noqa: E402,F401,F811\n")
 
 
 def render_py27(document, digest):
@@ -356,7 +357,7 @@ def render_js(document, digest):
                        "export const CATALOG_VEHICLES = freeze(%s);\n" % (json.dumps(SCHEMA), json.dumps(digest), body))
     return head + ("import { TEST_LAB } from './test-lab.mjs';\n"
                    "// TESTVEH-01: a test_lab stand (WOT091_TEST_LAB=1) uses the test_lab variant.\n"
-                   "const lab = TEST_LAB ? await import('./catalog-v1-test-lab.mjs') : null;\n"
+                   "const lab = TEST_LAB ? await import('./catalog-test-lab.mjs') : null;\n"
                    "export const CATALOG_SCHEMA = %s;\n"
                    "export const CATALOG_SHA256 = lab ? lab.CATALOG_SHA256 : %s;\n"
                    "export const CATALOG_VEHICLES = lab ? lab.CATALOG_VEHICLES : freeze(%s);\n"

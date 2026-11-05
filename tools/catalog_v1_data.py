@@ -1693,4 +1693,4 @@ VEHICLES = (
 # TESTVEH-01: a test_lab stand (WOT091_TEST_LAB=1) uses the test_lab variant.
 import test_vehicles as _test_vehicles  # noqa: E402
 if _test_vehicles.enabled():
-    from catalog_v1_data_test_lab import SCHEMA, CATALOG_SHA256, VEHICLES  # noqa: E402,F401,F811
+    from catalog_test_lab_data import SCHEMA, CATALOG_SHA256, VEHICLES  # noqa: E402,F401,F811

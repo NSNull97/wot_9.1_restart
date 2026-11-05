@@ -3,7 +3,7 @@
 const freeze = v => { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; };
 import { TEST_LAB } from './test-lab.mjs';
 // TESTVEH-01: a test_lab stand (WOT091_TEST_LAB=1) uses the test_lab variant.
-const lab = TEST_LAB ? await import('./catalog-v1-test-lab.mjs') : null;
+const lab = TEST_LAB ? await import('./catalog-test-lab.mjs') : null;
 export const CATALOG_SCHEMA = "wot091-server-catalog.v1";
 export const CATALOG_SHA256 = lab ? lab.CATALOG_SHA256 : "76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe";
 export const CATALOG_VEHICLES = lab ? lab.CATALOG_VEHICLES : freeze([

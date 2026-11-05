@@ -625,7 +625,7 @@ def prepare(args):
         source = ROOT/'client_patch'/f'{module}.py'
         if module == 'catalog_v1_hints' and getattr(args, 'test_vehicle_label', False):
             # TESTVEH-01 stand flag: a test_lab client carries the test_lab CAT-01 hints.
-            source = ROOT/'client_patch'/'catalog_v1_hints_test_lab.py'
+            source = ROOT/'client_patch'/'catalog_test_lab_hints.py'
         pyc = compiled/f'{module}.pyc'
         metadata = compiled/f'{module}.json'
         subprocess.run([str(compiler), str(ROOT/'tools/compile_interactive27.py'),
