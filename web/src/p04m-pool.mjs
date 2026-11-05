@@ -1,6 +1,7 @@
 /** Explicit five-type owner projection; legacy P09E readers remain strict. */
 import { nicknameField } from './security.mjs';
 import { CATALOG_SHA256, CATALOG_VEHICLES } from './catalog-v1.mjs';
+import { RESEARCH_CATALOG_SHA256 } from './test-lab.mjs';
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 
@@ -174,7 +175,7 @@ export function nativePoolOverview(profile) {
     && grantValid(profile.ammo_grant, ['native_export_sha256']), 'retained identity/resources/grants');
   requireValue(exact(research, ['schema', 'policy', 'catalog_sha256', 'garage_slots', 'unlocked_count', 'depot_types'])
     && research.schema === 'p09e-tank-module-research.v1' && researchPolicy(research.policy)
-    && research.catalog_sha256 === 'ede8f682bc5aafe23a00369d373aed08d783115bba588128b10e5ddbeca57855'
+    && research.catalog_sha256 === RESEARCH_CATALOG_SHA256
     && integer(research.garage_slots, 2, 256) && integer(research.unlocked_count, 1, 8192)
     && integer(research.depot_types, 0, 8192) && inventoryValid(profile.inventory, id, research.garage_slots, false),
   'research inventory bounds');

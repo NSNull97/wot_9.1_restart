@@ -1,18 +1,23 @@
-"""Stand-only test vehicles (config/test_vehicles.json), off unless activated.
+"""Stand-only test vehicles (config/test_vehicles.json), off unless the stand flag is set.
 
 Owner order 2026-11-04: T-62A (T), a copy of the 0.9.1 T-62A with tier 11 and
 1000 mm armour, for checks where damage to the own vehicle gets in the way.
 It is TEST_LAB data, never presented as a historical vehicle.
 
-Owner 2026-11-05: the test vehicles are part of the server research catalogue
-(p09e_research_catalog.load_catalog applies research_overlay after the client
-document); they are out of the client tree and shop (tools/test_vehicle_client.py).
+Owner 2026-11-05: the test vehicles are switched on per stand (flag test_lab,
+environment WOT091_TEST_LAB=1 for Python/Node, gateway/physics builds with
+--test-lab). Without the flag every catalogue is the main one (374 client
+vehicles, research 1f6b20d1). With it p09e_research_catalog.load_catalog applies
+research_overlay after the client document and the generated test_lab variants
+under config/test_lab/ are used. The vehicles are out of the client tree and
+shop (tools/test_vehicle_client.py).
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,8 +27,26 @@ MAX_BYTES = 16 * 1024
 VEHICLE_KEYS = {"vehicle_id", "base_vehicle_id", "resource_name", "base_resource_name", "native_type_id", "tier",
                 "label", "description", "chassis", "turret", "armor_mm", "armored_parts", "tracks"}
 KIND_CODE = {"chassis": 2, "turret": 3}
+ENV = "WOT091_TEST_LAB"
+TEST_LAB_DIR = ROOT / "config/test_lab"
+# Research catalogue identity of each mode (p09e document semantic SHA-256).
+BASE_RESEARCH_SHA256 = "1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80"
+TEST_LAB_RESEARCH_SHA256 = "646b61935ed5a5111296a26258663d1910a4a03152fa399ef28bce227cf12492"
+
+
 class TestVehicleError(ValueError):
     pass
+
+
+def enabled(environ=None):
+    """The stand flag: WOT091_TEST_LAB unset/"0" = main catalogues, "1" = test_lab."""
+    value = (os.environ if environ is None else environ).get(ENV)
+    require(value in (None, "0", "1"), ENV + " must be 0 or 1")
+    return value == "1"
+
+
+def research_sha256(environ=None):
+    return TEST_LAB_RESEARCH_SHA256 if enabled(environ) else BASE_RESEARCH_SHA256
 
 
 def require(ok, message):
@@ -93,9 +116,11 @@ def research_overlay(document, spec=None, spec_sha256=None):
                 return {swap(k): swap(x) for k, x in value.items()}
             return value
 
+        # The server keeps the base tier (battle rules, matchmaking); the spec tier is the
+        # client label only (tools/test_vehicle_client.py, `level/11` = XI).
         row = swap(copy.deepcopy(base))
         row.update(vehicle_id=v["vehicle_id"], resource_name=v["resource_name"], native_compact_id=compact,
-                   tier=v["tier"], not_in_shop=False, acquisition_allowed=True, unsupported_reason=None,
+                   not_in_shop=False, acquisition_allowed=True, unsupported_reason=None,
                    source=base["source"], test_lab=v["label"])
         doc["vehicles"][v["vehicle_id"]] = row
         for item in [v["vehicle_id"]] + sorted(row["default_unlocks"]):

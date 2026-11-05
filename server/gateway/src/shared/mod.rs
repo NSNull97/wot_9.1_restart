@@ -104,6 +104,11 @@ pub use server::serve_profile13_source_bundle;
 pub use server::serve_curated_lab;
 pub use server::serve_curated_lab_v2;
 pub(crate) mod vehicle_profile;
+#[cfg(not(feature="test_lab"))]
+pub(crate) mod vehicle_catalog;
+// TESTVEH-01 stand flag: the test_lab CAT-01 binding under the same module name.
+#[cfg(feature="test_lab")]
+#[path="vehicle_catalog_test_lab.rs"]
 pub(crate) mod vehicle_catalog;
 pub(crate) mod generated_vehicles;
 pub use server::serve;

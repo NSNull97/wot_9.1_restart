@@ -33,7 +33,9 @@ ROOT = TOOLS.parent
 SCHEMA = "p04m-battle-source.v1"
 MAX_SOURCE = 256 * 1024
 MAX_PROFILE = 1024 * 1024
-CATALOG_SHA256 = "ede8f682bc5aafe23a00369d373aed08d783115bba588128b10e5ddbeca57855"
+import test_vehicles  # noqa: E402
+# Research catalogue of this stand mode (main 1f6b20d1; test_lab stand: TESTVEH-01 overlay).
+CATALOG_SHA256 = test_vehicles.research_sha256()
 # CAT-NATIONS: the five P04M specs were derived from the research catalogue before
 # its nation fix. They are USSR rows (nation 0), identical in both catalogues, so
 # their provenance stays frozen: the source revision, the P04M definition/registry

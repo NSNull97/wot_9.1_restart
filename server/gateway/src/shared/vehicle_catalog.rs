@@ -2,7 +2,7 @@
 //! Gateway binding. Used only when the gateway config carries
 //! `"catalog":{"version":1,"sha256":CATALOG_SHA256}`; legacy lists stay the default.
 pub const CATALOG_SCHEMA:&str="wot091-server-catalog.v1";
-pub const CATALOG_SHA256:&str="c449a4d1d427a1407b1227b69281ed222d9e5df1148c4b74c9889dd11d5ea4df";
+pub const CATALOG_SHA256:&str="76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe";
 pub const CATALOG_JSON:&str=include_str!("../../../../config/catalog/catalog.v1.json");
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Admission{Always,ZeroEconomyPolicy,None}
@@ -49,9 +49,6 @@ pub const VEHICLES:&[Vehicle]=&[
     Vehicle{kind:"france-Bat_Chatillon25t",vehicle_id:"vehicle:france:Bat_Chatillon25t",native_compact_id:3649,descriptor:&[0x41,0x0e,0x1a,0x00,0x2d,0x00,0xcd,0x00,0x00,0x00,0x15,0x00,0x10,0x00,0x00],
         max_hp:1800,ammo_capacity:36,seats:3,primary_roles:&["commander","gunner","driver"],gun_compact_id:4164,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:france-Bat_Chatillon25t-stock-ap",family:"ARMOR_PIERCING",native_compact_id:8778},Shell{suffix:"apcr",shell_definition_id:"shell:france-Bat_Chatillon25t-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:9034},Shell{suffix:"he",shell_definition_id:"shell:france-Bat_Chatillon25t-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:9290}],
         devices:&[(360,170),(260,180),(200,70),(200,150),(250,190),(250,190),(160,80),(150,75),(110,55)],battle_admission:Admission::Always,legacy_inventory:None},
-    Vehicle{kind:"ussr-T62A_T",vehicle_id:"vehicle:ussr:T62A_T",native_compact_id:12801,descriptor:&[0x01,0x32,0x3e,0x00,0x51,0x00,0xcd,0x00,0x19,0x00,0x32,0x00,0x69,0x00,0x00],
-        max_hp:1950,ammo_capacity:50,seats:4,primary_roles:&["commander","gunner","driver","loader"],gun_compact_id:26884,shells:&[Shell{suffix:"apcr",shell_definition_id:"shell:ussr-T62A_T-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:19722},Shell{suffix:"heat",shell_definition_id:"shell:ussr-T62A_T-stock-heat",family:"HOLLOW_CHARGE",native_compact_id:25866},Shell{suffix:"he",shell_definition_id:"shell:ussr-T62A_T-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:25610}],
-        devices:&[(360,180),(210,140),(200,80),(250,75),(250,190),(250,190),(200,100),(170,85),(120,60)],battle_admission:Admission::Always,legacy_inventory:None},
 ];
 pub fn by_kind(kind:&str)->Option<&'static Vehicle>{VEHICLES.iter().find(|v|v.kind==kind)}
 

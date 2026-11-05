@@ -64,7 +64,7 @@ class TableContract(unittest.TestCase):
         self.assertEqual(result["status"], "PASS")
         self.assertEqual(result["table_sha256"], battle_any_data.TABLE_SHA256)
         self.assertEqual(len(battle_any.table()), result["vehicles"])
-        self.assertEqual(result["vehicles"], 375)  # 374 client vehicles + TESTVEH-01 T62A_T
+        self.assertEqual(result["vehicles"], 374)
 
     def test_no_row_grants_admission_stage1(self):
         for vehicle_id, row in rows().items():

@@ -43,12 +43,9 @@ class OriginalSourceTests(unittest.TestCase):
 
     def test_complete_pinned_source_coverage_and_native_ids(self):
         c = self.catalog
-        # 374 client vehicles + TESTVEH-01 T62A_T (own chassis/turret modules, spec source).
-        self.assertEqual((375, 2122, 2062, 427),
+        self.assertEqual((374, 2120, 2062, 426),
                          (len(c.vehicles), len(c.modules), len(c.unlocks), len(c.document["sources"])))
-        # sources: 426 file pins + test_vehicles_sha256 (a digest string, TESTVEH-01).
-        self.assertEqual(402, sum(pin["historical_catalog_baseline_match"] for pin in c.document["sources"].values()
-                                  if isinstance(pin, dict)))
+        self.assertEqual(402, sum(pin["historical_catalog_baseline_match"] for pin in c.document["sources"].values()))
         native_ids = [row["native_compact_id"] for row in [*c.vehicles.values(), *c.modules.values()]]
         self.assertEqual(len(native_ids), len(set(native_ids)))
 
@@ -114,8 +111,7 @@ class OriginalSourceTests(unittest.TestCase):
     def test_all_290_ordinary_credit_vehicles_reachable_without_unlock_all(self):
         c = self.catalog
         unlocked = set(c.initial_unlocked)
-        # 7 client starters + the stand test vehicle T62A_T (initially unlocked, TESTVEH-01).
-        self.assertEqual(8, len([key for key in unlocked if key.startswith("vehicle:")]))
+        self.assertEqual(7, len([key for key in unlocked if key.startswith("vehicle:")]))
         self.assertNotIn("vehicle:ussr:IS-7", unlocked)
         for _ in range(128):
             before = len(unlocked)
@@ -127,9 +123,7 @@ class OriginalSourceTests(unittest.TestCase):
             if len(unlocked) == before: break
         else: self.fail("graph did not converge")
         allowed = {key for key, row in c.vehicles.items() if row["acquisition_allowed"]}
-        # 290 ordinary credit vehicles + the stand test vehicle (TESTVEH-01, initially unlocked, notInShop).
-        self.assertEqual(["vehicle:ussr:T62A_T"], sorted(k for k in allowed if "test_lab" in c.vehicles[k]))
-        self.assertEqual(291, len(allowed))
+        self.assertEqual(290, len(allowed))
         self.assertEqual(set(), allowed - unlocked)
 
     def test_hidden_gold_special_are_not_free_credit_purchases(self):
