@@ -40,7 +40,10 @@ impl crate::bw_wire::Wire for Device {
     fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Engine),1=>Ok(Self::AmmoBay),2=>Ok(Self::FuelTank),3=>Ok(Self::Radio),4=>Ok(Self::LeftTrack),5=>Ok(Self::RightTrack),6=>Ok(Self::Gun),7=>Ok(Self::TurretRotator),8=>Ok(Self::SurveyingDevice),t=>crate::bw_wire::variant(t)}}
 }
 // end BW-01 wire codec
-impl Device {pub const ALL:[Self;9]=[Self::Engine,Self::AmmoBay,Self::FuelTank,Self::Radio,Self::LeftTrack,Self::RightTrack,Self::Gun,Self::TurretRotator,Self::SurveyingDevice];pub fn extra(self)->u8{26+self as u8}}
+impl Device {pub const ALL:[Self;9]=[Self::Engine,Self::AmmoBay,Self::FuelTank,Self::Radio,Self::LeftTrack,Self::RightTrack,Self::Gun,Self::TurretRotator,Self::SurveyingDevice];pub fn extra(self)->u8{26+self as u8}
+    /// LAB repair after destruction. A destroyed ammo bay is a detonation and the
+    /// end of the vehicle (ammo_detonation.rs), so it is never repaired.
+    pub fn repairable(self)->bool{self!=Self::AmmoBay}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Cap {pub max:u16,pub regen:u16}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]

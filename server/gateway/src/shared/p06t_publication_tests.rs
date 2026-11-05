@@ -33,7 +33,7 @@ fn fixture(now:Instant)->(Session,World) {
     // Establish the ordinary initial publication before testing a later delta.
     c.devices_snapshot_sent=true;c.owner_health_sent=Some(90);
     c.health_sent=[Some(90);model::MAX_ACTORS];c.crew_sent=[Some(true);model::MAX_ACTORS];
-    c.fire_sent=[Some(false);model::MAX_ACTORS];
+    c.fire_sent=std::array::from_fn(|_|Some(Vec::new()));
     publish(&mut c,&mut s.outbox,&world,now).unwrap();
     assert!(c.private_pending.is_empty());s.outbox.clear();s.shared=Some(c);(s,world)
 }
@@ -68,7 +68,7 @@ fn p06t_private_rapid_hide_reveal_without_leave_republishes_crew_and_fire() {
     let(state,_)=fuel_damage(true);world.actors[1].devices=Some(state);
     assert_eq!(world.actors[1].health,90);assert!(!world.actors[1].alive());
     let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
-    assert_eq!(c.crew_sent[1],Some(false));assert_eq!(c.fire_sent[1],Some(true));
+    assert_eq!(c.crew_sent[1],Some(false));assert_eq!(c.fire_sent[1],Some(vec![4]));
     let stale=c.private_pending.front().unwrap().body.clone();
     assert!(contains(&stale,&native::public_crew_active(wire::vehicle_id(1).unwrap(),false).unwrap()));
     assert!(contains(&stale,&native::public_modifiers(wire::vehicle_id(1).unwrap(),&[4]).unwrap()));
@@ -172,7 +172,7 @@ fn p06t_private_he_center_tracks_the_primary_vehicle_epoch_until_flush() {
     c.creations[2]=Some((create,false));c.creation_announcements[2]=Some(enter);
     while s.tx.due(now,s.rx).unwrap().is_some(){}
     let ack=transport091::parse(&transport091::ack(create+1)).unwrap();s.tx.acknowledge(&ack).unwrap();c.acknowledge(s.tx.cumulative,&ack).unwrap();
-    assert!(c.visible()[2]);c.health_sent[2]=Some(90);c.crew_sent[2]=Some(false);c.fire_sent[2]=Some(true);
+    assert!(c.visible()[2]);c.health_sent[2]=Some(90);c.crew_sent[2]=Some(false);c.fire_sent[2]=Some(vec![4]);
     let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
     let mut projectile=crate::gateway091::shared::projectile::Projectile::launch_shell_for_limit(1,1,&world.actors[1],now,world.shot_limit(),shell).unwrap();
     projectile.stopped=true;projectile.terminal=[41.125,1.75,62.5];world.projectiles.push(projectile);
@@ -218,4 +218,31 @@ fn postmortem01_visible_ally_killed_by_hidden_attacker_gets_native_death_callbac
     // A visible attacker keeps its own ID, as before.
     assert!(contains(&health(&world,1,Some(0),0).unwrap(),&[0x3c].into_iter().chain(0i16.to_le_bytes())
         .chain(wire::vehicle_id(0).unwrap().to_le_bytes()).collect::<Vec<_>>()));
+}
+
+#[test]
+fn p06t_crashed_track_is_public_without_fire_and_cleared_on_repair() {
+    let now=Instant::now();let(mut s,mut world)=fixture(now);
+    let mut state=State::new(Profile::Ms1).unwrap();
+    let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
+    let health=Health{hp:90,max_hp:90,terminal:false};
+    let mut shot=0;
+    while state.health()[Device::LeftTrack as usize]>0 {
+        shot+=1;assert!(shot<=20,"left track not destroyed by 20 authored hits");
+        state.apply_hits(&[ModuleHit{cause:Cause{shot,attacker_slot:1},ordinal:0,at_ms:u64::from(shot),
+            target:Target::Device(Device::LeftTrack),shell,ignition_roll:0.9}],health).unwrap();
+    }
+    assert!(!state.fire_active());
+    world.actors[1].devices=Some(state.clone());
+    let id=wire::vehicle_id(1).unwrap();
+    let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
+    assert_eq!(c.fire_sent[1],Some(vec![30]));
+    assert!(contains(&c.private_pending.back().unwrap().body,&native::public_modifiers(id,&[30]).unwrap()));
+    s.flush_shared_private().unwrap();
+    state.advance_fire(u64::from(shot)+crate::p06t_device_state::MODULE_REPAIR_DELAY_MS,health).unwrap();
+    assert!(state.health()[Device::LeftTrack as usize]>0);
+    world.actors[1].devices=Some(state);
+    let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
+    assert_eq!(c.fire_sent[1],Some(Vec::new()));
+    assert!(contains(&c.private_pending.back().unwrap().body,&native::public_modifiers(id,&[]).unwrap()));
 }
