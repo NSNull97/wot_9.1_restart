@@ -85,6 +85,18 @@ class TestVehicleClientTests(unittest.TestCase):
             ids = [v for k, v in after.items() if k.startswith('/ids[1]/')]
             self.assertEqual(len(ids), len(set(ids)), name)
 
+    def test_balance_row_gives_the_tier_eleven_type_the_base_weight(self):
+        # #717 indexes the 10-entry byComponentLevels tuple by level without a row (IndexError at 11).
+        raw = self.payloads['res_mods/0.9.1/' + tv.COMMON]
+        original = (ORIGINAL / 'res' / tv.COMMON).read_bytes()
+        rows = lambda data: [(r.own[1], [v for k, v in r.children if k == 'weight'])
+                             for k, r in pxml.parse(data)['root'].child('balance').child('byVehicleModule').children if k == 'name']
+        before, after = rows(original), rows(raw)
+        self.assertEqual(after[:-1], before)
+        base = [w for n, w in before if n == b'ussr:T62A']
+        self.assertEqual(after[-1], (b'ussr:T62A_T', base[0]))
+        self.assertEqual(len(pxml.parse(original)['root'].child('balance').child('byComponentLevels').own[1].split()), 10)
+
     def test_definition_is_the_original_renamed_with_only_armour_raised(self):
         original = list(packed_xml.walk(packed_xml.decode((DEFS / 't62a.xml').read_bytes())))
         renamed = list(packed_xml.walk(self.tree('t62a_t.xml')))

@@ -16,6 +16,11 @@ Payloads (relative to the client root):
   T62A_T (copy of T62A: new id, own name keys, level 11, price 0, notInShop, secret).
 - .../ussr/components/chassis.xml, turrets.xml: original ids plus the test
   vehicle's own chassis/turret names (as T62A_sport has its own pair).
+- res_mods/0.9.1/scripts/item_defs/vehicles/common/vehicle.xml: original plus a
+  balance/byVehicleModule row for ussr:T62A_T with the ussr:T62A weight (120.0). The
+  #717 VehicleDescriptor indexes the 10-entry balance/byComponentLevels tuple by
+  level unless the type has its own row, so level 11 would raise IndexError
+  (stand -13, 2026-11-05: hangar stuck at "Обновление Ангара").
 - .../ussr/t62a_t.xml: T62A definition with the chassis/turret renamed and every
   nonzero hull/turret/gun armour value set to 1000 (tracks and zero-armour records stay).
 - res/text/LC_MESSAGES/ussr_vehicles.mo: original catalog plus three new keys,
@@ -54,6 +59,7 @@ TEXT = {
     'T62A_T_descr': 'Тестовая машина стенда: копия Т-62А, броня 1000 мм. Не историческая машина.',
 }
 DEFS = 'scripts/item_defs/vehicles/ussr/'
+COMMON = 'scripts/item_defs/vehicles/common/vehicle.xml'
 OUT_DEFS = 'res_mods/0.9.1/' + DEFS
 ICONS = {
     'gui__maps__icons__levels__tank_level_11.png': 'res_mods/0.9.1/gui/maps/icons/levels/tank_level_11.png',
@@ -112,6 +118,20 @@ def vehicle_list(raw):
     at = [i for i, (key, _) in enumerate(entry.children) if key == 'price'][0] + 1
     entry.children.insert(at, ('notInShop', (pxml.BOOL, b'\x01')))
     root.children.append((NAME, entry))
+    return pxml.encode(document)
+
+
+def balance_row(raw):
+    """common/vehicle.xml: copy the base type's byVehicleModule row for the test type."""
+    document = pxml.parse(raw)
+    rows = document['root'].child('balance').child('byVehicleModule')
+    base, name = ('ussr:' + BASE).encode('ascii'), ('ussr:' + NAME).encode('ascii')
+    found = [data for key, data in rows.children if key == 'name' and isinstance(data, pxml.Element) and data.own[1] == base]
+    if len(found) != 1 or any(isinstance(d, pxml.Element) and d.own[1] == name for _, d in rows.children):
+        raise ValueError('unmeasured balance rows')
+    row = copy.deepcopy(found[0])
+    row.own = pxml.text('ussr:' + NAME)
+    rows.children.append(('name', row))
     return pxml.encode(document)
 
 
@@ -199,6 +219,8 @@ def build(original, python27=DEFAULT_PY27, icons=DEFAULT_ICONS, scratch=None):
     payloads[OUT_DEFS + 'components/chassis.xml'] = add_id(sources[DEFS + 'components/chassis.xml'], CHASSIS[1], CHASSIS[2])
     payloads[OUT_DEFS + 'components/turrets.xml'] = add_id(sources[DEFS + 'components/turrets.xml'], TURRET[1], TURRET[2])
     payloads[OUT_DEFS + 't62a_t.xml'] = vehicle_definition(sources[DEFS + 't62a.xml'])
+    sources[COMMON] = read(original / 'res' / COMMON)
+    payloads['res_mods/0.9.1/' + COMMON] = balance_row(sources[COMMON])
     payloads['res_mods/0.9.1/scripts/common/items/vehicles.pyc'] = level_pyc(original, python27, scratch)
     sources[MO] = read(original / MO, 8 * 1024 * 1024)
     payloads[MO] = add_mo_keys(sources[MO], TEXT)
