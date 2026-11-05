@@ -112,6 +112,7 @@ pub(crate) mod vehicle_catalog;
 #[path="vehicle_catalog_test_lab.rs"]
 pub(crate) mod vehicle_catalog;
 pub(crate) mod generated_vehicles;
+pub(crate) mod shell_rules;
 pub use server::serve;
 pub use server::serve_integrated;
 use super::{Session, Frame, Instant};

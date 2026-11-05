@@ -1,6 +1,9 @@
 //! Pure explicit laboratory family mathematics. No HP mutation or native IDs.
+//! SHELL-CFG: every number of the law comes from the immutable rules snapshot
+//! (`shared/shell_rules.rs`); the policy strings name the law code itself.
 use std::io;
 use crate::p06t_shells091::{Family, Shell, PROFILES};
+use crate::gateway091::shared::shell_rules::{rules, Rules};
 
 pub const POLICY: &str = "test_lab.p06t.single-plate-splash.v1";
 /// Explicit opt-in LAB rule, not a reconstruction of the historical solver.
@@ -53,17 +56,17 @@ fn unit(v: [f32;3]) -> io::Result<[f64;3]> {
 fn valid_armor(armor: f64) -> io::Result<()> {
     if !armor.is_finite() || !(0. ..=100_000.).contains(&armor) { return Err(bad("damage armor bound")); } Ok(())
 }
-fn penetration(shell: Shell, distance: f64) -> f64 {
-    if matches!(shell.family,Family::HollowCharge|Family::HighExplosive) || distance<=100. { shell.penetration_mm[0] }
-    else { (shell.penetration_mm[0]+(shell.penetration_mm[1]-shell.penetration_mm[0])*(distance-100.)/400.).max(0.) }
+fn penetration(r: &Rules, shell: Shell, distance: f64) -> f64 {
+    if !r.family(shell.family).distance_falloff || distance<=r.full_power_until_m { shell.penetration_mm[0] }
+    else { (shell.penetration_mm[0]+(shell.penetration_mm[1]-shell.penetration_mm[0])*(distance-r.full_power_until_m)/r.linear_span_m).max(0.) }
 }
-fn attenuated_he(shell: Shell, distance: f64, armor: f64) -> io::Result<u16> {
+fn attenuated_he(r: &Rules, shell: Shell, distance: f64, armor: f64) -> io::Result<u16> {
     let radius=shell.explosion_radius_m.ok_or_else(||bad("HE source radius missing"))?;
     if !distance.is_finite() || distance<0. { return Err(bad("HE distance bound")); }
     valid_armor(armor)?;
     // Explicit LAB formula. Neither coefficients nor rounding are claimed to
     // reproduce the original server. No hidden damage/penetration RNG.
-    Ok((0.5*f64::from(shell.damage_hp)*(1.-distance/radius).max(0.)-1.1*armor)
+    Ok((r.he_damage_factor*f64::from(shell.damage_hp)*(1.-distance/radius).max(0.)-r.he_armor_factor*armor)
         .max(0.).floor().min(f64::from(shell.damage_hp)) as u16)
 }
 pub fn resolve_direct(i: DirectInput) -> io::Result<Resolution> { resolve_direct_spent(i, 0.) }
@@ -83,9 +86,10 @@ impl crate::bw_wire::Wire for TrackPass {
 // end BW-01 wire codec
 pub fn track_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, armor_mm: f64) -> io::Result<TrackPass> {
     source_shell(shell)?;
+    let r = rules()?;
     if !distance_m.is_finite() || !(0. ..=100_000.).contains(&distance_m) { return Err(bad("damage range bound")); }
     valid_armor(armor_mm)?; valid_armor(spent_before_mm)?;
-    let power_before_mm = (penetration(shell, distance_m) - spent_before_mm).max(0.);
+    let power_before_mm = (penetration(r, shell, distance_m) - spent_before_mm).max(0.);
     let left = (power_before_mm - armor_mm).max(0.);
     let stopped = shell.family == Family::HighExplosive || left <= 0.;
     Ok(TrackPass { power_before_mm, power_after_mm: if stopped { 0. } else { left }, stopped })
@@ -93,6 +97,7 @@ pub fn track_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, armor_mm:
 /// `spent_mm` is the track armour already taken off this shot (`track_pass`); 0 is the old law.
 pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> {
     source_shell(i.shell)?;
+    let rules = rules()?;
     valid_armor(spent_mm)?;
     if spent_mm > 0. && i.shell.family == Family::HighExplosive { return Err(bad("HE stops on the track")); }
     if !i.distance_m.is_finite() || !(0. ..=100_000.).contains(&i.distance_m) { return Err(bad("damage range bound")); }
@@ -101,27 +106,23 @@ pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolut
     let incidence=dir.iter().zip(normal).map(|(d,n)|d*n).sum::<f64>().abs().clamp(0.,1.).acos().to_degrees();
     let mut r=Resolution {policy:POLICY,decision:Decision::NotPierced,damage_hp:0,
         incidence_degrees:incidence,effective_armor_mm:None,
-        nominal_power_mm:(penetration(i.shell,i.distance_m)-spent_mm).max(0.),normalization_degrees:0.};
+        nominal_power_mm:(penetration(rules,i.shell,i.distance_m)-spent_mm).max(0.),normalization_degrees:0.};
     if i.distance_m>=i.shell.max_distance_m { r.decision=Decision::OutOfRange;return Ok(r); }
     let Some(armor)=i.plate.armor_mm.filter(|a|*a>0.) else {r.decision=Decision::Unsupported;return Ok(r)};
     if !i.plate.ordinary {r.decision=Decision::Unsupported;return Ok(r);}
-    let (base_normalization,ricochet,overmatch)=match i.shell.family {
-        Family::ArmorPiercing=>(5.,Some(70.),true),
-        Family::ArmorPiercingCr=>(2.,Some(70.),true),
-        Family::HollowCharge=>(0.,Some(85.),false),
-        Family::HighExplosive=>(0.,None,false),
-    };
-    if ricochet.is_some_and(|angle|incidence>=angle) && (!overmatch || i.shell.caliber_mm<3.*armor) {
+    let family=rules.family(i.shell.family);
+    let (base_normalization,ricochet,overmatch)=(family.normalization_deg,family.ricochet_deg,family.caliber_rules);
+    if ricochet.is_some_and(|angle|incidence>=angle) && (!overmatch || i.shell.caliber_mm<rules.no_ricochet_ratio*armor) {
         r.decision=Decision::Ricochet;return Ok(r);
     }
-    let normalization=if overmatch && i.shell.caliber_mm>=2.*armor {base_normalization*1.4*i.shell.caliber_mm/armor}else{base_normalization};
+    let normalization=if overmatch && i.shell.caliber_mm>=rules.normalization_ratio*armor {base_normalization*rules.normalization_multiplier*i.shell.caliber_mm/armor}else{base_normalization};
     if !normalization.is_finite() {return Err(bad("damage normalization overflow"));}
     let angle=(incidence-normalization).max(0.);
     let effective=armor/angle.to_radians().cos().max(f64::MIN_POSITIVE);
     if !effective.is_finite() {return Err(bad("damage effective armor overflow"));}
     r.effective_armor_mm=Some(effective);r.normalization_degrees=normalization;
     if r.nominal_power_mm>effective {r.decision=Decision::Pierced;r.damage_hp=i.shell.damage_hp;}
-    else if i.shell.family==Family::HighExplosive {r.damage_hp=attenuated_he(i.shell,0.,armor)?;}
+    else if i.shell.family==Family::HighExplosive {r.damage_hp=attenuated_he(rules,i.shell,0.,armor)?;}
     Ok(r)
 }
 /// Geometry/source identity is established by the Trace source-witness adapter.
@@ -154,6 +155,7 @@ impl crate::bw_wire::Wire for SplashDamage {
 /// identity. Bounded typed facts do not prove that geometry query by themselves.
 pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<SplashDamage>> {
     source_shell(shell)?;
+    let rules=rules()?;
     if shell.family!=Family::HighExplosive || targets.len()>MAX_TARGETS {return Err(bad("damage splash family/count"));}
     // Target identity is any actor slot of the battle (RES-30: 30 actors); MAX_TARGETS
     // only bounds the count per call. The old slot<6 bound failed 30-actor battles.
@@ -165,7 +167,7 @@ pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<Splas
             return Err(bad("damage splash identity/distance"));
         }
         valid_armor(target.armor_mm)?;seen[slot]=true;
-        let damage=if target.los_clear {attenuated_he(shell,target.distance_m,target.armor_mm)?}else{0};
+        let damage=if target.los_clear {attenuated_he(rules,shell,target.distance_m,target.armor_mm)?}else{0};
         out.push(SplashDamage {slot:target.slot,damage_hp:damage});
     }
     Ok(out)
@@ -178,3 +180,7 @@ mod tests;
 #[cfg(test)]
 #[path="p06t_breech_damage_tests.rs"]
 mod breech_tests;
+
+#[cfg(test)]
+#[path="p06t_damage_rules_tests.rs"]
+mod rules_tests;

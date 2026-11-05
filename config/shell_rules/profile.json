@@ -1,0 +1,16 @@
+{
+  "schema": "wot091-shell-rules-profile.v1",
+  "config_version": 1,
+  "profile": "classic_plus",
+  "historical_baseline": "wot_0_9_1",
+  "note": "SHELL-CFG 05.11: current LAB law values as data; no number changed. Shell Mechanics 2.0 laws come in later cards.",
+  "layers": [
+    "server_defaults",
+    "historical_0_9_1",
+    "classic_plus",
+    "shell_type",
+    "shell_definition",
+    "gun_vehicle",
+    "game_mode"
+  ]
+}

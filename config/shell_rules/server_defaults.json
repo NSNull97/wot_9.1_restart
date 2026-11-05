@@ -1,0 +1,153 @@
+{
+  "layer": "server_defaults",
+  "rules": {
+    "laws": {
+      "direct": {
+        "value": "test_lab.p06t.single-plate-splash.v1",
+        "status": "test_lab",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) POLICY"
+      },
+      "track": {
+        "value": "test_lab.shell02.track-spaced-nominal-armour.v1",
+        "status": "test_lab",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) TRACK_PASS_POLICY"
+      },
+      "unarmored_device": {
+        "value": "test_lab.p06t.unarmored-gun-breech.v2",
+        "status": "test_lab",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) UNARMORED_DEVICE_POLICY"
+      }
+    },
+    "families": {
+      "armor_piercing": {
+        "normalization_deg": {
+          "value": 5.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1 (notes 8.6/8.9)"
+        },
+        "ricochet_deg": {
+          "value": 70.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1"
+        },
+        "caliber_rules": {
+          "value": true,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); 2x/3x caliber rules apply to this family"
+        },
+        "distance_falloff": {
+          "value": true,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 3 (HEAT/HE keep power)"
+        }
+      },
+      "armor_piercing_cr": {
+        "normalization_deg": {
+          "value": 2.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1 (notes 8.6/8.9)"
+        },
+        "ricochet_deg": {
+          "value": 70.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1"
+        },
+        "caliber_rules": {
+          "value": true,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); 2x/3x caliber rules apply to this family"
+        },
+        "distance_falloff": {
+          "value": true,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 3 (HEAT/HE keep power)"
+        }
+      },
+      "hollow_charge": {
+        "normalization_deg": {
+          "value": 0.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1 (notes 8.6/8.9)"
+        },
+        "ricochet_deg": {
+          "value": 85.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1"
+        },
+        "caliber_rules": {
+          "value": false,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); 2x/3x caliber rules apply to this family"
+        },
+        "distance_falloff": {
+          "value": false,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 3 (HEAT/HE keep power)"
+        }
+      },
+      "high_explosive": {
+        "normalization_deg": {
+          "value": 0.0,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1 (notes 8.6/8.9)"
+        },
+        "ricochet_deg": {
+          "value": null,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 1"
+        },
+        "caliber_rules": {
+          "value": false,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); 2x/3x caliber rules apply to this family"
+        },
+        "distance_falloff": {
+          "value": false,
+          "status": "requires_verification",
+          "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 3 (HEAT/HE keep power)"
+        }
+      }
+    },
+    "caliber": {
+      "normalization_ratio": {
+        "value": 2.0,
+        "status": "requires_verification",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); normalization grows when caliber >= ratio x armour"
+      },
+      "normalization_multiplier": {
+        "value": 1.4,
+        "status": "requires_verification",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); base x multiplier x caliber / armour"
+      },
+      "no_ricochet_ratio": {
+        "value": 3.0,
+        "status": "requires_verification",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); no ricochet when caliber >= ratio x armour"
+      }
+    },
+    "falloff": {
+      "full_power_until_m": {
+        "value": 100.0,
+        "status": "requires_verification",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); SHELL_MECH v1 decision 3 (linear 100 -> 500 m)"
+      },
+      "linear_span_m": {
+        "value": 400.0,
+        "status": "requires_verification",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2); second piercingPower value reached at full + span"
+      }
+    },
+    "high_explosive": {
+      "damage_factor": {
+        "value": 0.5,
+        "status": "test_lab",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) attenuated_he: factor x damage x (1 - d/R) - armour_factor x armour"
+      },
+      "armor_factor": {
+        "value": 1.1,
+        "status": "test_lab",
+        "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) attenuated_he"
+      }
+    }
+  }
+}
