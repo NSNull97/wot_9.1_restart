@@ -623,6 +623,9 @@ def prepare(args):
     sources = []
     for module in MODULES:
         source = ROOT/'client_patch'/f'{module}.py'
+        if module == 'catalog_v1_hints' and getattr(args, 'test_vehicle_label', False):
+            # TESTVEH-01 stand flag: a test_lab client carries the test_lab CAT-01 hints.
+            source = ROOT/'client_patch'/'catalog_test_lab_hints.py'
         pyc = compiled/f'{module}.pyc'
         metadata = compiled/f'{module}.json'
         subprocess.run([str(compiler), str(ROOT/'tools/compile_interactive27.py'),
@@ -634,6 +637,16 @@ def prepare(args):
     entries = []
     overwrite_allowed = {'res/engine_config.xml', 'paths.xml', 'res/text/LC_MESSAGES/menu.mo',
                          'res/text/LC_MESSAGES/system_messages.mo'}
+    if getattr(args, 'test_vehicle_label', False):
+        # TESTVEH-01 (owner 2026-11-04): stand T-62A shown as "Т-62А (Т)", tier 11.
+        import test_vehicle_client
+        vehicle_payloads, vehicle_evidence = test_vehicle_client.build(original, scratch=out/'test-vehicle-scratch')
+        clash = set(vehicle_payloads) & set(payloads)
+        if clash:
+            raise ValueError('test vehicle payload overlaps another payload: ' + ', '.join(sorted(clash)))
+        payloads.update(vehicle_payloads)
+        overwrite_allowed.update(vehicle_evidence['overwrites_original'])
+        resource_evidence['test_vehicle_label'] = vehicle_evidence
     if disable_dialog:
         overwrite_allowed.add('version.xml')
     if 'project_sixth_sense_sample' in resource_evidence:
@@ -818,6 +831,8 @@ def main():
     prep.add_argument('--trace-pose-10hz', action='store_true',
                       help='NET-01 diagnostic: record native vehicle positions, BigWorld.time and serverTime '
                            'every 0.1 s in battle (read-only); requires profile13 battle')
+    prep.add_argument('--test-vehicle-label', action='store_true',
+                      help='TESTVEH-01 test_lab client: separate Т-62А (Т) (label XI, 1000 mm stats, level bound 1..11) and the test_lab CAT-01 hints; only for a test_lab stand')
     prep.add_argument('--player-kill-marker', action='store_true',
                       help='Project policy, not original 0.9.1: a kill by the player keeps the player-coloured '
                            'marker colour (its crew-inactive refresh keeps the player as source); requires profile13 battle')

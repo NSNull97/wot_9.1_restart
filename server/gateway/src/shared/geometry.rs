@@ -435,6 +435,12 @@ fn non_reparse(path: &Path) -> io::Result<()> {
     } Ok(())
 }
 impl Bundle {
+    /// TESTVEH-01: the same geometry with uniform stand-only test armour on every
+    /// armoured hull/turret/gun material (materials::Catalog::with_test_armor).
+    pub(crate) fn with_test_armor(mut self, mm: f32) -> io::Result<Self> {
+        self.materials = self.materials.with_test_armor(mm)?;
+        Ok(self)
+    }
     pub fn load(local_root: &Path, path: &Path) -> io::Result<Self> {
         if !path.is_absolute() { return Err(bad()); }
         non_reparse(local_root)?; non_reparse(path)?;
@@ -1929,5 +1935,23 @@ pub(super) mod tests {
         for slot in 0..super::super::model::MAX_ACTORS { assert!(b.world_mesh(&actor, slot, 1000).is_ok()); }
         assert!(b.world_mesh(&actor, super::super::model::MAX_ACTORS, 1000).is_err());
         actor.position[0] = f32::NAN; assert!(b.world_mesh(&actor, 0, 1000).is_err());
+    }
+
+    /// TESTVEH-01: stand-only uniform armour changes only materials that carry armour.
+    #[test] fn testveh_uniform_armour_replaces_only_armoured_materials() {
+        let source = bundle();
+        let armoured = source.clone().with_test_armor(1000.).unwrap();
+        let mut seen = 0;
+        for component in &source.components { for t in &component.triangles {
+            let before = source.materials.lookup(&t.mesh, &t.material).unwrap();
+            let after = armoured.materials.lookup(&t.mesh, &t.material).unwrap();
+            assert_eq!(before.profile_revision, after.profile_revision);
+            match before.effective.as_ref().and_then(|e| e.armor) {
+                Some(_) => { assert_eq!(after.effective.as_ref().unwrap().armor, Some(1000.)); seen += 1; }
+                None => assert_eq!(before, after),
+            }
+        } }
+        assert!(seen > 0);
+        for mm in [0., 2000.5, f32::NAN] { assert!(source.clone().with_test_armor(mm).is_err()); }
     }
 }

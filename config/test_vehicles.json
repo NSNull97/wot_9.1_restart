@@ -1,0 +1,21 @@
+{
+  "schema": "wot091-test-vehicles.v1",
+  "classification": "TEST_LAB_STAND_ONLY; owner order 2026-11-04; not a historical vehicle",
+  "vehicles": [
+    {
+      "vehicle_id": "vehicle:ussr:T62A_T",
+      "base_vehicle_id": "vehicle:ussr:T62A",
+      "resource_name": "T62A_T",
+      "base_resource_name": "T62A",
+      "native_type_id": 50,
+      "tier": 11,
+      "label": "Т-62А (Т)",
+      "description": "Тестовая машина стенда: копия Т-62А, броня 1000 мм. Не историческая машина.",
+      "chassis": {"base": "Chassis_T62A", "name": "Chassis_T62A_T", "id": 62},
+      "turret": {"base": "Turret_1_T62A", "name": "Turret_1_T62A_T", "id": 50},
+      "armor_mm": 1000,
+      "armored_parts": ["hull", "turret", "gun"],
+      "tracks": "base"
+    }
+  ]
+}

@@ -45,14 +45,21 @@ from vehicle_physics_profile import no_links, owned
 
 SCHEMA = "wot091-battle-profiles.v1"
 BUNDLE_SCHEMA = "battle-any-source.v1"
-TABLE = ROOT / "config" / "catalog" / "battle_profiles.v1.json"
-BINDING = TOOLS / "battle_any_data.py"
-PHYSICS_DEFINITIONS = ROOT / "server" / "physics" / "Profiles" / "generated-definitions.json"
+import test_vehicles  # noqa: E402
+# TESTVEH-01: WOT091_TEST_LAB=1 builds/checks the test_lab variant (config/test_lab,
+# *_test_lab bindings); the main variant never contains a test vehicle.
+TEST_LAB = test_vehicles.enabled()
+_DIR = test_vehicles.TEST_LAB_DIR if TEST_LAB else ROOT / "config" / "catalog"
+_SUFFIX = "_test_lab" if TEST_LAB else ""
+TABLE = _DIR / "battle_profiles.v1.json"
+BINDING = TOOLS / ("battle_any_data%s.py" % _SUFFIX)
+PHYSICS_DEFINITIONS = (_DIR / "generated-definitions.json" if TEST_LAB
+                       else ROOT / "server" / "physics" / "Profiles" / "generated-definitions.json")
 GENERATED_POLICY = "battle-any-generated-v1"
-QUALIFICATION = ROOT / "config" / "catalog" / "battle_qualification.v1.json"
+QUALIFICATION = _DIR / "battle_qualification.v1.json"
 QUALIFICATION_SCHEMA = "wot091-battle-qualification.v1"
-RUST_PINS = ROOT / "server" / "gateway" / "src" / "shared" / "battle_any_pins.rs"
-CATALOG_SHA256 = "1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80"
+RUST_PINS = ROOT / "server" / "gateway" / "src" / "shared" / ("battle_any_pins%s.rs" % _SUFFIX)
+CATALOG_SHA256 = test_vehicles.research_sha256()
 # Original res/scripts/common/nations.pyc order (verified in build, as P06T does).
 # Since CAT-NATIONS the P09E research catalogue uses the same order; a row whose
 # catalogue nation differs is a build failure (the fields stay as the guard).
@@ -630,6 +637,37 @@ def bundle_name(row):
     return row["nation"] + "-" + row["resource"] + ".json"
 
 
+def derived_test_row(base, base_bundle, spec, catalog):
+    """TESTVEH-01: a stand-only test vehicle is its base vehicle's row and bundle with the
+    test identity (research overlay ids, own chassis/turret modules). Tier, geometry,
+    physics, shots and devices stay the base source facts (the tier label 11 is client
+    text only); armour is a stand manifest flag."""
+    from p09e_research_projection import descriptor
+    vehicle = catalog.vehicles[spec["vehicle_id"]]
+    defaults = dict(vehicle["defaults"])
+    row = copy.deepcopy(base)
+    require(base["status"] == "generated" and base_bundle is not None, "test vehicle base must be generated")
+    row["vehicle_id"] = spec["vehicle_id"]
+    row["resource"] = spec["resource_name"]
+    identity = row["identity"]
+    identity["modules"] = defaults
+    identity["module_compact_ids"] = {role: catalog.modules[m]["native_compact_id"] for role, m in defaults.items()}
+    identity["descriptor_hex"] = descriptor(catalog, {"vehicle_id": spec["vehicle_id"], "modules": defaults}).hex()
+    if "type_compact_id" in identity:
+        identity["type_compact_id"] = vehicle["native_compact_id"]
+    row["kind"] = kind_label(row)
+    bundle = json.loads(base_bundle)
+    bundle["vehicle_id"] = spec["vehicle_id"]
+    # The gateway checks the bundle identity against the registry row
+    # (geometry.rs from_generated_source): it carries the test identity too.
+    bundle["identity"] = dict(bundle["identity"], modules=defaults,
+                              **{k: identity[k] for k in ("descriptor_hex", "type_compact_id", "module_compact_ids")
+                                 if k in bundle["identity"]})
+    raw = canonical(bundle) + b"\n"
+    row["geometry"] = dict(row["geometry"], bundle=bundle_name(row), bytes=len(raw), sha256=sha(raw))
+    return row, raw
+
+
 def build(original):
     src = Sources(original)
     catalog = load_catalog(src.root)
@@ -656,11 +694,20 @@ def build(original):
     effects = [k[1:].split("[", 1)[0] for k in src.xml(PREFIX + "common/shot_effects.xml") if k.count("/") == 1 and k != "/"]
     require(len(effects) == len(set(effects)) and 0 < len(effects) <= 255, "shot effects order")
     rows, bundles = [], {}
+    tests = {v["vehicle_id"]: v for v in test_vehicles.load()[0]["vehicles"]} if TEST_LAB else {}
     for vehicle_id in sorted(catalog.vehicles):
+        if vehicle_id in tests:
+            continue
         row, raw = vehicle_row(src, catalog, vehicle_id, defaults, factor, effects)
         rows.append(row)
         if raw is not None:
             bundles[bundle_name(row)] = raw
+    for vehicle_id, spec in sorted(tests.items()):
+        base = next(r for r in rows if r["vehicle_id"] == spec["base_vehicle_id"])
+        row, raw = derived_test_row(base, bundles.get(bundle_name(base)), spec, catalog)
+        rows.append(row)
+        bundles[bundle_name(row)] = raw
+    rows.sort(key=lambda r: r["vehicle_id"])
     table = dict(schema=SCHEMA, target="v.0.9.1 #717 RU", research_catalog_sha256=CATALOG_SHA256, policy=POLICY,
                  source_pins=src.pins(), vehicles=rows)
     raw = canonical(table) + b"\n"
@@ -685,7 +732,8 @@ def export(original, out, update=False):
     if update or committed is None:
         TABLE.write_bytes(raw)
         BINDING.write_bytes(binding(raw))
-        RUST_PINS.write_bytes(rust_pins())
+        if QUALIFICATION.is_file():  # a first test_lab build: `qualify` writes the pins
+            RUST_PINS.write_bytes(rust_pins())
         PHYSICS_DEFINITIONS.write_bytes(canonical(physics_definitions(json.loads(raw))) + b"\n")
     table = json.loads(raw)
     counts = {}
@@ -703,7 +751,7 @@ def export(original, out, update=False):
 
 
 def binding(raw):
-    lines = ('"""GENERATED by tools/battle_any_profiles.py from config/catalog/battle_profiles.v1.json; do not edit."""',
+    lines = ('"""GENERATED by tools/battle_any_profiles.py from %s; do not edit."""' % TABLE.relative_to(ROOT).as_posix(),
              "SCHEMA = %r" % SCHEMA, "TABLE_SHA256 = %r" % sha(raw), "TABLE_BYTES = %d" % len(raw))
     return ("\n".join(lines) + "\n").encode("ascii")
 
@@ -757,7 +805,7 @@ def qualify(worker, out):
 def rust_pins():
     """Gateway pins of the embedded table and qualification record (exact bytes)."""
     lines = ("// GENERATED by tools/battle_any_profiles.py; do not edit. Exact-byte pins of the embedded",
-             "// config/catalog/battle_profiles.v1.json and battle_qualification.v1.json.",
+             "// %s and battle_qualification.v1.json." % TABLE.relative_to(ROOT).as_posix(),
              "pub const TABLE_SHA256:&str=\"%s\";" % sha(TABLE.read_bytes()),
              "pub const QUALIFICATION_SHA256:&str=\"%s\";" % sha(QUALIFICATION.read_bytes()))
     return ("\n".join(lines) + "\n").encode("ascii")

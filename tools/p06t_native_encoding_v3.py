@@ -19,7 +19,9 @@ from py27_static import parse_pyc,records
 from vehicle_physics_profile import no_links
 
 SCHEMA='native-item-encoding.717.v2'
-SEMANTIC_SHA256='1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80'
+import test_vehicles
+# Research catalogue of this stand mode (main 1f6b20d1; test_lab stand: TESTVEH-01 overlay).
+SEMANTIC_SHA256=test_vehicles.research_sha256()
 NATIONS=('ussr','germany','usa','china','france','uk','japan')
 TYPES={'vehicle':1,'chassis':2,'turret':3,'gun':4,'engine':5,'fuelTank':6,'radio':7}
 MODULE_ORDER=('chassis','engine','fuelTank','radio','turret','gun')
