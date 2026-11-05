@@ -18,7 +18,9 @@ struct Reference {path:PathBuf,sha256:String}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference,
     /// SHELL-02: optional pinned chassis bundle (`chassis-armor.v1`); absent keeps the old hit path.
-    chassis:Option<Reference>}
+    chassis:Option<Reference>,
+    /// TESTVEH-01: optional stand-only uniform test armour (mm) of a generated kind; absent keeps source armour.
+    test_armor_mm:Option<u16>}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Manifest {version:u8,map:MapId,catalog:Reference,profiles:Vec<Profile>,shared_physics:Option<Reference>}
 
@@ -51,19 +53,27 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
     else if rows.len()!=count{return Err(bad("exact curated source profile count"));}
     let mut profiles:Vec<Option<Profile>>=vec![None;count];let mut generated:Vec<Profile>=Vec::new();
     for row in rows {
-        let chassis=if row.get("chassis").is_some(){keys(row,&["kind","pool","geometry","chassis"])?;Some(reference(&row["chassis"])?)}
-            else{keys(row,&["kind","pool","geometry"])?;None};
+        let mut expected=vec!["kind","pool","geometry"];
+        if row.get("chassis").is_some(){expected.push("chassis");}
+        if row.get("test_armor_mm").is_some(){expected.push("test_armor_mm");}
+        keys(row,&expected)?;
+        let chassis=if row.get("chassis").is_some(){Some(reference(&row["chassis"])?)}else{None};
+        let test_armor_mm=if row.get("test_armor_mm").is_some(){
+            let mm=row["test_armor_mm"].as_u64().filter(|mm|(1..=2000).contains(mm)).ok_or_else(||bad("test armour bound"))?;
+            Some(mm as u16)
+        }else{None};
         let label=text(row,"kind")?;
         if version==Some(5)&&VehicleKind::from_label(label).is_none(){
             let kind=VehicleKind::from_owned_label(label).filter(|k|k.is_generated()).ok_or_else(||bad("unknown vehicle profile"))?;
             if generated.iter().any(|p|p.kind==kind){return Err(bad("duplicate vehicle profile"));}
-            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis});continue;
+            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,test_armor_mm});continue;
         }
+        if test_armor_mm.is_some(){return Err(bad("test armour applies to generated kinds only"));}
         let kind=if version==Some(4){VehicleKind::from_extended_label(label)}else{VehicleKind::from_label(label)}
             .ok_or_else(||bad("unknown vehicle profile"))?;
         let index=kind.index();if index>=count{return Err(bad("kind requires version3 curated pool"));}
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
-        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis});
+        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,test_armor_mm:None});
     }
     generated.sort_by(|a,b|a.kind.label().cmp(b.kind.label()));
     let profiles:Vec<Profile>=profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?;
@@ -165,7 +175,12 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
             return Err(bad("extended/generated profile requires its shared-only pool and resource version"));
         }
         super::server::selected_pool_config(&pool,map)?;
-        let geometry=Bundle::load(local_root,&geometry_path)?;
+        let mut geometry=Bundle::load(local_root,&geometry_path)?;
+        if let Some(mm)=profile.test_armor_mm{
+            geometry=geometry.with_test_armor(f32::from(mm))?;
+            println!("TESTVEH_ARMOR_BOUND kind={} armor_mm={} policy={} scope=stand_manifest",
+                profile.kind.label(),mm,super::materials::TEST_ARMOR_POLICY);
+        }
         let geometry=Arc::new(match &profile.chassis {
             Some(reference)=>{
                 let path=pin(local_root,reference,512*1024)?;
@@ -259,6 +274,21 @@ mod tests {
         assert!(parse(&read(&fits,profile13::MAX_MANIFEST_BYTES).unwrap()).is_ok());
         assert!(read(&over,profile13::MAX_MANIFEST_BYTES).is_err());
         fs::remove_dir_all(&dir).unwrap();
+    }
+    /// TESTVEH-01: a generated row may carry stand-only uniform test armour; curated rows and bounds refuse.
+    #[test]fn profile13_templates_accept_test_armour_on_generated_rows_only(){
+        let base=value();let reference=|name:&str|{let mut r=base["catalog"].clone();
+            r["path"]=Path::new(r["path"].as_str().unwrap()).with_file_name(name).to_string_lossy().into();r};
+        let row=|kind:&str|serde_json::json!({"kind":kind,"pool":reference(&format!("{kind}-pool.json")),"geometry":reference(&format!("{kind}-geometry.json"))});
+        let mut v=base.clone();v["version"]=5.into();v["shared_physics"]=reference("shared.json");
+        v["profiles"]=serde_json::json!([row("ms1"),row("is7"),row("t26"),row("t34"),row("t3485"),row("ussr-T62A"),row("ussr-KV-3")]);
+        v["profiles"][5]["test_armor_mm"]=1000.into();
+        let m=parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+        let armour:Vec<_>=m.profiles.iter().map(|p|(p.kind.label(),p.test_armor_mm)).filter(|(_,a)|a.is_some()).collect();
+        assert_eq!(armour,[("ussr-T62A",Some(1000))]);
+        for (index,value) in [(5,serde_json::json!(0)),(5,serde_json::json!(2001)),(5,serde_json::json!("1000")),(5,serde_json::json!(10.5)),(0,serde_json::json!(1000))]{
+            let mut w=v.clone();w["profiles"][index]["test_armor_mm"]=value.clone();
+            assert!(parse(&serde_json::to_vec(&w).unwrap()).is_err(),"index={index} value={value}");}
     }
     #[test]fn profile13_templates_require_two_exact_homogeneous_source_profiles(){
         let value=value();let expected=parse(&serde_json::to_vec(&value).unwrap()).unwrap();

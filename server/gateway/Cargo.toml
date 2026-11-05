@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 publish = false
 
+[features]
+# TESTVEH-01 stand flag (owner 2026-11-05): build.py gateway --test-lab.
+test_lab = []
+
 [dependencies]
 # Checkout is independently verified at the pinned commit by the run script.
 wg-toolkit = { path = "../../local/vendor/wg-toolkit-rs/wg-toolkit", version = "=0.5.0" }

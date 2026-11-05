@@ -295,8 +295,12 @@ def main():
                         help='With canonical --cargo-temp-target only: verify and reference the owned temp exe without a duplicate in --out')
     parser.add_argument('--release', action='store_true',
                         help='Gateway only: cargo --release executable; stands with battle_players > 2 (SPAWN-15)')
+    parser.add_argument('--test-lab', action='store_true',
+                        help='TESTVEH-01 stand flag: gateway feature test_lab / physics test_lab definitions')
     parser.add_argument('--out', required=True, help='Fresh directory below project local/build/')
     args = parser.parse_args()
+    if args.test_lab and args.legacy:
+        raise ValueError('--test-lab applies to the current gateway/physics only')
     if args.release and (args.component != 'gateway' or args.legacy):
         raise ValueError('--release applies to the current gateway only')
     check_temp_selector(args.component, args.legacy, args.cargo_temp_target)
@@ -316,6 +320,9 @@ def main():
               'deployed_gateway_before': deployed_hash,
               'deployed_artifacts_replaced': False, 'native_client': 'NOT_RUN',
               'linux': 'NOT_RUN' if os.name == 'nt' else 'Only this host build; native runtime NOT_RUN'}
+    if args.test_lab:
+        result['test_lab'] = True
+    features = ['--features', 'test_lab'] if args.test_lab else []
     try:
         if args.component == 'gateway':
             toolchains = ROOT / 'local/toolchains'
@@ -355,7 +362,7 @@ def main():
                 command(out, 'layout', [sys.executable, '-B', '-X', 'utf8', 'server/check_layout.py'], env)
                 result['source_layout'] = json.loads((out / 'layout.stdout.log').read_text(encoding='utf-8'))['status']
             if args.test:
-                test_argv = [str(cargo), 'test', '--offline', '--locked', '--manifest-path', manifest]
+                test_argv = [str(cargo), 'test', '--offline', '--locked', '--manifest-path', manifest] + features
                 if args.test_filter:
                     test_argv.append(args.test_filter)
                 if args.run_ignored:
@@ -372,7 +379,7 @@ def main():
             if args.release:
                 result['cargo_profile'] = profile
             command(out, 'build', [str(cargo), 'build', '--offline', '--locked', '--manifest-path', manifest]
-                    + (['--release'] if args.release else []), env)
+                    + (['--release'] if args.release else []) + features, env)
             executable = out / 'target' / profile / ('p01-wg-probe.exe' if args.legacy else 'sr-gateway.exe')
             if args.retain_temp_executable:
                 retained = retain_verified_executable(target / profile / 'sr-gateway.exe', out, target, profile)
@@ -404,7 +411,8 @@ def main():
                        NUGET_PACKAGES=str(packages))
             command(out, 'sdk', [dotnet, '--list-sdks'], env)
             command(out, 'restore', [dotnet, 'restore', manifest, '--locked-mode', '--configfile', str(nuget), intermediate], env)
-            command(out, 'build', [dotnet, 'build', manifest, '-c', 'Release', '--no-restore', intermediate, output], env)
+            command(out, 'build', [dotnet, 'build', manifest, '-c', 'Release', '--no-restore', intermediate, output]
+                    + (['-p:TestLab=true'] if args.test_lab else []), env)
             result['built_DLL_sha256'] = sha(out / 'bin/MapDriveWorker.dll')
             result['physics_simulation'] = 'NOT_RUN; build only'
         if deployed_hash is not None and sha(deployed) != deployed_hash:

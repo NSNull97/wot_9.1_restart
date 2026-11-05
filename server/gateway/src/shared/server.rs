@@ -1527,6 +1527,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         return Err(model::bad().into());
     }
     let config = Arc::new(crate::identity091::Config::load(config_path)?);
+    // TESTVEH-01 stand flag: say which catalogue variant this build embeds.
+    if cfg!(feature="test_lab"){println!("TEST_LAB build research={} catalog={}",
+        crate::research_service091::CATALOG_SHA256,super::vehicle_catalog::CATALOG_SHA256);}
     if config.catalog_v1{crate::profile13_v2091::enable_catalog_v1()?;
         println!("CATALOG_V1 enabled sha256={}",super::vehicle_catalog::CATALOG_SHA256);}
     if let Some(endpoint)=config.domain_endpoint(){println!("DOMAIN_SERVICE enabled endpoint={endpoint}");}

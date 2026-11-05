@@ -429,3 +429,152 @@ fn res30_thirty_place_battle_and_result_fit_a_one_megabyte_thread(){
         super::super::super::lifecycle_wire::avatar_result_stream_p06t(&r,1).unwrap();
     }).unwrap().join().unwrap();
 }
+
+// ---- BOT-02 (project policy `BEHAVIOUR`): owner's stand -12 report, 04.11 ----
+
+fn brain(w:&World,slot:usize)->&Brain{let b=w.bots.as_ref().unwrap();b.brains.iter().find(|b|b.slot==slot).unwrap()}
+
+/// Item 2: an ally in the shell's path holds the bot's fire and moves it; no
+/// shell of the bot reaches the ally on the server; the open duel fires more.
+#[test]
+fn bot02_never_fires_through_an_ally_in_the_shell_path(){
+    let now=Instant::now();
+    let run=|ally_in_line:bool|{
+        // Slot 1 (team 2) shoots at the native (team 1) 150 m ahead; slot 3 is its ally.
+        let mut w=fixture_on(MapId::Karelia,1,4,9,now);w.fill_bots().unwrap();
+        place(&mut w,0,[0.,0.,150.],0.);place(&mut w,1,[0.,0.,0.],0.);place(&mut w,2,[-400.,0.,-400.],0.);
+        // In line: broadside 20 m ahead, so the gun's whole cone crosses its hull.
+        if ally_in_line{place(&mut w,3,[0.,0.,20.],PI/2.);}else{place(&mut w,3,[60.,0.,40.],0.);}
+        let at=begin(&mut w,now);
+        // The ally is a passive vehicle here (its own shots would end the duel).
+        w.bots.as_mut().unwrap().brains.retain(|b|b.slot!=3);
+        for k in 1..=200u32{tick(&mut w,at+STEP*k);}
+        w
+    };
+    let open=run(false);
+    assert!(open.shots.iter().any(|s|s.slot==1),"control: a clear fire line fires");
+    let w=run(true);
+    // What the server resolved: no shell of the bot met its ally.
+    let own=|w:&World,shot:u32|w.shots.iter().any(|s|s.sequence==shot&&s.slot==1);
+    assert!(!w.contacts.iter().any(|c|c.target_slot==3&&own(&w,c.shot)),"no contact with the ally");
+    assert!(!w.impacts.iter().any(|i|i.attacker==1&&i.target==3)&&!w.damage_events.iter().any(|d|d.attacker==1&&d.target==3));
+    // Shots after it moved are fine when the path is clear (the contacts above prove it).
+    let count=|w:&World|w.shots.iter().filter(|s|s.slot==1).count();
+    assert!(count(&w)<count(&open),"held: {} vs {}",count(&w),count(&open));
+    let bots=w.bots.as_ref().unwrap();
+    assert!(bots.held[4]>0,"held for the fire line: {:?}",bots.held);
+    assert!(bots.repositions>0,"held too long: moves to a new position");
+}
+
+/// Item 2 cost/semantics: the fire-line probe reads the World only.
+#[test]
+fn bot02_fire_line_probe_is_pure(){
+    let now=Instant::now();let mut w=fixture_on(MapId::Karelia,1,4,9,now);w.fill_bots().unwrap();
+    place(&mut w,0,[0.,0.,150.],0.);place(&mut w,1,[0.,0.,0.],0.);place(&mut w,3,[0.,0.,20.],PI/2.);
+    let at=begin(&mut w,now);let before=(w.actors.clone(),w.bots.clone(),w.shots.len(),w.projectiles.len(),w.tick);
+    assert!(!w.bot_fire_line_safe(1,0,at).unwrap(),"the ally 20 m ahead is met before the native");
+    let _=w.bot_fire_line_safe(1,2,at).unwrap();
+    assert_eq!((w.actors.clone(),w.bots.clone(),w.shots.len(),w.projectiles.len(),w.tick),before,"no World change");
+    assert!(w.bot_fire_line_safe(1,3,at).unwrap(),"the ally itself as the target is met first");
+}
+
+/// Item 3: the hull turns a limited-traverse gun onto the target; a full
+/// turret never moves the hull for aiming.
+#[test]
+fn bot02_hull_turns_a_limited_traverse_gun_onto_the_target(){
+    let ten=10f32.to_radians();let limits=Some((-ten,ten));
+    assert_eq!(hull_turn_for(0.,limits),0);assert_eq!(hull_turn_for(5f32.to_radians(),limits),0);
+    assert_eq!(hull_turn_for(8f32.to_radians(),limits),1,"inside the gun sector but outside the 70 % margin");
+    assert_eq!(hull_turn_for(30f32.to_radians(),limits),1);assert_eq!(hull_turn_for(-30f32.to_radians(),limits),-1);
+    assert_eq!(hull_turn_for(3.,limits),1);assert_eq!(hull_turn_for(-3.,limits),-1,"behind: the short way round");
+    // Asymmetric sector (-7, +10): centred on +1.5 degrees.
+    let asym=Some((-7f32.to_radians(),10f32.to_radians()));
+    assert_eq!(hull_turn_for(-5f32.to_radians(),asym),-1);assert_eq!(hull_turn_for(6f32.to_radians(),asym),0);
+    // Narrow sectors keep a usable band.
+    let narrow=Some((-1f32.to_radians(),1f32.to_radians()));assert_eq!(hull_turn_for(0.,narrow),0);
+    assert_eq!(hull_turn_for(1f32.to_radians(),narrow),1);
+    for required in [-3.,-1.,0.,1.,3.]{assert_eq!(hull_turn_for(required,None),0,"full turret");}
+    // The limits are the battle profile's (0.9.1 catalogue), not a bot constant.
+    assert_eq!(turret_yaw_limits(VehicleKind::Ms1),None);
+    let foch=VehicleKind::from_owned_label("france-AMX50_Foch").unwrap();
+    let (lo,hi)=turret_yaw_limits(foch).expect("casemate gun sector");
+    assert!((lo+ten).abs()<1e-5&&(hi-ten).abs()<1e-5,"{lo} {hi}");
+    // Steering the test hull with the rule converges and stops inside the sector.
+    let (mut hull,bearing)=(0f32,2.2f32);
+    for _ in 0..100{hull=aim::wrap(hull+hull_turn_for(aim::wrap(bearing-hull),limits) as f32*0.08);}
+    assert!(aim::wrap(bearing-hull).abs()<=ten,"gun reaches the target: {}",aim::wrap(bearing-hull));
+}
+
+/// Item 4: a target the gun cannot depress to (MS-1 +8 degrees) is not
+/// waited for: after 3 s the bot leaves for a position farther away.
+#[test]
+fn bot02_target_outside_gun_depression_makes_the_bot_reposition(){
+    let now=Instant::now();let mut w=fixture_on(MapId::Karelia,1,2,9,now);w.fill_bots().unwrap();
+    // The bot on a 40 m ledge, the native 60 m out at its foot: about 33 degrees down.
+    place(&mut w,0,[0.,0.,60.],0.);place(&mut w,1,[0.,40.,0.],0.);
+    let at=begin(&mut w,now);let mut seen=None;
+    for k in 1..=80u32{
+        tick(&mut w,at+STEP*k);
+        if let Some((point,_))=brain(&w,1).reposition{seen.get_or_insert((k,point));}
+    }
+    let (k,point)=seen.expect("repositions instead of waiting");
+    assert!(k>=REPOSITION_TICKS,"not before the 3 s rule: tick {k}");
+    let (here,target)=([w.actors[1].position[0],w.actors[1].position[2]],[0.,60.]);
+    assert!(distance(point,target)>distance(here,target)+20.,"away from the target: {point:?}");
+    assert!(w.shots.iter().all(|s|s.slot!=1),"never fires out of its gun limits");
+    assert!(w.bots.as_ref().unwrap().repositions>=1);
+}
+
+/// Item 1: no progress while it wants to move (turning in place against
+/// something, never reaching throttle 1) now backs out; speed alone missed it.
+#[test]
+fn bot02_turning_in_place_without_progress_counts_as_stuck(){
+    let now=Instant::now();let mut w=driver(now,[0.,-120.]);let at=begin(&mut w,now);
+    let mut reversed=None;
+    for k in 1..=(PROGRESS_TICKS+20){
+        w.tick+=1;w.drive_bots(at).unwrap();
+        let a=&mut w.actors[1];a.speed=0.;a.origin=a.position; // pinned: neither moves nor turns
+        if k<PROGRESS_TICKS{assert_eq!(w.actors[1].input.throttle,0,"turning in place first");}
+        if w.actors[1].input.throttle<0{reversed.get_or_insert(k);}
+    }
+    let k=reversed.expect("backs out after no progress");
+    assert!(k>=PROGRESS_TICKS&&k<=PROGRESS_TICKS+2,"tick {k}");
+    assert_eq!(w.bot_stucks(),1);assert!(brain(&w,1).detour.is_some(),"and takes a side detour");
+}
+
+/// Item 1 (rushing): a seeded pause at the first route point while nothing
+/// is in contact, then the route goes on.
+#[test]
+fn bot02_pauses_at_the_first_route_point_then_advances(){
+    let now=Instant::now();let mut w=driver(now,[0.,10.]);
+    w.bots.as_mut().unwrap().brains[0].route=vec![[0.,10.],[0.,200.]];
+    let dwell=brain(&w,1).dwell;assert!((DWELL_MIN_TICKS..DWELL_MIN_TICKS+DWELL_SPAN_TICKS).contains(&dwell));
+    let at=begin(&mut w,now);let mut stopped=0u32;let mut resumed=false;
+    for k in 1..=(dwell+100){
+        tick(&mut w,at+STEP*k);sim(&mut w,1,true);
+        let b=brain(&w,1);
+        if b.dwell_until.is_some_and(|until|w.tick<until){if w.actors[1].input==Input::STOP{stopped+=1;}}
+        else if b.dwell_until.is_some()&&w.actors[1].input.throttle==1{resumed=true;}
+    }
+    assert!(stopped+2>=dwell,"holds the first point for its pause: {stopped} of {dwell}");
+    assert!(resumed,"then advances along the route");
+    assert!(w.actors[1].position[2]>15.);
+}
+
+/// Item 1 (rushing): a team-shown fight without own line and without
+/// support moves sideways for a line instead of driving deeper.
+#[test]
+fn bot02_outnumbered_without_a_line_moves_sideways_not_deeper(){
+    let now=Instant::now();let mut w=fixture_on(MapId::Karelia,1,6,9,now);w.fill_bots().unwrap();
+    w.terrain=Some(wall_at(75.));
+    // Subject slot 1 (team 2) behind the wall; its ally slot 3 spots three enemies.
+    place(&mut w,0,[0.,0.,150.],0.);place(&mut w,2,[20.,0.,150.],0.);place(&mut w,4,[-20.,0.,150.],0.);
+    place(&mut w,1,[0.,0.,0.],0.);place(&mut w,3,[80.,0.,150.],PI);place(&mut w,5,[-400.,0.,-400.],0.);
+    let at=begin(&mut w,now);
+    for k in 1..=(BLOCKED_ADVANCE_TICKS+5){tick(&mut w,at+STEP*k);}
+    assert!(w.desired_visibility(1).unwrap()[0],"the team shows the enemy");
+    let (point,_)=brain(&w,1).reposition.expect("moves for a line");
+    let here=[w.actors[1].position[0],w.actors[1].position[2]];
+    assert!((distance(point,here)-1.5*REPOSITION_SIDE_M).abs()<3.&&(point[1]-here[1]).abs()<3.,"sideways, not toward the enemy: {point:?}");
+    assert_ne!(w.actors[1].input,Input::STOP);
+}

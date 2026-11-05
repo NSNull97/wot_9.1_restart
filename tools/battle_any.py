@@ -12,9 +12,15 @@ import json
 from pathlib import Path
 from types import MappingProxyType
 
-import battle_any_data as data
+import test_vehicles
 
-TABLE_PATH = Path(__file__).resolve().parents[1] / "config/catalog/battle_profiles.v1.json"
+# TESTVEH-01: a test_lab stand (WOT091_TEST_LAB=1) reads the test_lab variant.
+if test_vehicles.enabled():
+    import battle_any_data_test_lab as data
+    TABLE_PATH = test_vehicles.TEST_LAB_DIR / "battle_profiles.v1.json"
+else:
+    import battle_any_data as data
+    TABLE_PATH = Path(__file__).resolve().parents[1] / "config/catalog/battle_profiles.v1.json"
 MAX_BYTES = 4 * 1024 * 1024
 _table = None
 

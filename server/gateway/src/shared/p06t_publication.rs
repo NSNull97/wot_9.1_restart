@@ -121,7 +121,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     }
     for(target,actor)in world.actors.iter().enumerate(){
         if !c.visible()[target]{continue;}
-        let crew=actor.crew_active();let fire=!actor.public_modifiers().is_empty();let mut body=Vec::new();
+        let crew=actor.crew_active();let modifiers=actor.public_modifiers();let mut body=Vec::new();
         let changed_crew=c.crew_sent[target]!=Some(crew);let mut targets=vec![target];
         if c.health_sent[target]!=Some(actor.health){
             if actor.health!=actor.vehicle_kind().max_health(){
@@ -133,8 +133,9 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
             c.health_sent[target]=Some(actor.health);
         }
         if changed_crew{body.extend(native::public_crew_active(wire::vehicle_id(target)?,crew)?);c.crew_sent[target]=Some(crew);}
-        if c.fire_sent[target]!=Some(fire){
-            body.extend(native::public_modifiers(wire::vehicle_id(target)?,&actor.public_modifiers())?);c.fire_sent[target]=Some(fire);
+        // Fire and crashed tracks share one public extras set; any change resends it.
+        if c.fire_sent[target].as_ref()!=Some(&modifiers){
+            body.extend(native::public_modifiers(wire::vehicle_id(target)?,&modifiers)?);c.fire_sent[target]=Some(modifiers);
         }
         if target==c.slot&&(c.owner_health_sent!=Some(actor.health)||changed_crew){
             // #717 Avatar.updateVehicleHealth ends with vehicle.health=rawHealth
