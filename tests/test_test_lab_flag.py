@@ -48,6 +48,11 @@ class PythonLayer(unittest.TestCase):
         self.assertEqual((catalog, last, research, rows), (TEST_LAB_CATALOG, 'ussr-T62A_T', tv.TEST_LAB_RESEARCH_SHA256, 375))
         self.assertNotEqual(table, python(self.CODE, None)[2])
 
+    def test_worker_catalogue_activation_follows_the_mode(self):
+        code = 'import json, catalog_v1, catalog_v1_data as d\nprint(json.dumps(catalog_v1.activate(d.CATALOG_SHA256)))'
+        self.assertEqual(python(code, None), MAIN_CATALOG)
+        self.assertEqual(python(code, '1'), TEST_LAB_CATALOG)
+
     def test_bad_flag_refuses(self):
         result = run([sys.executable, '-B', '-c', 'import sys; sys.path[:0]=["tools"]; import catalog_v1_data'], 'yes')
         self.assertNotEqual(result.returncode, 0)

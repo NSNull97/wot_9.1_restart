@@ -13,8 +13,11 @@ import json
 from pathlib import Path
 
 import catalog_v1_data as data
+import test_vehicles
 
-CATALOG_PATH = Path(__file__).resolve().parents[1] / "config/catalog/catalog.v1.json"
+# TESTVEH-01 stand flag: a test_lab worker binds the test_lab catalogue bytes.
+CATALOG_PATH = (test_vehicles.TEST_LAB_DIR / "catalog.v1.json" if test_vehicles.enabled()
+                else Path(__file__).resolve().parents[1] / "config/catalog/catalog.v1.json")
 MAX_BYTES = 256 * 1024
 _active = None
 
