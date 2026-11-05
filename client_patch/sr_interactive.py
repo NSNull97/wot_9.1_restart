@@ -125,6 +125,7 @@ _ui_started = False
 _ammunition_observed = False
 _vehicle_export_done = False
 _crew_export_done = False
+_layers_export_done = False
 _p04d_scenario = None
 _p04f_scenario = None
 _p04g_scenario = None
@@ -667,7 +668,7 @@ def consume_control(view):
     os.remove(path)
     data = json.loads(payload)
     del payload
-    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'verify_p09d_ammo', 'p09d_ammo_expected', 'verify_crew_recruitment', 'crew_recruitment_mode', 'crew_recruitment_expected', 'verify_crew_transfer', 'crew_transfer_mode', 'crew_transfer_expected', 'verify_cross_vehicle_crew', 'cross_vehicle_crew_mode', 'cross_vehicle_crew_expected', 'verify_roster_recruitment', 'roster_recruitment_mode', 'roster_recruitment_expected', 'roster_recruitment_hires', 'verify_crew_progression', 'crew_progression_mode', 'crew_progression_expected', 'crew_progression_learned', 'verify_crew_dismissal', 'crew_dismissal_mode', 'crew_dismissal_expected', 'crew_dismissal_hire', 'verify_barracks_recruitment', 'barracks_recruitment_mode', 'barracks_recruitment_expected', 'barracks_recruitment_hires', 'verify_crew_any_lifetime', 'crew_any_lifetime_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'quit_when')):
+    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'verify_p09d_ammo', 'p09d_ammo_expected', 'verify_crew_recruitment', 'crew_recruitment_mode', 'crew_recruitment_expected', 'verify_crew_transfer', 'crew_transfer_mode', 'crew_transfer_expected', 'verify_cross_vehicle_crew', 'cross_vehicle_crew_mode', 'cross_vehicle_crew_expected', 'verify_roster_recruitment', 'roster_recruitment_mode', 'roster_recruitment_expected', 'roster_recruitment_hires', 'verify_crew_progression', 'crew_progression_mode', 'crew_progression_expected', 'crew_progression_learned', 'verify_crew_dismissal', 'crew_dismissal_mode', 'crew_dismissal_expected', 'crew_dismissal_hire', 'verify_barracks_recruitment', 'barracks_recruitment_mode', 'barracks_recruitment_expected', 'barracks_recruitment_hires', 'verify_crew_any_lifetime', 'crew_any_lifetime_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'export_armor_layers', 'quit_when')):
         raise ValueError('unknown one-shot control schema')
     if (type(data.get('probe_destructible_identity', False)) is not bool
             or data.get('probe_destructible_identity') and _settings.get('enable_shared_lab') is not True):
@@ -696,6 +697,7 @@ def consume_control(view):
     if inspect_vehicle not in (None, 'ussr:IS-7'):
         raise ValueError('only explicitly requested original IS-7 inspection supported')
     export_crew = data.get('export_ms1_crew', False)
+    export_layers = data.get('export_armor_layers', False)
     verify_crew = data.get('verify_ms1_crew', False)
     verify_limits = data.get('verify_hangar_limits', False)
     verify_windows = data.get('verify_hangar_windows', False)
@@ -726,12 +728,13 @@ def consume_control(view):
             or drive_mode not in ('phase2_drive', 'boundary_only')):
         raise ValueError('drive mode requires explicit acceptance and a supported bounded scenario')
     quit_when = data.get('quit_when')
-    if (any(type(flag) is not bool for flag in (export_crew, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, verify_p09d, verify_recruit, verify_transfer, verify_cross, verify_roster, verify_progression, verify_dismissal, verify_barracks, verify_lifetime, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance))
-            or sum((export_crew, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, verify_p09d, verify_recruit, verify_transfer, verify_cross, verify_roster, verify_progression, verify_dismissal, verify_barracks, verify_lifetime, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance)) > 1
-            or quit_when not in (None, 'ms1_crew_exported', 'ms1_crew_observed', 'hangar_limits_observed', 'hangar_windows_observed', 'inprocess_relogin_observed', 'account_switch_observed', 'long_hangar_observed', 'ms1_ammo_exported', 'ms1_ammo_observed', 'p09d_ammo_observed', 'crew_recruitment_observed', 'crew_transfer_observed', 'cross_vehicle_crew_observed', 'roster_recruitment_observed', 'crew_progression_observed', 'crew_dismissal_observed', 'barracks_recruitment_observed', 'crew_any_lifetime_observed', 'arena_entry_exported', 'avatar_base_observed', 'arena_space_observed', 'arena_vehicle_observed', 'arena_ready_observed', 'arena_movement_observed', 'map_drive_observed', 'map_drive_acceptance_observed')):
+    if (any(type(flag) is not bool for flag in (export_crew, export_layers, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, verify_p09d, verify_recruit, verify_transfer, verify_cross, verify_roster, verify_progression, verify_dismissal, verify_barracks, verify_lifetime, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance))
+            or sum((export_crew, export_layers, verify_crew, verify_limits, verify_windows, verify_relogin, verify_switch, verify_long, export_ammo, verify_ammo, verify_p09d, verify_recruit, verify_transfer, verify_cross, verify_roster, verify_progression, verify_dismissal, verify_barracks, verify_lifetime, export_arena, probe_avatar, probe_space, probe_vehicle, probe_ready, probe_movement, probe_drive, probe_acceptance)) > 1
+            or quit_when not in (None, 'ms1_crew_exported', 'ms1_crew_observed', 'hangar_limits_observed', 'hangar_windows_observed', 'inprocess_relogin_observed', 'account_switch_observed', 'long_hangar_observed', 'ms1_ammo_exported', 'ms1_ammo_observed', 'p09d_ammo_observed', 'crew_recruitment_observed', 'crew_transfer_observed', 'cross_vehicle_crew_observed', 'roster_recruitment_observed', 'crew_progression_observed', 'crew_dismissal_observed', 'barracks_recruitment_observed', 'crew_any_lifetime_observed', 'arena_entry_exported', 'avatar_base_observed', 'arena_space_observed', 'arena_vehicle_observed', 'arena_ready_observed', 'arena_movement_observed', 'map_drive_observed', 'map_drive_acceptance_observed', 'armor_layers_exported')):
         raise ValueError('unknown bounded crew diagnostic condition')
     if quit_when is not None and (seconds is not None or scenario is not None or inspect_vehicle is not None
             or (quit_when == 'ms1_crew_exported' and not export_crew)
+            or (quit_when == 'armor_layers_exported' and not export_layers)
             or (quit_when == 'ms1_crew_observed' and not verify_crew)
             or (quit_when == 'hangar_limits_observed' and not verify_limits)
             or (quit_when == 'hangar_windows_observed' and not verify_windows)
@@ -963,7 +966,7 @@ def consume_control(view):
         raise ValueError('CREW-ANY lifetime expectation requires its explicit operation')
     _control_done = True
     _control = {'screenshot_when': capture, 'ui_scenario': scenario, 'inspect_vehicle': inspect_vehicle,
-                'export_ms1_crew': export_crew, 'verify_ms1_crew': verify_crew,
+                'export_ms1_crew': export_crew, 'export_armor_layers': export_layers, 'verify_ms1_crew': verify_crew,
                 'verify_hangar_limits': verify_limits, 'verify_hangar_windows': verify_windows,
                 'verify_inprocess_relogin': verify_relogin,
                 'verify_account_switch': verify_switch,
@@ -998,7 +1001,7 @@ def consume_control(view):
     record('test_control_consumed', input_removed=not os.path.exists(path),
            credentials_present=has_credentials, quit_after_seconds=seconds,
            screenshot_when=capture, original_login_view=type(view).__name__, submit_via=submit_via,
-           inspect_vehicle=inspect_vehicle, export_ms1_crew=export_crew, verify_ms1_crew=verify_crew,
+           inspect_vehicle=inspect_vehicle, export_ms1_crew=export_crew, export_armor_layers=export_layers, verify_ms1_crew=verify_crew,
            verify_hangar_limits=verify_limits, verify_hangar_windows=verify_windows,
            verify_inprocess_relogin=verify_relogin, verify_account_switch=verify_switch,
            alternate_credentials_present=verify_switch, verify_long_hangar=verify_long,
@@ -1144,7 +1147,7 @@ def schedule_drive_observation(scenario):
 
 
 def observe():
-    global _observations, _capture_ready_at, _login_field_observed, _ui_started, _ammunition_observed, _vehicle_export_done, _crew_export_done, _ammo_export_done, _arena_export_done
+    global _observations, _capture_ready_at, _login_field_observed, _ui_started, _ammunition_observed, _vehicle_export_done, _crew_export_done, _layers_export_done, _ammo_export_done, _arena_export_done
     if _fini:
         return
     _observations += 1
@@ -1352,6 +1355,15 @@ def observe():
             import hangar_ui_probe
             _vehicle_export_done = True
             hangar_ui_probe.export_original_vehicle(_control['inspect_vehicle'], record, _runtime)
+        if ready_hangar and not _layers_export_done and _control and _control.get('export_armor_layers'):
+            import armor_layers_probe
+            _layers_export_done = True
+            armor_layers_probe.export(record)
+            if _control.get('quit_when') == 'armor_layers_exported':
+                record('diagnostic_condition_complete', condition='armor_layers_exported',
+                       timed_exit=False, compatibility_acceptance=False)
+                quit_client()
+                return
         if ready_hangar and not _crew_export_done and _control and _control.get('export_ms1_crew'):
             import ms1_crew_probe
             _crew_export_done = True

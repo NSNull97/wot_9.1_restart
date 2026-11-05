@@ -86,6 +86,7 @@ pub(crate) mod ram_proof;
 pub(crate) mod tank_ram;
 pub(crate) mod projectile;
 pub(crate) mod collision;
+pub(crate) mod chassis_armor;
 pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;

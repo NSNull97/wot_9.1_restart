@@ -426,7 +426,7 @@ fn text(value: &Value) -> io::Result<String> {
     Ok(s.into())
 }
 fn uint(value: &Value) -> io::Result<u32> { u32::try_from(value.as_u64().ok_or_else(|| bad())?).map_err(|_| bad()) }
-fn non_reparse(path: &Path) -> io::Result<()> {
+pub(crate) fn non_reparse(path: &Path) -> io::Result<()> {
     for p in path.ancestors() {
         let m = fs::symlink_metadata(p)?;
         if m.file_type().is_symlink() { return Err(bad()); }
@@ -991,6 +991,24 @@ impl Bundle {
         Ok(())
     }
     fn mesh_for_pose(&self, position: [f32;3], direction: [f32;3], aim: [f32;2], slot: usize, tick: u32) -> io::Result<Mesh> {
+        let (vertices, triangles) = self.parts_for_pose(position, direction, aim);
+        // Hash the precise authoritative transform facts, including aim, so
+        // the identity stays unambiguous even within one server tick.
+        Mesh::new(vertices, triangles, self.geometry_revision(),
+            transform_revision(position, direction, aim, slot, tick))
+    }
+    /// SHELL-01: world-space Hull/Turret/Gun vertices and triangles of the
+    /// checked actor pose, for a caller that adds further components (chassis)
+    /// to one query. The same arithmetic as `world_mesh`; no armour semantics.
+    pub(crate) fn world_parts(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<(Vec<[f32; 3]>, Vec<Triangle>, String)> {
+        self.check_pose(actor,slot,tick)?;
+        let aim = [actor.aim.yaw, actor.aim.pitch];
+        let (vertices, triangles) = self.parts_for_pose(actor.position, actor.direction, aim);
+        Ok((vertices, triangles, transform_revision(actor.position, actor.direction, aim, slot, tick)))
+    }
+    /// Hull pivot relative to the chassis (vehicle) frame.
+    pub(crate) fn hull_position(&self) -> [f32; 3] { self.hull }
+    fn parts_for_pose(&self, position: [f32;3], direction: [f32;3], aim: [f32;2]) -> (Vec<[f32; 3]>, Vec<Triangle>) {
         let mut vertices = Vec::new(); let mut triangles = Vec::new();
         for (i, component) in self.components.iter().enumerate() {
             let base = vertices.len() as u32;
@@ -1003,10 +1021,7 @@ impl Bundle {
                 let mut t = triangle.clone(); t.a += base; t.b += base; t.c += base; triangles.push(t);
             }
         }
-        // Hash the precise authoritative transform facts, including aim, so
-        // the identity stays unambiguous even within one server tick.
-        Mesh::new(vertices, triangles, self.geometry_revision(),
-            transform_revision(position, direction, aim, slot, tick))
+        (vertices, triangles)
     }
     fn component_point(&self, index: usize, vertex: [f32; 3], yaw: f32, pitch: f32) -> [f32; 3] {
         let add = |a: [f32; 3], b: [f32; 3]| std::array::from_fn(|i| a[i] + b[i]);
