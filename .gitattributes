@@ -223,3 +223,14 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /tools/battle_any.py text eol=lf
 /tools/battle_any_data.py text eol=lf
 /server/gateway/src/shared/battle_any_pins.rs text eol=lf
+# TESTVEH-01 test_lab variant: same exact-byte rule as the main catalogue files.
+/config/test_lab/*.json text eol=lf
+/tools/test_vehicles.py text eol=lf
+/config/test_vehicles.json text eol=lf
+/tools/catalog_v1_data_test_lab.py text eol=lf
+/tools/battle_any_data_test_lab.py text eol=lf
+/web/src/catalog-v1-test-lab.mjs text eol=lf
+/web/src/test-lab.mjs text eol=lf
+/client_patch/catalog_v1_hints_test_lab.py text eol=lf
+/server/gateway/src/shared/vehicle_catalog_test_lab.rs text eol=lf
+/server/gateway/src/shared/battle_any_pins_test_lab.rs text eol=lf
