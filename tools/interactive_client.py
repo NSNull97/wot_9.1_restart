@@ -42,6 +42,7 @@ MODULES += ('project_battle_feed',)
 MODULES += ('project_battle_history',)
 MODULES += ('project_battle_settings',)
 MODULES += ('catalog_v1_hints', 'crew_vehicles')
+MODULES += ('armor_layers_probe',)
 
 
 def digest(payload):
