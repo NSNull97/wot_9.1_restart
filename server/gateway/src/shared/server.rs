@@ -827,7 +827,9 @@ impl BattleTemplate {
         let id=world.id;
         *world=if self.world.id==id {self.world.clone()} else {self.world.fresh_battle(id,now)?};*runtime=None;
         *runtime=self.runtime(world.map)?;
-        println!("P08B_WORLD_SELECTED battle={id} kind={} homogeneous={} actors={}",world.vehicle_kind().label(),!world.mixed_profiles(),world.expected_actors());
+        let rules=super::shell_rules::rules()?;
+        println!("P08B_WORLD_SELECTED battle={id} kind={} homogeneous={} actors={} rules_hash={} config_version={}",world.vehicle_kind().label(),
+            !world.mixed_profiles(),world.expected_actors(),rules.rules_hash,rules.config_version);
         Ok(())
     }
     fn new(world: &World, runtime: &Option<IntegratedRuntime>) -> Self {
@@ -1630,6 +1632,10 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         println!("P06T_ARMAMENT_BOUND policy={} damage_policy={} device_policy={} proxy_policy={} module_admission={} source={} historical_internal_volumes=UNKNOWN",
             crate::p06t_armament091::POLICY,crate::p06t_damage::POLICY,crate::p06t_device_state::POLICY,
             crate::p06t_lab_proxy::POLICY,model::p06t::MODULE_ADMISSION_POLICY,crate::p06t_shells091::SOURCE_REVISION);
+        // SHELL-CFG: the immutable rules snapshot of this build; a broken snapshot stops the start.
+        let rules=super::shell_rules::rules()?;
+        println!("SHELL_RULES_BOUND config_version={} rules_hash={} direct_law={} track_law={} profile=classic_plus scope=process-immutable",
+            rules.config_version,rules.rules_hash,rules.direct_law,rules.track_law);
     }
     if profile13_mode && config.visibility_v1 {
         battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;

@@ -182,5 +182,5 @@ mod tests;
 mod breech_tests;
 
 #[cfg(test)]
-#[path="p06t_damage_rules_tests.rs"]
+#[path="damage_law_rules_tests.rs"]
 mod rules_tests;

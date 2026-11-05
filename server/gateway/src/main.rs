@@ -192,6 +192,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "usage: sr-gateway bw01-battle-worker PORT"))?;
         return Ok(gateway091::shared::run_battle_worker(port)?);
     }
+    // SHELL-CFG: recompute a shot trace with this build's law and rules snapshot.
+    if args.get(1).map(String::as_str) == Some("shell-shot-replay") {
+        let path = args.get(2).filter(|_| args.len() == 3)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "usage: sr-gateway shell-shot-replay FILE"))?;
+        return Ok(gateway091::shared::shot_trace::replay_command(path)?);
+    }
     match command(&args)? {
         Command::CuratedLabV2{key,digest,gateway,templates,capture,vehicle}=>gateway091::shared::serve_curated_lab_v2(key,digest,gateway,templates,capture,vehicle),
         Command::CuratedLab{key,digest,gateway,templates,capture,vehicle}=>gateway091::shared::serve_curated_lab(key,digest,gateway,templates,capture,vehicle),

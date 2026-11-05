@@ -113,6 +113,7 @@ pub(crate) mod vehicle_catalog;
 pub(crate) mod vehicle_catalog;
 pub(crate) mod generated_vehicles;
 pub(crate) mod shell_rules;
+pub(crate) mod shot_trace;
 pub use server::serve;
 pub use server::serve_integrated;
 use super::{Session, Frame, Instant};
