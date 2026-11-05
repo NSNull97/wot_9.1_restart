@@ -177,13 +177,31 @@ impl crate::bw_wire::Wire for Contact {
 
 /// Committed authoritative outcome. No native IDs or client damage claims.
 #[derive(Clone, Debug, PartialEq)]
-pub enum ImpactOutcome { Ap(ap::Resolution), Mixed(crate::p06t_damage::Resolution), WreckBlocked }
+pub enum ImpactOutcome { Ap(ap::Resolution), Mixed(crate::p06t_damage::Resolution), WreckBlocked, Track(TrackImpact) }
 // BW-01 wire codec (tools/bw01_wire_gen.py): ImpactOutcome
 impl crate::bw_wire::Wire for ImpactOutcome {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ap(f0)=>{bw_o.tag(0);W::put(f0,bw_o);}Self::Mixed(f0)=>{bw_o.tag(1);W::put(f0,bw_o);}Self::WreckBlocked=>bw_o.tag(2),}}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ap(W::get(bw_i)?)),1=>Ok(Self::Mixed(W::get(bw_i)?)),2=>Ok(Self::WreckBlocked),t=>crate::bw_wire::variant(t)}}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ap(f0)=>{bw_o.tag(0);W::put(f0,bw_o);}Self::Mixed(f0)=>{bw_o.tag(1);W::put(f0,bw_o);}Self::WreckBlocked=>bw_o.tag(2),Self::Track(f0)=>{bw_o.tag(3);W::put(f0,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ap(W::get(bw_i)?)),1=>Ok(Self::Mixed(W::get(bw_i)?)),2=>Ok(Self::WreckBlocked),3=>Ok(Self::Track(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
 }
 // end BW-01 wire codec
+
+/// SHELL-02: a chassis track crossing (Trace `TrackContact`): a module hit with no HP
+/// change. `segment` is the chassis-local presentation ray (native component 0), None
+/// when no honest native segment exists (presentation only, never the hit decision).
+#[derive(Clone, Debug, PartialEq)]
+pub struct TrackImpact { pub device: crate::p06t_device_caps::Device, pub stopped: bool, pub segment: Option<geometry::VisualSegment> }
+// BW-01 wire codec (tools/bw01_wire_gen.py): TrackImpact
+impl crate::bw_wire::Wire for TrackImpact {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{device,stopped,segment}=self;W::put(device,bw_o);W::put(stopped,bw_o);W::put(segment,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{device:W::get(bw_i)?,stopped:W::get(bw_i)?,segment:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+
+/// Hull/Turret/Gun or wreck outcomes; track rows ride beside them (at most two per shot).
+fn body_impacts(impacts:&[AppliedImpact])->usize { impacts.iter().filter(|e|!e.is_track()).count() }
+impl AppliedImpact {
+    pub fn is_track(&self)->bool { matches!(self.outcome, ImpactOutcome::Track(_)) }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppliedImpact {
@@ -1371,7 +1389,14 @@ impl World {
                                     let geometry=self.geometry_for(actor.vehicle_kind())?;
                                     let t=if geometry.segment_misses(actor,slot,tick,start_point,end_point)? {f32::INFINITY} else {
                                         let mesh=geometry.world_mesh(actor,slot,tick)?;
-                                        super::collision::query(&mesh,start_point,end_point)?.first().map_or(f32::INFINITY,|hit|hit.t)
+                                        let body=super::collision::query(&mesh,start_point,end_point)?.first().map_or(f32::INFINITY,|hit|hit.t);
+                                        // SHELL-02: a live target's chassis tracks also stop a shell.
+                                        let track=match geometry.chassis_mesh(actor,slot,tick)? {
+                                            Some(chassis) if projectile.shell.is_some()&&actor.alive()=>
+                                                super::collision::query(&chassis,start_point,end_point)?.first().map_or(f32::INFINITY,|hit|hit.t),
+                                            _=>f32::INFINITY,
+                                        };
+                                        body.min(track)
                                     };
                                     if selected.is_none_or(|(old_t,old_slot)|t<old_t||(t==old_t&&slot<old_slot)){selected=Some((t,slot));}
                                 }
@@ -1393,6 +1418,45 @@ impl World {
                                     self.id, projectile.sequence, tick, &mesh, bundle.materials())?;
                                 (hits, material, None)
                             };
+                            // SHELL-02: chassis track crossings of a live target before its
+                            // nearest Hull/Turret/Gun, once per track and shot (collideOnceOnly).
+                            let mut tracks:Vec<super::collision::Candidate>=Vec::new();
+                            if projectile.shell.is_some()&&target.alive() {
+                                if let Some(chassis)=bundle.chassis_mesh(&target,target_slot,tick)? {
+                                    // Before the nearest vehicle triangle and strictly before terrain
+                                    // (terrain wins a shared f32 bucket, as against the hull).
+                                    let limit=hits.first().map_or(f32::INFINITY,|hit|hit.t)
+                                        .min(ground.as_ref().map_or(f32::INFINITY,|g|g.t as f32));
+                                    let done=impact_trace.tracks_hit(projectile.sequence);
+                                    for crossing in super::collision::query(&chassis,start_point,end_point)? {
+                                        if crossing.t>=limit {break;}
+                                        let side=super::chassis_armor::ChassisArmor::side(&crossing.material).ok_or_else(||bad())?;
+                                        if done.contains(&(target_slot,side))||tracks.iter().any(|o|o.material==crossing.material) {continue;}
+                                        tracks.push(crossing);
+                                    }
+                                }
+                            }
+                            for crossing in &tracks {
+                                let pass=self.track_mixed(&mut next_actors,&mut impact_trace,projectile,target_slot,tick,&bundle,crossing)?;
+                                let device=super::chassis_armor::ChassisArmor::side(&crossing.material).ok_or_else(||bad())?;
+                                // Presentation only: a ray the native decoder cannot honestly resolve is no visual.
+                                let segment=bundle.chassis().ok_or_else(||bad())?
+                                    .visual_segment(target.position,target.direction,start_point,end_point,crossing.t).ok();
+                                if impacts.iter().filter(|e|e.is_track()).count()>=2*self.shot_limit(){return Err(bad());}
+                                impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
+                                    outcome:ImpactOutcome::Track(TrackImpact{device,stopped:pass.stopped,segment}),
+                                    health_before:next_actors[target_slot].health,health_after:next_actors[target_slot].health,segment:None});
+                                if pass.stopped {
+                                    let point=std::array::from_fn(|i|start_point[i]+crossing.t*(end_point[i]-start_point[i]));
+                                    projectile.terminal=point;projectile.stopped=true;
+                                    // HE detonates on the track; the target itself is not excluded from the splash.
+                                    self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,point,tick,None,next_fragiles.as_ref())?;
+                                    impact_trace.terminal(self.id,projectile.sequence,tick,impact::TerminalReason::TestLabTrackImpact)?;
+                                    continue 'projectile_loop;
+                                }
+                            }
+                            // A shell that passed a track still meets the terrain or hull behind it
+                            // in this same segment (road wheels sit at ground level).
                             // Both candidates refer to the same original flight chord.
                             // Compare in the vehicle query's f32 parameter domain:
                             // terrain wins a shared rounding bucket, no epsilon.
@@ -1436,7 +1500,7 @@ impl World {
                                     material_facts: material_facts.ok_or_else(|| bad())? };
                                 let mut terminal_reason = impact::TerminalReason::UnresolvedCollision;
                                 if projectile.shell.is_some()&&target.alive(){
-                                    if impacts.len()>=self.shot_limit(){return Err(bad());}
+                                    if body_impacts(&impacts)>=self.shot_limit(){return Err(bad());}
                                     let before=target.health;
                                     let resolution=self.direct_mixed(&mut next_actors,&mut impact_trace,projectile,&contact,&bundle)?;
                                     let segment=if matches!(resolution.decision,crate::p06t_damage::Decision::Unsupported|crate::p06t_damage::Decision::OutOfRange){None}
@@ -1446,7 +1510,7 @@ impl World {
                                         health_after:before.saturating_sub(resolution.damage_hp as i16).max(0),segment});
                                     terminal_reason=impact::TerminalReason::TestLabMixedImpact;
                                 }else if self.ap_test_lab && target.alive() {
-                                    if impacts.len() >= self.shot_limit() { return Err(bad()); }
+                                    if body_impacts(&impacts) >= self.shot_limit() { return Err(bad()); }
                                     let distance = (0..3).map(|i| {
                                         let delta = f64::from(endpoint[i]) - f64::from(projectile.origin[i]);
                                         delta * delta
@@ -1474,7 +1538,7 @@ impl World {
                                     }
                                     terminal_reason = impact::TerminalReason::TestLabImpact;
                                 } else if projectile.shell.is_some()&&!target.alive(){
-                                    if impacts.len()>=self.shot_limit(){return Err(bad());}
+                                    if body_impacts(&impacts)>=self.shot_limit(){return Err(bad());}
                                     let segment=Some(bundle.impact_segment(&contact)?);
                                     impact_trace.wreck_inactive(self.id,projectile.sequence,tick,projectile.slot,target_slot,
                                         target.health,target.health,&target)?;
@@ -1482,7 +1546,7 @@ impl World {
                                         outcome:ImpactOutcome::WreckBlocked,health_before:target.health,health_after:target.health,segment});
                                     terminal_reason=impact::TerminalReason::TestLabWreckImpact;
                                 } else if self.ap_test_lab && target.health == 0 {
-                                    if impacts.len() >= self.shot_limit() { return Err(bad()); }
+                                    if body_impacts(&impacts) >= self.shot_limit() { return Err(bad()); }
                                     // Retained geometry blocks a shell on an already dead actor.
                                     // Require the same validated native segment, but never run
                                     // the live-armor resolver or mutate health/death/input state.

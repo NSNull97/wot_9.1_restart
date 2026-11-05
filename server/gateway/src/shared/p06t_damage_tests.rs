@@ -58,7 +58,11 @@ fn direct(shell:Shell,armor:f64,angle:f32,distance:f64)->math::Resolution {
     assert_eq!(output.iter().map(|r|r.damage_hp).collect::<Vec<_>>(),[149,0,0]);
     assert!(math::resolve_splash(shell(Mount::Ms1Stock,0),&inputs).is_err());
     assert!(math::resolve_splash(he,&[inputs[0],inputs[0]]).is_err());
-    assert!(math::resolve_splash(he,&[math::SplashTarget{slot:6,..inputs[0]}]).is_err());
+    // Any slot of a 30-actor battle is a valid splash target (stand -12 04.11 failed on slot>=6).
+    assert!(math::resolve_splash(he,&[math::SplashTarget{slot:6,..inputs[0]}]).is_ok());
+    assert!(math::resolve_splash(he,&[math::SplashTarget{slot:29,..inputs[0]}]).is_ok());
+    assert!(math::resolve_splash(he,&[math::SplashTarget{slot:30,..inputs[0]}]).is_err());
+    assert!(math::resolve_splash(he,&[math::SplashTarget{slot:17,..inputs[0]},math::SplashTarget{slot:17,..inputs[0]}]).is_err());
     assert!(math::resolve_splash(he,&[inputs[0];7]).is_err());
 }
 #[test] fn malformed_or_forged_math_inputs_never_become_plate_damage() {

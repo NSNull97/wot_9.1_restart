@@ -90,7 +90,8 @@ pub fn shot_result_flags(outcome: Option<ShotOutcome>, high_explosive: bool, hea
     if health_after <= 0 { flags |= VEHICLE_KILLED; }
     flags | match (outcome, damaged) {
         (Some(ShotOutcome::Ricochet), false) => RICOCHET,
-        (Some(ShotOutcome::Pierced), false) => ARMOR_WITH_ZERO_DF_PIERCED_BY_PROJECTILE,
+        // SHELL-02: a track (vehicleDamageFactor 0) hit is a zero-DF material pierced (INFERRED from the flag name).
+        (Some(ShotOutcome::Pierced | ShotOutcome::CriticalHit), false) => ARMOR_WITH_ZERO_DF_PIERCED_BY_PROJECTILE,
         (Some(ShotOutcome::Ricochet | ShotOutcome::NotPierced), true) if high_explosive =>
             MATERIAL_WITH_POSITIVE_DF_NOT_PIERCED_BY_PROJECTILE | MATERIAL_WITH_POSITIVE_DF_PIERCED_BY_EXPLOSION,
         (_, true) => MATERIAL_WITH_POSITIVE_DF_PIERCED_BY_PROJECTILE,

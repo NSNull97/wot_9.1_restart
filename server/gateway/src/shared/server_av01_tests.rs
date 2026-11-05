@@ -70,3 +70,24 @@ fn lifecycle(w:&mut World){w.lifecycle=Some(super::super::lifecycle::State::new(
     poll(&mut s,&mut w,now).unwrap();
     assert!(contains(&send_and_ack(&mut s,now).concat(),&super::super::av01_feedback::engine_mode_update(0,[3,1]).unwrap()));
 }
+
+/// SHELL-02: a track-only hit reaches the shooter as the native chassis hit effect
+/// (component 0, CRITICAL_HIT) and as a zero-DF shot result; it leaves no decal.
+#[test] fn shell02_track_hit_shows_on_the_chassis_for_the_shooter() {
+    let now=Instant::now();let(mut w,now)=World::track_hit_for_test(now,false);
+    let mut s=spotted(now,&w,0);
+    poll(&mut s,&mut w,now).unwrap();
+    let mut raw=Vec::new();for _ in 0..4 {raw.extend(send_and_ack(&mut s,now).concat());s.flush_shared_private().unwrap();}
+    raw.extend(queued_bodies(&s,now).concat());
+    let e=w.impacts.iter().find(|e|e.is_track()).unwrap();
+    let(segment,outcome,component)=impact_visual(e).unwrap().unwrap();
+    assert_eq!((outcome,component),(impact_wire::ShotOutcome::CriticalHit,0));
+    let shell=w.projectiles.iter().find(|p|p.sequence==e.shot).unwrap().shell.unwrap();
+    let fx=impact_wire::show_damage_shell(shell,0,1,0,segment.bounds,segment.start,segment.end,outcome).unwrap();
+    assert!(contains(&raw,&fx),"chassis hit effect for the shooter");
+    let flags=super::super::av01_feedback::shot_result_flags(Some(outcome),false,e.health_before,e.health_after);
+    assert_eq!(flags&super::super::av01_feedback::hit_flags::ARMOR_WITH_ZERO_DF_PIERCED_BY_PROJECTILE,
+        super::super::av01_feedback::hit_flags::ARMOR_WITH_ZERO_DF_PIERCED_BY_PROJECTILE);
+    assert!(contains(&raw,&super::super::av01_feedback::shot_results(&[(1,flags)]).unwrap()));
+    assert!(sticker_codes(&w,1).unwrap().is_empty(),"no decal on a track");
+}

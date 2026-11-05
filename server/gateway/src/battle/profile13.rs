@@ -10,6 +10,9 @@ use crate::gateway091::shared::vehicle_profile::VehicleKind;
 
 pub const MAX_REQUEST_BYTES: usize = 4096;
 pub const MAX_REPLY_BYTES: usize = 8192;
+/// Template resource manifest (profile13 rows with pool/geometry/chassis references);
+/// a local operator file, not a writer reply. Same depth/node/array bounds.
+pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 pub const POLICY_SHA256: &str = "cddd7d8cfabe8a4df5543fdcef14dd5518c36bc8bce431cfb502a5c72903ccda";
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 256;
@@ -125,7 +128,7 @@ fn walk(value: &Value, depth: usize, nodes: &mut usize) -> io::Result<()> {
 }
 
 pub fn bounded_json(raw: &[u8], maximum: usize) -> io::Result<Value> {
-    if ![MAX_REQUEST_BYTES, MAX_REPLY_BYTES].contains(&maximum) || raw.is_empty() || raw.len() > maximum {
+    if ![MAX_REQUEST_BYTES, MAX_REPLY_BYTES, MAX_MANIFEST_BYTES].contains(&maximum) || raw.is_empty() || raw.len() > maximum {
         return Err(bad("JSON byte bound"));
     }
     let Unique(value) = serde_json::from_slice(raw).map_err(|_| bad("unique integer JSON"))?;

@@ -22,6 +22,10 @@ impl PolicyVersion {
     pub fn manifest_sha(self)->&'static str{match self{Self::V1=>POLICY_SHA256,Self::V2=>POLICY_V2_SHA256}}
 }
 pub const MAX_HITS:usize=1920;
+/// Module hits of one shot: two internal (ordinals 0/1) plus SHELL-02 chassis tracks
+/// (ordinal 2 left, 3 right; `TRACK_ORDINALS`).
+pub const MAX_SHOT_HITS:usize=4;
+pub const TRACK_ORDINALS:[u8;2]=[2,3];
 pub const MAX_TIME_MS:u64=3_600_000;
 pub const FIRE_INTERVAL_MS:u64=1000;
 pub const MAX_FIRE_TICKS:u8=10;
@@ -226,9 +230,11 @@ impl State {
         source_shell(hit.shell)?;
         // RES-30: any attacker/shot of a 30-actor battle (was slot<6, shot<=960).
         use crate::gateway091::shared::model::{MAX_ACTORS,MAX_BATTLE_SHOTS};
-        if hit.cause.shot==0 || hit.cause.shot as usize>MAX_BATTLE_SHOTS || usize::from(hit.cause.attacker_slot)>=MAX_ACTORS || hit.ordinal>=2
+        if hit.cause.shot==0 || hit.cause.shot as usize>MAX_BATTLE_SHOTS || usize::from(hit.cause.attacker_slot)>=MAX_ACTORS || usize::from(hit.ordinal)>=MAX_SHOT_HITS
             || !hit.ignition_roll.is_finite() || !(0. ..1.).contains(&hit.ignition_roll)
-            || matches!(hit.target,Target::Seat(s) if usize::from(s)>=self.profile.crew().len()) {
+            || matches!(hit.target,Target::Seat(s) if usize::from(s)>=self.profile.crew().len())
+            || hit.ordinal==TRACK_ORDINALS[0]&&hit.target!=Target::Device(Device::LeftTrack)
+            || hit.ordinal==TRACK_ORDINALS[1]&&hit.target!=Target::Device(Device::RightTrack) {
             return Err(bad("module hit source/identity/roll bounds"));
         }
         Ok(())
@@ -246,7 +252,7 @@ impl State {
             if let Some(old)=next.seen.iter().find(|old|old.cause.shot==hit.cause.shot&&old.ordinal==hit.ordinal) {
                 if *old!=hit {return Err(bad("module conflicting replay"));}continue;
             }
-            if next.seen.iter().filter(|old|old.cause.shot==hit.cause.shot).count()>=2
+            if next.seen.iter().filter(|old|old.cause.shot==hit.cause.shot).count()>=MAX_SHOT_HITS
                 || next.seen.iter().any(|old|old.cause.shot==hit.cause.shot&&old.target==hit.target)
                 || next.seen.len()>=MAX_HITS {return Err(bad("module hit history bound"));}
             if next.frozen || h.terminal || h.hp==0 || !next.crew_active() {next.frozen=true;continue;}

@@ -66,15 +66,42 @@ fn attenuated_he(shell: Shell, distance: f64, armor: f64) -> io::Result<u16> {
     Ok((0.5*f64::from(shell.damage_hp)*(1.-distance/radius).max(0.)-1.1*armor)
         .max(0.).floor().min(f64::from(shell.damage_hp)) as u16)
 }
-pub fn resolve_direct(i: DirectInput) -> io::Result<Resolution> {
+pub fn resolve_direct(i: DirectInput) -> io::Result<Resolution> { resolve_direct_spent(i, 0.) }
+/// SHELL-02 track pass. INFERRED from the #717 track MaterialInfo (VERIFIED: armor N mm,
+/// `useHitAngle` false, `mayRicochet` false, `vehicleDamageFactor` 0) and the 8.6 notes
+/// "tracks act as spaced armour": the nominal track armour is taken off the shell power,
+/// with no angle, ricochet or HP. HE detonates on the track. The HEAT loss behind a
+/// screen (5 %/10 cm, 8.6) is NOT applied: its form is an open owner question.
+pub const TRACK_PASS_POLICY: &str = "test_lab.shell02.track-spaced-nominal-armour.v1";
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct TrackPass { pub power_before_mm: f64, pub power_after_mm: f64, pub stopped: bool }
+// BW-01 wire codec (tools/bw01_wire_gen.py): TrackPass
+impl crate::bw_wire::Wire for TrackPass {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{power_before_mm,power_after_mm,stopped}=self;W::put(power_before_mm,bw_o);W::put(power_after_mm,bw_o);W::put(stopped,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{power_before_mm:W::get(bw_i)?,power_after_mm:W::get(bw_i)?,stopped:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+pub fn track_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, armor_mm: f64) -> io::Result<TrackPass> {
+    source_shell(shell)?;
+    if !distance_m.is_finite() || !(0. ..=100_000.).contains(&distance_m) { return Err(bad("damage range bound")); }
+    valid_armor(armor_mm)?; valid_armor(spent_before_mm)?;
+    let power_before_mm = (penetration(shell, distance_m) - spent_before_mm).max(0.);
+    let left = (power_before_mm - armor_mm).max(0.);
+    let stopped = shell.family == Family::HighExplosive || left <= 0.;
+    Ok(TrackPass { power_before_mm, power_after_mm: if stopped { 0. } else { left }, stopped })
+}
+/// `spent_mm` is the track armour already taken off this shot (`track_pass`); 0 is the old law.
+pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> {
     source_shell(i.shell)?;
+    valid_armor(spent_mm)?;
+    if spent_mm > 0. && i.shell.family == Family::HighExplosive { return Err(bad("HE stops on the track")); }
     if !i.distance_m.is_finite() || !(0. ..=100_000.).contains(&i.distance_m) { return Err(bad("damage range bound")); }
     if let Some(armor)=i.plate.armor_mm {valid_armor(armor)?;}
     let dir=unit(i.chord)?;let normal=unit(i.winding_normal)?;
     let incidence=dir.iter().zip(normal).map(|(d,n)|d*n).sum::<f64>().abs().clamp(0.,1.).acos().to_degrees();
     let mut r=Resolution {policy:POLICY,decision:Decision::NotPierced,damage_hp:0,
         incidence_degrees:incidence,effective_armor_mm:None,
-        nominal_power_mm:penetration(i.shell,i.distance_m),normalization_degrees:0.};
+        nominal_power_mm:(penetration(i.shell,i.distance_m)-spent_mm).max(0.),normalization_degrees:0.};
     if i.distance_m>=i.shell.max_distance_m { r.decision=Decision::OutOfRange;return Ok(r); }
     let Some(armor)=i.plate.armor_mm.filter(|a|*a>0.) else {r.decision=Decision::Unsupported;return Ok(r)};
     if !i.plate.ordinary {r.decision=Decision::Unsupported;return Ok(r);}
@@ -128,10 +155,13 @@ impl crate::bw_wire::Wire for SplashDamage {
 pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<SplashDamage>> {
     source_shell(shell)?;
     if shell.family!=Family::HighExplosive || targets.len()>MAX_TARGETS {return Err(bad("damage splash family/count"));}
-    let mut seen=[false;MAX_TARGETS];let mut out=Vec::with_capacity(targets.len());
+    // Target identity is any actor slot of the battle (RES-30: 30 actors); MAX_TARGETS
+    // only bounds the count per call. The old slot<6 bound failed 30-actor battles.
+    use crate::gateway091::shared::model::MAX_ACTORS;
+    let mut seen=[false;MAX_ACTORS];let mut out=Vec::with_capacity(targets.len());
     for target in targets {
         let slot=usize::from(target.slot);
-        if slot>=MAX_TARGETS || seen[slot] || !target.distance_m.is_finite() || !(0. ..=100_000.).contains(&target.distance_m) {
+        if slot>=MAX_ACTORS || seen[slot] || !target.distance_m.is_finite() || !(0. ..=100_000.).contains(&target.distance_m) {
             return Err(bad("damage splash identity/distance"));
         }
         valid_armor(target.armor_mm)?;seen[slot]=true;

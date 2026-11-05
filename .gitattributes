@@ -223,6 +223,9 @@ tests/fixtures/p10b-ready-project-projection.json text eol=lf
 /tools/battle_any.py text eol=lf
 /tools/battle_any_data.py text eol=lf
 /server/gateway/src/shared/battle_any_pins.rs text eol=lf
+
+# SHELL-01/02: generated exact-byte pin compared by tools/chassis_armor_export.py check.
+server/gateway/src/shared/chassis_armor_pins.rs text eol=lf
 # TESTVEH-01 test_lab variant: same exact-byte rule as the main catalogue files.
 /config/test_lab/*.json text eol=lf
 /tools/test_vehicles.py text eol=lf

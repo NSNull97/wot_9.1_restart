@@ -66,7 +66,7 @@ VehicleKind::T3485=>SourceSpec{names:["Hull", "Turret_01", "Gun_01"],counts:[(30
 _=>return None,
 })}
 // Allows f32 pose/mesh rounding at the native AABB boundary, not hitbox growth.
-const CONTACT_TOLERANCE: f64 = 0.0002;
+pub(crate) const CONTACT_TOLERANCE: f64 = 0.0002;
 
 fn same_surface(a:&super::collision::Candidate,b:&super::collision::Candidate)->bool {
     a.triangle_id==b.triangle_id && a.mesh==b.mesh && a.group==b.group && a.material==b.material
@@ -172,6 +172,18 @@ pub struct ImpactSegment {
 impl crate::bw_wire::Wire for ImpactSegment {
     fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{component,bounds,start,end}=self;W::put(component,bw_o);W::put(bounds,bw_o);W::put(start,bw_o);W::put(end,bw_o);}
     fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{component:W::get(bw_i)?,bounds:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
+
+/// SHELL-02: a component-local presentation ray for a component that is not one
+/// of the three `materials::Component`s (the chassis, native component index 0).
+/// Same contract as `ImpactSegment`: bounds-local, line extended across the bbox.
+#[derive(Clone, Debug, PartialEq)]
+pub struct VisualSegment { pub bounds: [[f32; 3]; 2], pub start: [f32; 3], pub end: [f32; 3] }
+// BW-01 wire codec (tools/bw01_wire_gen.py): VisualSegment
+impl crate::bw_wire::Wire for VisualSegment {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{bounds,start,end}=self;W::put(bounds,bw_o);W::put(start,bw_o);W::put(end,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{bounds:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -341,7 +353,7 @@ pub(super) fn transform_revision(position: [f32; 3], direction: [f32; 3], aim: [
     format!("pose-v1:{slot}:{tick}:{:x}", hash.finalize())
 }
 
-fn clipped_line(point: [f32; 3], direction: [f32; 3], bounds: [[f32; 3]; 2], minimum: Option<f64>)
+pub(crate) fn clipped_line(point: [f32; 3], direction: [f32; 3], bounds: [[f32; 3]; 2], minimum: Option<f64>)
     -> io::Result<([f32; 3], [f32; 3])> {
     if point.into_iter().chain(direction).chain(bounds.into_iter().flatten())
         .any(|x| !x.is_finite()) { return Err(bad()); }
@@ -392,11 +404,13 @@ pub struct Bundle {
     bounds:[[[f32;3];2];3],
     // Farthest any collision vertex can get from the actor's position, in any pose.
     reach_m:f32,
+    /// SHELL-02: the pinned chassis (track) bundle of the same vehicle, when bound.
+    chassis:Option<std::sync::Arc<super::chassis_armor::ChassisArmor>>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Bundle
 impl crate::bw_wire::Wire for Bundle {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);W::put(reach_m,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?,reach_m:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);W::put(reach_m,bw_o);W::put(chassis,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?,reach_m:W::get(bw_i)?,chassis:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 /// Rotations keep lengths, so each component's pivot chain plus its farthest
@@ -529,7 +543,7 @@ impl Bundle {
             components.push(Component { vertices, triangles });
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS}, reach_m })
+        Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS}, reach_m, chassis: None })
     }
     /// BATTLE-ANY bundle: the exact digest must be a registry geometry pin.
     /// Slots are Hull/Turret_01/Gun_01; source part names are checked, triangle
@@ -577,7 +591,7 @@ impl Bundle {
             components.push(Component{vertices,triangles});
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m})
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis:None})
     }
     fn from_p06t_source(vehicle:VehicleKind,raw:&[u8])->io::Result<Self>{
         use super::p06t_geometry_source::{Assembly,SourceBundle};
@@ -593,7 +607,7 @@ impl Bundle {
             components.push(Component{vertices:component.vertices,triangles:component.triangles});
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m})
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis:None})
     }
     /// Separate closed P04M source export format; the enclosing raw digest was
     /// approved before JSON parsing. Visual bounds stay source facts, not a
@@ -645,7 +659,7 @@ impl Bundle {
             components.push(Component{vertices,triangles});
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds:spec.visual_bounds,reach_m})
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds:spec.visual_bounds,reach_m,chassis:None})
     }
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle }
     pub fn geometry_revision(&self) -> &'static str { source_revision(self.vehicle) }
@@ -655,6 +669,23 @@ impl Bundle {
             hull_bounds: self.bounds[0], turret_top: self.bounds[1][1][1] }
     }
     pub fn bundle_sha256(&self) -> &'static str { bundle_sha256(self.vehicle) }
+    /// SHELL-02: bind the pinned chassis of this same vehicle and frame. The reach
+    /// bound grows to cover the chassis so `segment_misses` stays a true miss.
+    pub fn with_chassis(mut self, chassis: std::sync::Arc<super::chassis_armor::ChassisArmor>) -> io::Result<Self> {
+        if self.chassis.is_some() { return Err(bad()); }
+        chassis.check_binding(&self)?;
+        self.reach_m = self.reach_m.max(chassis.reach_m() + 0.05);
+        self.chassis = Some(chassis); Ok(self)
+    }
+    pub fn chassis(&self) -> Option<&super::chassis_armor::ChassisArmor> { self.chassis.as_deref() }
+    /// World chassis mesh of the checked actor pose (vehicle frame, no turret);
+    /// None without a bound chassis. Same pose identity as `world_mesh`.
+    pub fn chassis_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Option<Mesh>> {
+        let Some(chassis) = &self.chassis else { return Ok(None); };
+        self.check_pose(actor, slot, tick)?;
+        let revision = transform_revision(actor.position, actor.direction, [actor.aim.yaw, actor.aim.pitch], slot, tick);
+        chassis.world_mesh_unchecked(actor.position, actor.direction, revision).map(Some)
+    }
     fn component_bounds(&self) -> [[[f32; 3]; 2]; 3] {self.bounds}
     pub fn materials(&self) -> &Catalog { &self.materials }
     /// TURRET-01: source collision vertices of Turret and Gun that are extreme

@@ -17,6 +17,8 @@ fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidDat
 struct Reference {path:PathBuf,sha256:String}
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference,
+    /// SHELL-02: optional pinned chassis bundle (`chassis-armor.v1`); absent keeps the old hit path.
+    chassis:Option<Reference>,
     /// TESTVEH-01: optional stand-only uniform test armour (mm) of a generated kind; absent keeps source armour.
     test_armor_mm:Option<u16>}
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -36,7 +38,7 @@ fn reference(value:&Value)->io::Result<Reference> {
     Ok(Reference{path,sha256:sha256.into()})
 }
 fn parse(raw:&[u8])->io::Result<Manifest> {
-    let value=profile13::bounded_json(raw,profile13::MAX_REPLY_BYTES)?;
+    let value=profile13::bounded_json(raw,profile13::MAX_MANIFEST_BYTES)?;
     let version=value["version"].as_u64();
     if matches!(version,Some(2|3|4|5)){keys(&value,&["version","map","catalog","profiles","shared_physics"])?;}
     else{keys(&value,&["version","map","catalog","profiles"])?;}
@@ -51,23 +53,27 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
     else if rows.len()!=count{return Err(bad("exact curated source profile count"));}
     let mut profiles:Vec<Option<Profile>>=vec![None;count];let mut generated:Vec<Profile>=Vec::new();
     for row in rows {
+        let mut expected=vec!["kind","pool","geometry"];
+        if row.get("chassis").is_some(){expected.push("chassis");}
+        if row.get("test_armor_mm").is_some(){expected.push("test_armor_mm");}
+        keys(row,&expected)?;
+        let chassis=if row.get("chassis").is_some(){Some(reference(&row["chassis"])?)}else{None};
         let test_armor_mm=if row.get("test_armor_mm").is_some(){
-            keys(row,&["kind","pool","geometry","test_armor_mm"])?;
             let mm=row["test_armor_mm"].as_u64().filter(|mm|(1..=2000).contains(mm)).ok_or_else(||bad("test armour bound"))?;
             Some(mm as u16)
-        }else{keys(row,&["kind","pool","geometry"])?;None};
+        }else{None};
         let label=text(row,"kind")?;
         if version==Some(5)&&VehicleKind::from_label(label).is_none(){
             let kind=VehicleKind::from_owned_label(label).filter(|k|k.is_generated()).ok_or_else(||bad("unknown vehicle profile"))?;
             if generated.iter().any(|p|p.kind==kind){return Err(bad("duplicate vehicle profile"));}
-            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,test_armor_mm});continue;
+            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,test_armor_mm});continue;
         }
         if test_armor_mm.is_some(){return Err(bad("test armour applies to generated kinds only"));}
         let kind=if version==Some(4){VehicleKind::from_extended_label(label)}else{VehicleKind::from_label(label)}
             .ok_or_else(||bad("unknown vehicle profile"))?;
         let index=kind.index();if index>=count{return Err(bad("kind requires version3 curated pool"));}
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
-        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,test_armor_mm:None});
+        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,test_armor_mm:None});
     }
     generated.sort_by(|a,b|a.kind.label().cmp(b.kind.label()));
     let profiles:Vec<Profile>=profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?;
@@ -152,7 +158,7 @@ pub(super) fn require_source_wire_support(kind:VehicleKind)->io::Result<()> {
 }
 
 pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resources>> {
-    let path=owned(local_root,manifest_path)?;let manifest=parse(&read(&path,profile13::MAX_REPLY_BYTES)?)?;
+    let path=owned(local_root,manifest_path)?;let manifest=parse(&read(&path,profile13::MAX_MANIFEST_BYTES)?)?;
     let catalog_path=owned(local_root,&manifest.catalog.path)?;
     let catalog=Arc::new(Catalog::load(local_root,&catalog_path,&manifest.catalog.sha256)?);
     let worker_path=catalog_path.parent().ok_or_else(||bad("catalog parent"))?.join(&catalog.worker_file);
@@ -169,13 +175,22 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
             return Err(bad("extended/generated profile requires its shared-only pool and resource version"));
         }
         super::server::selected_pool_config(&pool,map)?;
-        let mut bundle=Bundle::load(local_root,&geometry_path)?;
+        let mut geometry=Bundle::load(local_root,&geometry_path)?;
         if let Some(mm)=profile.test_armor_mm{
-            bundle=bundle.with_test_armor(f32::from(mm))?;
+            geometry=geometry.with_test_armor(f32::from(mm))?;
             println!("TESTVEH_ARMOR_BOUND kind={} armor_mm={} policy={} scope=stand_manifest",
                 profile.kind.label(),mm,super::materials::TEST_ARMOR_POLICY);
         }
-        let geometry=Arc::new(bundle);
+        let geometry=Arc::new(match &profile.chassis {
+            Some(reference)=>{
+                let path=pin(local_root,reference,512*1024)?;
+                let chassis=super::chassis_armor::ChassisArmor::load(local_root,&path)?;
+                println!("SHELL02_CHASSIS_BOUND kind={} chassis_sha256={} vehicle={} policy={}",profile.kind.label(),chassis.sha256,
+                    chassis.vehicle_id,crate::p06t_damage::TRACK_PASS_POLICY);
+                geometry.with_chassis(Arc::new(chassis))?
+            },
+            None=>geometry,
+        });
         super::server::validate_vehicle_binding(profile.kind,&pool,Some(&geometry))?;
         let terrain=super::server::terrain_for_pool_for_map(&pool,map)?;
         catalog.bind_geometry(&terrain)?;
@@ -233,6 +248,32 @@ mod tests {
             0=>{rows.truncate(5);},1=>rows.push(row("ussr-KV-3")),2=>rows.push(row("ussr-Object_261")),3=>rows.push(row("wt-e100-128")),
             4=>{rows.remove(2);},5=>w["version"]=3.into(),6=>rows.push(row("ms1")),_=>unreachable!()}
             assert!(parse(&serde_json::to_vec(&w).unwrap()).is_err(),"mutation={mutation}");}
+    }
+    /// SHELL-02: a profile row may carry one optional pinned chassis reference.
+    #[test]fn profile13_templates_accept_an_optional_chassis_reference_only(){
+        let base=value();
+        let mut v=base.clone();v["profiles"][0]["chassis"]=base["profiles"][0]["geometry"].clone();
+        let m=parse(&serde_json::to_vec(&v).unwrap()).unwrap();
+        assert!(m.profiles[0].chassis.is_some()&&m.profiles[1].chassis.is_none());
+        assert!(parse(&serde_json::to_vec(&base).unwrap()).unwrap().profiles.iter().all(|p|p.chassis.is_none()));
+        let mut bad=v.clone();bad["profiles"][0]["extra"]=1.into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+        let mut bad=v.clone();bad["profiles"][0]["chassis"]["sha256"]="x".into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+        let mut bad=v;bad["profiles"][0]["chassis"]["path"]="relative.json".into();assert!(parse(&serde_json::to_vec(&bad).unwrap()).is_err());
+    }
+    /// SHELL-02: a stand manifest with chassis references outgrows the 8 KiB writer-reply
+    /// bound; the manifest has its own bounded limit (`profile13::MAX_MANIFEST_BYTES`).
+    #[test]fn profile13_templates_manifest_has_its_own_byte_bound_above_the_reply_bound(){
+        let raw=serde_json::to_vec(&value()).unwrap();
+        let padded=|size:usize|{let mut r=raw.clone();r.resize(size,b' ');r};
+        assert!(parse(&padded(profile13::MAX_REPLY_BYTES+1100)).is_ok(),"9 KiB manifest parses");
+        assert!(parse(&padded(profile13::MAX_MANIFEST_BYTES)).is_ok());
+        assert!(parse(&padded(profile13::MAX_MANIFEST_BYTES+1)).is_err(),"above the manifest bound is refused");
+        let dir=std::env::temp_dir().join(format!("wot091-manifest-bound-{}",std::process::id()));fs::create_dir_all(&dir).unwrap();
+        let (fits,over)=(dir.join("fits.json"),dir.join("over.json"));
+        fs::write(&fits,padded(profile13::MAX_REPLY_BYTES+1100)).unwrap();fs::write(&over,padded(profile13::MAX_MANIFEST_BYTES+1)).unwrap();
+        assert!(parse(&read(&fits,profile13::MAX_MANIFEST_BYTES).unwrap()).is_ok());
+        assert!(read(&over,profile13::MAX_MANIFEST_BYTES).is_err());
+        fs::remove_dir_all(&dir).unwrap();
     }
     /// TESTVEH-01: a generated row may carry stand-only uniform test armour; curated rows and bounds refuse.
     #[test]fn profile13_templates_accept_test_armour_on_generated_rows_only(){
@@ -368,7 +409,7 @@ mod tests {
     #[test]fn p04m_real_source_geometry_cannot_bind_to_another_kind_pool() {
         let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local").canonicalize().unwrap();
         let (path,_)=crate::portable_test_fixtures::verified(&root.join("stands/p08b-profile13-01/battle-profiles.json"),None);
-        let old=parse(&read(&path,profile13::MAX_REPLY_BYTES).unwrap()).unwrap();
+        let old=parse(&read(&path,profile13::MAX_MANIFEST_BYTES).unwrap()).unwrap();
         let pool=Pool::load(&root,&old.profiles[0].pool.path).unwrap();assert_eq!(pool.vehicle_kind(),VehicleKind::Ms1);
         let geometry=Bundle::load(&root,&root.join("evidence/20261016-p04m-source-import01/t26-stock.json")).unwrap();
         assert!(super::super::server::validate_vehicle_binding(VehicleKind::T26,&pool,Some(&geometry)).is_err());
