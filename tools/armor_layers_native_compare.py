@@ -25,6 +25,7 @@ MAX_BUNDLE = 4 * 1024 * 1024
 MAX_LINE = 70000
 DISTANCE_TOL = 1e-3
 COS_TOL = 1e-3
+EDGE_TOL = 1e-5
 EPS = 1e-12
 GEOMETRY_INDEX = {"hull": 0, "turret": 1, "gun": 2}
 
@@ -117,6 +118,19 @@ def segment_hits(triangles, start, end):
     return sorted(hits, key=lambda h: (h[0], h[3]))
 
 
+def collapse(hits):
+    """Order by distance and merge a hit repeated at the same distance with the same
+    material: a segment through the shared edge of two triangles. Native collideSegment
+    returns its hits in BSP order (not along the ray) and reports both triangles."""
+    out, merged = [], 0
+    for hit in sorted(hits, key=lambda h: h[0]):
+        if out and abs(out[-1][0] - hit[0]) <= EDGE_TOL and out[-1][2] == hit[2]:
+            merged += 1
+            continue
+        out.append(hit)
+    return out, merged
+
+
 def compare_ray(native, project):
     if len(native) != len(project):
         return "count"
@@ -152,22 +166,26 @@ def compare(records, chassis_dir, geometry_dir):
             part = bundle(source)["geometry"]["components"][GEOMETRY_INDEX[component]]
         triangles = meshes.setdefault((vehicle, component), mesh(part))
         counts = {"equal": 0, "count": 0, "distance": 0, "material": 0, "angle": 0}
+        merged = {"native": 0, "project": 0}
         cos_sign = {"same": 0, "opposite": 0}
         examples = []
         for ray in rays:
-            project = segment_hits(triangles, tuple(ray["start"]), tuple(ray["end"]))
-            verdict = compare_ray(ray["hits"], project)
+            native, n_merged = collapse(ray["hits"])
+            project, p_merged = collapse(segment_hits(triangles, tuple(ray["start"]), tuple(ray["end"])))
+            merged["native"] += n_merged
+            merged["project"] += p_merged
+            verdict = compare_ray(native, project)
             counts[verdict or "equal"] += 1
             if verdict is None:
-                for (_, nc, _), (_, pc, _, _) in zip(ray["hits"], project):
+                for (_, nc, _), (_, pc, _, _) in zip(native, project):
                     cos_sign["same" if (nc >= 0) == (pc >= 0) else "opposite"] += 1
             elif len(examples) < 8:
-                examples.append(dict(start=ray["start"], end=ray["end"], verdict=verdict, native=ray["hits"],
+                examples.append(dict(start=ray["start"], end=ray["end"], verdict=verdict, native=native,
                                      project=[[round(h[0], 6), round(h[1], 6), h[2]] for h in project]))
         report.append(dict(vehicle=vehicle, component=component, mesh=part.get("name"),
                            source=str(source), source_sha256=hashlib.sha256(read(source, MAX_BUNDLE)).hexdigest(),
                            rays=len(rays), native_hits=sum(len(r["hits"]) for r in rays), triangles=len(triangles),
-                           verdicts=counts, cos_sign=cos_sign, examples=examples))
+                           verdicts=counts, cos_sign=cos_sign, edge_duplicates_merged=merged, examples=examples))
     calibers = [r for r in records if r["event"] == "armor_layers_calibers"]
     return dict(schema=SCHEMA, tolerance=dict(distance_m=DISTANCE_TOL, abs_cos=COS_TOL), components=report,
                 calibers=calibers, all_equal=all(c["verdicts"]["equal"] == c["rays"] for c in report),

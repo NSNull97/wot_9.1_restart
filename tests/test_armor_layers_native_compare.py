@@ -49,6 +49,12 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(c.compare_ray([[1.0, 0.5, 1], [2.0, 1.0, 2]], self.PROJECT), 'angle')
 
 
+class Collapse(unittest.TestCase):
+    def test_native_bsp_order_and_shared_edge_duplicates(self):
+        hits, merged = c.collapse([[2.0, 0.5, 2], [1.0, 1.0, 1], [1.0, 1.0, 1], [1.0, 1.0, 3]])
+        self.assertEqual((hits, merged), ([[1.0, 1.0, 1], [1.0, 1.0, 3], [2.0, 0.5, 2]], 1))
+
+
 class EndToEnd(unittest.TestCase):
     def test_report_from_trace_and_bundles(self):
         with tempfile.TemporaryDirectory() as tmp:
