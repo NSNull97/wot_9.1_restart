@@ -12,9 +12,19 @@ use super::aim::source_aim::{SourceAim,SourceEnvelope};
 use crate::p06t_shells091::{Family,GunProfile,Mount,Shell};
 use crate::p06t_device_caps::{Cap,Seat};
 
+// TESTVEH-01 stand flag: a `--test-lab` gateway embeds the test_lab variant.
+#[cfg(not(feature="test_lab"))]
 include!("battle_any_pins.rs");
+#[cfg(not(feature="test_lab"))]
 const TABLE:&[u8]=include_bytes!("../../../../config/catalog/battle_profiles.v1.json");
+#[cfg(not(feature="test_lab"))]
 const QUALIFICATION:&[u8]=include_bytes!("../../../../config/catalog/battle_qualification.v1.json");
+#[cfg(feature="test_lab")]
+include!("battle_any_pins_test_lab.rs");
+#[cfg(feature="test_lab")]
+const TABLE:&[u8]=include_bytes!("../../../../config/test_lab/battle_profiles.v1.json");
+#[cfg(feature="test_lab")]
+const QUALIFICATION:&[u8]=include_bytes!("../../../../config/test_lab/battle_qualification.v1.json");
 pub const POLICY:&str="battle-any-generated-v1";
 /// Same bound as the scene worker's angular frame and ram response.
 pub const MAX_GENERATED:usize=512;
@@ -280,8 +290,8 @@ mod tests {
     #[test]
     fn embedded_registry_verifies_and_excludes_legacy_kinds() {
         let r=registry().unwrap();
-        // 232 generated rows minus the five hand-closed kinds.
-        assert_eq!(r.entries().len(),227);
+        // 232 generated rows minus the five hand-closed kinds (test_lab: plus T62A_T).
+        assert_eq!(r.entries().len(),if cfg!(feature="test_lab"){228}else{227});
         for refused in ["vehicle:france:AMX_13_90","vehicle:france:AMX_M4_1945"] {assert!(r.by_vehicle(refused).is_none(),"{refused}");}
         for (i,e) in r.entries().iter().enumerate() {
             assert_eq!(e.id.get(),i);assert_eq!(r.by_label(&e.label),Some(e.id));

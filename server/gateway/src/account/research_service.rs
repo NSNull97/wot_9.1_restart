@@ -7,7 +7,11 @@ use serde_json::Value;
 use sha2::{Digest,Sha256};
 
 pub const POLICY_SHA256:&str="46875923affb6bd307ad4d35397880fae1dd16fb1992ae2bfbfed607d132361c";
+// TESTVEH-01 stand flag: a `--test-lab` gateway serves the test_lab research catalogue.
+#[cfg(not(feature="test_lab"))]
 pub const CATALOG_SHA256:&str="1f6b20d1ba564e00186fed77a3da74c3bd9b135f0db30ffdef740fd5888ced80";
+#[cfg(feature="test_lab")]
+pub const CATALOG_SHA256:&str="646b61935ed5a5111296a26258663d1910a4a03152fa399ef28bce227cf12492";
 pub const SHOP_REVISION:i64=5;
 pub const MAX_STATE_BYTES:usize=32768;
 pub const MAX_SHOP_BYTES:usize=32768;

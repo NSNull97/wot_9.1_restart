@@ -263,7 +263,24 @@ impl Catalog {
         let component = Component::parse(component)?;
         self.entries.iter().find(|e| e.component == component && e.name == label).cloned().ok_or_else(|| bad())
     }
+    /// TESTVEH-01 stand-only test armour: every material that carries an armour
+    /// value gets `mm`; records without armour (devices, no native record) stay
+    /// as they are. Material revisions stay the source ones (impact checks them);
+    /// the policy is printed at startup and named in the stand manifest row.
+    pub(crate) fn with_test_armor(mut self, mm: f32) -> io::Result<Self> {
+        if !mm.is_finite() || !(1. ..=2000.).contains(&mm) { return Err(bad()); }
+        let mut changed = 0usize;
+        for entry in &mut self.entries {
+            if let Some(effective) = entry.effective.as_mut() {
+                if effective.armor.is_some() { effective.armor = Some(mm); changed += 1; }
+            }
+        }
+        if changed == 0 { return Err(bad()); }
+        Ok(self)
+    }
 }
+
+pub const TEST_ARMOR_POLICY: &str = "test_lab.testveh.uniform-armour.v1";
 
 #[cfg(test)]
 mod tests {

@@ -106,7 +106,7 @@ impl Actor {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
     pub fn crew_active(&self)->bool{self.health>0&&self.devices.as_ref().is_none_or(|state|state.crew_active())}
     pub fn alive(&self)->bool{self.crew_active()}
-    pub fn public_modifiers(&self)->Vec<u8>{if self.devices.as_ref().is_some_and(|state|state.fire_active()){vec![4]}else{Vec::new()}}
+    pub fn public_modifiers(&self)->Vec<u8>{self.devices.as_ref().map_or_else(Vec::new,|state|state.public_modifiers())}
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
