@@ -57,6 +57,20 @@
 - Шаг 5 ЗАБЛОКИРОВАН: `cat_nations_migrate.plan(db, 1f6b20d1…, ede8f682…)` на копии базы -12 отказывает —
   «late-results namespace requires a separately validated migration: history present». Обход не делался.
   Решение владельца: отдельная проверенная миграция истории поздних итогов или свежий тестовый стенд.
-- Шаг 6: gate и Python-набор D: — см. STATUS/HANDOFF; бой владельца NOT_RUN (нет стенда с новым каталогом).
+- Шаг 6: gate D: `ab858fd` (temp на E:) — FAIL 1917/80/21. Причины (VERIFIED по журналу
+  `local/build/server/gateway-testveh-ab858fd/test.stdout.log`):
+  1. `generated vehicles: tier` (9 тестов, MM-01): реестр шлюза принимает уровень 1..10, а строка T62A_T в таблице боя
+     получила 11. По этому же плану сервер держит уровень источника (10); 11 — только подпись клиента. Исправление:
+     `derived_test_row` не меняет `tier` → новая таблица, квалификация, пины; `generated_vehicles.rs` 227→228.
+  2. Закреплённый хеш фикстуры p10b `b9a5b3a6…` (сейчас `5b2af840…`, 49 тестов в 7 файлах p10b/training).
+  3. `research metadata identity/policy/hash/revision` (13): фикстуры несут старый хеш исследований `1f6b20d1`:
+     P04M native-fixtures (`local/evidence/20261031-cat-nations-restamp/…`) и hex-блоки `tests/fixtures/p08b-hold-*.json`,
+     `p10b-ready-project-projection.json`. Нужен перештамп по образцу `tests/helpers/cat_nations_writer_fixture_restamp.py`
+     (1f6b20d1→ede8f682) с пересчётом производных SHA, затем пины.
+  Плюс 2 базовых `tests_p04m` и `p08b_owner_hold17` (требует temp на C:; C: заполнен, 05.11 — 19 МБ).
+  Вопрос владельцу до продолжения: наложение тестовой машины всегда включено (меняет хеш каталога исследований
+  для всех: перештамп всех исторических фикстур и миграция поздних итогов стенда) или включается конфигом стенда
+  (фикстуры и main-каталог не меняются, тестовая машина есть только на стенде с флагом).
+  Python-набор D: по `ab858fd` — см. `E:/WoT091_Verify_20261031/night3-20261105.log`. Бой владельца NOT_RUN.
 
 Откат: revert merge-коммита; база стенда — копия до переноса; клиент — rollback установки.
