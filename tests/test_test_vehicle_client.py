@@ -95,7 +95,7 @@ class TestVehicleClientTests(unittest.TestCase):
         self.assertEqual(after[:-1], before)
         base = [w for n, w in before if n == b'ussr:T62A']
         self.assertEqual(after[-1], (b'ussr:T62A_T', base[0]))
-        self.assertEqual(len(pxml.parse(original)['root'].child('balance').child('byComponentLevels').own[1].split()), 10)
+        self.assertEqual(len(pxml.parse(original)['root'].child('balance').child('byComponentLevels')[1].split()), 10)
 
     def test_definition_is_the_original_renamed_with_only_armour_raised(self):
         original = list(packed_xml.walk(packed_xml.decode((DEFS / 't62a.xml').read_bytes())))
