@@ -2,7 +2,7 @@
  * Bridge binding; used only when the bridge option `catalog` names this hash. */
 const freeze = v => { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; };
 export const CATALOG_SCHEMA = "wot091-server-catalog.v1";
-export const CATALOG_SHA256 = "ace7781a4beff55ad09765b5d9704c14920bde2089246b13072b0e4df5605204";
+export const CATALOG_SHA256 = "bedd6d49ef86055a77017fa5466efd96553eb731626efe7f464c6b8ccc167746";
 export const CATALOG_VEHICLES = freeze([
   {
     "ammo_capacity": 96,

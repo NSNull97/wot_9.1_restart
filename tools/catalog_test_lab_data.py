@@ -4,7 +4,7 @@ Server-side Python 3 binding. The legacy closed lists stay the default;
 this data is used only when the worker receives ``--catalog-sha256``.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = 'ace7781a4beff55ad09765b5d9704c14920bde2089246b13072b0e4df5605204'
+CATALOG_SHA256 = 'bedd6d49ef86055a77017fa5466efd96553eb731626efe7f464c6b8ccc167746'
 VEHICLES = (
     {
         'ammo_capacity': 96,

@@ -658,7 +658,11 @@ def derived_test_row(base, base_bundle, spec, catalog):
     row["kind"] = kind_label(row)
     bundle = json.loads(base_bundle)
     bundle["vehicle_id"] = spec["vehicle_id"]
-    bundle["identity"] = dict(bundle["identity"], modules=defaults)
+    # The gateway checks the bundle identity against the registry row
+    # (geometry.rs from_generated_source): it carries the test identity too.
+    bundle["identity"] = dict(bundle["identity"], modules=defaults,
+                              **{k: identity[k] for k in ("descriptor_hex", "type_compact_id", "module_compact_ids")
+                                 if k in bundle["identity"]})
     raw = canonical(bundle) + b"\n"
     row["geometry"] = dict(row["geometry"], bundle=bundle_name(row), bytes=len(raw), sha256=sha(raw))
     return row, raw

@@ -6,7 +6,7 @@ map_drive_client reads this table only when installed with --catalog-v1, the
 crew/ammunition windows (crew_vehicles) only when installed with --crew-any.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = 'ace7781a4beff55ad09765b5d9704c14920bde2089246b13072b0e4df5605204'
+CATALOG_SHA256 = 'bedd6d49ef86055a77017fa5466efd96553eb731626efe7f464c6b8ccc167746'
 VEHICLES = (
     {
         'ammo_capacity': 96,

@@ -15,7 +15,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
 import test_vehicles as tv  # noqa: E402
 
 MAIN_CATALOG = '76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe'
-TEST_LAB_CATALOG = 'ace7781a4beff55ad09765b5d9704c14920bde2089246b13072b0e4df5605204'
+TEST_LAB_CATALOG = 'bedd6d49ef86055a77017fa5466efd96553eb731626efe7f464c6b8ccc167746'
 
 
 def run(argv, flag, cwd=ROOT):
@@ -72,6 +72,30 @@ class GeneratedVariants(unittest.TestCase):
                      'config/catalog/server_profiles.v1.json', 'server/physics/Profiles/generated-definitions.json',
                      'server/gateway/src/shared/vehicle_catalog.rs', 'client_patch/catalog_v1_hints.py'):
             self.assertNotIn(b'T62A_T', (ROOT / path).read_bytes(), path)
+
+
+class DerivedTestRow(unittest.TestCase):
+    """The gateway checks a geometry bundle's identity against its registry row
+    (geometry.rs from_generated_source); the derived bundle must carry the test identity."""
+
+    def test_bundle_identity_follows_the_test_row(self):
+        from unittest import mock
+        import battle_any_profiles as bap
+        modules = {'chassis': 'module:ussr:chassis:C_T', 'gun': 'module:ussr:gun:G'}
+        catalog = mock.Mock(vehicles={'vehicle:ussr:X_T': {'defaults': modules, 'native_compact_id': 12801}},
+                            modules={'module:ussr:chassis:C_T': {'native_compact_id': 15874},
+                                     'module:ussr:gun:G': {'native_compact_id': 26884}})
+        identity = {'descriptor_hex': 'aa', 'type_compact_id': 13825, 'modules': {}, 'module_compact_ids': {}}
+        base = {'status': 'generated', 'vehicle_id': 'vehicle:ussr:X', 'resource': 'X', 'nation': 'ussr', 'tier': 10,
+                'identity': dict(identity), 'geometry': {}}
+        bundle = json.dumps({'vehicle_id': 'vehicle:ussr:X', 'identity': dict(identity)}).encode()
+        spec = {'vehicle_id': 'vehicle:ussr:X_T', 'resource_name': 'X_T', 'tier': 11}
+        with mock.patch('p09e_research_projection.descriptor', return_value=bytes.fromhex('0132')),                 mock.patch.object(bap, 'kind_label', return_value='ussr-X_T'):
+            row, raw = bap.derived_test_row(base, bundle, spec, catalog)
+        derived = json.loads(raw)['identity']
+        for key in ('descriptor_hex', 'type_compact_id', 'module_compact_ids', 'modules'):
+            self.assertEqual(derived[key], row['identity'][key], key)
+        self.assertEqual((row['identity']['type_compact_id'], row['identity']['descriptor_hex'], row['tier']), (12801, '0132', 10))
 
 
 @unittest.skipUnless(shutil.which('node'), 'node absent')
