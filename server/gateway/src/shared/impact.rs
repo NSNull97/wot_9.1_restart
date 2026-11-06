@@ -39,6 +39,17 @@ pub fn plate_for(kind:VehicleKind,facts:&materials::MaterialFacts,chord:[f32;3],
     Ok(crate::p06t_damage::Plate{armor_mm:old.armor,ordinary:!matches!(old.outcome,ap::Outcome::Unsupported(_))})
 }
 
+/// SHELL-PEN: a spaced plate is armour that never damages the vehicle
+/// (`vehicleDamageFactor` 0) and is not a device (`damageKind` 0).
+pub fn spaced_layer(facts:&materials::MaterialFacts)->bool{
+    facts.effective.as_ref().is_some_and(|m|m.vehicle_damage_factor==0.&&m.damage_kind==0&&m.armor.is_some_and(|a|a>0.))
+}
+/// Entering a layer: the segment runs against the source winding normal (SHELL-PEN step 1:
+/// #717 winding normals point outwards on 98.8 % of first external hits; INFERRED).
+pub fn against_winding(chord:[f32;3],normal:[f32;3])->bool{
+    (0..3).map(|i|f64::from(chord[i])*f64::from(normal[i])).sum::<f64>()<0.
+}
+
 /// A distinct source class is required. Zero armor or extra32 alone cannot
 /// admit a device. The closed source-bundle loader additionally verifies that
 /// this class's common_extra is gunHealth/native32 before forming these facts.
@@ -117,6 +128,7 @@ pub enum Stage {
     VehicleContact,
     TrackContact,
     Terminal,
+    SpacedContact,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -130,11 +142,13 @@ pub enum TerminalReason {
     TerrainCollision,
     /// SHELL-02: the shell stopped (or HE detonated) on a chassis track.
     TestLabTrackImpact,
+    /// SHELL-PEN: the shell stopped on a spaced layer (HE/HEAT stop, power used up, ricochet).
+    TestLabLayerImpact,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): TerminalReason
 impl crate::bw_wire::Wire for TerminalReason {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::RangeExpired=>bw_o.tag(0),Self::UnavailableImpactResolver=>bw_o.tag(1),Self::UnresolvedCollision=>bw_o.tag(2),Self::TestLabImpact=>bw_o.tag(3),Self::TestLabMixedImpact=>bw_o.tag(4),Self::TestLabWreckImpact=>bw_o.tag(5),Self::TerrainCollision=>bw_o.tag(6),Self::TestLabTrackImpact=>bw_o.tag(7),}}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::RangeExpired),1=>Ok(Self::UnavailableImpactResolver),2=>Ok(Self::UnresolvedCollision),3=>Ok(Self::TestLabImpact),4=>Ok(Self::TestLabMixedImpact),5=>Ok(Self::TestLabWreckImpact),6=>Ok(Self::TerrainCollision),7=>Ok(Self::TestLabTrackImpact),t=>crate::bw_wire::variant(t)}}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::RangeExpired=>bw_o.tag(0),Self::UnavailableImpactResolver=>bw_o.tag(1),Self::UnresolvedCollision=>bw_o.tag(2),Self::TestLabImpact=>bw_o.tag(3),Self::TestLabMixedImpact=>bw_o.tag(4),Self::TestLabWreckImpact=>bw_o.tag(5),Self::TerrainCollision=>bw_o.tag(6),Self::TestLabTrackImpact=>bw_o.tag(7),Self::TestLabLayerImpact=>bw_o.tag(8),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::RangeExpired),1=>Ok(Self::UnavailableImpactResolver),2=>Ok(Self::UnresolvedCollision),3=>Ok(Self::TestLabImpact),4=>Ok(Self::TestLabMixedImpact),5=>Ok(Self::TestLabWreckImpact),6=>Ok(Self::TerrainCollision),7=>Ok(Self::TestLabTrackImpact),8=>Ok(Self::TestLabLayerImpact),t=>crate::bw_wire::variant(t)}}
 }
 // end BW-01 wire codec
 
@@ -311,6 +325,13 @@ pub enum Event {
         device:crate::p06t_device_caps::Device,candidate:collision::Candidate,chassis_revision:String,
         transform_revision:String,armor_mm:f64,distance_m:f64,pass:crate::p06t_damage::TrackPass,policy:&'static str,
     },
+    /// SHELL-PEN: a spaced plate (vehicleDamageFactor 0, armour) of the current vehicle
+    /// batch crossed against the winding before its material contact; the layered law
+    /// with the shot's rolls. No vehicle HP changes on a spaced layer.
+    SpacedContact {
+        order:u32,battle_id:u64,shot_id:u32,server_tick:u32,segment_order:u32,query_order:u32,target:usize,
+        candidate_index:usize,material:String,t:f32,armor_mm:f64,distance_m:f64,pass:crate::p06t_damage::LayerPass,policy:&'static str,
+    },
     Terminal {
         order: u32,
         battle_id: u64,
@@ -321,8 +342,8 @@ pub enum Event {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Event
 impl crate::bw_wire::Wire for Event {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Admission{order,battle_id,shot_id,server_tick,shooter_slot,vehicle_compact_id,gun_compact_id,shell_compact_id,profile,ammo_before,ammo_after,reload_ready}=>{bw_o.tag(0);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(shooter_slot,bw_o);W::put(vehicle_compact_id,bw_o);W::put(gun_compact_id,bw_o);W::put(shell_compact_id,bw_o);W::put(profile,bw_o);W::put(ammo_before,bw_o);W::put(ammo_after,bw_o);W::put(reload_ready,bw_o);}Self::Selected{order,battle_id,shot_id,server_tick,shooter_slot,vehicle_compact_id,gun_compact_id,shell,ammo_before,ammo_after,source_revision}=>{bw_o.tag(1);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(shooter_slot,bw_o);W::put(vehicle_compact_id,bw_o);W::put(gun_compact_id,bw_o);W::put(shell,bw_o);W::put(ammo_before,bw_o);W::put(ammo_after,bw_o);W::put(source_revision,bw_o);}Self::Launch{order,battle_id,shot_id,server_tick,origin,velocity,gravity,max_distance,max_lifetime_seconds,pose_revision}=>{bw_o.tag(2);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(origin,bw_o);W::put(velocity,bw_o);W::put(gravity,bw_o);W::put(max_distance,bw_o);W::put(max_lifetime_seconds,bw_o);W::put(pose_revision,bw_o);}Self::Segment{order,battle_id,shot_id,server_tick,segment_tick_start,segment_tick_end,start,end,geometry_revision}=>{bw_o.tag(3);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_tick_start,bw_o);W::put(segment_tick_end,bw_o);W::put(start,bw_o);W::put(end,bw_o);W::put(geometry_revision,bw_o);}Self::TerrainQuery{order,battle_id,shot_id,server_tick,segment_order,terrain_revision,scene_version,excluded_instance,excluded_instances,catalog_sha256,hit}=>{bw_o.tag(4);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(terrain_revision,bw_o);W::put(scene_version,bw_o);W::put(excluded_instance,bw_o);W::put(excluded_instances,bw_o);W::put(catalog_sha256,bw_o);W::put(hit,bw_o);}Self::CollisionQuery{order,battle_id,shot_id,server_tick,segment_order,candidate_count,geometry_revision,transform_revision}=>{bw_o.tag(5);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(candidate_count,bw_o);W::put(geometry_revision,bw_o);W::put(transform_revision,bw_o);}Self::Intersection{order,battle_id,shot_id,server_tick,query_order,segment_order,candidate_index,triangle_id,mesh,group,material,normal,t,geometry_revision,transform_revision}=>{bw_o.tag(6);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(query_order,bw_o);W::put(segment_order,bw_o);W::put(candidate_index,bw_o);W::put(triangle_id,bw_o);W::put(mesh,bw_o);W::put(group,bw_o);W::put(material,bw_o);W::put(normal,bw_o);W::put(t,bw_o);W::put(geometry_revision,bw_o);W::put(transform_revision,bw_o);}Self::MaterialContact{order,battle_id,shot_id,server_tick,query_order,segment_order,intersection_order,candidate_index,facts}=>{bw_o.tag(7);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(query_order,bw_o);W::put(segment_order,bw_o);W::put(intersection_order,bw_o);W::put(candidate_index,bw_o);W::put(facts,bw_o);}Self::ApResolution{order,battle_id,shot_id,server_tick,attacker,target,material_order,resolution,health_before,health_after}=>{bw_o.tag(8);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(material_order,bw_o);W::put(resolution,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::MixedResolution{order,battle_id,shot_id,server_tick,attacker,target,material_order,shell,contact,resolution,health_before,health_after}=>{bw_o.tag(9);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(material_order,bw_o);W::put(shell,bw_o);W::put(contact,bw_o);W::put(resolution,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::SplashResolution{order,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,contact,distance_m,terrain_revision,excluded_instances,los_start,terrain_blocker,los_policy,resolution,health_before,health_after}=>{bw_o.tag(10);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(anchor_order,bw_o);W::put(center,bw_o);W::put(shell,bw_o);W::put(contact,bw_o);W::put(distance_m,bw_o);W::put(terrain_revision,bw_o);W::put(excluded_instances,bw_o);W::put(los_start,bw_o);W::put(terrain_blocker,bw_o);W::put(los_policy,bw_o);W::put(resolution,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::WreckImpact{order,battle_id,shot_id,server_tick,attacker,target,material_order,policy_revision,health_before,health_after}=>{bw_o.tag(11);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(material_order,bw_o);W::put(policy_revision,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::TerrainContact{order,battle_id,shot_id,server_tick,segment_order,terrain_query_order,hit}=>{bw_o.tag(12);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(terrain_query_order,bw_o);W::put(hit,bw_o);}Self::DestructibleTransition{order,battle_id,shot_id,server_tick,terrain_contact_order,transition}=>{bw_o.tag(13);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(terrain_contact_order,bw_o);W::put(transition,bw_o);}Self::FragileDamage{order,battle_id,shot_id,server_tick,terrain_contact_order,damage}=>{bw_o.tag(14);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(terrain_contact_order,bw_o);W::put(damage,bw_o);}Self::VehicleContact{order,battle_id,server_tick,contact}=>{bw_o.tag(15);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(server_tick,bw_o);W::put(contact,bw_o);}Self::TrackContact{order,battle_id,shot_id,server_tick,segment_order,query_order,target,device,candidate,chassis_revision,transform_revision,armor_mm,distance_m,pass,policy}=>{bw_o.tag(16);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(query_order,bw_o);W::put(target,bw_o);W::put(device,bw_o);W::put(candidate,bw_o);W::put(chassis_revision,bw_o);W::put(transform_revision,bw_o);W::put(armor_mm,bw_o);W::put(distance_m,bw_o);W::put(pass,bw_o);W::put(policy,bw_o);}Self::Terminal{order,battle_id,shot_id,server_tick,reason}=>{bw_o.tag(17);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(reason,bw_o);}}}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Admission{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,shooter_slot:W::get(bw_i)?,vehicle_compact_id:W::get(bw_i)?,gun_compact_id:W::get(bw_i)?,shell_compact_id:W::get(bw_i)?,profile:W::get(bw_i)?,ammo_before:W::get(bw_i)?,ammo_after:W::get(bw_i)?,reload_ready:W::get(bw_i)?}),1=>Ok(Self::Selected{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,shooter_slot:W::get(bw_i)?,vehicle_compact_id:W::get(bw_i)?,gun_compact_id:W::get(bw_i)?,shell:W::get(bw_i)?,ammo_before:W::get(bw_i)?,ammo_after:W::get(bw_i)?,source_revision:W::get(bw_i)?}),2=>Ok(Self::Launch{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,origin:W::get(bw_i)?,velocity:W::get(bw_i)?,gravity:W::get(bw_i)?,max_distance:W::get(bw_i)?,max_lifetime_seconds:W::get(bw_i)?,pose_revision:W::get(bw_i)?}),3=>Ok(Self::Segment{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_tick_start:W::get(bw_i)?,segment_tick_end:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?,geometry_revision:W::get(bw_i)?}),4=>Ok(Self::TerrainQuery{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,terrain_revision:W::get(bw_i)?,scene_version:W::get(bw_i)?,excluded_instance:W::get(bw_i)?,excluded_instances:W::get(bw_i)?,catalog_sha256:W::get(bw_i)?,hit:W::get(bw_i)?}),5=>Ok(Self::CollisionQuery{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,candidate_count:W::get(bw_i)?,geometry_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?}),6=>Ok(Self::Intersection{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,query_order:W::get(bw_i)?,segment_order:W::get(bw_i)?,candidate_index:W::get(bw_i)?,triangle_id:W::get(bw_i)?,mesh:W::get(bw_i)?,group:W::get(bw_i)?,material:W::get(bw_i)?,normal:W::get(bw_i)?,t:W::get(bw_i)?,geometry_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?}),7=>Ok(Self::MaterialContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,query_order:W::get(bw_i)?,segment_order:W::get(bw_i)?,intersection_order:W::get(bw_i)?,candidate_index:W::get(bw_i)?,facts:W::get(bw_i)?}),8=>Ok(Self::ApResolution{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,material_order:W::get(bw_i)?,resolution:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),9=>Ok(Self::MixedResolution{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,material_order:W::get(bw_i)?,shell:W::get(bw_i)?,contact:W::get(bw_i)?,resolution:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),10=>Ok(Self::SplashResolution{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,anchor_order:W::get(bw_i)?,center:W::get(bw_i)?,shell:W::get(bw_i)?,contact:W::get(bw_i)?,distance_m:W::get(bw_i)?,terrain_revision:W::get(bw_i)?,excluded_instances:W::get(bw_i)?,los_start:W::get(bw_i)?,terrain_blocker:W::get(bw_i)?,los_policy:W::get(bw_i)?,resolution:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),11=>Ok(Self::WreckImpact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,material_order:W::get(bw_i)?,policy_revision:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),12=>Ok(Self::TerrainContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,terrain_query_order:W::get(bw_i)?,hit:W::get(bw_i)?}),13=>Ok(Self::DestructibleTransition{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,terrain_contact_order:W::get(bw_i)?,transition:W::get(bw_i)?}),14=>Ok(Self::FragileDamage{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,terrain_contact_order:W::get(bw_i)?,damage:W::get(bw_i)?}),15=>Ok(Self::VehicleContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,contact:W::get(bw_i)?}),16=>Ok(Self::TrackContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,query_order:W::get(bw_i)?,target:W::get(bw_i)?,device:W::get(bw_i)?,candidate:W::get(bw_i)?,chassis_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?,armor_mm:W::get(bw_i)?,distance_m:W::get(bw_i)?,pass:W::get(bw_i)?,policy:W::get(bw_i)?}),17=>Ok(Self::Terminal{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,reason:W::get(bw_i)?}),t=>crate::bw_wire::variant(t)}}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Admission{order,battle_id,shot_id,server_tick,shooter_slot,vehicle_compact_id,gun_compact_id,shell_compact_id,profile,ammo_before,ammo_after,reload_ready}=>{bw_o.tag(0);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(shooter_slot,bw_o);W::put(vehicle_compact_id,bw_o);W::put(gun_compact_id,bw_o);W::put(shell_compact_id,bw_o);W::put(profile,bw_o);W::put(ammo_before,bw_o);W::put(ammo_after,bw_o);W::put(reload_ready,bw_o);}Self::Selected{order,battle_id,shot_id,server_tick,shooter_slot,vehicle_compact_id,gun_compact_id,shell,ammo_before,ammo_after,source_revision}=>{bw_o.tag(1);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(shooter_slot,bw_o);W::put(vehicle_compact_id,bw_o);W::put(gun_compact_id,bw_o);W::put(shell,bw_o);W::put(ammo_before,bw_o);W::put(ammo_after,bw_o);W::put(source_revision,bw_o);}Self::Launch{order,battle_id,shot_id,server_tick,origin,velocity,gravity,max_distance,max_lifetime_seconds,pose_revision}=>{bw_o.tag(2);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(origin,bw_o);W::put(velocity,bw_o);W::put(gravity,bw_o);W::put(max_distance,bw_o);W::put(max_lifetime_seconds,bw_o);W::put(pose_revision,bw_o);}Self::Segment{order,battle_id,shot_id,server_tick,segment_tick_start,segment_tick_end,start,end,geometry_revision}=>{bw_o.tag(3);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_tick_start,bw_o);W::put(segment_tick_end,bw_o);W::put(start,bw_o);W::put(end,bw_o);W::put(geometry_revision,bw_o);}Self::TerrainQuery{order,battle_id,shot_id,server_tick,segment_order,terrain_revision,scene_version,excluded_instance,excluded_instances,catalog_sha256,hit}=>{bw_o.tag(4);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(terrain_revision,bw_o);W::put(scene_version,bw_o);W::put(excluded_instance,bw_o);W::put(excluded_instances,bw_o);W::put(catalog_sha256,bw_o);W::put(hit,bw_o);}Self::CollisionQuery{order,battle_id,shot_id,server_tick,segment_order,candidate_count,geometry_revision,transform_revision}=>{bw_o.tag(5);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(candidate_count,bw_o);W::put(geometry_revision,bw_o);W::put(transform_revision,bw_o);}Self::Intersection{order,battle_id,shot_id,server_tick,query_order,segment_order,candidate_index,triangle_id,mesh,group,material,normal,t,geometry_revision,transform_revision}=>{bw_o.tag(6);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(query_order,bw_o);W::put(segment_order,bw_o);W::put(candidate_index,bw_o);W::put(triangle_id,bw_o);W::put(mesh,bw_o);W::put(group,bw_o);W::put(material,bw_o);W::put(normal,bw_o);W::put(t,bw_o);W::put(geometry_revision,bw_o);W::put(transform_revision,bw_o);}Self::MaterialContact{order,battle_id,shot_id,server_tick,query_order,segment_order,intersection_order,candidate_index,facts}=>{bw_o.tag(7);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(query_order,bw_o);W::put(segment_order,bw_o);W::put(intersection_order,bw_o);W::put(candidate_index,bw_o);W::put(facts,bw_o);}Self::ApResolution{order,battle_id,shot_id,server_tick,attacker,target,material_order,resolution,health_before,health_after}=>{bw_o.tag(8);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(material_order,bw_o);W::put(resolution,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::MixedResolution{order,battle_id,shot_id,server_tick,attacker,target,material_order,shell,contact,resolution,health_before,health_after}=>{bw_o.tag(9);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(material_order,bw_o);W::put(shell,bw_o);W::put(contact,bw_o);W::put(resolution,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::SplashResolution{order,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,contact,distance_m,terrain_revision,excluded_instances,los_start,terrain_blocker,los_policy,resolution,health_before,health_after}=>{bw_o.tag(10);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(anchor_order,bw_o);W::put(center,bw_o);W::put(shell,bw_o);W::put(contact,bw_o);W::put(distance_m,bw_o);W::put(terrain_revision,bw_o);W::put(excluded_instances,bw_o);W::put(los_start,bw_o);W::put(terrain_blocker,bw_o);W::put(los_policy,bw_o);W::put(resolution,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::WreckImpact{order,battle_id,shot_id,server_tick,attacker,target,material_order,policy_revision,health_before,health_after}=>{bw_o.tag(11);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(material_order,bw_o);W::put(policy_revision,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}Self::TerrainContact{order,battle_id,shot_id,server_tick,segment_order,terrain_query_order,hit}=>{bw_o.tag(12);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(terrain_query_order,bw_o);W::put(hit,bw_o);}Self::DestructibleTransition{order,battle_id,shot_id,server_tick,terrain_contact_order,transition}=>{bw_o.tag(13);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(terrain_contact_order,bw_o);W::put(transition,bw_o);}Self::FragileDamage{order,battle_id,shot_id,server_tick,terrain_contact_order,damage}=>{bw_o.tag(14);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(terrain_contact_order,bw_o);W::put(damage,bw_o);}Self::VehicleContact{order,battle_id,server_tick,contact}=>{bw_o.tag(15);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(server_tick,bw_o);W::put(contact,bw_o);}Self::TrackContact{order,battle_id,shot_id,server_tick,segment_order,query_order,target,device,candidate,chassis_revision,transform_revision,armor_mm,distance_m,pass,policy}=>{bw_o.tag(16);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(query_order,bw_o);W::put(target,bw_o);W::put(device,bw_o);W::put(candidate,bw_o);W::put(chassis_revision,bw_o);W::put(transform_revision,bw_o);W::put(armor_mm,bw_o);W::put(distance_m,bw_o);W::put(pass,bw_o);W::put(policy,bw_o);}Self::SpacedContact{order,battle_id,shot_id,server_tick,segment_order,query_order,target,candidate_index,material,t,armor_mm,distance_m,pass,policy}=>{bw_o.tag(17);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(segment_order,bw_o);W::put(query_order,bw_o);W::put(target,bw_o);W::put(candidate_index,bw_o);W::put(material,bw_o);W::put(t,bw_o);W::put(armor_mm,bw_o);W::put(distance_m,bw_o);W::put(pass,bw_o);W::put(policy,bw_o);}Self::Terminal{order,battle_id,shot_id,server_tick,reason}=>{bw_o.tag(18);W::put(order,bw_o);W::put(battle_id,bw_o);W::put(shot_id,bw_o);W::put(server_tick,bw_o);W::put(reason,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Admission{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,shooter_slot:W::get(bw_i)?,vehicle_compact_id:W::get(bw_i)?,gun_compact_id:W::get(bw_i)?,shell_compact_id:W::get(bw_i)?,profile:W::get(bw_i)?,ammo_before:W::get(bw_i)?,ammo_after:W::get(bw_i)?,reload_ready:W::get(bw_i)?}),1=>Ok(Self::Selected{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,shooter_slot:W::get(bw_i)?,vehicle_compact_id:W::get(bw_i)?,gun_compact_id:W::get(bw_i)?,shell:W::get(bw_i)?,ammo_before:W::get(bw_i)?,ammo_after:W::get(bw_i)?,source_revision:W::get(bw_i)?}),2=>Ok(Self::Launch{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,origin:W::get(bw_i)?,velocity:W::get(bw_i)?,gravity:W::get(bw_i)?,max_distance:W::get(bw_i)?,max_lifetime_seconds:W::get(bw_i)?,pose_revision:W::get(bw_i)?}),3=>Ok(Self::Segment{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_tick_start:W::get(bw_i)?,segment_tick_end:W::get(bw_i)?,start:W::get(bw_i)?,end:W::get(bw_i)?,geometry_revision:W::get(bw_i)?}),4=>Ok(Self::TerrainQuery{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,terrain_revision:W::get(bw_i)?,scene_version:W::get(bw_i)?,excluded_instance:W::get(bw_i)?,excluded_instances:W::get(bw_i)?,catalog_sha256:W::get(bw_i)?,hit:W::get(bw_i)?}),5=>Ok(Self::CollisionQuery{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,candidate_count:W::get(bw_i)?,geometry_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?}),6=>Ok(Self::Intersection{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,query_order:W::get(bw_i)?,segment_order:W::get(bw_i)?,candidate_index:W::get(bw_i)?,triangle_id:W::get(bw_i)?,mesh:W::get(bw_i)?,group:W::get(bw_i)?,material:W::get(bw_i)?,normal:W::get(bw_i)?,t:W::get(bw_i)?,geometry_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?}),7=>Ok(Self::MaterialContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,query_order:W::get(bw_i)?,segment_order:W::get(bw_i)?,intersection_order:W::get(bw_i)?,candidate_index:W::get(bw_i)?,facts:W::get(bw_i)?}),8=>Ok(Self::ApResolution{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,material_order:W::get(bw_i)?,resolution:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),9=>Ok(Self::MixedResolution{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,material_order:W::get(bw_i)?,shell:W::get(bw_i)?,contact:W::get(bw_i)?,resolution:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),10=>Ok(Self::SplashResolution{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,anchor_order:W::get(bw_i)?,center:W::get(bw_i)?,shell:W::get(bw_i)?,contact:W::get(bw_i)?,distance_m:W::get(bw_i)?,terrain_revision:W::get(bw_i)?,excluded_instances:W::get(bw_i)?,los_start:W::get(bw_i)?,terrain_blocker:W::get(bw_i)?,los_policy:W::get(bw_i)?,resolution:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),11=>Ok(Self::WreckImpact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,material_order:W::get(bw_i)?,policy_revision:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?}),12=>Ok(Self::TerrainContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,terrain_query_order:W::get(bw_i)?,hit:W::get(bw_i)?}),13=>Ok(Self::DestructibleTransition{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,terrain_contact_order:W::get(bw_i)?,transition:W::get(bw_i)?}),14=>Ok(Self::FragileDamage{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,terrain_contact_order:W::get(bw_i)?,damage:W::get(bw_i)?}),15=>Ok(Self::VehicleContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,contact:W::get(bw_i)?}),16=>Ok(Self::TrackContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,query_order:W::get(bw_i)?,target:W::get(bw_i)?,device:W::get(bw_i)?,candidate:W::get(bw_i)?,chassis_revision:W::get(bw_i)?,transform_revision:W::get(bw_i)?,armor_mm:W::get(bw_i)?,distance_m:W::get(bw_i)?,pass:W::get(bw_i)?,policy:W::get(bw_i)?}),17=>Ok(Self::SpacedContact{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,segment_order:W::get(bw_i)?,query_order:W::get(bw_i)?,target:W::get(bw_i)?,candidate_index:W::get(bw_i)?,material:W::get(bw_i)?,t:W::get(bw_i)?,armor_mm:W::get(bw_i)?,distance_m:W::get(bw_i)?,pass:W::get(bw_i)?,policy:W::get(bw_i)?}),18=>Ok(Self::Terminal{order:W::get(bw_i)?,battle_id:W::get(bw_i)?,shot_id:W::get(bw_i)?,server_tick:W::get(bw_i)?,reason:W::get(bw_i)?}),t=>crate::bw_wire::variant(t)}}
 }
 // end BW-01 wire codec
 
@@ -345,6 +366,7 @@ impl Event {
             Self::FragileDamage { .. } => Stage::FragileDamage,
             Self::VehicleContact { .. } => Stage::VehicleContact,
             Self::TrackContact { .. } => Stage::TrackContact,
+            Self::SpacedContact { .. } => Stage::SpacedContact,
             Self::Terminal { .. } => Stage::Terminal,
         }
     }
@@ -368,6 +390,7 @@ impl Event {
             | Self::FragileDamage { order, .. }
             | Self::VehicleContact { order, .. }
             | Self::TrackContact { order, .. }
+            | Self::SpacedContact { order, .. }
             | Self::Terminal { order, .. } => *order,
         }
     }
@@ -390,6 +413,7 @@ impl Event {
             | Self::DestructibleTransition { shot_id, .. }
             | Self::FragileDamage { shot_id, .. }
             | Self::TrackContact { shot_id, .. }
+            | Self::SpacedContact { shot_id, .. }
             | Self::Terminal { shot_id, .. } => *shot_id,
             Self::VehicleContact { .. } => 0,
         }
@@ -688,6 +712,8 @@ impl Trace {
                 ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::WreckImpact),
             TerminalReason::TestLabTrackImpact => self.last_stage(shot_id)==Some(Stage::TrackContact)&&self.track_stopped(shot_id)
                 ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::TrackContact),
+            TerminalReason::TestLabLayerImpact => self.last_stage(shot_id)==Some(Stage::SpacedContact)&&self.track_stopped(shot_id)
+                ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::SpacedContact),
             TerminalReason::TerrainCollision => matches!(self.last_stage(shot_id),Some(Stage::TerrainContact|Stage::DestructibleTransition|Stage::FragileDamage))
                 ||self.last_splash_anchor_stage(battle_id,shot_id,server_tick)?==Some(Stage::TerrainContact),
             TerminalReason::UnresolvedCollision =>
@@ -846,7 +872,7 @@ impl Trace {
             return Err(invalid("splash anchor frozen HE source"));
         }
         let(anchor_index,anchor)=self.events.iter().enumerate().rev().find(|(_,e)|e.shot_id()==shot_id
-            &&matches!(e,Event::MixedResolution{..}|Event::WreckImpact{..}|Event::TerrainContact{..}|Event::TrackContact{..}))
+            &&matches!(e,Event::MixedResolution{..}|Event::WreckImpact{..}|Event::TerrainContact{..}|Event::TrackContact{..}|Event::SpacedContact{..}))
             .ok_or_else(||invalid("splash absent current explosion anchor"))?;
         match anchor{
             Event::MixedResolution{order,battle_id:b,server_tick:t,attacker:a,shell:retained,contact,..}
@@ -858,6 +884,11 @@ impl Trace {
                 let(_,start,end)=self.segment_points(shot_id,server_tick)?;
                 Ok((*order,std::array::from_fn(|i|start[i]+candidate.t*(end[i]-start[i])),Stage::TrackContact))
             },
+            Event::SpacedContact{order,battle_id:b,server_tick:st,t,pass,..}
+                if *b==battle_id&&*st==server_tick&&pass.outcome!=crate::p06t_damage::PassOutcome::Passed=>{
+                let(_,start,end)=self.segment_points(shot_id,server_tick)?;
+                Ok((*order,std::array::from_fn(|i|start[i]+t*(end[i]-start[i])),Stage::SpacedContact))
+            },
             Event::WreckImpact{order,battle_id:b,server_tick:t,attacker:a,target,material_order,policy_revision,health_before,health_after,..}
                 if *b==battle_id&&*t==server_tick&&*a==attacker=>{
                 let kind=self.kind_for_slot(*target)?;
@@ -867,14 +898,14 @@ impl Trace {
                     return Err(invalid("splash wreck source actor/health policy"));
                 }
                 let(query,segment,intersection,facts)=match self.events.iter().find(|e|e.order()==*material_order){
-                    Some(Event::MaterialContact{order:m,battle_id:mb,shot_id:s,server_tick:mt,query_order,segment_order,intersection_order,candidate_index:0,facts})
-                        if *mb==battle_id&&*s==shot_id&&*mt==server_tick&&*m<*order
-                            &&query_order.checked_add(1)==Some(*intersection_order)=>(*query_order,*segment_order,*intersection_order,facts),
+                    Some(Event::MaterialContact{order:m,battle_id:mb,shot_id:s,server_tick:mt,query_order,segment_order,intersection_order,candidate_index,facts})
+                        if *mb==battle_id&&*s==shot_id&&*mt==server_tick&&*m<*order&&self.material_candidate_bound(*query_order,*intersection_order,*candidate_index)
+                            =>(*query_order,*segment_order,*intersection_order,facts),
                     _=>return Err(invalid("splash wreck material order")),
                 };
                 let pose_prefix=format!("pose-v1:{target}:{server_tick}:");
                 let(parameter,geometry_revision,transform_revision)=match self.events.iter().find(|e|e.order()==intersection){
-                    Some(Event::Intersection{battle_id:ib,shot_id:s,server_tick:it,query_order,segment_order,candidate_index:0,mesh,material,t,normal,geometry_revision,transform_revision,..})
+                    Some(Event::Intersection{battle_id:ib,shot_id:s,server_tick:it,query_order,segment_order,mesh,material,t,normal,geometry_revision,transform_revision,..})
                         if *ib==battle_id&&*s==shot_id&&*it==server_tick&&*query_order==query&&*segment_order==segment
                             &&mesh.as_str()==facts.component.name()&&*material==facts.name&&finite_vector(*normal)
                             &&t.is_finite()&&(0. ..=1.).contains(t)&&*geometry_revision==super::geometry::source_revision(kind)
@@ -1172,15 +1203,16 @@ impl Trace {
     /// a claim of mathematically exact ordering. No epsilon is added.
     fn selected_terrain(&self, battle_id: u64, shot_id: u32, server_tick: u32)
         -> io::Result<Option<(u32, u32, terrain::Hit)>> {
-        let (query, segment) = match self.latest_flight(shot_id) {
+        let (query, segment, nearest) = match self.latest_flight(shot_id) {
             Some(Event::MaterialContact { battle_id: battle, server_tick: tick, query_order, segment_order,
-                intersection_order, candidate_index: 0, .. })
-                if *battle == battle_id && *tick == server_tick && query_order.checked_add(1) == Some(*intersection_order) =>
-                    (*query_order, *segment_order),
+                intersection_order, candidate_index, .. })
+                if *battle == battle_id && *tick == server_tick
+                    && self.material_candidate_bound(*query_order, *intersection_order, *candidate_index) =>
+                    (*query_order, *segment_order, Some(*candidate_index)),
             Some(Event::Intersection { battle_id: battle, server_tick: tick, query_order, segment_order, .. })
-                if *battle == battle_id && *tick == server_tick => (*query_order, *segment_order),
+                if *battle == battle_id && *tick == server_tick => (*query_order, *segment_order, if self.layers { None } else { Some(0) }),
             Some(Event::CollisionQuery { order, battle_id: battle, server_tick: tick, segment_order,
-                candidate_count: 0, .. }) if *battle == battle_id && *tick == server_tick => (*order, *segment_order),
+                candidate_count: 0, .. }) if *battle == battle_id && *tick == server_tick => (*order, *segment_order, None),
             _ => return Err(invalid("terrain selection without current collision batch")),
         };
         let candidate_count = match self.events.iter().find(|event| event.order() == query) {
@@ -1190,11 +1222,13 @@ impl Trace {
         };
         let Some((terrain_order, Some(hit))) = self.terrain_for_query(battle_id, shot_id, server_tick, segment, query)?
             else { return Ok(None); };
-        if candidate_count != 0 {
-            match self.events.iter().find(|event| event.order() == query + 1) {
+        // SHELL-PEN: the vehicle candidate that competes with terrain is the material contact
+        // (spaced plates before it are layers); without one there is no vehicle stop.
+        if let Some(index) = nearest.filter(|_| candidate_count != 0) {
+            match self.events.iter().find(|event| event.order() == query + 1 + index as u32) {
                 Some(Event::Intersection { battle_id: battle, shot_id: shot, server_tick: tick,
-                    query_order, segment_order, candidate_index: 0, t, .. })
-                    if *battle == battle_id && *shot == shot_id && *tick == server_tick
+                    query_order, segment_order, candidate_index, t, .. })
+                    if *battle == battle_id && *shot == shot_id && *tick == server_tick && *candidate_index == index
                         && *query_order == query && *segment_order == segment => {
                     if hit.t as f32 > *t { return Ok(None); }
                 },
@@ -1210,15 +1244,16 @@ impl Trace {
         target: usize) -> io::Result<(u32, &materials::MaterialFacts)> {
         let (order, query, segment, intersection, facts) = match self.latest_flight(shot_id) {
             Some(Event::MaterialContact { order, battle_id: battle, server_tick: tick,
-                query_order, segment_order, intersection_order, candidate_index: 0, facts, .. })
-                if *battle == battle_id && *tick == server_tick =>
+                query_order, segment_order, intersection_order, candidate_index, facts, .. })
+                if *battle == battle_id && *tick == server_tick
+                    && self.material_candidate_bound(*query_order, *intersection_order, *candidate_index) =>
                 (*order, *query_order, *segment_order, *intersection_order, facts),
             _ => return Err(invalid("impact outcome without latest nearest material")),
         };
         let pose_tag = format!("pose-v1:{target}:{server_tick}:");
         let target_bound = matches!(self.events.iter().find(|event| event.order() == intersection),
             Some(Event::Intersection { battle_id: battle, shot_id: shot, server_tick: tick,
-                query_order, segment_order, candidate_index: 0, mesh, material, geometry_revision,
+                query_order, segment_order, mesh, material, geometry_revision,
                 transform_revision, .. })
                 if *battle == battle_id && *shot == shot_id && *tick == server_tick
                 && *query_order == query && *segment_order == segment
@@ -1296,15 +1331,27 @@ impl Trace {
         let terrain_hit = match terrain { Some(terrain) if generic=>terrain.nearest_excluding_many(start,end,&excluded_instances)?,
             Some(terrain)=>terrain.nearest_excluding(start,end,excluded_instance)?,None=>None };
         let candidates = collision::query(mesh, start, end)?;
-        let material = match (catalog, candidates.first()) {
-            (Some(catalog), Some(nearest)) => Some(catalog.lookup(&nearest.mesh, &nearest.material)?),
-            _ => None,
+        // SHELL-PEN: under the layered law the material contact is the first candidate
+        // that is not a spaced plate; spaced plates before it become SpacedContact rows.
+        let mut material_index = 0usize;
+        let material = match catalog {
+            Some(catalog) if self.layers => {
+                let mut found = None;
+                for (index, candidate) in candidates.iter().enumerate() {
+                    let facts = catalog.lookup(&candidate.mesh, &candidate.material)?;
+                    if !spaced_layer(&facts) { material_index = index; found = Some(facts); break; }
+                }
+                found
+            },
+            Some(catalog) => match candidates.first() { Some(nearest) => Some(catalog.lookup(&nearest.mesh, &nearest.material)?), None => None },
+            None => None,
         };
+        let layer_rows = if self.layers && catalog.is_some() { if material.is_some() { material_index } else { candidates.len() } } else { 0 };
         let added = 1 + candidates.len() + usize::from(material.is_some()) + usize::from(terrain.is_some());
         // Reserve a selected terrain/AP/wreck outcome and its terminal.
         // A future runtime adapter must commit query/terminal with its World
         // transaction so unrelated shots cannot consume that remaining slot.
-        let closing_rows = 1 + usize::from(material.is_some() || terrain_hit.is_some())
+        let closing_rows = layer_rows + 1 + usize::from(material.is_some() || terrain_hit.is_some())
             + usize::from(generic||scene_version==0 && terrain_hit.as_ref().is_some_and(destructible::selected));
         if self.events.len() + added + closing_rows > self.event_limit()
             || self.next_order.checked_add((added + closing_rows) as u32).is_none() {
@@ -1333,7 +1380,7 @@ impl Trace {
         if let Some(facts) = &material {
             batch.push(Event::MaterialContact { order: first_order + batch.len() as u32,
                 battle_id, shot_id, server_tick, query_order, segment_order,
-                intersection_order: query_order + 1, candidate_index: 0, facts: facts.clone() });
+                intersection_order: query_order + 1 + material_index as u32, candidate_index: material_index, facts: facts.clone() });
         }
         // All fallible validation precedes mutation; do not clone the complete
         // flight history for every segment in the full-ammo trace.
@@ -1350,28 +1397,65 @@ impl Trace {
             Some(Event::CollisionQuery { order, battle_id, server_tick, segment_order, candidate_count: 0, .. }) =>
                 matches!(self.terrain_for_query(*battle_id, shot_id, *server_tick, *segment_order, *order),
                     Ok(None | Some((_, None)))),
+            // SHELL-PEN: a batch of spaced plates only (no MaterialContact), all passed, no terrain stop.
+            Some(Event::Intersection { query_order, battle_id, server_tick, segment_order, .. }) if self.layers =>
+                !self.events.iter().any(|e| matches!(e, Event::MaterialContact { query_order: q, .. } if q == query_order))
+                    && matches!(self.terrain_for_query(*battle_id, shot_id, *server_tick, *segment_order, *query_order),
+                        Ok(None | Some((_, None)))),
             _ => false,
         }
     }
 
     /// Latest event of a shot other than a `TrackContact` annotation of its current batch.
     fn latest_flight(&self, shot_id: u32) -> Option<&Event> {
-        self.events.iter().rev().find(|event| event.shot_id() == shot_id && !matches!(event, Event::TrackContact { .. }))
+        self.events.iter().rev().find(|event| event.shot_id() == shot_id && !matches!(event, Event::TrackContact { .. } | Event::SpacedContact { .. }))
     }
     fn track_stopped(&self, shot_id: u32) -> bool {
-        self.events.iter().any(|e| matches!(e, Event::TrackContact { shot_id: s, pass, .. } if *s == shot_id && pass.stopped))
+        self.events.iter().any(|e| matches!(e, Event::TrackContact { shot_id: s, pass, .. } if *s == shot_id && pass.stopped)
+            || matches!(e, Event::SpacedContact { shot_id: s, pass, .. } if *s == shot_id && pass.outcome != crate::p06t_damage::PassOutcome::Passed))
     }
     /// Track armour already taken off this shot (tracks of any vehicle it passed).
+    /// Armour this shot already left on tracks (nominal) and spaced layers (effective).
     pub(crate) fn track_spent(&self, shot_id: u32) -> io::Result<f64> {
         let mut spent = 0.;
         for event in self.events.iter() {
-            if let Event::TrackContact { shot_id: s, armor_mm, pass, .. } = event {
-                if *s != shot_id { continue; }
-                if pass.stopped { return Err(invalid("track contact stop before outcome")); }
-                spent += armor_mm;
+            match event {
+                Event::TrackContact { shot_id: s, armor_mm, pass, .. } if *s == shot_id => {
+                    if pass.stopped { return Err(invalid("track contact stop before outcome")); }
+                    spent += armor_mm;
+                },
+                Event::SpacedContact { shot_id: s, pass, .. } if *s == shot_id => {
+                    if pass.outcome != crate::p06t_damage::PassOutcome::Passed { return Err(invalid("spaced layer stop before outcome")); }
+                    spent += pass.effective_armor_mm;
+                },
+                _ => {},
             }
         }
         Ok(spent)
+    }
+    /// A MaterialContact names the intersection right after its query at its own candidate.
+    fn material_candidate_bound(&self, query_order: u32, intersection_order: u32, candidate_index: usize) -> bool {
+        u32::try_from(candidate_index).ok().and_then(|i| query_order.checked_add(1)?.checked_add(i)) == Some(intersection_order)
+            && (candidate_index == 0 || self.layers)
+    }
+    /// The t of the current batch's material contact (the vehicle stop); None when every
+    /// candidate of the batch is a spaced layer, or there is no candidate.
+    fn material_t(&self, shot_id: u32, query: u32) -> Option<f32> {
+        let (intersection, index) = self.events.iter().find_map(|e| match e {
+            Event::MaterialContact { shot_id: s, query_order, intersection_order, candidate_index, .. }
+                if *s == shot_id && *query_order == query => Some((*intersection_order, *candidate_index)), _ => None })?;
+        match self.events.iter().find(|e| e.order() == intersection) {
+            Some(Event::Intersection { query_order, candidate_index, t, .. }) if *query_order == query && *candidate_index == index => Some(*t),
+            _ => None,
+        }
+    }
+    /// Layers (tracks and spaced plates) of one segment are crossed in increasing t, once each.
+    fn layer_order_ok(&self, shot_id: u32, segment: u32, t: f32) -> bool {
+        !self.events.iter().any(|e| match e {
+            Event::TrackContact { shot_id: s, segment_order, candidate, .. } => *s == shot_id && *segment_order == segment && candidate.t >= t,
+            Event::SpacedContact { shot_id: s, segment_order, t: lt, .. } => *s == shot_id && *segment_order == segment && *lt >= t,
+            _ => false,
+        })
     }
     /// (target, track) pairs this shot already crossed (`collideOnceOnly`).
     pub fn tracks_hit(&self, shot_id: u32) -> Vec<(usize, crate::p06t_device_caps::Device)> {
@@ -1406,6 +1490,9 @@ impl Trace {
                 if *b == battle_id && *t == server_tick => (*query_order, *segment_order),
             Some(Event::CollisionQuery { order, battle_id: b, server_tick: t, segment_order, candidate_count: 0, .. })
                 if *b == battle_id && *t == server_tick => (*order, *segment_order),
+            // SHELL-PEN: a batch whose every candidate is a spaced plate has no MaterialContact.
+            Some(Event::Intersection { battle_id: b, server_tick: t, query_order, segment_order, .. })
+                if self.layers && *b == battle_id && *t == server_tick => (*query_order, *segment_order),
             _ => return Err(invalid("track contact without current vehicle batch")),
         };
         let (segment_check, start, end) = self.segment_points(shot_id, server_tick)?;
@@ -1421,11 +1508,10 @@ impl Trace {
             return Err(invalid("track contact does not match the actual chassis query/pose"));
         }
         if candidate_count != 0 {
-            match self.events.iter().find(|e| e.order() == query + 1) {
-                Some(Event::Intersection { query_order, candidate_index: 0, t, .. }) if *query_order == query => {
-                    if candidate.t >= *t { return Err(invalid("track contact behind the nearest vehicle triangle")); }
-                },
-                _ => return Err(invalid("track contact nearest vehicle binding")),
+            match self.material_t(shot_id, query) {
+                Some(t) => if candidate.t >= t { return Err(invalid("track contact behind the vehicle material contact")); },
+                None if self.layers => {},
+                None => return Err(invalid("track contact nearest vehicle binding")),
             }
         }
         if let Some((_, Some(hit))) = self.terrain_for_query(battle_id, shot_id, server_tick, segment, query)? {
@@ -1442,6 +1528,7 @@ impl Trace {
                 if *t == target && *d == device || *segment_order == segment && c.t >= candidate.t {
                     return Err(invalid("track contact repeat, order or target"));
                 }
+                if !self.layer_order_ok(shot_id, segment, candidate.t) { return Err(invalid("track contact behind a spaced layer of this segment")); }
                 spent += armor_mm;
             }
         }
@@ -1462,6 +1549,70 @@ impl Trace {
             query_order: query, target, device, candidate: candidate.clone(), chassis_revision: chassis.geometry_revision(),
             transform_revision: vehicle_transform, armor_mm: material.armor_mm, distance_m, pass,
             policy: if rolls.is_some() { crate::p06t_damage::LAYERS_POLICY } else { crate::p06t_damage::TRACK_PASS_POLICY } })?;
+        self.last_tick = server_tick;
+        Ok(pass)
+    }
+
+    /// SHELL-PEN: one spaced plate of the current vehicle batch, crossed against the
+    /// winding before the material contact (or in a batch of spaced plates only). The
+    /// candidate and its MaterialInfo are taken from the recorded batch and the source
+    /// catalogue again; the layered law runs here with the shot's rolls.
+    #[allow(clippy::too_many_arguments)]
+    pub fn spaced_contact(&mut self, battle_id: u64, shot_id: u32, server_tick: u32, target: usize,
+        catalog: &materials::Catalog, actor: &super::model::Actor, candidate_index: usize) -> io::Result<crate::p06t_damage::LayerPass> {
+        self.common(battle_id, shot_id, server_tick)?;
+        let kind = self.kind_for_slot(target)?;
+        let shell = self.selected_shell(shot_id).flatten().ok_or_else(|| invalid("spaced contact without selected shell"))?;
+        let attacker = self.admission_facts(shot_id).map(|v| v.0).ok_or_else(|| invalid("spaced contact admission"))?;
+        let rolls = self.shot_rolls(battle_id, shot_id)?.ok_or_else(|| invalid("spaced contact outside the layered law"))?;
+        if attacker == target || self.has_terminal(shot_id) || self.track_stopped(shot_id) || actor.vehicle_kind() != kind || !actor.alive() {
+            return Err(invalid("spaced contact identity"));
+        }
+        let (query, segment) = match self.latest_flight(shot_id) {
+            Some(Event::MaterialContact { battle_id: b, server_tick: t, query_order, segment_order, .. }
+                | Event::Intersection { battle_id: b, server_tick: t, query_order, segment_order, .. })
+                if *b == battle_id && *t == server_tick => (*query_order, *segment_order),
+            _ => return Err(invalid("spaced contact without current vehicle batch")),
+        };
+        let (_, start, end) = self.segment_points(shot_id, server_tick)?;
+        let (mesh, material, normal, t, revision) = match self.events.iter().find(|e| matches!(e,
+            Event::Intersection { query_order, candidate_index: c, .. } if *query_order == query && *c == candidate_index)) {
+            Some(Event::Intersection { battle_id: b, shot_id: s, server_tick: st, segment_order, mesh, material, normal, t, geometry_revision, .. })
+                if *b == battle_id && *s == shot_id && *st == server_tick && *segment_order == segment
+                    && *geometry_revision == super::geometry::source_revision(kind) => (mesh.clone(), material.clone(), *normal, *t, ()),
+            _ => return Err(invalid("spaced contact candidate binding")),
+        };
+        let _ = revision;
+        if self.material_t(shot_id, query).is_some_and(|limit| t >= limit) { return Err(invalid("spaced contact behind the material contact")); }
+        if let Some((_, Some(hit))) = self.terrain_for_query(battle_id, shot_id, server_tick, segment, query)? {
+            if hit.t as f32 <= t { return Err(invalid("spaced contact behind terrain")); }
+        }
+        let facts = catalog.lookup(&mesh, &material)?;
+        let chord: [f32; 3] = std::array::from_fn(|i| end[i] - start[i]);
+        if !spaced_layer(&facts) || !against_winding(chord, normal) { return Err(invalid("spaced contact is not a spaced plate crossed inward")); }
+        if self.events.iter().any(|e| matches!(e, Event::SpacedContact { shot_id: s, query_order, candidate_index: c, .. }
+            if *s == shot_id && *query_order == query && *c == candidate_index)) || !self.layer_order_ok(shot_id, segment, t) {
+            return Err(invalid("spaced contact repeat or order"));
+        }
+        let effective = facts.effective.as_ref().ok_or_else(|| invalid("spaced contact without MaterialInfo"))?;
+        let armor_mm = f64::from(effective.armor.ok_or_else(|| invalid("spaced contact armour"))?);
+        let origin = self.events.iter().find_map(|e| match e { Event::Launch { shot_id: s, origin, .. } if *s == shot_id => Some(*origin), _ => None })
+            .ok_or_else(|| invalid("spaced contact launch absent"))?;
+        let point: [f32; 3] = std::array::from_fn(|i| start[i] + t * (end[i] - start[i]));
+        let distance_m = (0..3).map(|i| (f64::from(point[i]) - f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
+        let spent = self.track_spent(shot_id)?;
+        let layer = crate::p06t_damage::Layer { armor_mm, use_hit_angle: effective.use_hit_angle, may_ricochet: effective.may_ricochet,
+            chord, winding_normal: normal };
+        let pass = crate::p06t_damage::layer_pass(shell, distance_m, spent, rolls, layer)?;
+        if super::shot_trace::enabled() {
+            super::shot_trace::layer(battle_id, shot_id, server_tick, attacker, target, self.kind_for_slot(attacker)?, &shell, distance_m, spent, &layer, rolls, &pass);
+        }
+        if self.events.len() + 3 > self.event_limit() || self.next_order.checked_add(3).is_none() {
+            return Err(invalid("spaced contact trace capacity"));
+        }
+        self.push(Event::SpacedContact { order: self.next_order_value()?, battle_id, shot_id, server_tick, segment_order: segment,
+            query_order: query, target, candidate_index, material: facts.name.clone(), t, armor_mm, distance_m, pass,
+            policy: crate::p06t_damage::LAYERS_POLICY })?;
         self.last_tick = server_tick;
         Ok(pass)
     }

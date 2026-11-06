@@ -104,3 +104,19 @@ fn direct_case(armor: Option<f64>, angle: f32, distance: f64, spent: f64) -> Val
     record["attacker_kind"] = "no-such-kind".into();
     assert!(replay_record(&record).is_err());
 }
+
+#[test] fn a_spaced_layer_record_replays_from_its_seed() {
+    let rules = crate::gateway091::shared::shell_rules::rules().unwrap();
+    let ap = shell(Family::ArmorPiercing);
+    for (seed, angle, armor) in [(5u64, 0f32, 20.), (6, 50., 15.), (7, 80., 30.)] {
+        let rolls = crate::gateway091::shared::shell_rules::rolls_from_seed(rules, seed);
+        let a = angle.to_radians();
+        let l = Layer { armor_mm: armor, use_hit_angle: true, may_ricochet: true, chord: [a.sin(), 0.2, -a.cos()], winding_normal: [0., 0., 1.] };
+        let pass = law::layer_pass(ap, 250., 3.5, rolls, l).unwrap();
+        let record = stamp(layer_record(7, 9, 130, 0, 3, KIND, &ap, 250., 3.5, &l, rolls, &pass));
+        assert!(replay_record(&serde_json::from_str(&record.to_string()).unwrap()).unwrap(), "{record}");
+        let mut wrong = record.clone();
+        wrong["rng"]["seed"] = format!("{:016x}", seed + 1000).into();
+        assert!(!replay_record(&wrong).unwrap() || pass.outcome != law::PassOutcome::Passed, "another seed changes the rolled power");
+    }
+}

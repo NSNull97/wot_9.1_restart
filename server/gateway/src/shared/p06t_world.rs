@@ -189,6 +189,14 @@ impl World {
         self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         Ok(pass)
     }
+    /// SHELL-PEN: one spaced plate of a live target crossed under the layered law. The
+    /// Trace re-reads the candidate and records the pass; a spaced plate changes no HP
+    /// and hits no module (`vehicleDamageFactor` 0, armour only).
+    pub(super) fn spaced_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,slot:usize,
+        tick:u32,bundle:&geometry::Bundle,candidate_index:usize)->io::Result<crate::p06t_damage::LayerPass>{
+        let actor=actors.get(slot).ok_or_else(||bad())?;
+        trace.spaced_contact(self.id,projectile.sequence,tick,slot,bundle.materials(),actor,candidate_index)
+    }
     fn apply_rack_transition(&mut self,actors:&mut[Actor],slot:usize,events:&[device::Transition],
         health_before:u16,residual_hp:u16,shot:u32,attacker:usize,tick:u32)->io::Result<u16>{
         if self.ammo_detonation.is_none(){return Ok(0);}

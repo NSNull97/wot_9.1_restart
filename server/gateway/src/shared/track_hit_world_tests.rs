@@ -260,3 +260,43 @@ pub(super) fn track_hit_world(now:Instant,body:bool)->World{
     assert_eq!(resolution.policy,crate::p06t_damage::LAYERS_POLICY);
     assert_eq!(resolution.nominal_power_mm,(34.*rolls.penetration-armor).max(0.));
 }
+
+fn spaced_rows(w:&World)->Vec<(crate::p06t_damage::LayerPass,&'static str)>{
+    w.impact.events().iter().filter_map(|e|match e{impact::Event::SpacedContact{target:1,pass,policy,..}=>Some((*pass,*policy)),_=>None}).collect()
+}
+/// Bounded search over aim points of the side-on MS-1 for a shot that crosses a spaced plate.
+fn spaced_shot(base:&World,now:Instant)->World{
+    for y in [0.3,0.5,0.7,0.9,1.1,1.3,1.5,1.7]{for x in [-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5]{
+        let w=shoot(base,[x,y,19.],now);
+        if !spaced_rows(&w).is_empty(){return w;}
+    }}
+    panic!("a side-on shot must cross a spaced plate of the source MS-1");
+}
+
+#[test]fn layered_law_ap_crosses_a_spaced_plate_as_a_layer(){
+    let now=Instant::now();let base=ready_layers([4,0,0],413,now);
+    let w=spaced_shot(&base,now);
+    let rows=spaced_rows(&w);
+    for(pass,policy) in &rows{assert_eq!(*policy,crate::p06t_damage::LAYERS_POLICY);assert!(pass.effective_armor_mm>0.,"{pass:?}");}
+    let(first,_)=rows[0];
+    if first.outcome==crate::p06t_damage::PassOutcome::Passed {
+        // The plate is a layer, not a stop: the shell goes on with less power (to the hull or out).
+        assert_eq!(first.power_after_mm,first.power_before_mm-first.effective_armor_mm);
+        if let Some((resolution,_,_))=hull_rows(&w).first(){
+            assert!(resolution.nominal_power_mm<=first.power_after_mm+1e-9,"{resolution:?} after {first:?}");
+        }
+    } else {
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Terminal{reason:impact::TerminalReason::TestLabLayerImpact,..})));
+        assert_eq!(w.actors[1].health,base.actors[1].health,"a spaced plate never takes HP");
+    }
+}
+
+#[test]fn layered_law_heat_stops_on_a_spaced_plate(){
+    let now=Instant::now();let base=ready_layers([0,4,0],414,now);
+    let w=spaced_shot(&base,now);
+    let(pass,_)=spaced_rows(&w)[0];
+    assert_eq!((pass.outcome,pass.power_after_mm),(crate::p06t_damage::PassOutcome::Stopped,0.));
+    assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Terminal{reason:impact::TerminalReason::TestLabLayerImpact,..})));
+    assert!(!w.impact.events().iter().any(|e|matches!(e,impact::Event::MixedResolution{target:1,..})),"no plate behind HEAT");
+    assert_eq!(w.actors[1].health,base.actors[1].health);
+}

@@ -1418,14 +1418,25 @@ impl World {
                                     self.id, projectile.sequence, tick, &mesh, bundle.materials())?;
                                 (hits, material, None)
                             };
+                            // SHELL-PEN: under the layered law the vehicle stop is the first candidate
+                            // that is not a spaced plate (the Trace chose the same MaterialContact).
+                            let material_index=if impact_trace.layers() {
+                                let mut found=None;
+                                for (index,hit) in hits.iter().enumerate() {
+                                    if !impact::spaced_layer(&bundle.materials().lookup(&hit.mesh,&hit.material)?) {found=Some(index);break;}
+                                }
+                                found
+                            } else if hits.is_empty() {None} else {Some(0)};
+                            let stop=material_index.and_then(|index|hits.get(index));
+                            let chord:[f32;3]=std::array::from_fn(|i|end_point[i]-start_point[i]);
                             // SHELL-02: chassis track crossings of a live target before its
                             // nearest Hull/Turret/Gun, once per track and shot (collideOnceOnly).
                             let mut tracks:Vec<super::collision::Candidate>=Vec::new();
                             if projectile.shell.is_some()&&target.alive() {
                                 if let Some(chassis)=bundle.chassis_mesh(&target,target_slot,tick)? {
-                                    // Before the nearest vehicle triangle and strictly before terrain
+                                    // Before the vehicle stop and strictly before terrain
                                     // (terrain wins a shared f32 bucket, as against the hull).
-                                    let limit=hits.first().map_or(f32::INFINITY,|hit|hit.t)
+                                    let limit=stop.map_or(f32::INFINITY,|hit|hit.t)
                                         .min(ground.as_ref().map_or(f32::INFINITY,|g|g.t as f32));
                                     let done=impact_trace.tracks_hit(projectile.sequence);
                                     for crossing in super::collision::query(&chassis,start_point,end_point)? {
@@ -1436,7 +1447,48 @@ impl World {
                                     }
                                 }
                             }
-                            for crossing in &tracks {
+                            // SHELL-PEN: spaced plates crossed inward before the stop, before terrain.
+                            let mut spaced:Vec<usize>=Vec::new();
+                            if projectile.shell.is_some()&&target.alive()&&impact_trace.layers() {
+                                let ground_t=ground.as_ref().map_or(f32::INFINITY,|g|g.t as f32);
+                                for (index,hit) in hits.iter().enumerate().take(material_index.unwrap_or(hits.len())) {
+                                    if hit.t<ground_t&&impact::against_winding(chord,hit.normal)
+                                        &&impact::spaced_layer(&bundle.materials().lookup(&hit.mesh,&hit.material)?) {spaced.push(index);}
+                                }
+                            }
+                            let mut layers:Vec<(f32,Option<usize>,Option<usize>)>=tracks.iter().enumerate().map(|(i,c)|(c.t,Some(i),None))
+                                .chain(spaced.iter().map(|&i|(hits[i].t,None,Some(i)))).collect();
+                            layers.sort_by(|a,b|a.0.total_cmp(&b.0));
+                            for (_,track_index,spaced_index) in layers {
+                                if let Some(index)=spaced_index {
+                                    let pass=self.spaced_mixed(&mut next_actors,&mut impact_trace,projectile,target_slot,tick,&bundle,index)?;
+                                    if pass.outcome==crate::p06t_damage::PassOutcome::Passed {continue;}
+                                    let hit=&hits[index];
+                                    let point=std::array::from_fn(|i|start_point[i]+hit.t*(end_point[i]-start_point[i]));
+                                    let facts=bundle.materials().lookup(&hit.mesh,&hit.material)?;
+                                    let contact=Contact{shot:projectile.sequence,target_slot,tick,segment_start:start_point,segment_end:end_point,
+                                        segment_seconds:segment_end.duration_since(segment_start).as_secs_f32(),endpoint:point,
+                                        target_position:target.position,target_direction:target.direction,target_aim:[target.aim.yaw,target.aim.pitch],
+                                        triangle:hit.clone(),geometry_revision:mesh.geometry_revision().into(),transform_revision:mesh.transform_revision().into(),
+                                        material_facts:facts};
+                                    let resolution=crate::p06t_damage::Resolution{policy:crate::p06t_damage::LAYERS_POLICY,
+                                        decision:if pass.outcome==crate::p06t_damage::PassOutcome::Ricochet{crate::p06t_damage::Decision::Ricochet}
+                                            else{crate::p06t_damage::Decision::NotPierced},
+                                        damage_hp:0,incidence_degrees:pass.incidence_degrees,effective_armor_mm:Some(pass.effective_armor_mm),
+                                        nominal_power_mm:pass.power_before_mm,normalization_degrees:pass.normalization_degrees};
+                                    if body_impacts(&impacts)>=self.shot_limit(){return Err(bad());}
+                                    // Presentation only, as for a track: no visual where the decoder cannot resolve the ray.
+                                    let segment=bundle.impact_segment(&contact).ok();
+                                    impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
+                                        outcome:ImpactOutcome::Mixed(resolution),health_before:next_actors[target_slot].health,
+                                        health_after:next_actors[target_slot].health,segment});
+                                    projectile.terminal=point;projectile.stopped=true;
+                                    // HE detonates on the spaced plate; HEAT/absorbed/ricochet end the shot.
+                                    self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,point,tick,None,next_fragiles.as_ref())?;
+                                    impact_trace.terminal(self.id,projectile.sequence,tick,impact::TerminalReason::TestLabLayerImpact)?;
+                                    continue 'projectile_loop;
+                                }
+                                let crossing=&tracks[track_index.ok_or_else(||bad())?];
                                 let pass=self.track_mixed(&mut next_actors,&mut impact_trace,projectile,target_slot,tick,&bundle,crossing)?;
                                 let device=super::chassis_armor::ChassisArmor::side(&crossing.material).ok_or_else(||bad())?;
                                 // Presentation only: a ray the native decoder cannot honestly resolve is no visual.
@@ -1460,7 +1512,7 @@ impl World {
                             // Both candidates refer to the same original flight chord.
                             // Compare in the vehicle query's f32 parameter domain:
                             // terrain wins a shared rounding bucket, no epsilon.
-                            if ground.as_ref().is_some_and(|g| hits.first().is_none_or(|v| (g.t as f32) <= v.t)) {
+                            if ground.as_ref().is_some_and(|g| stop.is_none_or(|v| (g.t as f32) <= v.t)) {
                                 if terrain_contacts.len() >= self.shot_limit() { return Err(bad()); }
                                 let hit = impact_trace.terrain_contact(self.id, projectile.sequence, tick)?;
                                 let chord: [f64; 3] = std::array::from_fn(|i| f64::from(end_point[i])-f64::from(start_point[i]));
@@ -1486,7 +1538,7 @@ impl World {
                                 impact_trace.terminal(self.id, projectile.sequence, tick, impact::TerminalReason::TerrainCollision)?;
                                 continue 'projectile_loop;
                             }
-                            if let Some(nearest) = hits.first() {
+                            if let Some(nearest) = stop {
                                 let endpoint = std::array::from_fn(|i|
                                     start_point[i] + nearest.t * (end_point[i] - start_point[i]));
                                 if contacts.len() >= self.shot_limit() { return Err(bad()); }
