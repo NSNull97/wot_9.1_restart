@@ -136,7 +136,7 @@ impl World {
             if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
             self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         }else if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
-            let ray=bundle.proxy_ray(contact)?;
+            let ray=bundle.proxy_ray_for(contact,trace.layers())?;
             if !ray.is_empty(){
                 let kind=actors[slot].vehicle_kind();
                 let profile=caps::Profile::for_owned(kind).or_else(||caps::Profile::SUPPORTED.get(kind.index()).copied()).ok_or_else(||bad())?;

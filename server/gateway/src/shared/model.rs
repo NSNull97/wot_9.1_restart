@@ -1556,6 +1556,7 @@ impl World {
                                     let before=target.health;
                                     let resolution=self.direct_mixed(&mut next_actors,&mut impact_trace,projectile,&contact,&bundle)?;
                                     let segment=if matches!(resolution.decision,crate::p06t_damage::Decision::Unsupported|crate::p06t_damage::Decision::OutOfRange){None}
+                                        else if impact_trace.layers(){bundle.impact_segment(&contact).ok()}
                                         else{Some(bundle.impact_segment(&contact)?)};
                                     impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
                                         outcome:ImpactOutcome::Mixed(resolution),health_before:before,
@@ -1591,7 +1592,7 @@ impl World {
                                     terminal_reason = impact::TerminalReason::TestLabImpact;
                                 } else if projectile.shell.is_some()&&!target.alive(){
                                     if body_impacts(&impacts)>=self.shot_limit(){return Err(bad());}
-                                    let segment=Some(bundle.impact_segment(&contact)?);
+                                    let segment=if impact_trace.layers(){bundle.impact_segment(&contact).ok()}else{Some(bundle.impact_segment(&contact)?)};
                                     impact_trace.wreck_inactive(self.id,projectile.sequence,tick,projectile.slot,target_slot,
                                         target.health,target.health,&target)?;
                                     impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,

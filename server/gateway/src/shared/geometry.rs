@@ -893,7 +893,10 @@ impl Bundle {
     /// Requery the exact authoritative source mesh and contact pose. A source
     /// triangle ID/label alone does not validate the normal, fraction, nearest
     /// order or contact point. This preserves the legacy wire segment method.
-    pub fn proxy_ray(&self, contact: &Contact) -> io::Result<ProxyRay> {
+    pub fn proxy_ray(&self, contact: &Contact) -> io::Result<ProxyRay> { self.proxy_ray_for(contact, false) }
+    /// SHELL-PEN: under the layered law the contact is the first candidate that is not a
+    /// spaced plate (the plates before it were crossed as layers).
+    pub fn proxy_ray_for(&self, contact: &Contact, layered: bool) -> io::Result<ProxyRay> {
         if contact.shot == 0 || contact.shot as usize > super::model::MAX_BATTLE_SHOTS
             || !contact.segment_seconds.is_finite() || !(0. ..=1.).contains(&contact.segment_seconds)
             || contact.geometry_revision != self.geometry_revision() || contact.target_slot >= super::model::MAX_ACTORS || contact.tick < 1000
@@ -909,8 +912,12 @@ impl Bundle {
         if facts!=contact.material_facts {return Err(bad());}
         let mesh = self.mesh_for_pose(contact.target_position, contact.target_direction,
             contact.target_aim, contact.target_slot, contact.tick)?;
-        let expected = super::collision::query(&mesh, contact.segment_start, contact.segment_end)?
-            .into_iter().next().ok_or_else(|| bad())?;
+        let mut found = None;
+        for candidate in super::collision::query(&mesh, contact.segment_start, contact.segment_end)? {
+            if layered && super::impact::spaced_layer(&self.materials.lookup(&candidate.mesh, &candidate.material)?) { continue; }
+            found = Some(candidate); break;
+        }
+        let expected = found.ok_or_else(|| bad())?;
         let endpoint = std::array::from_fn(|i| contact.segment_start[i]
             + expected.t * (contact.segment_end[i] - contact.segment_start[i]));
         if expected != contact.triangle || endpoint != contact.endpoint { return Err(bad()); }
@@ -1486,6 +1493,27 @@ pub(super) mod tests {
         let actual_first = native_decoder_first(&b,&false_success);
         assert_eq!(perf02_identity(&actual_first),perf02_identity(&contacts[0].triangle));
         assert_ne!(perf02_identity(&actual_first),perf02_identity(&contacts[1].triangle));
+    }
+    /// Stand -13, 2026-11-06: a pierced plate behind a crossed spaced plate failed the
+    /// battle in the module ray, which required the nearest triangle. Under the layered
+    /// law the ray takes the first candidate that is not a spaced plate.
+    #[test] fn layered_module_ray_accepts_a_contact_behind_a_spaced_plate_only() {
+        let planes = vec![[0.,-0.5,-0.5],[0.,0.5,-0.5],[0.,0.,0.5],[0.05,-0.5,-0.5],[0.05,0.5,-0.5],[0.05,0.,0.5]];
+        let catalog = bundle();
+        let kind = |spaced: bool| (1..=40).map(|n| format!("armor_{n}")).find(|name| catalog.materials().lookup("Hull", name)
+            .is_ok_and(|f| super::super::impact::spaced_layer(&f) == spaced && f.effective.as_ref().is_some_and(|m| m.armor.is_some_and(|a| a > 0.))))
+            .expect("source MS-1 hull material of this kind");
+        let (screen, plate) = (kind(true), kind(false));
+        let b = perf02_surface_fixture(planes.clone(), vec![perf02_surface_triangle(0,0,1,2,&screen),perf02_surface_triangle(1,3,4,5,&plate)]);
+        let contacts = perf02_surface_contacts(&b);
+        assert!(super::super::impact::spaced_layer(&contacts[0].material_facts), "{screen} is a spaced plate");
+        assert!(!super::super::impact::spaced_layer(&contacts[1].material_facts));
+        assert!(b.proxy_ray(&contacts[1]).is_err(), "single-plate law: only the nearest");
+        assert!(b.proxy_ray_for(&contacts[1], true).is_ok(), "layered law: behind a crossed spaced plate");
+        assert!(b.proxy_ray_for(&contacts[0], true).is_err(), "a spaced plate itself is no module contact");
+        let main = perf02_surface_fixture(planes, vec![perf02_surface_triangle(0,0,1,2,&plate),perf02_surface_triangle(1,3,4,5,&plate)]);
+        let contacts = perf02_surface_contacts(&main);
+        assert!(main.proxy_ray_for(&contacts[1], true).is_err(), "behind main armour stays refused");
     }
     #[test] fn perf02_impact_synthetic_nonfirst_equal_t_currently_accepted() {
         // Both triangles meet at the same point; equal-t ordering in this

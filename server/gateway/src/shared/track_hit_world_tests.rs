@@ -265,10 +265,11 @@ fn spaced_rows(w:&World)->Vec<(crate::p06t_damage::LayerPass,&'static str)>{
     w.impact.events().iter().filter_map(|e|match e{impact::Event::SpacedContact{target:1,pass,policy,..}=>Some((*pass,*policy)),_=>None}).collect()
 }
 /// Bounded search over aim points of the side-on MS-1 for a shot that crosses a spaced plate.
-fn spaced_shot(base:&World,now:Instant)->World{
+fn spaced_shot(base:&World,now:Instant)->World{spaced_shot_where(base,now,|_|true)}
+fn spaced_shot_where(base:&World,now:Instant,accept:impl Fn(&World)->bool)->World{
     for y in [0.3,0.5,0.7,0.9,1.1,1.3,1.5,1.7]{for x in [-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5]{
         let w=shoot(base,[x,y,19.],now);
-        if !spaced_rows(&w).is_empty(){return w;}
+        if !spaced_rows(&w).is_empty()&&accept(&w){return w;}
     }}
     panic!("a side-on shot must cross a spaced plate of the source MS-1");
 }

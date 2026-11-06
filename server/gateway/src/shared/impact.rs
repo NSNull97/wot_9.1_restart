@@ -843,7 +843,9 @@ impl Trace {
             }
             let mesh=bundle.world_mesh(actor,target,server_tick)?;
             if mesh.geometry_revision()!=contact.geometry_revision||mesh.transform_revision()!=contact.transform_revision
-                ||collision::query(&mesh,start,end)?.first()!=Some(&contact.triangle){
+                ||collision::query(&mesh,start,end)?.into_iter()
+                    .find(|c|!self.layers||!bundle.materials().lookup(&c.mesh,&c.material).is_ok_and(|f|spaced_layer(&f)))
+                    .as_ref()!=Some(&contact.triangle){
                 return Err(invalid("LAB31 actual nearest source triangle witness"));
             }
         }
