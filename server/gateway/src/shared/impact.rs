@@ -50,6 +50,14 @@ pub fn resolve_mixed_for(kind:VehicleKind,facts:&materials::MaterialFacts,shell:
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_mixed_spent(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
     chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool,spent_mm:f64)->io::Result<crate::p06t_damage::Resolution>{
+    let(input,unarmored_device)=mixed_direct_input(kind,facts,shell,chord,normal,distance,breech_lab,spent_mm)?;
+    if unarmored_device {crate::p06t_damage::resolve_unarmored_device(input)} else {crate::p06t_damage::resolve_direct_spent(input,spent_mm)}
+}
+/// SHELL-CFG: the exact law input of a mixed contact (and whether it is the LAB31
+/// unarmored-device rule); the shot trace records this same input.
+#[allow(clippy::too_many_arguments)]
+pub fn mixed_direct_input(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
+    chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool,spent_mm:f64)->io::Result<(crate::p06t_damage::DirectInput,bool)>{
     let marker=facts.kind==31||facts.name=="gunBreech"||facts.source_class==materials::SourceClass::GunBreechVisualMaterial;
     if breech_lab&&marker {
         let exact=kind==VehicleKind::Wt128&&facts.component==materials::Component::Gun01
@@ -60,11 +68,11 @@ pub fn resolve_mixed_spent(kind:VehicleKind,facts:&materials::MaterialFacts,shel
                 &&!m.use_antifragmentation_lining&&m.may_ricochet&&!m.collide_once_only
                 &&m.chance_to_hit_by_projectile==1.&&m.chance_to_hit_by_explosion==1.&&m.continue_trace_if_no_hit);
         if !exact||spent_mm!=0.{return Err(invalid("LAB31 source class/profile/flags"));}
-        return crate::p06t_damage::resolve_unarmored_device(crate::p06t_damage::DirectInput{
-            shell,plate:crate::p06t_damage::Plate{armor_mm:Some(0.),ordinary:false},chord,winding_normal:normal,distance_m:distance});
+        return Ok((crate::p06t_damage::DirectInput{
+            shell,plate:crate::p06t_damage::Plate{armor_mm:Some(0.),ordinary:false},chord,winding_normal:normal,distance_m:distance},true));
     }
     let plate=plate_for(kind,facts,chord,normal,distance)?;
-    crate::p06t_damage::resolve_direct_spent(crate::p06t_damage::DirectInput{shell,plate,chord,winding_normal:normal,distance_m:distance},spent_mm)
+    Ok((crate::p06t_damage::DirectInput{shell,plate,chord,winding_normal:normal,distance_m:distance},false))
 }
 
 fn splash_los_query(terrain:&terrain::Terrain,center:[f32;3],point:[f32;3],excluded:&[u32])->io::Result<([f32;3],Option<terrain::Hit>)>{
@@ -798,6 +806,11 @@ impl Trace {
         }
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("mixed result policy/source/HP/capacity"));}
+        if super::shot_trace::enabled(){
+            let spent=self.track_spent(shot_id)?;
+            let(input,unarmored)=mixed_direct_input(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab,spent)?;
+            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&input,spent,unarmored,&computed);
+        }
         self.push(Event::MixedResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
             shell,contact:contact.clone(),resolution:computed,health_before,health_after})?;
         self.last_tick=server_tick;Ok(())
@@ -926,6 +939,7 @@ impl Trace {
         let computed=crate::p06t_damage::resolve_splash(shell,&[input])?[0];
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("splash recomputed damage/health/capacity"));}
+        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&shell,&input,&computed);}
         self.push(Event::SplashResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,
             contact:contact.clone(),distance_m:distance,terrain_revision:terrain.source_revision(),excluded_instances:excluded,los_start,terrain_blocker:blocker,
             los_policy:SPLASH_LOS_POLICY,resolution:computed,health_before,health_after})?;
@@ -1419,6 +1433,9 @@ impl Trace {
         let point: [f32; 3] = std::array::from_fn(|i| start[i] + candidate.t * (end[i] - start[i]));
         let distance_m = (0..3).map(|i| (f64::from(point[i]) - f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
         let pass = crate::p06t_damage::track_pass(shell, distance_m, spent, material.armor_mm)?;
+        if super::shot_trace::enabled() {
+            super::shot_trace::track(battle_id, shot_id, server_tick, attacker, target, self.kind_for_slot(attacker)?, &shell, distance_m, spent, material.armor_mm, &pass);
+        }
         // Keep room for the outcome and terminal rows the batch reserved.
         if self.events.len() + 3 > self.event_limit() || self.next_order.checked_add(3).is_none() {
             return Err(invalid("track contact trace capacity"));

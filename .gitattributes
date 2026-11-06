@@ -237,3 +237,7 @@ server/gateway/src/shared/chassis_armor_pins.rs text eol=lf
 /client_patch/catalog_test_lab_hints.py text eol=lf
 /server/gateway/src/shared/vehicle_catalog_test_lab.rs text eol=lf
 /server/gateway/src/shared/battle_any_pins_test_lab.rs text eol=lf
+# SHELL-CFG: rulesHash is the SHA-256 of the exact snapshot bytes.
+/config/shell_rules/*.json text eol=lf
+/server/gateway/src/shared/shell_rules_pins.rs text eol=lf
+/tools/shell_rules.py text eol=lf
