@@ -16,6 +16,11 @@
         "value": "test_lab.p06t.unarmored-gun-breech.v2",
         "status": "test_lab",
         "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) UNARMORED_DEVICE_POLICY"
+      },
+      "layers": {
+        "value": "project.armor-layers.v1",
+        "status": "project_policy",
+        "source": "SHELL-PEN 2026-11-06: layered law (owner decisions 1-4), server/gateway/src/shared/p06t_damage.rs LAYERS_POLICY"
       }
     },
     "families": {

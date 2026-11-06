@@ -44,7 +44,7 @@ def angle(nullable=False):
 FAMILY = {"normalization_deg": angle(), "ricochet_deg": angle(True), "caliber_rules": ("bool",),
           "distance_falloff": ("bool",)}
 SCHEMA = {
-    "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",)},
+    "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",), "layers": ("law",)},
     "families": {name: FAMILY for name in ("armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive")},
     "caliber": {"normalization_ratio": ("number", 1.0, 20.0, False), "normalization_multiplier": ("number", 0.0, 10.0, False),
                 "no_ricochet_ratio": ("number", 1.0, 20.0, False)},

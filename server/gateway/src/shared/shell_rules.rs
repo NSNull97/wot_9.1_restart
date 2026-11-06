@@ -24,7 +24,7 @@ pub struct FamilyRules { pub normalization_deg: f64, pub ricochet_deg: Option<f6
 pub struct Rules {
     pub rules_hash: String,
     pub config_version: u32,
-    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String,
+    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String,
     /// Indexed by `family_index`.
     pub families: [FamilyRules; 4],
     pub normalization_ratio: f64, pub normalization_multiplier: f64, pub no_ricochet_ratio: f64,
@@ -92,7 +92,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     let rules = &top["rules"];
     exact(rules, &["laws", "families", "caliber", "falloff", "high_explosive", "randomization", "layers", "engine", "damage"], "rules")?;
     let laws = &rules["laws"];
-    exact(laws, &["direct", "track", "unarmored_device"], "rules.laws")?;
+    exact(laws, &["direct", "track", "unarmored_device", "layers"], "rules.laws")?;
     let families = &rules["families"];
     let names = ["armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive"];
     exact(families, &names, "rules.families")?;
@@ -135,6 +135,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         direct_law: law(laws, "direct", crate::p06t_damage::POLICY)?,
         track_law: law(laws, "track", crate::p06t_damage::TRACK_PASS_POLICY)?,
         unarmored_device_law: law(laws, "unarmored_device", crate::p06t_damage::UNARMORED_DEVICE_POLICY)?,
+        layers_law: law(laws, "layers", crate::p06t_damage::LAYERS_POLICY)?,
         families: table,
         normalization_ratio: number(caliber, "normalization_ratio", "rules.caliber", 1., 20.)?,
         normalization_multiplier: number(caliber, "normalization_multiplier", "rules.caliber", 0., 10.)?,

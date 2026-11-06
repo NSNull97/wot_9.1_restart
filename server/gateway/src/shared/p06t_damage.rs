@@ -3,7 +3,7 @@
 //! (`shared/shell_rules.rs`); the policy strings name the law code itself.
 use std::io;
 use crate::p06t_shells091::{Family, Shell, PROFILES};
-use crate::gateway091::shared::shell_rules::{rules, Rules};
+use crate::gateway091::shared::shell_rules::{rules, Rolls, Rules};
 
 pub const POLICY: &str = "test_lab.p06t.single-plate-splash.v1";
 /// Explicit opt-in LAB rule, not a reconstruction of the historical solver.
@@ -94,34 +94,90 @@ pub fn track_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, armor_mm:
     let stopped = shell.family == Family::HighExplosive || left <= 0.;
     Ok(TrackPass { power_before_mm, power_after_mm: if stopped { 0. } else { left }, stopped })
 }
+fn valid_roll(r: Rolls) -> io::Result<()> {
+    if !(0.5..=1.5).contains(&r.penetration) || !(0.5..=1.5).contains(&r.damage) { return Err(bad("damage roll bound")); } Ok(())
+}
+/// One spaced layer or track crossed against the winding (SHELL-PEN step 1).
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct Layer { pub armor_mm: f64, pub use_hit_angle: bool, pub may_ricochet: bool, pub chord: [f32;3], pub winding_normal: [f32;3] }
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum PassOutcome { Passed, Absorbed, Ricochet, Stopped }
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub struct LayerPass { pub power_before_mm: f64, pub incidence_degrees: f64, pub normalization_degrees: f64,
+    pub effective_armor_mm: f64, pub power_after_mm: f64, pub outcome: PassOutcome }
+/// A spaced layer or track: HE stops (detonates) on it; HEAT stops by the owner's
+/// choice (2026-11-06, option c); AP/APCR take the effective layer armour off the
+/// rolled power (normalization and ricochet only where the material uses the hit
+/// angle / may ricochet, as the #717 track MaterialInfo does not).
+pub fn layer_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, rolls: Rolls, layer: Layer) -> io::Result<LayerPass> {
+    source_shell(shell)?;
+    let rules = rules()?;
+    valid_roll(rolls)?;
+    if !distance_m.is_finite() || !(0. ..=100_000.).contains(&distance_m) { return Err(bad("damage range bound")); }
+    valid_armor(layer.armor_mm)?; valid_armor(spent_before_mm)?;
+    let caliber = if rules.caliber_integer { shell.caliber_mm.trunc() } else { shell.caliber_mm };
+    let power_before_mm = (penetration(rules, shell, distance_m) * rolls.penetration - spent_before_mm).max(0.);
+    let dir = unit(layer.chord)?; let normal = unit(layer.winding_normal)?;
+    let incidence = if layer.use_hit_angle { dir.iter().zip(normal).map(|(d,n)|d*n).sum::<f64>().abs().clamp(0.,1.).acos().to_degrees() } else { 0. };
+    let mut pass = LayerPass { power_before_mm, incidence_degrees: incidence, normalization_degrees: 0., effective_armor_mm: layer.armor_mm,
+        power_after_mm: 0., outcome: PassOutcome::Stopped };
+    if shell.family == Family::HighExplosive || shell.family == Family::HollowCharge && rules.heat_stops_on_spaced { return Ok(pass); }
+    let family = rules.family(shell.family);
+    if layer.use_hit_angle && layer.armor_mm > 0. {
+        let overmatch = family.caliber_rules;
+        if layer.may_ricochet && family.ricochet_deg.is_some_and(|a| incidence >= a) && (!overmatch || caliber < rules.no_ricochet_ratio * layer.armor_mm) {
+            pass.outcome = PassOutcome::Ricochet; return Ok(pass);
+        }
+        let normalization = if overmatch && caliber >= rules.normalization_ratio * layer.armor_mm {
+            family.normalization_deg * rules.normalization_multiplier * caliber / layer.armor_mm } else { family.normalization_deg };
+        if !normalization.is_finite() { return Err(bad("damage normalization overflow")); }
+        pass.normalization_degrees = normalization;
+        pass.effective_armor_mm = layer.armor_mm / (incidence - normalization).max(0.).to_radians().cos().max(f64::MIN_POSITIVE);
+        if !pass.effective_armor_mm.is_finite() { return Err(bad("damage effective armor overflow")); }
+    }
+    let left = power_before_mm - pass.effective_armor_mm;
+    if left > 0. { pass.power_after_mm = left; pass.outcome = PassOutcome::Passed; } else { pass.outcome = PassOutcome::Absorbed; }
+    Ok(pass)
+}
 /// `spent_mm` is the track armour already taken off this shot (`track_pass`); 0 is the old law.
-pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> {
+pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> { resolve_plate(i, spent_mm, None) }
+/// SHELL-PEN layered law (owner 2026-11-06): the main armour plate after the spaced
+/// layers and tracks of this shot (`spent_mm`), with the shot's one penetration roll
+/// and its damage roll; the caliber is the engine integer (#717 readInt).
+pub const LAYERS_POLICY: &str = "project.armor-layers.v1";
+pub fn resolve_layered(i: DirectInput, spent_mm: f64, rolls: Rolls) -> io::Result<Resolution> { resolve_plate(i, spent_mm, Some(rolls)) }
+fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>) -> io::Result<Resolution> {
     source_shell(i.shell)?;
     let rules = rules()?;
     valid_armor(spent_mm)?;
     if spent_mm > 0. && i.shell.family == Family::HighExplosive { return Err(bad("HE stops on the track")); }
     if !i.distance_m.is_finite() || !(0. ..=100_000.).contains(&i.distance_m) { return Err(bad("damage range bound")); }
     if let Some(armor)=i.plate.armor_mm {valid_armor(armor)?;}
+    if let Some(r)=rolls { valid_roll(r)?; }
+    let caliber=if rolls.is_some()&&rules.caliber_integer {i.shell.caliber_mm.trunc()} else {i.shell.caliber_mm};
     let dir=unit(i.chord)?;let normal=unit(i.winding_normal)?;
     let incidence=dir.iter().zip(normal).map(|(d,n)|d*n).sum::<f64>().abs().clamp(0.,1.).acos().to_degrees();
-    let mut r=Resolution {policy:POLICY,decision:Decision::NotPierced,damage_hp:0,
+    let power=match rolls { Some(r)=>penetration(rules,i.shell,i.distance_m)*r.penetration, None=>penetration(rules,i.shell,i.distance_m) };
+    let mut r=Resolution {policy:if rolls.is_some(){LAYERS_POLICY}else{POLICY},decision:Decision::NotPierced,damage_hp:0,
         incidence_degrees:incidence,effective_armor_mm:None,
-        nominal_power_mm:(penetration(rules,i.shell,i.distance_m)-spent_mm).max(0.),normalization_degrees:0.};
+        nominal_power_mm:(power-spent_mm).max(0.),normalization_degrees:0.};
     if i.distance_m>=i.shell.max_distance_m { r.decision=Decision::OutOfRange;return Ok(r); }
     let Some(armor)=i.plate.armor_mm.filter(|a|*a>0.) else {r.decision=Decision::Unsupported;return Ok(r)};
     if !i.plate.ordinary {r.decision=Decision::Unsupported;return Ok(r);}
     let family=rules.family(i.shell.family);
     let (base_normalization,ricochet,overmatch)=(family.normalization_deg,family.ricochet_deg,family.caliber_rules);
-    if ricochet.is_some_and(|angle|incidence>=angle) && (!overmatch || i.shell.caliber_mm<rules.no_ricochet_ratio*armor) {
+    if ricochet.is_some_and(|angle|incidence>=angle) && (!overmatch || caliber<rules.no_ricochet_ratio*armor) {
         r.decision=Decision::Ricochet;return Ok(r);
     }
-    let normalization=if overmatch && i.shell.caliber_mm>=rules.normalization_ratio*armor {base_normalization*rules.normalization_multiplier*i.shell.caliber_mm/armor}else{base_normalization};
+    let normalization=if overmatch && caliber>=rules.normalization_ratio*armor {base_normalization*rules.normalization_multiplier*caliber/armor}else{base_normalization};
     if !normalization.is_finite() {return Err(bad("damage normalization overflow"));}
     let angle=(incidence-normalization).max(0.);
     let effective=armor/angle.to_radians().cos().max(f64::MIN_POSITIVE);
     if !effective.is_finite() {return Err(bad("damage effective armor overflow"));}
     r.effective_armor_mm=Some(effective);r.normalization_degrees=normalization;
-    if r.nominal_power_mm>effective {r.decision=Decision::Pierced;r.damage_hp=i.shell.damage_hp;}
+    if r.nominal_power_mm>effective {r.decision=Decision::Pierced;r.damage_hp=match rolls {
+        Some(roll)=>(f64::from(i.shell.damage_hp)*roll.damage).round().clamp(0.,f64::from(u16::MAX)) as u16,
+        None=>i.shell.damage_hp };}
     else if i.shell.family==Family::HighExplosive {r.damage_hp=attenuated_he(rules,i.shell,0.,armor)?;}
     Ok(r)
 }
@@ -184,3 +240,7 @@ mod breech_tests;
 #[cfg(test)]
 #[path="damage_law_rules_tests.rs"]
 mod rules_tests;
+
+#[cfg(test)]
+#[path="armor_layers_law_tests.rs"]
+mod layers_tests;
