@@ -1634,8 +1634,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             crate::p06t_lab_proxy::POLICY,model::p06t::MODULE_ADMISSION_POLICY,crate::p06t_shells091::SOURCE_REVISION);
         // SHELL-CFG: the immutable rules snapshot of this build; a broken snapshot stops the start.
         let rules=super::shell_rules::rules()?;
-        println!("SHELL_RULES_BOUND config_version={} rules_hash={} direct_law={} track_law={} profile=classic_plus scope=process-immutable",
-            rules.config_version,rules.rules_hash,rules.direct_law,rules.track_law);
+        if config.shell_layers{battle_template.world.enable_shell_layers()?;}
+        println!("SHELL_RULES_BOUND config_version={} rules_hash={} direct_law={} track_law={} layers_law={} layers={} profile=classic_plus scope=process-immutable",
+            rules.config_version,rules.rules_hash,rules.direct_law,rules.track_law,rules.layers_law,config.shell_layers);
     }
     if profile13_mode && config.visibility_v1 {
         battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;

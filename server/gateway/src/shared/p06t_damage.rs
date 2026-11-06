@@ -102,9 +102,21 @@ fn valid_roll(r: Rolls) -> io::Result<()> {
 pub struct Layer { pub armor_mm: f64, pub use_hit_angle: bool, pub may_ricochet: bool, pub chord: [f32;3], pub winding_normal: [f32;3] }
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum PassOutcome { Passed, Absorbed, Ricochet, Stopped }
+// BW-01 wire codec (tools/bw01_wire_gen.py): PassOutcome
+impl crate::bw_wire::Wire for PassOutcome {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::Passed=>bw_o.tag(0),Self::Absorbed=>bw_o.tag(1),Self::Ricochet=>bw_o.tag(2),Self::Stopped=>bw_o.tag(3),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::Passed),1=>Ok(Self::Absorbed),2=>Ok(Self::Ricochet),3=>Ok(Self::Stopped),t=>crate::bw_wire::variant(t)}}
+}
+// end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct LayerPass { pub power_before_mm: f64, pub incidence_degrees: f64, pub normalization_degrees: f64,
     pub effective_armor_mm: f64, pub power_after_mm: f64, pub outcome: PassOutcome }
+// BW-01 wire codec (tools/bw01_wire_gen.py): LayerPass
+impl crate::bw_wire::Wire for LayerPass {
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{power_before_mm,incidence_degrees,normalization_degrees,effective_armor_mm,power_after_mm,outcome}=self;W::put(power_before_mm,bw_o);W::put(incidence_degrees,bw_o);W::put(normalization_degrees,bw_o);W::put(effective_armor_mm,bw_o);W::put(power_after_mm,bw_o);W::put(outcome,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{power_before_mm:W::get(bw_i)?,incidence_degrees:W::get(bw_i)?,normalization_degrees:W::get(bw_i)?,effective_armor_mm:W::get(bw_i)?,power_after_mm:W::get(bw_i)?,outcome:W::get(bw_i)?})}
+}
+// end BW-01 wire codec
 /// A spaced layer or track: HE stops (detonates) on it; HEAT stops by the owner's
 /// choice (2026-11-06, option c); AP/APCR take the effective layer armour off the
 /// rolled power (normalization and ricochet only where the material uses the hit
@@ -138,6 +150,15 @@ pub fn layer_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, rolls: Ro
     let left = power_before_mm - pass.effective_armor_mm;
     if left > 0. { pass.power_after_mm = left; pass.outcome = PassOutcome::Passed; } else { pass.outcome = PassOutcome::Absorbed; }
     Ok(pass)
+}
+/// A track crossing: with the shot's rolls it is a layer without hit angle or ricochet
+/// (#717 track MaterialInfo), so HE and HEAT stop on it (owner 2026-11-06); without
+/// rolls it is the SHELL-02 track pass.
+pub fn track_layered(shell: Shell, distance_m: f64, spent_before_mm: f64, armor_mm: f64, rolls: Option<Rolls>) -> io::Result<TrackPass> {
+    let Some(rolls) = rolls else { return track_pass(shell, distance_m, spent_before_mm, armor_mm) };
+    let p = layer_pass(shell, distance_m, spent_before_mm, rolls,
+        Layer { armor_mm, use_hit_angle: false, may_ricochet: false, chord: [0., 0., 1.], winding_normal: [0., 0., -1.] })?;
+    Ok(TrackPass { power_before_mm: p.power_before_mm, power_after_mm: p.power_after_mm, stopped: p.outcome != PassOutcome::Passed })
 }
 /// `spent_mm` is the track armour already taken off this shot (`track_pass`); 0 is the old law.
 pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> { resolve_plate(i, spent_mm, None) }

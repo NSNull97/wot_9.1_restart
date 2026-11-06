@@ -341,6 +341,14 @@
 ],
 [
 "shared/p06t_damage.rs",
+"LayerPass"
+],
+[
+"shared/p06t_damage.rs",
+"PassOutcome"
+],
+[
+"shared/p06t_damage.rs",
 "Resolution"
 ],
 [

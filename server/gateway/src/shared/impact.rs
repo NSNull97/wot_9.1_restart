@@ -44,14 +44,16 @@ pub fn plate_for(kind:VehicleKind,facts:&materials::MaterialFacts,chord:[f32;3],
 /// this class's common_extra is gunHealth/native32 before forming these facts.
 pub fn resolve_mixed_for(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
     chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool)->io::Result<crate::p06t_damage::Resolution>{
-    resolve_mixed_spent(kind,facts,shell,chord,normal,distance,breech_lab,0.)
+    resolve_mixed_spent(kind,facts,shell,chord,normal,distance,breech_lab,0.,None)
 }
 /// SHELL-02: the same law after `spent_mm` of track armour (sum of this shot's `TrackContact`).
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_mixed_spent(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
-    chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool,spent_mm:f64)->io::Result<crate::p06t_damage::Resolution>{
+    chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool,spent_mm:f64,rolls:Option<super::shell_rules::Rolls>)->io::Result<crate::p06t_damage::Resolution>{
     let(input,unarmored_device)=mixed_direct_input(kind,facts,shell,chord,normal,distance,breech_lab,spent_mm)?;
-    if unarmored_device {crate::p06t_damage::resolve_unarmored_device(input)} else {crate::p06t_damage::resolve_direct_spent(input,spent_mm)}
+    if unarmored_device {crate::p06t_damage::resolve_unarmored_device(input)}
+    else if let Some(rolls)=rolls {crate::p06t_damage::resolve_layered(input,spent_mm,rolls)}
+    else {crate::p06t_damage::resolve_direct_spent(input,spent_mm)}
 }
 /// SHELL-CFG: the exact law input of a mixed contact (and whether it is the LAB31
 /// unarmored-device rule); the shot trace records this same input.
@@ -411,11 +413,13 @@ pub struct Trace {
     source_history:Vec<(u32,usize,super::ram_proof::Source)>,
     mixed:bool,
     breech_lab:bool,
+    /// SHELL-PEN layered law with rolls (stand config `shell_rules`).
+    layers:bool,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Trace
 impl crate::bw_wire::Wire for Trace {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,vehicle,roster,actor_kinds,events,terminal_shots,next_order,last_tick,battle_id,fragiles,contact_sources,contact_revoked,source_history,mixed,breech_lab}=self;W::put(map,bw_o);W::put(vehicle,bw_o);W::put(roster,bw_o);W::put(actor_kinds,bw_o);W::put(events,bw_o);W::put(terminal_shots,bw_o);W::put(next_order,bw_o);W::put(last_tick,bw_o);W::put(battle_id,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_revoked,bw_o);W::put(source_history,bw_o);W::put(mixed,bw_o);W::put(breech_lab,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,vehicle:W::get(bw_i)?,roster:W::get(bw_i)?,actor_kinds:W::get(bw_i)?,events:W::get(bw_i)?,terminal_shots:W::get(bw_i)?,next_order:W::get(bw_i)?,last_tick:W::get(bw_i)?,battle_id:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_revoked:W::get(bw_i)?,source_history:W::get(bw_i)?,mixed:W::get(bw_i)?,breech_lab:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{map,vehicle,roster,actor_kinds,events,terminal_shots,next_order,last_tick,battle_id,fragiles,contact_sources,contact_revoked,source_history,mixed,breech_lab,layers}=self;W::put(map,bw_o);W::put(vehicle,bw_o);W::put(roster,bw_o);W::put(actor_kinds,bw_o);W::put(events,bw_o);W::put(terminal_shots,bw_o);W::put(next_order,bw_o);W::put(last_tick,bw_o);W::put(battle_id,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_revoked,bw_o);W::put(source_history,bw_o);W::put(mixed,bw_o);W::put(breech_lab,bw_o);W::put(layers,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{map:W::get(bw_i)?,vehicle:W::get(bw_i)?,roster:W::get(bw_i)?,actor_kinds:W::get(bw_i)?,events:W::get(bw_i)?,terminal_shots:W::get(bw_i)?,next_order:W::get(bw_i)?,last_tick:W::get(bw_i)?,battle_id:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_revoked:W::get(bw_i)?,source_history:W::get(bw_i)?,mixed:W::get(bw_i)?,breech_lab:W::get(bw_i)?,layers:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -436,6 +440,18 @@ impl Trace {
         self.breech_lab=true;Ok(())
     }
     pub fn extended_breech_lab(&self)->bool{self.breech_lab}
+    /// Only a pristine configured battle may switch to the layered law.
+    pub fn enable_layers(&mut self)->io::Result<()>{
+        if self.layers||self.roster.is_none()||!self.events.is_empty()||self.battle_id.is_some(){return Err(invalid("late/duplicate layered law"));}
+        self.layers=true;Ok(())
+    }
+    pub fn layers(&self)->bool{self.layers}
+    /// SHELL-PEN: a battle with selected shells (mixed) uses the layered law with the
+    /// shot's rolls; the World and this Trace check both take them from here.
+    pub fn shot_rolls(&self,battle_id:u64,shot_id:u32)->io::Result<Option<super::shell_rules::Rolls>>{
+        if !self.mixed||!self.layers {return Ok(None);}
+        Ok(Some(super::shell_rules::shot_rolls(super::shell_rules::rules()?,battle_id,shot_id)))
+    }
     /// Evidence adapters may insert this only when Some, preserving old JSON.
     pub fn extended_breech_lab_policy(&self)->Option<&'static str>{
         self.breech_lab.then_some(crate::p06t_damage::UNARMORED_DEVICE_POLICY)
@@ -788,8 +804,9 @@ impl Trace {
             .ok_or_else(||invalid("mixed result launch absent"))?;
         let distance=(0..3).map(|i|(f64::from(endpoint[i])-f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
         let chord=std::array::from_fn(|i|end[i]-start[i]);
+        let rolls=self.shot_rolls(battle_id,shot_id)?;
         let computed=resolve_mixed_spent(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab,
-            self.track_spent(shot_id)?)?;
+            self.track_spent(shot_id)?,rolls)?;
         if computed.policy==crate::p06t_damage::UNARMORED_DEVICE_POLICY {
             let(bundle,actor)=source.ok_or_else(||invalid("LAB31 absent actual source witness"))?;
             if actor.vehicle_kind()!=target_kind||bundle.vehicle_kind()!=target_kind||actor.health!=health_before||!actor.alive()
@@ -809,7 +826,7 @@ impl Trace {
         if super::shot_trace::enabled(){
             let spent=self.track_spent(shot_id)?;
             let(input,unarmored)=mixed_direct_input(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab,spent)?;
-            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&input,spent,unarmored,&computed);
+            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&input,spent,unarmored,rolls,&computed);
         }
         self.push(Event::MixedResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
             shell,contact:contact.clone(),resolution:computed,health_before,health_after})?;
@@ -1432,9 +1449,10 @@ impl Trace {
             .ok_or_else(|| invalid("track contact launch absent"))?;
         let point: [f32; 3] = std::array::from_fn(|i| start[i] + candidate.t * (end[i] - start[i]));
         let distance_m = (0..3).map(|i| (f64::from(point[i]) - f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
-        let pass = crate::p06t_damage::track_pass(shell, distance_m, spent, material.armor_mm)?;
+        let rolls = self.shot_rolls(battle_id, shot_id)?;
+        let pass = crate::p06t_damage::track_layered(shell, distance_m, spent, material.armor_mm, rolls)?;
         if super::shot_trace::enabled() {
-            super::shot_trace::track(battle_id, shot_id, server_tick, attacker, target, self.kind_for_slot(attacker)?, &shell, distance_m, spent, material.armor_mm, &pass);
+            super::shot_trace::track(battle_id, shot_id, server_tick, attacker, target, self.kind_for_slot(attacker)?, &shell, distance_m, spent, material.armor_mm, rolls, &pass);
         }
         // Keep room for the outcome and terminal rows the batch reserved.
         if self.events.len() + 3 > self.event_limit() || self.next_order.checked_add(3).is_none() {
@@ -1442,7 +1460,8 @@ impl Trace {
         }
         self.push(Event::TrackContact { order: self.next_order_value()?, battle_id, shot_id, server_tick, segment_order: segment,
             query_order: query, target, device, candidate: candidate.clone(), chassis_revision: chassis.geometry_revision(),
-            transform_revision: vehicle_transform, armor_mm: material.armor_mm, distance_m, pass, policy: crate::p06t_damage::TRACK_PASS_POLICY })?;
+            transform_revision: vehicle_transform, armor_mm: material.armor_mm, distance_m, pass,
+            policy: if rolls.is_some() { crate::p06t_damage::LAYERS_POLICY } else { crate::p06t_damage::TRACK_PASS_POLICY } })?;
         self.last_tick = server_tick;
         Ok(pass)
     }

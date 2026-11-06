@@ -16,6 +16,13 @@ impl World {
         self.impact.enable_extended_breech_lab()
     }
     pub fn extended_breech_lab(&self)->bool{self.impact.extended_breech_lab()}
+    /// SHELL-PEN: the layered law with the shot's rolls for every battle of this
+    /// template (stand config `shell_rules`); before actors, mixed ammunition only.
+    pub fn enable_shell_layers(&mut self)->io::Result<()> {
+        if !self.mixed_ammo||!self.mixed_profiles||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()
+            ||!self.projectiles.is_empty(){return Err(bad());}
+        self.impact.enable_layers()
+    }
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
         let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
         let state=device::State::new(profile)?;
@@ -105,7 +112,7 @@ impl World {
         // SHELL-02: track armour this shot already passed (0 without a TrackContact).
         let spent=trace.track_spent(projectile.sequence)?;
         let resolution=impact::resolve_mixed_spent(actors[slot].vehicle_kind(),&contact.material_facts,shell,
-            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent)?;
+            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent,trace.shot_rolls(self.id,projectile.sequence)?)?;
         let after=(i32::from(before)-i32::from(resolution.damage_hp)).max(0)as i16;
         trace.mixed_resolution_source(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after,bundle,&actors[slot])?;
         let facts=&contact.material_facts;

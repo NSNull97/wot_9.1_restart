@@ -303,6 +303,9 @@ pub struct Config {
     pub results_ledger:bool,
     /// UI-06: `team_score` (absent: no frags, no team killer flag, zero results).
     pub team_score:bool,
+    /// SHELL-PEN: `shell_rules` {"version":2,"sha256":<this build's rulesHash>} turns on the
+    /// layered law with rolls (absent: the single-plate law, old path).
+    pub shell_layers:bool,
     /// BW-01: each arena steps in its own worker process (absent: arenas in this process, old path).
     pub battle_worker:Option<BattleWorker>,
 }
@@ -555,6 +558,13 @@ impl Config {
             _=>return Err(invalid("catalog must be {version:1,sha256} of this gateway build")),
         };
         if catalog_v1&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("catalog v1 applies to the owned mixed profile13 writer only"));}
+        let shell_layers=match value.remove("shell_rules"){
+            None=>false,
+            Some(Value::Object(c)) if c.len()==2&&c.get("version")==Some(&Value::from(2u64))
+                &&c.get("sha256").and_then(Value::as_str)==Some(crate::gateway091::shared::shell_rules::RULES_SHA256)=>true,
+            _=>return Err(invalid("shell_rules must be {version:2,sha256} of this gateway build")),
+        };
+        if shell_layers&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("shell_rules applies to the owned mixed profile13 battle only"));}
         let int_user_settings=match value.remove("int_user_settings") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("int user settings must be explicit boolean"))};
         let domain_value=value.remove("domain_service");
         if int_user_settings&&domain_value.is_none(){return Err(invalid("int user settings require domain_service"));}
@@ -585,7 +595,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,shell_layers,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1432,6 +1442,24 @@ mod tests {
         many["one_more"]=true.into();let error=load(&many).err().unwrap().to_string();assert!(error.contains("too many config fields"),"{error}");
         let mut raw=serde_json::to_string(&value).unwrap();raw.pop();raw.push_str(",\"arenas\":2}");fs::write(&path,raw).unwrap();
         let error=Config::load(path.to_str().unwrap()).err().unwrap().to_string();assert!(error.contains("duplicate config field"),"{error}");
+    }
+    #[test] fn shell_rules_is_an_explicit_hash_bound_mixed_profile13_option() {
+        let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let root=Path::new(env!("CARGO_MANIFEST_DIR")).join("../../local/test-runs").join(format!("shell-rules-config-{stamp}"));
+        fs::create_dir_all(&root).unwrap();let root=root.canonicalize().unwrap();fs::write(root.join("token.txt"),"a".repeat(43)).unwrap();
+        let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
+            "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
+        let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
+        let sha=crate::gateway091::shared::shell_rules::RULES_SHA256;
+        assert!(!load(&value).unwrap().shell_layers,"absent: the single-plate law");
+        value["shell_rules"]=serde_json::json!({"version":2,"sha256":sha});assert!(load(&value).is_err(),"needs the mixed profile13 battle");
+        for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
+            "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","p04m_pool","p06t_mixed_ammo"]{value[field]=true.into();}
+        assert!(load(&value).unwrap().shell_layers);
+        for bad in [serde_json::json!({"version":2,"sha256":"0".repeat(64)}),serde_json::json!({"version":1,"sha256":sha}),
+            serde_json::json!({"version":2,"sha256":sha,"extra":true}),true.into(),Value::Null]{
+            value["shell_rules"]=bad;assert!(load(&value).is_err());}
+        fs::remove_dir_all(&root).unwrap();
     }
     #[test] fn cat01_catalog_is_an_explicit_hash_bound_mixed_profile13_option() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
