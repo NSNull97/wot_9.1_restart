@@ -1,9 +1,9 @@
 {
   "schema": "wot091-shell-rules-profile.v1",
-  "config_version": 1,
+  "config_version": 2,
   "profile": "classic_plus",
   "historical_baseline": "wot_0_9_1",
-  "note": "SHELL-CFG 05.11: current LAB law values as data; no number changed. Shell Mechanics 2.0 laws come in later cards.",
+  "note": "SHELL-PEN 06.11: configVersion 2 adds randomization, layers, engine caliber and damage rounding (layered law). SHELL-CFG 05.11: LAB law values as data.",
   "layers": [
     "server_defaults",
     "historical_0_9_1",

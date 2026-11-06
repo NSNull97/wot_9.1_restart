@@ -32,7 +32,7 @@ PROFILE_SCHEMA = "wot091-shell-rules-profile.v1"
 SNAPSHOT_SCHEMA = "wot091-shell-rules.v1"
 LAYERS = ("server_defaults", "historical_0_9_1", "classic_plus", "shell_type", "shell_definition", "gun_vehicle", "game_mode")
 EMPTY_ONLY = ("shell_type", "shell_definition", "gun_vehicle", "game_mode")
-STATUSES = ("verified_091", "test_lab", "requires_verification", "experimental")
+STATUSES = ("verified_091", "test_lab", "requires_verification", "experimental", "project_policy")
 MAX_FILE = 64 * 1024
 MAX_SOURCE = 512
 
@@ -50,6 +50,13 @@ SCHEMA = {
                 "no_ricochet_ratio": ("number", 1.0, 20.0, False)},
     "falloff": {"full_power_until_m": ("number", 0.0, 1000.0, False), "linear_span_m": ("number", 1.0, 2000.0, False)},
     "high_explosive": {"damage_factor": ("number", 0.0, 1.0, False), "armor_factor": ("number", 0.0, 10.0, False)},
+    # SHELL-PEN (configVersion 2): read by the layered law; the single-plate law ignores them.
+    "randomization": {"penetration_percent": ("number", 0.0, 50.0, False), "damage_percent": ("number", 0.0, 50.0, False),
+                      "distribution": ("enum", ("uniform",)), "penetration_rolls_per_shot": ("enum", ("one",))},
+    "layers": {"entry": ("enum", ("against_winding",)), "heat_on_spaced": ("enum", ("stop", "pass")),
+               "he_on_spaced": ("enum", ("stop",)), "after_ricochet": ("enum", ("shot_ends",))},
+    "engine": {"caliber_integer": ("bool",)},
+    "damage": {"rounding": ("enum", ("half_away_from_zero",))},
 }
 
 
@@ -87,6 +94,8 @@ def check_leaf(path, spec, leaf):
     value, kind = leaf["value"], spec[0]
     if kind == "bool":
         require(type(value) is bool, path + ": bool required")
+    elif kind == "enum":
+        require(value in spec[1], path + ": one of " + ", ".join(spec[1]))
     elif kind == "law":
         require(type(value) is str and value.startswith(("test_lab.", "project.", "wot091.")) and len(value) <= 128,
                 path + ": law id")
