@@ -41,6 +41,18 @@ fn ready_at(chassis:bool,counts:[u16;3],id:u64,now:Instant,ground:f32,target_z:f
     for slot in 0..2{w.set_ready(slot,slot as u32+1).unwrap();}
     w.advance_lifecycle(now).unwrap();w
 }
+/// SHELL-PEN: the same stand with the layered law (config `shell_rules`).
+fn ready_layers(counts:[u16;3],id:u64,now:Instant)->World{
+    let mut w=template(now,id,true,-100.);w.enable_shell_layers().unwrap();
+    lab_attach(&mut w,0,[4,4,4]);lab_attach(&mut w,1,[1,1,1]);
+    w.actors[0].fire=fire::State::with_typed(source::Mount::Ms1Stock,counts,
+        source::PROFILES[0].shots[counts.iter().position(|v|*v>0).unwrap()].compact_descr).unwrap();
+    for(slot,p)in [[0.;3],[0.,0.,20.]].into_iter().enumerate(){w.actors[slot].position=p;w.actors[slot].origin=p;}
+    w.actors[1].direction=[std::f32::consts::FRAC_PI_2,0.,0.];w.actors[1].yaw=std::f32::consts::FRAC_PI_2;
+    w.start(now).unwrap();w.lifecycle_created_unix=Some(1792152000);
+    for slot in 0..2{w.set_ready(slot,slot as u32+1).unwrap();}
+    w.advance_lifecycle(now).unwrap();w
+}
 fn shoot(base:&World,point:[f32;3],now:Instant)->World{
     let mut w=base.clone();
     w.apply(0,1,&[Command::Aim(aim::Intent::Point(point))],now).unwrap();
@@ -225,4 +237,67 @@ pub(super) fn track_hit_world(now:Instant,body:bool)->World{
         assert_eq!((packed[0],packed[1]),(4,0),"CRITICAL_HIT on the chassis, native component 0");
         assert_eq!(w.impacts.iter().filter(|e|!e.is_track()).count(),usize::from(body));
     }
+}
+
+#[test]fn layered_law_heat_stops_on_the_track_and_never_reaches_the_hull(){
+    // Owner 2026-11-06 (SHELL-PEN question 1, option c).
+    let now=Instant::now();let base=ready_layers([0,4,0],411,now);assert!(base.impact.layers());
+    let(w,_)=first_track_shot(&base,now);
+    let rows=track_rows(&w);assert_eq!(rows.len(),1);assert!(rows[0].2.stopped&&rows[0].2.power_after_mm==0.,"{rows:?}");
+    assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::TrackContact{policy,..}if *policy==crate::p06t_damage::LAYERS_POLICY)));
+    assert!(!w.impact.events().iter().any(|e|matches!(e,impact::Event::MixedResolution{target:1,..})),"no hull plate behind HEAT");
+    assert_eq!(w.actors[1].health,base.actors[1].health);
+}
+
+#[test]fn layered_law_ap_passes_the_track_with_the_shot_roll_and_rolls_the_hull_plate(){
+    let now=Instant::now();let base=ready_layers([4,0,0],412,now);
+    let(w,_)=track_shot_where(&base,now,|w|!hull_rows(w).is_empty());
+    let(_,armor,pass)=track_rows(&w)[0];
+    let rolls=w.impact.shot_rolls(w.id,1).unwrap().expect("layered battle rolls");
+    assert_eq!(pass.power_before_mm,34.*rolls.penetration,"one penetration roll for the shot");
+    assert_eq!(pass.power_after_mm,34.*rolls.penetration-armor);
+    let(resolution,_,_)=hull_rows(&w)[0];
+    assert_eq!(resolution.policy,crate::p06t_damage::LAYERS_POLICY);
+    assert_eq!(resolution.nominal_power_mm,(34.*rolls.penetration-armor).max(0.));
+}
+
+fn spaced_rows(w:&World)->Vec<(crate::p06t_damage::LayerPass,&'static str)>{
+    w.impact.events().iter().filter_map(|e|match e{impact::Event::SpacedContact{target:1,pass,policy,..}=>Some((*pass,*policy)),_=>None}).collect()
+}
+/// Bounded search over aim points of the side-on MS-1 for a shot that crosses a spaced plate.
+fn spaced_shot(base:&World,now:Instant)->World{spaced_shot_where(base,now,|_|true)}
+fn spaced_shot_where(base:&World,now:Instant,accept:impl Fn(&World)->bool)->World{
+    for y in [0.3,0.5,0.7,0.9,1.1,1.3,1.5,1.7]{for x in [-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5]{
+        let w=shoot(base,[x,y,19.],now);
+        if !spaced_rows(&w).is_empty()&&accept(&w){return w;}
+    }}
+    panic!("a side-on shot must cross a spaced plate of the source MS-1");
+}
+
+#[test]fn layered_law_ap_crosses_a_spaced_plate_as_a_layer(){
+    let now=Instant::now();let base=ready_layers([4,0,0],413,now);
+    let w=spaced_shot(&base,now);
+    let rows=spaced_rows(&w);
+    for(pass,policy) in &rows{assert_eq!(*policy,crate::p06t_damage::LAYERS_POLICY);assert!(pass.effective_armor_mm>0.,"{pass:?}");}
+    let(first,_)=rows[0];
+    if first.outcome==crate::p06t_damage::PassOutcome::Passed {
+        // The plate is a layer, not a stop: the shell goes on with less power (to the hull or out).
+        assert_eq!(first.power_after_mm,first.power_before_mm-first.effective_armor_mm);
+        if let Some((resolution,_,_))=hull_rows(&w).first(){
+            assert!(resolution.nominal_power_mm<=first.power_after_mm+1e-9,"{resolution:?} after {first:?}");
+        }
+    } else {
+        assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Terminal{reason:impact::TerminalReason::TestLabLayerImpact,..})));
+        assert_eq!(w.actors[1].health,base.actors[1].health,"a spaced plate never takes HP");
+    }
+}
+
+#[test]fn layered_law_heat_stops_on_a_spaced_plate(){
+    let now=Instant::now();let base=ready_layers([0,4,0],414,now);
+    let w=spaced_shot(&base,now);
+    let(pass,_)=spaced_rows(&w)[0];
+    assert_eq!((pass.outcome,pass.power_after_mm),(crate::p06t_damage::PassOutcome::Stopped,0.));
+    assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Terminal{reason:impact::TerminalReason::TestLabLayerImpact,..})));
+    assert!(!w.impact.events().iter().any(|e|matches!(e,impact::Event::MixedResolution{target:1,..})),"no plate behind HEAT");
+    assert_eq!(w.actors[1].health,base.actors[1].health);
 }

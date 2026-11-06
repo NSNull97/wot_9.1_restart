@@ -16,6 +16,13 @@ impl World {
         self.impact.enable_extended_breech_lab()
     }
     pub fn extended_breech_lab(&self)->bool{self.impact.extended_breech_lab()}
+    /// SHELL-PEN: the layered law with the shot's rolls for every battle of this
+    /// template (stand config `shell_rules`); before actors, mixed ammunition only.
+    pub fn enable_shell_layers(&mut self)->io::Result<()> {
+        if !self.mixed_ammo||!self.mixed_profiles||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()
+            ||!self.projectiles.is_empty(){return Err(bad());}
+        self.impact.enable_layers()
+    }
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
         let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
         let state=device::State::new(profile)?;
@@ -105,7 +112,7 @@ impl World {
         // SHELL-02: track armour this shot already passed (0 without a TrackContact).
         let spent=trace.track_spent(projectile.sequence)?;
         let resolution=impact::resolve_mixed_spent(actors[slot].vehicle_kind(),&contact.material_facts,shell,
-            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent)?;
+            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent,trace.shot_rolls(self.id,projectile.sequence)?)?;
         let after=(i32::from(before)-i32::from(resolution.damage_hp)).max(0)as i16;
         trace.mixed_resolution_source(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after,bundle,&actors[slot])?;
         let facts=&contact.material_facts;
@@ -129,7 +136,7 @@ impl World {
             if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
             self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         }else if resolution.decision==crate::p06t_damage::Decision::Pierced||exterior_gun {
-            let ray=bundle.proxy_ray(contact)?;
+            let ray=bundle.proxy_ray_for(contact,trace.layers())?;
             if !ray.is_empty(){
                 let kind=actors[slot].vehicle_kind();
                 let profile=caps::Profile::for_owned(kind).or_else(||caps::Profile::SUPPORTED.get(kind.index()).copied()).ok_or_else(||bad())?;
@@ -181,6 +188,14 @@ impl World {
         if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
         self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         Ok(pass)
+    }
+    /// SHELL-PEN: one spaced plate of a live target crossed under the layered law. The
+    /// Trace re-reads the candidate and records the pass; a spaced plate changes no HP
+    /// and hits no module (`vehicleDamageFactor` 0, armour only).
+    pub(super) fn spaced_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,slot:usize,
+        tick:u32,bundle:&geometry::Bundle,candidate_index:usize)->io::Result<crate::p06t_damage::LayerPass>{
+        let actor=actors.get(slot).ok_or_else(||bad())?;
+        trace.spaced_contact(self.id,projectile.sequence,tick,slot,bundle.materials(),actor,candidate_index)
     }
     fn apply_rack_transition(&mut self,actors:&mut[Actor],slot:usize,events:&[device::Transition],
         health_before:u16,residual_hp:u16,shot:u32,attacker:usize,tick:u32)->io::Result<u16>{

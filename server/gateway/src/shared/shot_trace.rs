@@ -15,8 +15,9 @@ use std::io::{self, BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
 use serde_json::{json, Value};
-use crate::p06t_damage::{self as law, DirectInput, Plate, Resolution, SplashDamage, SplashTarget, TrackPass};
+use crate::p06t_damage::{self as law, DirectInput, Layer, LayerPass, Plate, Resolution, SplashDamage, SplashTarget, TrackPass};
 use crate::p06t_shells091::{Family, Shell};
+use crate::gateway091::shared::shell_rules::Rolls;
 use super::vehicle_profile::VehicleKind;
 
 pub const SCHEMA: &str = "wot091-shot-trace.v1";
@@ -87,8 +88,22 @@ fn context(kind: &str, battle: u64, shot: u32, tick: u32, attacker: usize, targe
 
 #[allow(clippy::too_many_arguments)]
 pub fn direct(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, input: &DirectInput, spent_mm: f64,
-              unarmored_device: bool, result: &Resolution) {
-    write(direct_record(battle, shot, tick, attacker, target, attacker_kind, input, spent_mm, unarmored_device, result));
+              unarmored_device: bool, rolls: Option<Rolls>, result: &Resolution) {
+    let mut v = direct_record(battle, shot, tick, attacker, target, attacker_kind, input, spent_mm, unarmored_device, result);
+    v["rng"] = rolls_json(rolls);
+    write(v);
+}
+/// The shot's seed and rolls (null under the single-plate law); replay derives the
+/// rolls again from the seed with the snapshot of the record's rulesHash.
+fn rolls_json(rolls: Option<Rolls>) -> Value {
+    rolls.map_or(Value::Null, |r| json!({"stream": "splitmix64-v1", "seed": format!("{:016x}", r.seed),
+        "penetration": fb(r.penetration), "damage": fb(r.damage)}))
+}
+fn rolls_of(record: &Value) -> io::Result<Option<Rolls>> {
+    let rng = &record["rng"];
+    if rng.is_null() { return Ok(None); }
+    let seed = rng["seed"].as_str().filter(|s| s.len() == 16).and_then(|s| u64::from_str_radix(s, 16).ok()).ok_or_else(|| bad("rng seed"))?;
+    Ok(Some(crate::gateway091::shared::shell_rules::rolls_from_seed(crate::gateway091::shared::shell_rules::rules()?, seed)))
 }
 #[allow(clippy::too_many_arguments)]
 fn direct_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, input: &DirectInput, spent_mm: f64,
@@ -103,8 +118,10 @@ fn direct_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usi
 }
 #[allow(clippy::too_many_arguments)]
 pub fn track(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, distance_m: f64,
-             spent_before_mm: f64, armor_mm: f64, pass: &TrackPass) {
-    write(track_record(battle, shot, tick, attacker, target, attacker_kind, shell, distance_m, spent_before_mm, armor_mm, pass));
+             spent_before_mm: f64, armor_mm: f64, rolls: Option<Rolls>, pass: &TrackPass) {
+    let mut v = track_record(battle, shot, tick, attacker, target, attacker_kind, shell, distance_m, spent_before_mm, armor_mm, pass);
+    v["rng"] = rolls_json(rolls);
+    write(v);
 }
 #[allow(clippy::too_many_arguments)]
 fn track_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, distance_m: f64,
@@ -126,6 +143,28 @@ fn splash_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usi
     v["input"] = json!({"slot": input.slot, "distance_m": fb(input.distance_m), "armor_mm": fb(input.armor_mm), "los_clear": input.los_clear});
     v["result"] = json!({"slot": result.slot, "damage_hp": result.damage_hp});
     v
+}
+
+/// SHELL-PEN: one spaced layer crossed under the layered law.
+#[allow(clippy::too_many_arguments)]
+pub fn layer(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
+             distance_m: f64, spent_before_mm: f64, layer: &Layer, rolls: Rolls, pass: &LayerPass) {
+    write(layer_record(battle, shot, tick, attacker, target, attacker_kind, shell, distance_m, spent_before_mm, layer, rolls, pass));
+}
+#[allow(clippy::too_many_arguments)]
+fn layer_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
+                distance_m: f64, spent_before_mm: f64, layer: &Layer, rolls: Rolls, pass: &LayerPass) -> Value {
+    let mut v = context("layer", battle, shot, tick, attacker, target, attacker_kind);
+    v["shell"] = shell_json(shell);
+    v["input"] = json!({"distance_m": fb(distance_m), "spent_before_mm": fb(spent_before_mm), "armor_mm": fb(layer.armor_mm),
+        "use_hit_angle": layer.use_hit_angle, "may_ricochet": layer.may_ricochet, "chord": f3(layer.chord), "winding_normal": f3(layer.winding_normal)});
+    v["rng"] = rolls_json(Some(rolls));
+    v["result"] = layer_json(pass);
+    v
+}
+fn layer_json(p: &LayerPass) -> Value {
+    json!({"power_before_mm": fb(p.power_before_mm), "incidence_deg": fb(p.incidence_degrees), "normalization_deg": fb(p.normalization_degrees),
+           "effective_armor_mm": fb(p.effective_armor_mm), "power_after_mm": fb(p.power_after_mm), "outcome": format!("{:?}", p.outcome)})
 }
 
 /// The shell of a vehicle kind's gun profile (the source the battle admitted).
@@ -166,10 +205,19 @@ fn recompute(record: &Value) -> io::Result<Value> {
         Some("direct") => {
             let i = DirectInput { shell, plate: Plate { armor_mm: f64_opt(input, "armor_mm")?, ordinary: input["ordinary"].as_bool().ok_or_else(|| bad("ordinary"))? },
                 chord: vec3(input, "chord")?, winding_normal: vec3(input, "winding_normal")?, distance_m: f64_of(input, "distance_m")? };
-            let r = if input["unarmored_device"].as_bool() == Some(true) { law::resolve_unarmored_device(i)? } else { law::resolve_direct_spent(i, f64_of(input, "spent_mm")?)? };
+            let spent = f64_of(input, "spent_mm")?;
+            let r = if input["unarmored_device"].as_bool() == Some(true) { law::resolve_unarmored_device(i)? }
+                else if let Some(rolls) = rolls_of(record)? { law::resolve_layered(i, spent, rolls)? } else { law::resolve_direct_spent(i, spent)? };
             resolution_json(&r)
         }
-        Some("track") => pass_json(&law::track_pass(shell, f64_of(input, "distance_m")?, f64_of(input, "spent_before_mm")?, f64_of(input, "armor_mm")?)?),
+        Some("track") => pass_json(&law::track_layered(shell, f64_of(input, "distance_m")?, f64_of(input, "spent_before_mm")?, f64_of(input, "armor_mm")?, rolls_of(record)?)?),
+        Some("layer") => {
+            let rolls = rolls_of(record)?.ok_or_else(|| bad("layer without rolls"))?;
+            let l = Layer { armor_mm: f64_of(input, "armor_mm")?, use_hit_angle: input["use_hit_angle"].as_bool().ok_or_else(|| bad("use_hit_angle"))?,
+                may_ricochet: input["may_ricochet"].as_bool().ok_or_else(|| bad("may_ricochet"))?, chord: vec3(input, "chord")?,
+                winding_normal: vec3(input, "winding_normal")? };
+            layer_json(&law::layer_pass(shell, f64_of(input, "distance_m")?, f64_of(input, "spent_before_mm")?, rolls, l)?)
+        }
         Some("splash") => {
             if shell.family != Family::HighExplosive { return Err(bad("splash family")); }
             let t = SplashTarget { slot: u8::try_from(input["slot"].as_u64().ok_or_else(|| bad("slot"))?).map_err(|_| bad("slot"))?,

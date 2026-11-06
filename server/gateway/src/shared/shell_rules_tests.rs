@@ -44,3 +44,32 @@ fn mutated(edit: impl Fn(&mut Value)) -> Vec<u8> {
     let same = mutated(|_| {});
     assert_eq!(parse(&same, &digest(&same)).unwrap().families, rules().unwrap().families);
 }
+
+#[test] fn version_two_adds_the_layered_law_settings() {
+    let r = rules().unwrap();
+    assert_eq!(r.config_version, 2);
+    assert_eq!((r.penetration_random_percent, r.damage_random_percent, r.heat_stops_on_spaced, r.caliber_integer), (25., 25., true, true));
+    let bad = mutated(|d| { d["rules"]["layers"]["heat_on_spaced"]["value"] = "explode-later".into(); });
+    assert!(parse(&bad, &digest(&bad)).is_err());
+    let bad = mutated(|d| { d["rules"]["randomization"]["distribution"]["value"] = "normal".into(); });
+    assert!(parse(&bad, &digest(&bad)).is_err());
+}
+
+#[test] fn shot_rolls_are_bounded_reproducible_from_the_seed_and_vary_per_shot() {
+    let r = rules().unwrap();
+    let mut seen = std::collections::BTreeSet::new();
+    let (mut low, mut high) = (f64::MAX, f64::MIN);
+    for shot in 0..20_000u32 {
+        let roll = shot_rolls(r, 777, shot);
+        assert!((0.75..1.25).contains(&roll.penetration) && (0.75..1.25).contains(&roll.damage), "{roll:?}");
+        assert_eq!(rolls_from_seed(r, roll.seed), roll);
+        assert_eq!(shot_rolls(r, 777, shot), roll, "same process, same battle and shot");
+        seen.insert(roll.seed);
+        low = low.min(roll.penetration); high = high.max(roll.penetration);
+    }
+    assert_eq!(seen.len(), 20_000);
+    assert!(low < 0.76 && high > 1.24, "{low} {high}");
+    assert_ne!(shot_rolls(r, 778, 1).seed, shot_rolls(r, 777, 1).seed);
+    let mut flat = r.clone(); flat.penetration_random_percent = 0.; flat.damage_random_percent = 0.;
+    assert_eq!(rolls_from_seed(&flat, 99).penetration, 1.);
+}

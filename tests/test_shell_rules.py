@@ -17,7 +17,7 @@ class Snapshot(unittest.TestCase):
         self.assertEqual(sr.SNAPSHOT.read_bytes(), raw)
         self.assertEqual(sr.PINS.read_bytes(), sr.rust_pins(raw))
         doc = json.loads(raw)
-        self.assertEqual((doc['schema'], doc['config_version'], doc['profile']), ('wot091-shell-rules.v1', 1, 'classic_plus'))
+        self.assertEqual((doc['schema'], doc['config_version'], doc['profile']), ('wot091-shell-rules.v1', 2, 'classic_plus'))
         self.assertEqual([layer['name'] for layer in doc['layers']], list(sr.LAYERS))
 
     def test_values_are_the_former_lab_constants(self):
@@ -83,6 +83,8 @@ class Layers(unittest.TestCase):
             ('classic_plus', {'laws': {'direct': self.leaf('made-up-law')}}),
             ('shell_definition', {'caliber': {'normalization_ratio': self.leaf(2.5)}}),
             ('game_mode', {'falloff': {'linear_span_m': self.leaf(300.0)}}),
+            ('classic_plus', {'layers': {'heat_on_spaced': self.leaf('explode')}}),
+            ('classic_plus', {'randomization': {'distribution': self.leaf('normal')}}),
         ]
         for name, rules in bad_layers:
             with self.subTest(layer=name, rules=rules):

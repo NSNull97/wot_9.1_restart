@@ -16,6 +16,11 @@
         "value": "test_lab.p06t.unarmored-gun-breech.v2",
         "status": "test_lab",
         "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) UNARMORED_DEVICE_POLICY"
+      },
+      "layers": {
+        "value": "project.armor-layers.v1",
+        "status": "project_policy",
+        "source": "SHELL-PEN 2026-11-06: layered law (owner decisions 1-4), server/gateway/src/shared/p06t_damage.rs LAYERS_POLICY"
       }
     },
     "families": {
@@ -147,6 +152,64 @@
         "value": 1.1,
         "status": "test_lab",
         "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) attenuated_he"
+      }
+    },
+    "randomization": {
+      "penetration_percent": {
+        "value": 25.0,
+        "status": "verified_091",
+        "source": "#717 vehicles.pyc _readShell defaults (damageRandomization/piercingPowerRandomization = 0.25), SHELL_MECH"
+      },
+      "damage_percent": {
+        "value": 25.0,
+        "status": "verified_091",
+        "source": "#717 vehicles.pyc _readShell defaults (damageRandomization/piercingPowerRandomization = 0.25), SHELL_MECH"
+      },
+      "distribution": {
+        "value": "uniform",
+        "status": "project_policy",
+        "source": "owner 2026-11-06 (SHELL-PEN question 2); #717 distribution UNKNOWN"
+      },
+      "penetration_rolls_per_shot": {
+        "value": "one",
+        "status": "project_policy",
+        "source": "Shell Mechanics 2.0 section 4; owner 2026-11-06"
+      }
+    },
+    "layers": {
+      "entry": {
+        "value": "against_winding",
+        "status": "requires_verification",
+        "source": "SHELL-PEN step 1 layer audit 2026-11-06 (INFERRED from 232 meshes)"
+      },
+      "heat_on_spaced": {
+        "value": "stop",
+        "status": "project_policy",
+        "source": "owner 2026-11-06 (SHELL-PEN question 1, option c); not 0.9.1"
+      },
+      "he_on_spaced": {
+        "value": "stop",
+        "status": "requires_verification",
+        "source": "SHELL-02 track law (HE detonates on the track); SHELL-03 decides HE"
+      },
+      "after_ricochet": {
+        "value": "shot_ends",
+        "status": "requires_verification",
+        "source": "owner 2026-11-06; 9.3 notes announce continuation as new"
+      }
+    },
+    "engine": {
+      "caliber_integer": {
+        "value": true,
+        "status": "verified_091",
+        "source": "SHELL-01 05.11: #717 descriptor caliber readInt (FV215b 182.9 -> 182)"
+      }
+    },
+    "damage": {
+      "rounding": {
+        "value": "half_away_from_zero",
+        "status": "requires_verification",
+        "source": "owner 2026-11-06 uniform +-25 %; #717 rounding UNKNOWN"
       }
     }
   }
