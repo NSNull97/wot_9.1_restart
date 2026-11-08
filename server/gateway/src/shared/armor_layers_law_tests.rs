@@ -57,8 +57,8 @@ fn layer(armor: f64, angle: f32, use_hit_angle: bool, may_ricochet: bool) -> Lay
     assert!(old.normalization_degrees > 5. && new.normalization_degrees == 5., "{} {}", old.normalization_degrees, new.normalization_degrees);
 }
 
-#[test] fn he_and_heat_stop_on_a_spaced_layer_or_track() {
-    for (mount, family) in [(Mount::Is7Stock, Family::HighExplosive), (Mount::Ms1Stock, Family::HollowCharge)] {
+#[test] fn heat_stops_on_a_spaced_layer_or_track() {
+    for (mount, family) in [(Mount::Ms1Stock, Family::HollowCharge)] {
         let shell = shot(mount, family);
         for l in [layer(20., 0., false, false), layer(8., 45., true, true)] {
             let pass = layer_pass(shell, 100., 0., NEUTRAL, l).unwrap();
@@ -88,4 +88,80 @@ fn layer(armor: f64, angle: f32, use_hit_angle: bool, may_ricochet: bool) -> Lay
     // Power used up on the layer.
     let absorbed = layer_pass(ap, 100., power - 5., NEUTRAL, layer(20., 0., false, false)).unwrap();
     assert_eq!((absorbed.outcome, absorbed.power_after_mm), (PassOutcome::Absorbed, 0.));
+}
+
+// SHELL-03 (owner 2026-11-08): HE/HESH by layers.
+fn fv(resource: &str) -> Shell { *crate::p06t_shells091::profile(Mount::Fv215b183).shots.iter().find(|s| s.resource == resource).unwrap() }
+
+#[test] fn hesh_is_a_server_table_matching_every_source_hesh_shell() {
+    let (hesh_shell, he) = (fv("_183mm_HESH"), fv("_183mm_HE_Mk1"));
+    assert!(hesh(hesh_shell) && !hesh(he));
+    assert_eq!((hesh_shell.family, hesh_shell.penetration_mm, hesh_shell.damage_hp), (Family::HighExplosive, [275., 275.], 1750), "client kind stays HE");
+    // No other shell of any battle or generated gun is HESH, by id or by source name.
+    let registry = crate::gateway091::shared::generated_vehicles::registry().unwrap();
+    let all = PROFILES.iter().flat_map(|p| p.shots.iter().copied()).chain(registry.entries().iter().flat_map(|e| e.gun.shots.iter().copied()));
+    let mut found = std::collections::BTreeSet::new();
+    for s in all { assert_eq!(hesh(s), s.resource.contains("HESH"), "{}", s.resource); if hesh(s) { assert_eq!(s.family, Family::HighExplosive); found.insert(s.compact_descr); } }
+    assert_eq!(found.into_iter().collect::<Vec<_>>(), HESH_SHELLS.to_vec(), "every table entry is a real shell");
+}
+
+#[test] fn he_and_hesh_pass_a_screen_by_resistance_and_loss_or_detonate() {
+    let rules = profile().unwrap();
+    let (he, hesh_shell) = (fv("_183mm_HE_Mk1"), fv("_183mm_HESH"));
+    // 10 mm screen at 0 deg: (92 - 10) * 0.75 and (275 - 10) * 0.25.
+    let p = layer_pass(he, 100., 0., NEUTRAL, layer(10., 0., true, true)).unwrap();
+    assert_eq!((p.outcome, p.power_after_mm), (PassOutcome::Passed, (92. - 10. * rules.he_screen.resistance) * (1. - rules.he_screen.loss)));
+    let p = layer_pass(hesh_shell, 100., 0., NEUTRAL, layer(10., 0., true, true)).unwrap();
+    assert_eq!((p.outcome, p.power_after_mm), (PassOutcome::Passed, (275. - 10.) * 0.25));
+    // The angle thickens a screen; no ricochet and no normalization for HE.
+    let p = layer_pass(he, 100., 0., NEUTRAL, layer(10., 60., true, true)).unwrap();
+    assert_eq!((p.normalization_degrees, p.outcome), (0., PassOutcome::Passed));
+    assert!((p.effective_armor_mm - 20.).abs() < 1e-4);
+    // Thicker than the power: detonation on the layer (Stopped, the splash anchor).
+    for l in [layer(100., 0., true, true), layer(92., 0., false, false)] {
+        assert_eq!(layer_pass(he, 100., 0., NEUTRAL, l).unwrap().outcome, PassOutcome::Stopped);
+    }
+    // The penetration roll scales the power before the screen.
+    let low = Rolls { seed: 1, penetration: 0.75, damage: 1. };
+    let p = layer_pass(he, 100., 0., low, layer(10., 0., false, false)).unwrap();
+    assert_eq!(p.power_after_mm, (92. * 0.75 - 10.) * 0.75);
+    // A track (no hit angle) by the same law; without rolls the SHELL-02 track pass still stops HE.
+    let t = track_layered(he, 100., 0., 20., Some(NEUTRAL)).unwrap();
+    assert_eq!((t.stopped, t.power_after_mm), (false, (92. - 20.) * 0.75));
+    assert!(track_layered(he, 100., 0., 20., None).unwrap().stopped);
+}
+
+#[test] fn he_behind_a_screen_meets_the_main_plate_with_its_remaining_power() {
+    let he = fv("_183mm_HE_Mk1");
+    let after = (92. - 10.) * 0.75;
+    let spent = 92. - after;
+    let pierced = resolve_layered(plate(he, 40., 0., 100.), spent, NEUTRAL).unwrap();
+    assert_eq!((pierced.decision, pierced.damage_hp), (Decision::Pierced, 1750));
+    assert_eq!(pierced.nominal_power_mm, 92. - spent);
+    let held = resolve_layered(plate(he, 80., 0., 100.), spent, NEUTRAL).unwrap();
+    assert_eq!((held.decision, held.damage_hp), (Decision::NotPierced, (0.5f64 * 1750. - 1.1 * 80.).floor() as u16));
+    // The damage roll scales D in the non-penetration formula; HESH direct is HE.
+    let low = Rolls { seed: 1, penetration: 1., damage: 0.8 };
+    assert_eq!(resolve_layered(plate(he, 80., 0., 100.), spent, low).unwrap().damage_hp, (0.5f64 * 1750. * 0.8 - 1.1 * 80.).floor() as u16);
+    assert_eq!(resolve_layered(plate(fv("_183mm_HESH"), 300., 0., 100.), 0., low).unwrap().damage_hp, (0.5f64 * 1750. * 0.8 - 1.1 * 300.).floor() as u16);
+    // The single-plate law still refuses HE behind a track.
+    assert!(resolve_direct_spent(plate(he, 40., 0., 100.), spent).is_err());
+}
+
+#[test] fn layered_splash_falls_off_takes_the_roll_and_halves_hesh() {
+    let (he, hesh_shell) = (fv("_183mm_HE_Mk1"), fv("_183mm_HESH"));
+    let target = |distance_m: f64, armor_mm: f64| SplashTarget { slot: 3, distance_m, armor_mm, los_clear: true };
+    let dmg = |shell, t, r| resolve_splash_layered(shell, &[t], r).unwrap()[0].damage_hp;
+    let expected = |k: f64, d: f64, armor: f64, roll: f64| (0.5 * 1750. * roll * k * (1. - d / 5.05) - 1.1 * armor).max(0.).floor() as u16;
+    for (d, armor) in [(0., 30.), (1.2, 50.), (3.3, 20.), (5.05, 0.), (6., 0.)] {
+        assert_eq!(dmg(he, target(d, armor), NEUTRAL), expected(1., d, armor, 1.), "{d} {armor}");
+        assert_eq!(dmg(hesh_shell, target(d, armor), NEUTRAL), expected(0.5, d, armor, 1.), "{d} {armor}");
+    }
+    let high = Rolls { seed: 7, penetration: 1., damage: 1.2 };
+    assert_eq!(dmg(he, target(1., 40.), high), expected(1., 1., 40., 1.2));
+    // Neutral rolls and no layers: the LAB splash.
+    assert_eq!(resolve_splash_layered(he, &[target(1., 40.)], NEUTRAL).unwrap(), resolve_splash(he, &[target(1., 40.)]).unwrap());
+    let hidden = SplashTarget { los_clear: false, ..target(1., 0.) };
+    assert_eq!(dmg(he, hidden, high), 0);
+    assert!(resolve_splash_layered(he, &[target(1., 0.)], Rolls { seed: 0, penetration: 1., damage: 2. }).is_err(), "roll bound");
 }

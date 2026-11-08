@@ -60,6 +60,25 @@ fn penetration(r: &Rules, shell: Shell, distance: f64) -> f64 {
     if !r.family(shell.family).distance_falloff || distance<=r.full_power_until_m { shell.penetration_mm[0] }
     else { (shell.penetration_mm[0]+(shell.penetration_mm[1]-shell.penetration_mm[0])*(distance-r.full_power_until_m)/r.linear_span_m).max(0.) }
 }
+/// SHELL-03 (owner 2026-11-08): HE/HESH by layers. HESH is a server-side type: #717 reads
+/// it as HIGH_EXPLOSIVE (the client shows HE); only this table names it.
+pub const HE_POLICY: &str = "project.he-layers.v1";
+/// Every HESH of the 0.9.1 battle catalogs (config/catalog, config/test_lab battle_profiles):
+/// _105mm_HESH_L7 (210 mm) and _183mm_HESH, FV215b (183) (275 mm). Test-checked against the
+/// source resource names of every battle and generated gun.
+pub const HESH_SHELLS: [u16; 2] = [17754, 21082];
+pub fn hesh(shell: Shell) -> bool { shell.family == Family::HighExplosive && HESH_SHELLS.contains(&shell.compact_descr) }
+/// Layered HE damage: `D*roll*k*F(d)*factor - armour_factor*armour`, `F(d) = max(0, 1-d/R)^n`,
+/// floored as the LAB formula; `k` is the HESH splash factor for splash, 1 for a direct hit.
+fn layered_he(r: &Rules, shell: Shell, distance: f64, armor: f64, roll: f64, splash: bool) -> io::Result<u16> {
+    let radius=shell.explosion_radius_m.filter(|v|*v>0.).ok_or_else(||bad("HE source radius missing"))?;
+    if !distance.is_finite() || distance<0. { return Err(bad("HE distance bound")); }
+    valid_armor(armor)?;
+    let k=if splash && hesh(shell) { r.hesh_splash_factor } else { 1. };
+    let falloff=(1.-distance/radius).max(0.).powf(r.he_falloff_exponent);
+    Ok((r.he_damage_factor*f64::from(shell.damage_hp)*roll*k*falloff-r.he_armor_factor*armor)
+        .max(0.).floor().min(f64::from(u16::MAX)) as u16)
+}
 fn attenuated_he(r: &Rules, shell: Shell, distance: f64, armor: f64) -> io::Result<u16> {
     let radius=shell.explosion_radius_m.ok_or_else(||bad("HE source radius missing"))?;
     if !distance.is_finite() || distance<0. { return Err(bad("HE distance bound")); }
@@ -133,7 +152,8 @@ pub fn layer_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, rolls: Ro
     let incidence = if layer.use_hit_angle { dir.iter().zip(normal).map(|(d,n)|d*n).sum::<f64>().abs().clamp(0.,1.).acos().to_degrees() } else { 0. };
     let mut pass = LayerPass { power_before_mm, incidence_degrees: incidence, normalization_degrees: 0., effective_armor_mm: layer.armor_mm,
         power_after_mm: 0., outcome: PassOutcome::Stopped };
-    if shell.family == Family::HighExplosive || shell.family == Family::HollowCharge && rules.heat_stops_on_spaced { return Ok(pass); }
+    let he = shell.family == Family::HighExplosive;
+    if he && !rules.he_screen_formula || shell.family == Family::HollowCharge && rules.heat_stops_on_spaced { return Ok(pass); }
     let family = rules.family(shell.family);
     if layer.use_hit_angle && layer.armor_mm > 0. {
         let overmatch = family.caliber_rules;
@@ -146,6 +166,14 @@ pub fn layer_pass(shell: Shell, distance_m: f64, spent_before_mm: f64, rolls: Ro
         pass.normalization_degrees = normalization;
         pass.effective_armor_mm = layer.armor_mm / (incidence - normalization).max(0.).to_radians().cos().max(f64::MIN_POSITIVE);
         if !pass.effective_armor_mm.is_finite() { return Err(bad("damage effective armor overflow")); }
+    }
+    if he {
+        // SHELL-03 (owner 2026-11-08, Shell Mechanics 2.0 section 5 candidate): P_after =
+        // max(0, (P - t_eff*K)*(1-L)); a stopped HE/HESH detonates on the layer.
+        let screen = if hesh(shell) { rules.hesh_screen } else { rules.he_screen };
+        let left = (power_before_mm - pass.effective_armor_mm * screen.resistance) * (1. - screen.loss);
+        if left > 0. { pass.power_after_mm = left; pass.outcome = PassOutcome::Passed; }
+        return Ok(pass);
     }
     let left = power_before_mm - pass.effective_armor_mm;
     if left > 0. { pass.power_after_mm = left; pass.outcome = PassOutcome::Passed; } else { pass.outcome = PassOutcome::Absorbed; }
@@ -171,7 +199,7 @@ fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>) -> io::Res
     source_shell(i.shell)?;
     let rules = rules()?;
     valid_armor(spent_mm)?;
-    if spent_mm > 0. && i.shell.family == Family::HighExplosive { return Err(bad("HE stops on the track")); }
+    if spent_mm > 0. && i.shell.family == Family::HighExplosive && !(rolls.is_some() && rules.he_screen_formula) { return Err(bad("HE stops on the track")); }
     if !i.distance_m.is_finite() || !(0. ..=100_000.).contains(&i.distance_m) { return Err(bad("damage range bound")); }
     if let Some(armor)=i.plate.armor_mm {valid_armor(armor)?;}
     if let Some(r)=rolls { valid_roll(r)?; }
@@ -199,7 +227,8 @@ fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>) -> io::Res
     if r.nominal_power_mm>effective {r.decision=Decision::Pierced;r.damage_hp=match rolls {
         Some(roll)=>(f64::from(i.shell.damage_hp)*roll.damage).round().clamp(0.,f64::from(u16::MAX)) as u16,
         None=>i.shell.damage_hp };}
-    else if i.shell.family==Family::HighExplosive {r.damage_hp=attenuated_he(rules,i.shell,0.,armor)?;}
+    else if i.shell.family==Family::HighExplosive {r.damage_hp=match rolls {
+        Some(roll)=>layered_he(rules,i.shell,0.,armor,roll.damage,false)?, None=>attenuated_he(rules,i.shell,0.,armor)? };}
     Ok(r)
 }
 /// Geometry/source identity is established by the Trace source-witness adapter.
@@ -230,7 +259,13 @@ impl crate::bw_wire::Wire for SplashDamage {
 // end BW-01 wire codec
 /// World owns the actual center-to-surface distance, LOS query and target
 /// identity. Bounded typed facts do not prove that geometry query by themselves.
-pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<SplashDamage>> {
+pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<SplashDamage>> { splash_with(shell,targets,None) }
+/// SHELL-03 layered splash: `armor_mm` is the nominal armour on the one ray to the vehicle
+/// (screens and tracks crossed plus the main plate); the shot's damage roll scales D.
+pub fn resolve_splash_layered(shell:Shell,targets:&[SplashTarget],rolls:Rolls)->io::Result<Vec<SplashDamage>> {
+    valid_roll(rolls)?; splash_with(shell,targets,Some(rolls))
+}
+fn splash_with(shell:Shell,targets:&[SplashTarget],rolls:Option<Rolls>)->io::Result<Vec<SplashDamage>> {
     source_shell(shell)?;
     let rules=rules()?;
     if shell.family!=Family::HighExplosive || targets.len()>MAX_TARGETS {return Err(bad("damage splash family/count"));}
@@ -244,7 +279,8 @@ pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<Splas
             return Err(bad("damage splash identity/distance"));
         }
         valid_armor(target.armor_mm)?;seen[slot]=true;
-        let damage=if target.los_clear {attenuated_he(rules,shell,target.distance_m,target.armor_mm)?}else{0};
+        let damage=if !target.los_clear {0} else if let Some(roll)=rolls {layered_he(rules,shell,target.distance_m,target.armor_mm,roll.damage,true)?}
+            else {attenuated_he(rules,shell,target.distance_m,target.armor_mm)?};
         out.push(SplashDamage {slot:target.slot,damage_hp:damage});
     }
     Ok(out)

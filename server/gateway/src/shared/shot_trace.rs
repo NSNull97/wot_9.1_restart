@@ -133,8 +133,18 @@ fn track_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usiz
     v
 }
 #[allow(clippy::too_many_arguments)]
-pub fn splash(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, input: &SplashTarget, result: &SplashDamage) {
-    write(splash_record(battle, shot, tick, attacker, target, attacker_kind, shell, input, result));
+pub fn splash(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, input: &SplashTarget,
+              rolls: Option<Rolls>, layers_mm: f64, result: &SplashDamage) {
+    write(splash_rolled(battle, shot, tick, attacker, target, attacker_kind, shell, input, rolls, layers_mm, result));
+}
+#[allow(clippy::too_many_arguments)]
+fn splash_rolled(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, input: &SplashTarget,
+                 rolls: Option<Rolls>, layers_mm: f64, result: &SplashDamage) -> Value {
+    let mut v = splash_record(battle, shot, tick, attacker, target, attacker_kind, shell, input, result);
+    // SHELL-03: the shot's damage roll and, for reading only, the screens/tracks share of armor_mm.
+    v["rng"] = rolls_json(rolls);
+    if rolls.is_some() { v["input"]["layers_mm"] = fb(layers_mm); v["shell_type"] = if law::hesh(*shell) { "HESH" } else { "HE" }.into(); }
+    v
 }
 #[allow(clippy::too_many_arguments)]
 fn splash_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell, input: &SplashTarget, result: &SplashDamage) -> Value {
@@ -222,7 +232,7 @@ fn recompute(record: &Value) -> io::Result<Value> {
             if shell.family != Family::HighExplosive { return Err(bad("splash family")); }
             let t = SplashTarget { slot: u8::try_from(input["slot"].as_u64().ok_or_else(|| bad("slot"))?).map_err(|_| bad("slot"))?,
                 distance_m: f64_of(input, "distance_m")?, armor_mm: f64_of(input, "armor_mm")?, los_clear: input["los_clear"].as_bool().ok_or_else(|| bad("los"))? };
-            let d = law::resolve_splash(shell, &[t])?[0];
+            let d = match rolls_of(record)? { Some(rolls) => law::resolve_splash_layered(shell, &[t], rolls)?[0], None => law::resolve_splash(shell, &[t])?[0] };
             json!({"slot": d.slot, "damage_hp": d.damage_hp})
         }
         _ => return Err(bad("record kind")),

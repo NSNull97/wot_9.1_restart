@@ -44,17 +44,23 @@ def angle(nullable=False):
 FAMILY = {"normalization_deg": angle(), "ricochet_deg": angle(True), "caliber_rules": ("bool",),
           "distance_falloff": ("bool",)}
 SCHEMA = {
-    "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",), "layers": ("law",)},
+    "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",), "layers": ("law",), "he": ("law",)},
     "families": {name: FAMILY for name in ("armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive")},
     "caliber": {"normalization_ratio": ("number", 1.0, 20.0, False), "normalization_multiplier": ("number", 0.0, 10.0, False),
                 "no_ricochet_ratio": ("number", 1.0, 20.0, False)},
     "falloff": {"full_power_until_m": ("number", 0.0, 1000.0, False), "linear_span_m": ("number", 1.0, 2000.0, False)},
-    "high_explosive": {"damage_factor": ("number", 0.0, 1.0, False), "armor_factor": ("number", 0.0, 10.0, False)},
+    "high_explosive": {"damage_factor": ("number", 0.0, 1.0, False), "armor_factor": ("number", 0.0, 10.0, False),
+                       # SHELL-03 (configVersion 3): read by the layered law only.
+                       "falloff_exponent": ("number", 0.25, 8.0, False),
+                       "screen_resistance": ("number", 0.0, 10.0, False), "screen_loss": ("number", 0.0, 1.0, False),
+                       "hesh_screen_resistance": ("number", 0.0, 10.0, False), "hesh_screen_loss": ("number", 0.0, 1.0, False),
+                       "hesh_splash_factor": ("number", 0.0, 1.0, False),
+                       "splash_ray": ("enum", ("one_ray_layers",)), "damage_roll": ("enum", ("shot_damage_roll",))},
     # SHELL-PEN (configVersion 2): read by the layered law; the single-plate law ignores them.
     "randomization": {"penetration_percent": ("number", 0.0, 50.0, False), "damage_percent": ("number", 0.0, 50.0, False),
                       "distribution": ("enum", ("uniform",)), "penetration_rolls_per_shot": ("enum", ("one",))},
     "layers": {"entry": ("enum", ("against_winding",)), "heat_on_spaced": ("enum", ("stop", "pass")),
-               "he_on_spaced": ("enum", ("stop",)), "after_ricochet": ("enum", ("shot_ends",))},
+               "he_on_spaced": ("enum", ("stop", "screen_formula")), "after_ricochet": ("enum", ("shot_ends",))},
     "engine": {"caliber_integer": ("bool",)},
     "damage": {"rounding": ("enum", ("half_away_from_zero",))},
 }

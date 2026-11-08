@@ -301,3 +301,52 @@ fn spaced_shot_where(base:&World,now:Instant,accept:impl Fn(&World)->bool)->Worl
     assert!(!w.impact.events().iter().any(|e|matches!(e,impact::Event::MixedResolution{target:1,..})),"no plate behind HEAT");
     assert_eq!(w.actors[1].health,base.actors[1].health);
 }
+
+// SHELL-03 (owner 2026-11-08): HE by layers in the live World.
+fn splash_rows(w:&World)->Vec<(super::super::super::model::Contact,[f32;3],f64,crate::p06t_damage::SplashDamage,i16,i16)>{
+    w.impact.events().iter().filter_map(|e|match e{impact::Event::SplashResolution{target:1,contact,center,distance_m,resolution,health_before,health_after,..}
+        =>Some((contact.clone(),*center,*distance_m,*resolution,*health_before,*health_after)),_=>None}).collect()
+}
+#[test]fn layered_law_he_passes_the_track_by_the_screen_formula_and_meets_the_hull(){
+    let now=Instant::now();let base=ready_layers([0,0,4],415,now);
+    let rules=crate::gateway091::shared::shell_rules::rules().unwrap();
+    let(w,_)=track_shot_where(&base,now,|w|!hull_rows(w).is_empty());
+    let(_,armor,pass)=track_rows(&w)[0];
+    let rolls=w.impact.shot_rolls(w.id,1).unwrap().expect("layered battle rolls");
+    assert_eq!(pass.power_before_mm,19.*rolls.penetration);
+    assert_eq!(pass.power_after_mm,(19.*rolls.penetration-armor*rules.he_screen.resistance)*(1.-rules.he_screen.loss));
+    assert!(!pass.stopped);
+    let(resolution,before,after)=hull_rows(&w)[0];
+    assert_eq!(resolution.policy,crate::p06t_damage::LAYERS_POLICY);
+    assert!((resolution.nominal_power_mm-pass.power_after_mm).abs()<1e-9,"the hull sees the power after the track: {resolution:?} {pass:?}");
+    assert_eq!(before-after,resolution.damage_hp as i16);
+    // The direct target is excluded from its own splash (no summing).
+    assert!(splash_rows(&w).is_empty());
+}
+#[test]fn layered_law_he_stopped_on_a_layer_splashes_the_target_through_the_layers_on_one_ray(){
+    let now=Instant::now();let base=ready_layers([0,0,4],416,now);
+    let stopped=|w:&World|track_rows(w).iter().any(|r|r.2.stopped)
+        ||spaced_rows(w).iter().any(|(p,_)|p.outcome!=crate::p06t_damage::PassOutcome::Passed);
+    let mut found=None;
+    'search: for y in [0.15,0.25,0.35,0.45,0.55,0.65,0.9,1.1,1.3,1.5]{for x in [-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5]{
+        let w=shoot(&base,[x,y,19.],now);if stopped(&w){found=Some(w);break 'search;}
+    }}
+    let w=found.expect("an MS-1 HE shot stopping on a track or a spaced plate");
+    assert!(hull_rows(&w).is_empty(),"a detonated HE reaches no plate directly");
+    let rows=splash_rows(&w);
+    assert_eq!(rows.len(),1,"the detonation reaches the target hull within its radius");
+    let rolls=w.impact.shot_rolls(w.id,1).unwrap().unwrap();
+    let shell=source::PROFILES[0].shots[2];
+    let bundle=w.geometry_for(VehicleKind::Ms1).unwrap().clone();
+    for(contact,center,distance,damage,before,after) in &rows{
+        // Recompute from the same one ray: layers + main plate, the shot's damage roll.
+        let(again,layers)=bundle.explosion_layers(&w.actors[1],*center,shell.explosion_radius_m.unwrap() as f32,1,1,contact.tick).unwrap().unwrap();
+        assert_eq!(&again,contact);
+        let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
+        let plate=impact::plate_for(VehicleKind::Ms1,&contact.material_facts,chord,contact.triangle.normal,*distance).unwrap();
+        let input=crate::p06t_damage::SplashTarget{slot:1,distance_m:*distance,armor_mm:plate.armor_mm.unwrap()+layers,los_clear:true};
+        assert_eq!(crate::p06t_damage::resolve_splash_layered(shell,&[input],rolls).unwrap()[0],*damage);
+        assert_eq!(before-after,damage.damage_hp as i16);
+    }
+    assert_eq!(base.actors[1].health-w.actors[1].health,rows.iter().map(|r|r.3.damage_hp as i16).sum::<i16>());
+}

@@ -952,6 +952,48 @@ impl Bundle {
     /// produce a Contact. Caller owns source shell radius and terrain/static LOS.
     pub fn explosion_contact(&self, actor: &Actor, center: [f32;3], radius: f32,
         shot: u32, target_slot: usize, tick: u32) -> io::Result<Option<Contact>> {
+        let (mesh, end) = self.explosion_ray(actor, center, radius, shot, target_slot, tick)?;
+        let Some(triangle)=super::collision::query(&mesh,center,end)?.into_iter().next() else {return Ok(None)};
+        self.explosion_hit(&mesh, actor, center, end, radius, triangle, shot, target_slot, tick)
+    }
+    /// SHELL-03 layered splash (owner 2026-11-08): the same one ray per vehicle. Spaced plates
+    /// entered on it and the live target's tracks before the plate add their nominal armour;
+    /// parts that are neither (devices, exits) are passed. The Contact is the first ordinary
+    /// armour plate within the radius; the second value is the armour of the layers before it.
+    pub fn explosion_layers(&self, actor: &Actor, center: [f32;3], radius: f32,
+        shot: u32, target_slot: usize, tick: u32) -> io::Result<Option<(Contact, f64)>> {
+        let (mesh, end) = self.explosion_ray(actor, center, radius, shot, target_slot, tick)?;
+        let chord: [f32;3] = std::array::from_fn(|i| end[i]-center[i]);
+        let mut layers: f64 = 0.;
+        let mut main = None;
+        for candidate in super::collision::query(&mesh,center,end)? {
+            let facts = self.materials.lookup(&candidate.mesh,&candidate.material)?;
+            if super::impact::spaced_layer(&facts) {
+                if super::impact::against_winding(chord, candidate.normal) {
+                    layers += f64::from(facts.effective.as_ref().and_then(|m| m.armor).ok_or_else(|| bad())?);
+                }
+                continue;
+            }
+            let plate = super::impact::plate_for(self.vehicle_kind(), &facts, chord, candidate.normal, 0.)?;
+            if plate.ordinary { main = Some(candidate); break; }
+        }
+        let Some(triangle) = main else { return Ok(None) };
+        if let (Some(chassis), Some(tracks)) = (self.chassis(), self.chassis_mesh(actor, target_slot, tick)?) {
+            if actor.alive() {
+                let mut sides = Vec::new();
+                for crossing in super::collision::query(&tracks,center,end)? {
+                    if crossing.t >= triangle.t { break; }
+                    if sides.contains(&crossing.material) { continue; }
+                    layers += chassis.material(&crossing.material).ok_or_else(|| bad())?.armor_mm;
+                    sides.push(crossing.material.clone());
+                }
+            }
+        }
+        if !layers.is_finite() { return Err(bad()); }
+        Ok(self.explosion_hit(&mesh, actor, center, end, radius, triangle, shot, target_slot, tick)?.map(|c| (c, layers)))
+    }
+    fn explosion_ray(&self, actor: &Actor, center: [f32;3], radius: f32,
+        shot: u32, target_slot: usize, tick: u32) -> io::Result<(Mesh, [f32;3])> {
         const MAX_RADIUS: f32 = 16.; // bounded API ceiling; actual #717 maximum is5.05
         if center.iter().any(|v| !v.is_finite() || v.abs()>100_000.)
             || !radius.is_finite() || radius<=0. || radius>MAX_RADIUS
@@ -981,7 +1023,11 @@ impl Bundle {
         }
         let end=std::array::from_fn(|i|(f64::from(hull_center[i])+unit[i]*(extent+0.01))as f32);
         if end==center {return Err(bad());}
-        let Some(triangle)=super::collision::query(&mesh,center,end)?.into_iter().next() else {return Ok(None)};
+        Ok((mesh, end))
+    }
+    #[allow(clippy::too_many_arguments)]
+    fn explosion_hit(&self, mesh: &Mesh, actor: &Actor, center: [f32;3], end: [f32;3], radius: f32, triangle: super::collision::Candidate,
+        shot: u32, target_slot: usize, tick: u32) -> io::Result<Option<Contact>> {
         let endpoint=std::array::from_fn(|i|center[i]+triangle.t*(end[i]-center[i]));
         let distance_squared=(0..3).map(|i|(f64::from(endpoint[i])-f64::from(center[i])).powi(2)).sum::<f64>();
         if distance_squared>f64::from(radius).powi(2) {return Ok(None);}

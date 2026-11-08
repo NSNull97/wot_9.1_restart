@@ -47,12 +47,29 @@ fn mutated(edit: impl Fn(&mut Value)) -> Vec<u8> {
 
 #[test] fn version_two_adds_the_layered_law_settings() {
     let r = rules().unwrap();
-    assert_eq!(r.config_version, 2);
+    assert!(r.config_version >= 2);
     assert_eq!((r.penetration_random_percent, r.damage_random_percent, r.heat_stops_on_spaced, r.caliber_integer), (25., 25., true, true));
     let bad = mutated(|d| { d["rules"]["layers"]["heat_on_spaced"]["value"] = "explode-later".into(); });
     assert!(parse(&bad, &digest(&bad)).is_err());
     let bad = mutated(|d| { d["rules"]["randomization"]["distribution"]["value"] = "normal".into(); });
     assert!(parse(&bad, &digest(&bad)).is_err());
+}
+
+#[test] fn version_three_adds_the_he_screen_splash_and_hesh_settings() {
+    let r = rules().unwrap();
+    assert_eq!(r.config_version, 3);
+    assert_eq!(r.he_law, crate::p06t_damage::HE_POLICY);
+    assert!(r.he_screen_formula);
+    assert_eq!((r.he_screen, r.hesh_screen), (Screen { resistance: 1., loss: 0.25 }, Screen { resistance: 1., loss: 0.75 }));
+    assert_eq!((r.he_falloff_exponent, r.hesh_splash_factor), (1., 0.5));
+    for (label, bad) in [
+        ("loss above one", mutated(|d| { d["rules"]["high_explosive"]["screen_loss"]["value"] = 1.5.into(); })),
+        ("unknown splash ray", mutated(|d| { d["rules"]["high_explosive"]["splash_ray"]["value"] = "all_surfaces".into(); })),
+        ("unknown HE screen rule", mutated(|d| { d["rules"]["layers"]["he_on_spaced"]["value"] = "pass".into(); })),
+        ("foreign HE law", mutated(|d| { d["rules"]["laws"]["he"]["value"] = "project.he-other.v9".into(); })),
+    ] { assert!(parse(&bad, &digest(&bad)).is_err(), "{label}"); }
+    let stop = mutated(|d| { d["rules"]["layers"]["he_on_spaced"]["value"] = "stop".into(); });
+    assert!(!parse(&stop, &digest(&stop)).unwrap().he_screen_formula);
 }
 
 #[test] fn shot_rolls_are_bounded_reproducible_from_the_seed_and_vary_per_shot() {

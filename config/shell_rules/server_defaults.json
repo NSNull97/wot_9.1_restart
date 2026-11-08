@@ -21,6 +21,11 @@
         "value": "project.armor-layers.v1",
         "status": "project_policy",
         "source": "SHELL-PEN 2026-11-06: layered law (owner decisions 1-4), server/gateway/src/shared/p06t_damage.rs LAYERS_POLICY"
+      },
+      "he": {
+        "value": "project.he-layers.v1",
+        "status": "project_policy",
+        "source": "SHELL-03 owner 2026-11-08: HE/HESH by layers, server/gateway/src/shared/p06t_damage.rs HE_POLICY"
       }
     },
     "families": {
@@ -152,6 +157,46 @@
         "value": 1.1,
         "status": "test_lab",
         "source": "server/gateway/src/shared/p06t_damage.rs (main 008495d2) attenuated_he"
+      },
+      "falloff_exponent": {
+        "value": 1.0,
+        "status": "requires_verification",
+        "source": "Shell Mechanics 2.0 section 6 candidate F(d)=max(0,1-d/R)^n; n=1 keeps the LAB linear falloff"
+      },
+      "screen_resistance": {
+        "value": 1.0,
+        "status": "experimental",
+        "source": "SHELL-03 owner 2026-11-08 (question 1, Shell Mechanics 2.0 section 5 candidate P_after=max(0,(P-t*K)*(1-L))); K not given, project value"
+      },
+      "screen_loss": {
+        "value": 0.25,
+        "status": "experimental",
+        "source": "SHELL-03 owner 2026-11-08 (question 1); L not given, project value"
+      },
+      "hesh_screen_resistance": {
+        "value": 1.0,
+        "status": "experimental",
+        "source": "SHELL-03 owner 2026-11-08 (question 1); HESH K not given, project value"
+      },
+      "hesh_screen_loss": {
+        "value": 0.75,
+        "status": "experimental",
+        "source": "SHELL-03 owner 2026-11-08 (question 1); Shell Mechanics 2.0: HESH heavily penalised, screens stay protection"
+      },
+      "hesh_splash_factor": {
+        "value": 0.5,
+        "status": "experimental",
+        "source": "SHELL-03 owner 2026-11-08 (question 3); Shell Mechanics 2.0 section 6: 50 % of HE only as an experiment"
+      },
+      "splash_ray": {
+        "value": "one_ray_layers",
+        "status": "project_policy",
+        "source": "SHELL-03 owner 2026-11-08 (question 2): one ray per vehicle, screens and tracks on it add their nominal armour, no summing over surfaces"
+      },
+      "damage_roll": {
+        "value": "shot_damage_roll",
+        "status": "project_policy",
+        "source": "SHELL-03 owner 2026-11-08 (question 4): the shot's one damage roll scales D before the formula"
       }
     },
     "randomization": {
@@ -188,9 +233,9 @@
         "source": "owner 2026-11-06 (SHELL-PEN question 1, option c); not 0.9.1"
       },
       "he_on_spaced": {
-        "value": "stop",
-        "status": "requires_verification",
-        "source": "SHELL-02 track law (HE detonates on the track); SHELL-03 decides HE"
+        "value": "screen_formula",
+        "status": "project_policy",
+        "source": "SHELL-03 owner 2026-11-08 (question 1): HE/HESH pass a screen or track while P_after > 0, else detonate on it"
       },
       "after_ricochet": {
         "value": "shot_ends",

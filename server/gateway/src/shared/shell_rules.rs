@@ -24,7 +24,7 @@ pub struct FamilyRules { pub normalization_deg: f64, pub ricochet_deg: Option<f6
 pub struct Rules {
     pub rules_hash: String,
     pub config_version: u32,
-    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String,
+    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String, pub he_law: String,
     /// Indexed by `family_index`.
     pub families: [FamilyRules; 4],
     pub normalization_ratio: f64, pub normalization_multiplier: f64, pub no_ricochet_ratio: f64,
@@ -36,7 +36,14 @@ pub struct Rules {
     pub heat_stops_on_spaced: bool,
     /// #717 reads the shell caliber with readInt (FV215b 182.9 -> 182).
     pub caliber_integer: bool,
+    /// configVersion 3 (SHELL-03, owner 2026-11-08), layered law only: HE/HESH pass a screen or
+    /// track by `max(0, (P - t*K) * (1 - L))`; splash falloff exponent; HESH splash factor.
+    pub he_screen_formula: bool, pub he_falloff_exponent: f64,
+    pub he_screen: Screen, pub hesh_screen: Screen, pub hesh_splash_factor: f64,
 }
+/// Shell Mechanics 2.0 section 5 candidate: resistance `K` and extra loss `L` of a screen.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Screen { pub resistance: f64, pub loss: f64 }
 impl Rules {
     pub fn family(&self, family: Family) -> FamilyRules { self.families[family_index(family)] }
 }
@@ -92,7 +99,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     let rules = &top["rules"];
     exact(rules, &["laws", "families", "caliber", "falloff", "high_explosive", "randomization", "layers", "engine", "damage"], "rules")?;
     let laws = &rules["laws"];
-    exact(laws, &["direct", "track", "unarmored_device", "layers"], "rules.laws")?;
+    exact(laws, &["direct", "track", "unarmored_device", "layers", "he"], "rules.laws")?;
     let families = &rules["families"];
     let names = ["armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive"];
     exact(families, &names, "rules.families")?;
@@ -115,7 +122,10 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     let falloff = &rules["falloff"];
     exact(falloff, &["full_power_until_m", "linear_span_m"], "rules.falloff")?;
     let he = &rules["high_explosive"];
-    exact(he, &["damage_factor", "armor_factor"], "rules.high_explosive")?;
+    exact(he, &["damage_factor", "armor_factor", "falloff_exponent", "screen_resistance", "screen_loss",
+        "hesh_screen_resistance", "hesh_screen_loss", "hesh_splash_factor", "splash_ray", "damage_roll"], "rules.high_explosive")?;
+    choice(he, "splash_ray", "rules.high_explosive", &["one_ray_layers"])?;
+    choice(he, "damage_roll", "rules.high_explosive", &["shot_damage_roll"])?;
     let random = &rules["randomization"];
     exact(random, &["penetration_percent", "damage_percent", "distribution", "penetration_rolls_per_shot"], "rules.randomization")?;
     choice(random, "distribution", "rules.randomization", &["uniform"])?;
@@ -123,7 +133,6 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     let layers = &rules["layers"];
     exact(layers, &["entry", "heat_on_spaced", "he_on_spaced", "after_ricochet"], "rules.layers")?;
     choice(layers, "entry", "rules.layers", &["against_winding"])?;
-    choice(layers, "he_on_spaced", "rules.layers", &["stop"])?;
     choice(layers, "after_ricochet", "rules.layers", &["shot_ends"])?;
     let engine = &rules["engine"];
     exact(engine, &["caliber_integer"], "rules.engine")?;
@@ -136,6 +145,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         track_law: law(laws, "track", crate::p06t_damage::TRACK_PASS_POLICY)?,
         unarmored_device_law: law(laws, "unarmored_device", crate::p06t_damage::UNARMORED_DEVICE_POLICY)?,
         layers_law: law(laws, "layers", crate::p06t_damage::LAYERS_POLICY)?,
+        he_law: law(laws, "he", crate::p06t_damage::HE_POLICY)?,
         families: table,
         normalization_ratio: number(caliber, "normalization_ratio", "rules.caliber", 1., 20.)?,
         normalization_multiplier: number(caliber, "normalization_multiplier", "rules.caliber", 0., 10.)?,
@@ -148,6 +158,13 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         damage_random_percent: number(random, "damage_percent", "rules.randomization", 0., 50.)?,
         heat_stops_on_spaced: choice(layers, "heat_on_spaced", "rules.layers", &["stop", "pass"])? == "stop",
         caliber_integer: boolean(engine, "caliber_integer", "rules.engine")?,
+        he_screen_formula: choice(layers, "he_on_spaced", "rules.layers", &["stop", "screen_formula"])? == "screen_formula",
+        he_falloff_exponent: number(he, "falloff_exponent", "rules.high_explosive", 0.25, 8.)?,
+        he_screen: Screen { resistance: number(he, "screen_resistance", "rules.high_explosive", 0., 10.)?,
+            loss: number(he, "screen_loss", "rules.high_explosive", 0., 1.)? },
+        hesh_screen: Screen { resistance: number(he, "hesh_screen_resistance", "rules.high_explosive", 0., 10.)?,
+            loss: number(he, "hesh_screen_loss", "rules.high_explosive", 0., 1.)? },
+        hesh_splash_factor: number(he, "hesh_splash_factor", "rules.high_explosive", 0., 1.)?,
     })
 }
 

@@ -234,17 +234,25 @@ impl World {
         let radius=shell.explosion_radius_m.ok_or_else(||bad())?as f32;
         let terrain=self.terrain.as_ref().ok_or_else(||bad())?.clone();
         let excluded=fragile_state.map_or_else(Vec::new,|state|state.projectile_excluded());
+        // SHELL-03: under the layered law one ray per vehicle through its screens and tracks, with the shot's damage roll.
+        let rolls=trace.shot_rolls(self.id,projectile.sequence)?;
         for slot in 0..actors.len(){
             if exclude_target==Some(slot)||!actors[slot].alive(){continue;}
             let bundle=self.geometry_for(actors[slot].vehicle_kind())?.clone();
-            let Some(contact)=bundle.explosion_contact(&actors[slot],center,radius,projectile.sequence,slot,tick)?else{continue;};
+            let (contact,layers)=if rolls.is_some(){
+                let Some(found)=bundle.explosion_layers(&actors[slot],center,radius,projectile.sequence,slot,tick)?else{continue;};found
+            }else{
+                let Some(contact)=bundle.explosion_contact(&actors[slot],center,radius,projectile.sequence,slot,tick)?else{continue;};(contact,0.)
+            };
             let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
             let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(center[i])).powi(2)).sum::<f64>().sqrt();
             let plate=impact::plate_for(actors[slot].vehicle_kind(),&contact.material_facts,chord,contact.triangle.normal,distance)?;
             if !plate.ordinary{continue;}
             let clear=impact::splash_los(&terrain,center,contact.endpoint,&excluded)?;
-            let result=crate::p06t_damage::resolve_splash(shell,&[crate::p06t_damage::SplashTarget{
-                slot:slot as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||bad())?,los_clear:clear}])?[0];
+            let input=crate::p06t_damage::SplashTarget{
+                slot:slot as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||bad())?+layers,los_clear:clear};
+            let result=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_layered(shell,&[input],r)?[0],
+                None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
             let before=actors[slot].health;let after=(i32::from(before)-i32::from(result.damage_hp)).max(0)as i16;
             trace.splash_resolution(self.id,projectile.sequence,tick,projectile.slot,slot,&contact,center,&result,before,after,
                 &terrain,&bundle,&actors[slot])?;
