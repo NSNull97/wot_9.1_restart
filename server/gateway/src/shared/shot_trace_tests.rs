@@ -139,3 +139,20 @@ fn direct_case(armor: Option<f64>, angle: f32, distance: f64, spent: f64) -> Val
         }
     }
 }
+
+#[test] fn a_module_record_replays_its_chance_decision() {
+    use crate::gateway091::shared::shell_rules::ModuleClass;
+    let rules = crate::gateway091::shared::shell_rules::rules().unwrap();
+    let ap = shell(Family::ArmorPiercing);
+    for (class, explosion, roll) in [(ModuleClass::AmmoBay, false, 0.26), (ModuleClass::AmmoBay, false, 0.28), (ModuleClass::Crew, true, 0.149), (ModuleClass::Crew, true, 0.2)] {
+        let chance = rules.module_chance(class, explosion);
+        let record = stamp(module_record(7, 30, 150, 0, 5, KIND, &ap, "Device(AmmoBay)", class, explosion, chance, roll, roll < chance));
+        assert!(replay_record(&serde_json::from_str(&record.to_string()).unwrap()).unwrap(), "{record}");
+        let mut flipped = record.clone();
+        flipped["result"]["applied"] = (!(roll < chance)).into();
+        assert!(!replay_record(&flipped).unwrap());
+    }
+    let mut bad = stamp(module_record(7, 31, 150, 0, 5, KIND, &ap, "x", ModuleClass::Gun, false, 0.33, 0.5, false));
+    bad["input"]["class"] = "hull".into();
+    assert!(replay_record(&bad).is_err());
+}

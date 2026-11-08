@@ -62,9 +62,9 @@ impl World {
         let slot=next.attach_loadout_fire(identity,session,None,Some(fire))?;
         next.vehicle_kind=previous;next.mixed_ammo=true;
         if existing.is_none(){
-            let actor=&mut next.actors[slot];
-            actor.devices=Some(crate::p06t_device_state::State::new_v2(
-                crate::p06t_device_caps::Profile::SUPPORTED[loadout.kind.index()])?);
+            let devices=next.classic_devices(crate::p06t_device_state::State::new_v2(
+                crate::p06t_device_caps::Profile::SUPPORTED[loadout.kind.index()])?)?;
+            next.actors[slot].devices=Some(devices);
             next.lab_loadouts[slot]=Some(loadout);
         }
         *self=next;Ok(slot)

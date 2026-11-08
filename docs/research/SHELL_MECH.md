@@ -349,6 +349,13 @@ MaterialInfo не доказывают наличие всей внутренн�
 (ammoBay 0.27, engine 0.45 и др.) LAB-путь не применяет: их смысл в серверной механике UNKNOWN — решение
 владельца (SHELL-04).
 
+**SHELL-04, шансы попадания (08.11).** VERIFIED: `chanceToHitByProjectile`/`chanceToHitByExplosion` заданы только в
+C (`materials`), ни один файл машины в `item_defs/vehicles` их не переопределяет: двигатель, баки, рация, механизм башни,
+приборы наблюдения 0.45/0.45; БК 0.27/0.27; орудие 0.33/0.33; казённик и гусеницы 1.0/1.0; все роли экипажа 0.33/0.15.
+Сверка профиля с файлом — `tests/test_shell_rules.py` (`tools/shell_rules.py common_chances`). Применение (бросок на
+каждый пересечённый модуль, луч 10 калибров, порог `maxRegenHealth`) — проектная политика `project.modules-classic.v1`
+(решения владельца 08.11), закон сервера 0.9.1 по-прежнему UNKNOWN.
+
 **SHELL-02, гусеницы в живом попадании.** VERIFIED: в клиентском байткоде `collideOnceOnly`,
 `continueTraceIfNoHit`, `vehicleDamageFactor` встречаются только в загрузчике `vehicles.pyc`
 (`_readMaterials`); ASCII-поиск в `WorldOfTanks.exe` их не находит. Клиент не решает, что происходит со снарядом

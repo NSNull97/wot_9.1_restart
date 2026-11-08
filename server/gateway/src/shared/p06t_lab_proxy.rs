@@ -39,6 +39,15 @@ pub fn select(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;
 /// The remaining boxes stay invented LAB volumes: the #717 client carries no internal
 /// device volumes for any battle-registry vehicle (SHELL-02 census).
 pub fn select_with(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool)->io::Result<Vec<Hit>> {
+    select_limited(profile,component,bounds,start,end,chassis_tracks,2)
+}
+/// SHELL-04 classic modules (owner 2026-11-08): every LAB box on the internal trace (the caller
+/// cuts the trace to 10 calibers), nearest first; the boxes stay invented LAB volumes.
+pub const CLASSIC_MAX_HITS:usize=12;
+pub fn select_classic(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool)->io::Result<Vec<Hit>> {
+    select_limited(profile,component,bounds,start,end,chassis_tracks,CLASSIC_MAX_HITS)
+}
+fn select_limited(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool,limit:usize)->io::Result<Vec<Hit>> {
     if bounds.into_iter().flatten().chain(start).chain(end).any(|v|!v.is_finite()||v.abs()>100_000.)
         || (0..3).any(|i|bounds[0][i]>=bounds[1][i])
         || start==end || (0..3).any(|i|start[i]<bounds[0][i]-0.0002||start[i]>bounds[1][i]+0.0002
@@ -77,5 +86,22 @@ pub fn select_with(profile:Profile,component:Component,bounds:[[f32;3];2],start:
     }
     let mut hits:Vec<_>=boxes.into_iter().filter_map(|(target,low,high)|entry(start,end,low,high).map(|entry_fraction|Hit{target,entry_fraction})).collect();
     hits.sort_by(|a,b|a.entry_fraction.total_cmp(&b.entry_fraction).then(a.target.key().cmp(&b.target.key())));
-    hits.truncate(2);Ok(hits)
+    hits.truncate(limit);Ok(hits)
+}
+
+#[cfg(test)]
+mod classic_tests {
+    use super::*;
+    #[test] fn classic_selection_keeps_every_box_on_the_trace_nearest_first() {
+        // A diagonal hull trace through the engine, ammo bay and radio boxes.
+        let bounds=[[0.;3],[1.;3]];
+        let two=select_with(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.99,0.5,0.99],true).unwrap();
+        let all=select_classic(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.99,0.5,0.99],true).unwrap();
+        assert_eq!(two.len(),2);assert!(all.len()>2,"{all:?}");
+        assert_eq!(&all[..2],&two[..]);
+        assert!(all.windows(2).all(|w|w[0].entry_fraction<=w[1].entry_fraction));
+        // A short trace (10 calibers) reaches fewer boxes.
+        let short=select_classic(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.2,0.5,0.2],true).unwrap();
+        assert!(short.len()<all.len());
+    }
 }

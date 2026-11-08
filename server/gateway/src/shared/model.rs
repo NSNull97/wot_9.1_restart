@@ -993,7 +993,7 @@ impl World {
         let result=self.attach_owned(identity,session,loadout);self.mixed_ammo=mixed;self.ammo_detonation=detonation;
         let slot=result?;let kind=self.actors[slot].vehicle_kind();let source=crate::p06t_shells091::profile(kind.mount());
         self.actors[slot].fire=fire::State::with_typed(kind.mount(),[source.capacity,0,0],source.shots[0].compact_descr)?;
-        self.actors[slot].devices=Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(||bad())?)?);
+        self.actors[slot].devices=Some(self.classic_devices(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(||bad())?)?)?);
         Ok(slot)
     }
     pub fn attach_owned_v2(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
@@ -1036,7 +1036,7 @@ impl World {
         if existing.is_none(){
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
             next.actors[slot].owned_v2=Some(loadout.clone());
-            next.actors[slot].devices=Some(crate::p06t_device_state::State::new(profile)?);
+            next.actors[slot].devices=Some(next.classic_devices(crate::p06t_device_state::State::new(profile)?)?);
         }
         *self=next;Ok(slot)
     }

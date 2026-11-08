@@ -992,6 +992,50 @@ impl Bundle {
         if !layers.is_finite() { return Err(bad()); }
         Ok(self.explosion_hit(&mesh, actor, center, end, radius, triangle, shot, target_slot, tick)?.map(|c| (c, layers)))
     }
+    /// SHELL-04 (owner 2026-11-08): external modules an HE/HESH explosion reaches: one ray to each
+    /// track side's centroid (the live target's chassis) and one to the gun box centre; a module is
+    /// reached when its own surface is the first on that ray (armour or a screen before the gun
+    /// blocks it) within the radius. Returns the module and its distance.
+    pub fn explosion_modules(&self, actor: &Actor, center: [f32;3], radius: f32,
+        shot: u32, target_slot: usize, tick: u32) -> io::Result<Vec<(crate::p06t_device_caps::Device, f64)>> {
+        use crate::p06t_device_caps::Device;
+        let (mesh, _) = self.explosion_ray(actor, center, radius, shot, target_slot, tick)?;
+        let beyond = |point: [f32;3]| -> [f32;3] {
+            std::array::from_fn(|i| point[i] + (point[i]-center[i]))
+        };
+        let distance = |p: [f32;3]| (0..3).map(|i| (f64::from(p[i])-f64::from(center[i])).powi(2)).sum::<f64>().sqrt();
+        let mut out = Vec::new();
+        if let (Some(chassis), Some(tracks)) = (self.chassis(), self.chassis_mesh(actor, target_slot, tick)?) {
+            for (label, device) in [("leftTrack", Device::LeftTrack), ("rightTrack", Device::RightTrack)] {
+                let Some(local) = chassis.side_centroid(label) else { continue };
+                let rotated = pose::rotate(local, actor.direction);
+                let aim: [f32;3] = std::array::from_fn(|i| actor.position[i] + rotated[i]);
+                if aim == center { continue; }
+                let end = beyond(aim);
+                if let Some(hit) = super::collision::query(&tracks, center, end)?.into_iter().next() {
+                    let point = std::array::from_fn(|i| center[i] + hit.t * (end[i]-center[i]));
+                    if hit.material == label && distance(point) <= f64::from(radius) { out.push((device, distance(point))); }
+                }
+            }
+        }
+        let midpoint = std::array::from_fn(|i| (self.bounds[2][0][i]+self.bounds[2][1][i])*0.5);
+        let rotated = pose::rotate(self.component_point(2, midpoint, actor.aim.yaw, actor.aim.pitch), actor.direction);
+        let aim: [f32;3] = std::array::from_fn(|i| actor.position[i] + rotated[i]);
+        if aim != center {
+            let end = beyond(aim);
+            let chord: [f32;3] = std::array::from_fn(|i| end[i]-center[i]);
+            for candidate in super::collision::query(&mesh, center, end)? {
+                let facts = self.materials.lookup(&candidate.mesh, &candidate.material)?;
+                let point = std::array::from_fn(|i| center[i] + candidate.t * (end[i]-center[i]));
+                if facts.name == "gun" && facts.kind == 25 && facts.source_class == materials::SourceClass::GunVisualMaterial {
+                    if distance(point) <= f64::from(radius) { out.push((Device::Gun, distance(point))); }
+                    break;
+                }
+                if super::impact::spaced_layer(&facts) || super::impact::plate_for(self.vehicle_kind(), &facts, chord, candidate.normal, 0.)?.ordinary { break; }
+            }
+        }
+        Ok(out)
+    }
     fn explosion_ray(&self, actor: &Actor, center: [f32;3], radius: f32,
         shot: u32, target_slot: usize, tick: u32) -> io::Result<(Mesh, [f32;3])> {
         const MAX_RADIUS: f32 = 16.; // bounded API ceiling; actual #717 maximum is5.05
