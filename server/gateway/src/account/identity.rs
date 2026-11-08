@@ -560,9 +560,10 @@ impl Config {
         if catalog_v1&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("catalog v1 applies to the owned mixed profile13 writer only"));}
         let shell_layers=match value.remove("shell_rules"){
             None=>false,
-            Some(Value::Object(c)) if c.len()==2&&c.get("version")==Some(&Value::from(2u64))
+            // The stand names the exact rules snapshot of this build: its configVersion and rulesHash.
+            Some(Value::Object(c)) if c.len()==2&&c.get("version")==Some(&Value::from(crate::gateway091::shared::shell_rules::CONFIG_VERSION))
                 &&c.get("sha256").and_then(Value::as_str)==Some(crate::gateway091::shared::shell_rules::RULES_SHA256)=>true,
-            _=>return Err(invalid("shell_rules must be {version:2,sha256} of this gateway build")),
+            _=>return Err(invalid("shell_rules must be {version:configVersion,sha256:rulesHash} of this gateway build")),
         };
         if shell_layers&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("shell_rules applies to the owned mixed profile13 battle only"));}
         let int_user_settings=match value.remove("int_user_settings") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("int user settings must be explicit boolean"))};
@@ -1450,14 +1451,14 @@ mod tests {
         let mut value=serde_json::json!({"login_bind":"127.0.0.1:23014","base_bind":"127.0.0.1:23015","identity_endpoint":"127.0.0.1:3395",
             "identity_token_file":root.join("token.txt"),"local_root":root,"session_duration_seconds":600});
         let path=root.join("gateway.json");let load=|v:&Value|{fs::write(&path,serde_json::to_vec(v).unwrap()).unwrap();Config::load(path.to_str().unwrap())};
-        let sha=crate::gateway091::shared::shell_rules::RULES_SHA256;
+        let (sha,version)=(crate::gateway091::shared::shell_rules::RULES_SHA256,crate::gateway091::shared::shell_rules::CONFIG_VERSION);
         assert!(!load(&value).unwrap().shell_layers,"absent: the single-plate law");
-        value["shell_rules"]=serde_json::json!({"version":2,"sha256":sha});assert!(load(&value).is_err(),"needs the mixed profile13 battle");
+        value["shell_rules"]=serde_json::json!({"version":version,"sha256":sha});assert!(load(&value).is_err(),"needs the mixed profile13 battle");
         for field in ["ammunition_service","crew_service","crew_transfer","crew_cross_vehicle","crew_roster_recruitment","crew_progression",
             "crew_dismissal","crew_barracks_recruitment","research_service","profile13_battle","p04m_pool","p06t_mixed_ammo"]{value[field]=true.into();}
         assert!(load(&value).unwrap().shell_layers);
-        for bad in [serde_json::json!({"version":2,"sha256":"0".repeat(64)}),serde_json::json!({"version":1,"sha256":sha}),
-            serde_json::json!({"version":2,"sha256":sha,"extra":true}),true.into(),Value::Null]{
+        for bad in [serde_json::json!({"version":version,"sha256":"0".repeat(64)}),serde_json::json!({"version":version-1,"sha256":sha}),
+            serde_json::json!({"version":version,"sha256":sha,"extra":true}),true.into(),Value::Null]{
             value["shell_rules"]=bad;assert!(load(&value).is_err());}
         fs::remove_dir_all(&root).unwrap();
     }
