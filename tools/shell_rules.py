@@ -93,7 +93,7 @@ SCHEMA = {
     # SHELL-04 (configVersion 4): read by the layered law only.
     "modules": dict({"internal_trace_calibers": ("number", 1.0, 100.0, False),
                      "chance_gate": ("enum", ("per_module_roll",)), "critical": ("enum", ("at_or_below_max_regen",)),
-                     "he": ("enum", ("external_on_non_penetration",)), "device_damage_roll": ("enum", ("none",))},
+                     "he": ("enum", ("external_on_non_penetration",)), "device_damage_roll": ("enum", ("none", "shot_damage_roll"))},
                     **{name + "_" + kind: ("number", 0.0, 1.0, False) for name in MODULES for kind in ("projectile", "explosion")}),
 }
 

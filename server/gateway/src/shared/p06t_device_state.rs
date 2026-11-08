@@ -270,9 +270,17 @@ impl State {
     /// SHELL-04 (owner 2026-11-08): external modules (tracks, gun) of an HE/HESH explosion take an
     /// explicit device damage each (the shell's device damage scaled by the splash falloff).
     pub fn apply_explosion_hits(&mut self,hits:&[ModuleHit],amounts:&[u16],h:Health)->io::Result<Vec<Transition>> {
-        if !self.classic||amounts.len()!=hits.len()||hits.iter().zip(amounts).any(|(hit,a)|*a==0||*a>hit.shell.device_damage
-            ||!matches!(hit.target,Target::Device(Device::LeftTrack|Device::RightTrack|Device::Gun))) {
+        if hits.iter().any(|hit|!matches!(hit.target,Target::Device(Device::LeftTrack|Device::RightTrack|Device::Gun))) {
             return Err(bad("explosion module hit bounds"));
+        }
+        self.apply_classic_hits(hits,amounts,h)
+    }
+    /// SHELL-04 (owner 2026-11-08): classic hits with their module damage given (the shell's device
+    /// damage times the shot's damage roll, within +-25 %; seats ignore it).
+    pub fn apply_classic_hits(&mut self,hits:&[ModuleHit],amounts:&[u16],h:Health)->io::Result<Vec<Transition>> {
+        if !self.classic||amounts.len()!=hits.len()||hits.iter().zip(amounts).any(|(hit,a)|*a==0
+            ||u32::from(*a)*4>u32::from(hit.shell.device_damage)*5+2) {
+            return Err(bad("classic module hit damage bounds"));
         }
         self.apply_with(hits,Some(amounts),h)
     }

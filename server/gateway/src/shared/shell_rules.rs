@@ -160,7 +160,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     choice(modules, "chance_gate", "rules.modules", &["per_module_roll"])?;
     choice(modules, "critical", "rules.modules", &["at_or_below_max_regen"])?;
     choice(modules, "he", "rules.modules", &["external_on_non_penetration"])?;
-    choice(modules, "device_damage_roll", "rules.modules", &["none"])?;
+    choice(modules, "device_damage_roll", "rules.modules", &["shot_damage_roll"])?;
     let mut module_chances = [[0.; 2]; 10];
     for (index, name) in MODULE_CLASSES.iter().enumerate() {
         for (kind, label) in ["projectile", "explosion"].iter().enumerate() {

@@ -392,3 +392,15 @@ fn chance_draws(w:&World,shot:u32,target:usize,first:u8)->Vec<(u8,f64)>{
         for (_,distance) in &modules {assert!(*distance<=1.0);}
     }
 }
+#[test]fn layered_law_track_takes_the_shot_rolled_module_damage(){
+    let now=Instant::now();let base=ready_layers([4,0,0],419,now);
+    let(w,_)=first_track_shot(&base,now);
+    let(side,_,_)=track_rows(&w)[0];
+    let rolls=w.impact.shot_rolls(w.id,1).unwrap().unwrap();
+    let shell=source::PROFILES[0].shots[0];
+    let expected=((f64::from(shell.device_damage)*rolls.damage).round() as u16).max(1);
+    let max=caps::Profile::Ms1.caps()[side as usize].max;
+    let lost=w.device_events.iter().find_map(|(slot,e)|match e.change{device::Change::Device{device,before,after,..}
+        if *slot==1&&device==side&&before==max=>Some(before-after),_=>None}).expect("track module transition");
+    assert_eq!(lost,expected.min(max),"{rolls:?}");
+}

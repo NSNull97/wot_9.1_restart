@@ -284,9 +284,9 @@
         "source": "SHELL-04 owner 2026-11-08 (question 4): pierced HE as AP with the explosion chance; non-penetration and splash hit external modules (tracks, gun) only"
       },
       "device_damage_roll": {
-        "value": "none",
-        "status": "requires_verification",
-        "source": "Shell Mechanics 2.0 section 7 names no module damage roll; nominal device damage"
+        "value": "shot_damage_roll",
+        "status": "project_policy",
+        "source": "owner 2026-11-08 (SHELL-04): module damage takes the shot's one damage roll (+-25 %), rounded half away from zero"
       },
       "engine_projectile": {
         "value": 0.45,

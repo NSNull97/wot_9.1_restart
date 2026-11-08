@@ -35,7 +35,9 @@ fn after(events:&[Transition])->(u16,Condition) {
     let mut s=State::new(Profile::Ms1).unwrap();s.enable_classic().unwrap();
     let h=full(Profile::Ms1);
     assert!(s.apply_explosion_hits(&[track_hit(1)],&[0],h).is_err(),"zero damage");
-    assert!(s.apply_explosion_hits(&[track_hit(1)],&[he().device_damage+1],h).is_err(),"above device damage");
+    let dd=u32::from(he().device_damage);
+    assert!(s.clone().apply_explosion_hits(&[track_hit(1)],&[((dd*5+2)/4) as u16],h).is_ok(),"up to the +25 % roll");
+    assert!(s.apply_explosion_hits(&[track_hit(1)],&[((dd*5+2)/4+1) as u16],h).is_err(),"above the +25 % roll");
     let seat=ModuleHit{target:Target::Seat(0),ordinal:CLASSIC_FIRST_ORDINAL,..track_hit(1)};
     assert!(s.apply_explosion_hits(&[seat],&[1],h).is_err(),"no crew from an explosion");
     assert!(!s.hit_by_shot(1,Target::Device(Device::LeftTrack)));
@@ -54,4 +56,15 @@ fn after(events:&[Transition])->(u16,Condition) {
     assert_eq!(events.iter().filter(|e|matches!(e.change,Change::Crew{..})).count(),2);
     let mut lab=State::new(Profile::Is7).unwrap();
     assert!(lab.apply_hits(&hits,full(Profile::Is7)).is_err(),"the LAB route keeps two internal hits");
+}
+
+#[test] fn classic_internal_hits_take_the_given_rolled_module_damage() {
+    let mut s=State::new(Profile::Is7).unwrap();s.enable_classic().unwrap();
+    let shell=source::profile(Mount::Is7Stock).shots[0];
+    let hit=ModuleHit{cause:Cause{shot:5,attacker_slot:0},ordinal:CLASSIC_FIRST_ORDINAL,at_ms:100,target:Target::Device(Device::Engine),shell,ignition_roll:0.99};
+    let amount=(f64::from(shell.device_damage)*0.8).round() as u16;
+    let events=s.apply_classic_hits(&[hit],&[amount],full(Profile::Is7)).unwrap();
+    assert_eq!(after(&events).0,360-amount,"IS-7 engine 360 HP minus the rolled module damage");
+    let mut lab=State::new(Profile::Is7).unwrap();
+    assert!(lab.apply_classic_hits(&[hit],&[amount],full(Profile::Is7)).is_err());
 }
