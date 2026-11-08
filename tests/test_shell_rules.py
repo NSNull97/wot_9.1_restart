@@ -17,7 +17,7 @@ class Snapshot(unittest.TestCase):
         self.assertEqual(sr.SNAPSHOT.read_bytes(), raw)
         self.assertEqual(sr.PINS.read_bytes(), sr.rust_pins(raw))
         doc = json.loads(raw)
-        self.assertEqual((doc['schema'], doc['config_version'], doc['profile']), ('wot091-shell-rules.v1', 3, 'classic_plus'))
+        self.assertEqual((doc['schema'], doc['config_version'], doc['profile']), ('wot091-shell-rules.v1', 4, 'classic_plus'))
         self.assertEqual([layer['name'] for layer in doc['layers']], list(sr.LAYERS))
 
     def test_values_are_the_former_lab_constants(self):
@@ -41,6 +41,20 @@ def _get(tree, path):
     for key in path:
         tree = tree[key]
     return tree
+
+
+class ModuleChances(unittest.TestCase):
+    CLIENT = Path('C:/WoT_0.9.1_RU_0717_original/res/scripts/item_defs/vehicles/common/vehicle.xml')
+
+    def test_profile_chances_are_the_client_common_materials(self):
+        if not self.CLIENT.is_file():
+            self.skipTest('NOT_RUN: original #717 client copy absent')
+        raw = self.CLIENT.read_bytes()
+        self.assertEqual(sr.sha(raw)[:8], '599ea82e')
+        rules = json.loads(sr.build_snapshot())['rules']['modules']
+        for key, value in sr.common_chances(raw).items():
+            self.assertEqual(rules[key]['value'], value, key)
+            self.assertEqual(rules[key]['status'], 'verified_091', key)
 
 
 class Layers(unittest.TestCase):

@@ -41,10 +41,37 @@ def angle(nullable=False):
     return ("number", 0.0, 90.0, nullable)
 
 
+# SHELL-04: modules and crew of #717 common/vehicle.xml MaterialInfo (chanceToHitByProjectile/ByExplosion).
+MODULES = ("engine", "ammo_bay", "fuel_tank", "radio", "track", "gun", "gun_breech", "turret_rotator", "surveying_device", "crew")
+COMMON_MATERIALS = {"engine": ("engine",), "ammo_bay": ("ammoBay",), "fuel_tank": ("fuelTank",), "radio": ("radio",),
+                    "track": ("leftTrack", "rightTrack"), "gun": ("gun",), "gun_breech": ("gunBreech",),
+                    "turret_rotator": ("turretRotator",), "surveying_device": ("surveyingDevice",),
+                    "crew": ("commander", "driver", "radioman_1", "radioman_2", "gunner_1", "gunner_2", "loader_1", "loader_2")}
+
+
+def common_chances(raw):
+    """Chances of each module group in a #717 packed common/vehicle.xml; every material of a group must agree."""
+    import re
+    import packed_xml
+    found = {}
+    for path, value in packed_xml.walk(packed_xml.decode(raw)):
+        m = re.match(r"/materials\[1\]/([A-Za-z0-9_]+)\[1\]/chanceToHitBy(Projectile|Explosion)\[1\]$", path)
+        if m:
+            found[(m.group(1), m.group(2).lower())] = float(value)
+    out = {}
+    for name, materials in COMMON_MATERIALS.items():
+        for kind in ("projectile", "explosion"):
+            values = {found[(material, kind)] for material in materials}
+            require(len(values) == 1, name + ": materials disagree")
+            out[name + "_" + kind] = values.pop()
+    return out
+
+
 FAMILY = {"normalization_deg": angle(), "ricochet_deg": angle(True), "caliber_rules": ("bool",),
           "distance_falloff": ("bool",)}
 SCHEMA = {
-    "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",), "layers": ("law",), "he": ("law",)},
+    "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",), "layers": ("law",), "he": ("law",),
+             "modules": ("law",)},
     "families": {name: FAMILY for name in ("armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive")},
     "caliber": {"normalization_ratio": ("number", 1.0, 20.0, False), "normalization_multiplier": ("number", 0.0, 10.0, False),
                 "no_ricochet_ratio": ("number", 1.0, 20.0, False)},
@@ -63,6 +90,11 @@ SCHEMA = {
                "he_on_spaced": ("enum", ("stop", "screen_formula")), "after_ricochet": ("enum", ("shot_ends",))},
     "engine": {"caliber_integer": ("bool",)},
     "damage": {"rounding": ("enum", ("half_away_from_zero",))},
+    # SHELL-04 (configVersion 4): read by the layered law only.
+    "modules": dict({"internal_trace_calibers": ("number", 1.0, 100.0, False),
+                     "chance_gate": ("enum", ("per_module_roll",)), "critical": ("enum", ("at_or_below_max_regen",)),
+                     "he": ("enum", ("external_on_non_penetration",)), "device_damage_roll": ("enum", ("none",))},
+                    **{name + "_" + kind: ("number", 0.0, 1.0, False) for name in MODULES for kind in ("projectile", "explosion")}),
 }
 
 

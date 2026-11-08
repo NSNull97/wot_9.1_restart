@@ -26,6 +26,11 @@
         "value": "project.he-layers.v1",
         "status": "project_policy",
         "source": "SHELL-03 owner 2026-11-08: HE/HESH by layers, server/gateway/src/shared/p06t_damage.rs HE_POLICY"
+      },
+      "modules": {
+        "value": "project.modules-classic.v1",
+        "status": "project_policy",
+        "source": "SHELL-04 owner 2026-11-08: modules and crew by layers, server/gateway/src/shared/p06t_world.rs MODULES_POLICY"
       }
     },
     "families": {
@@ -255,6 +260,133 @@
         "value": "half_away_from_zero",
         "status": "requires_verification",
         "source": "owner 2026-11-06 uniform +-25 %; #717 rounding UNKNOWN"
+      }
+    },
+    "modules": {
+      "internal_trace_calibers": {
+        "value": 10.0,
+        "status": "requires_verification",
+        "source": "SHELL-04 owner 2026-11-08 (question 2): internal trace of 10 engine-integer calibers from the penetration point; owner 06.11 (SHELL-PEN question 4)"
+      },
+      "chance_gate": {
+        "value": "per_module_roll",
+        "status": "project_policy",
+        "source": "SHELL-04 owner 2026-11-08 (question 1): one roll per crossed module or crew seat; #717 server law UNKNOWN"
+      },
+      "critical": {
+        "value": "at_or_below_max_regen",
+        "status": "requires_verification",
+        "source": "SHELL-04 owner 2026-11-08 (question 3): damaged at 0 < HP <= maxRegenHealth; a repaired module comes back critical at maxRegenHealth (#717 DEVICE_REPAIRED_TO_CRITICAL)"
+      },
+      "he": {
+        "value": "external_on_non_penetration",
+        "status": "project_policy",
+        "source": "SHELL-04 owner 2026-11-08 (question 4): pierced HE as AP with the explosion chance; non-penetration and splash hit external modules (tracks, gun) only"
+      },
+      "device_damage_roll": {
+        "value": "none",
+        "status": "requires_verification",
+        "source": "Shell Mechanics 2.0 section 7 names no module damage roll; nominal device damage"
+      },
+      "engine_projectile": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "engine_explosion": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "ammo_bay_projectile": {
+        "value": 0.27,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "ammo_bay_explosion": {
+        "value": 0.27,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "fuel_tank_projectile": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "fuel_tank_explosion": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "radio_projectile": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "radio_explosion": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "track_projectile": {
+        "value": 1.0,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "track_explosion": {
+        "value": 1.0,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "gun_projectile": {
+        "value": 0.33,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "gun_explosion": {
+        "value": 0.33,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "gun_breech_projectile": {
+        "value": 1.0,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "gun_breech_explosion": {
+        "value": 1.0,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "turret_rotator_projectile": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "turret_rotator_explosion": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "surveying_device_projectile": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "surveying_device_explosion": {
+        "value": 0.45,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      },
+      "crew_projectile": {
+        "value": 0.33,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByProjectile; no vehicle file overrides it"
+      },
+      "crew_explosion": {
+        "value": 0.15,
+        "status": "verified_091",
+        "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
       }
     }
   }
