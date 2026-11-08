@@ -977,7 +977,11 @@ impl Trace {
             return Err(invalid("splash identity/actor/duplicate/bounds"));
         }
         let(anchor_order,anchor,_)=self.splash_anchor(battle_id,shot_id,server_tick,attacker,shell)?;
-        if center!=anchor||!finite_vector(center)||geometry.explosion_contact(target_actor,center,radius as f32,shot_id,target,server_tick)?.as_ref()!=Some(contact){
+        let rolls=self.shot_rolls(battle_id,shot_id)?;
+        let witness=if rolls.is_some(){geometry.explosion_layers(target_actor,center,radius as f32,shot_id,target,server_tick)?}
+            else{geometry.explosion_contact(target_actor,center,radius as f32,shot_id,target,server_tick)?.map(|c|(c,0.))};
+        let layers=match witness{Some((c,layers)) if c==*contact=>layers,_=>f64::NAN};
+        if center!=anchor||!finite_vector(center)||!layers.is_finite(){
             return Err(invalid("splash center or actual geometry witness differs"));
         }
         let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
@@ -985,11 +989,12 @@ impl Trace {
         let plate=plate_for(kind,&contact.material_facts,chord,contact.triangle.normal,distance)?;
         if !plate.ordinary{return Err(invalid("splash unsupported source plate"));}
         let excluded=self.excluded_before(u32::MAX);let(los_start,blocker)=splash_los_query(terrain,center,contact.endpoint,&excluded)?;
-        let input=crate::p06t_damage::SplashTarget{slot:target as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||invalid("splash armor absent"))?,los_clear:blocker.is_none()};
-        let computed=crate::p06t_damage::resolve_splash(shell,&[input])?[0];
+        let input=crate::p06t_damage::SplashTarget{slot:target as u8,distance_m:distance,
+            armor_mm:plate.armor_mm.ok_or_else(||invalid("splash armor absent"))?+layers,los_clear:blocker.is_none()};
+        let computed=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_layered(shell,&[input],r)?[0],None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("splash recomputed damage/health/capacity"));}
-        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&shell,&input,&computed);}
+        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&shell,&input,rolls,layers,&computed);}
         self.push(Event::SplashResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,
             contact:contact.clone(),distance_m:distance,terrain_revision:terrain.source_revision(),excluded_instances:excluded,los_start,terrain_blocker:blocker,
             los_policy:SPLASH_LOS_POLICY,resolution:computed,health_before,health_after})?;
@@ -1418,17 +1423,21 @@ impl Trace {
     }
     /// Track armour already taken off this shot (tracks of any vehicle it passed).
     /// Armour this shot already left on tracks (nominal) and spaced layers (effective).
+    /// Power this shot already left on crossed tracks and spaced layers. HE/HESH under the
+    /// layered law lose `(P - t*K)*L` more than the armour (SHELL-03), so for them the loss
+    /// is the recorded power before minus after; AP/APCR keep the armour sum.
     pub(crate) fn track_spent(&self, shot_id: u32) -> io::Result<f64> {
+        let he = self.layers && self.selected_shell(shot_id).flatten().is_some_and(|s| s.family == crate::p06t_shells091::Family::HighExplosive);
         let mut spent = 0.;
         for event in self.events.iter() {
             match event {
                 Event::TrackContact { shot_id: s, armor_mm, pass, .. } if *s == shot_id => {
                     if pass.stopped { return Err(invalid("track contact stop before outcome")); }
-                    spent += armor_mm;
+                    spent += if he { pass.power_before_mm - pass.power_after_mm } else { *armor_mm };
                 },
                 Event::SpacedContact { shot_id: s, pass, .. } if *s == shot_id => {
                     if pass.outcome != crate::p06t_damage::PassOutcome::Passed { return Err(invalid("spaced layer stop before outcome")); }
-                    spent += pass.effective_armor_mm;
+                    spent += if he { pass.power_before_mm - pass.power_after_mm } else { pass.effective_armor_mm };
                 },
                 _ => {},
             }
@@ -1523,17 +1532,17 @@ impl Trace {
         let material = chassis.material(&candidate.material).ok_or_else(|| invalid("track contact without MaterialInfo"))?;
         if material.damage_kind != 1 || material.vehicle_damage_factor != 0. || material.use_hit_angle || material.may_ricochet
             || !material.collide_once_only { return Err(invalid("track contact material flags outside the pass policy")); }
-        let mut spent = 0.;
         for event in self.events.iter() {
-            if let Event::TrackContact { shot_id: s, target: t, device: d, armor_mm, segment_order, candidate: c, .. } = event {
+            if let Event::TrackContact { shot_id: s, target: t, device: d, segment_order, candidate: c, .. } = event {
                 if *s != shot_id { continue; }
                 if *t == target && *d == device || *segment_order == segment && c.t >= candidate.t {
                     return Err(invalid("track contact repeat, order or target"));
                 }
                 if !self.layer_order_ok(shot_id, segment, candidate.t) { return Err(invalid("track contact behind a spaced layer of this segment")); }
-                spent += armor_mm;
             }
         }
+        // SHELL-03: the spaced layers crossed before this track count too (SHELL-PEN summed tracks only).
+        let spent = self.track_spent(shot_id)?;
         let origin = self.events.iter().find_map(|e| match e { Event::Launch { shot_id: s, origin, .. } if *s == shot_id => Some(*origin), _ => None })
             .ok_or_else(|| invalid("track contact launch absent"))?;
         let point: [f32; 3] = std::array::from_fn(|i| start[i] + candidate.t * (end[i] - start[i]));

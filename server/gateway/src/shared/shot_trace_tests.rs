@@ -120,3 +120,22 @@ fn direct_case(armor: Option<f64>, angle: f32, distance: f64, spent: f64) -> Val
         assert!(!replay_record(&wrong).unwrap() || pass.outcome != law::PassOutcome::Passed, "another seed changes the rolled power");
     }
 }
+
+#[test] fn a_layered_splash_record_replays_from_its_seed_and_names_hesh() {
+    let rules = crate::gateway091::shared::shell_rules::rules().unwrap();
+    let kind = VehicleKind::Fv183;
+    for resource in ["_183mm_HESH", "_183mm_HE_Mk1"] {
+        let shell = *crate::p06t_shells091::profile(kind.mount()).shots.iter().find(|s| s.resource == resource).unwrap();
+        for seed in [11u64, 12, 13] {
+            let rolls = crate::gateway091::shared::shell_rules::rolls_from_seed(rules, seed);
+            let target = SplashTarget { slot: 4, distance_m: 1.7, armor_mm: 20. + 6., los_clear: true };
+            let damage = law::resolve_splash_layered(shell, &[target], rolls).unwrap()[0];
+            let record = stamp(splash_rolled(7, 21, 140, 0, 4, kind, &shell, &target, Some(rolls), 6., &damage));
+            assert_eq!(record["shell_type"], if resource.contains("HESH") { "HESH" } else { "HE" });
+            assert!(replay_record(&serde_json::from_str(&record.to_string()).unwrap()).unwrap(), "{record}");
+            let mut wrong = record.clone();
+            wrong["rng"]["seed"] = format!("{:016x}", seed + 1000).into();
+            assert!(!replay_record(&wrong).unwrap() || damage.damage_hp == 0, "another seed changes the damage");
+        }
+    }
+}
