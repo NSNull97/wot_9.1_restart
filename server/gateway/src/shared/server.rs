@@ -3552,6 +3552,31 @@ mod tests {
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
     /// later 5-byte token-only keepalive failed `n>rx` until idle_timeout.
+    #[test] fn spg01_strategic_camera_records_are_strict_and_refused_for_a_tank() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let bind=|target:u32|{let mut raw=vec![0x0d,8,0,0,0,0,0];raw.extend(target.to_le_bytes());raw};
+        let mut move_to=vec![0x0f,16,0,0,0,0,0];
+        for value in [10f32,200.,-30.] {move_to.extend(value.to_le_bytes());}
+        assert_eq!(wire::avatar_move_to(&move_to).unwrap(),Some([10.,200.,-30.]));
+        let own=wire::vehicle_id(1).unwrap();
+        assert_eq!(wire::spg_bind(&bind(0),1).unwrap(),wire::SpgCamera::Unbind);
+        assert_eq!(wire::spg_bind(&bind(own),1).unwrap(),wire::SpgCamera::Rebind);
+        assert!(wire::spg_bind(&bind(wire::vehicle_id(0).unwrap()),1).is_err());
+        // The vehicle's own aim record keeps its route.
+        let mut aim=move_to.clone(); aim[3..7].copy_from_slice(&own.to_le_bytes());
+        assert_eq!(wire::avatar_move_to(&aim).unwrap(),None);
+        let mut nan=move_to.clone(); nan[7..11].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(wire::avatar_move_to(&nan).is_err());
+        let mut far=move_to.clone(); far[7..11].copy_from_slice(&2_000_000f32.to_le_bytes());
+        assert!(wire::avatar_move_to(&far).is_err());
+        let mut long=move_to.clone(); long.push(0); assert!(wire::avatar_move_to(&long).is_err());
+        let mut length=move_to.clone(); length[1]=15; assert!(wire::avatar_move_to(&length).is_err());
+        // A tank has no strategic sight: both records stay refused and the channel does not advance.
+        for raw in [move_to,bind(0),bind(own)] {
+            let before=b.rx; assert!(b.receive(&frame(&b,&raw),now).is_err()); assert_eq!(b.rx,before);
+        }
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
+    }
     #[test] fn postmortem01_observer_camera_switch_to_ally_unbind_and_enemy_keeps_channel_live() {
         let now=Instant::now(); let (_,mut b,mut w)=visible_pair(now);
         // Alive owner: an observer bind is still outside the measured contract.

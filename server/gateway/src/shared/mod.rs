@@ -19,6 +19,10 @@ fn record_size(payload: &[u8], at: usize) -> io::Result<Option<usize>> {
         _ => return Ok(None),
     }))
 }
+/// SPG-01: the strategic sight exists on an SPG only; any other vehicle keeps refusing its records.
+fn spg_owner(world: &World, slot: usize) -> bool {
+    world.actors.get(slot).is_some_and(|actor| dispersion::gun(actor.vehicle_kind().name()).is_ok_and(|gun| gun.spg))
+}
 fn var2_size(payload: &[u8], at: usize) -> io::Result<usize> {
     if payload.len() - at < 3 { return Err(bad()); }
     Ok(3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize)
@@ -958,6 +962,12 @@ impl Session {
                     // No callback echo, no domain command, no hidden-state read.
                     events.push(format!("SHARED_AUTOAIM_CANCEL session={} domain_applied=false native_callback=false",self.id));
                 }
+            } else if id == 0x0d && c.correction && c.binding.is_some_and(|(_,ack)| ack)
+                && world.actors.get(c.slot).is_some_and(|actor| actor.alive()) && spg_owner(world,c.slot) {
+                // SPG-01: the strategic sight switches the camera binding. Authority,
+                // interest and the published vehicle stay where they are.
+                let camera=wire::spg_bind(raw,c.slot)?;
+                events.push(format!("SHARED_SPG_CAMERA session={} slot={} request={camera:?} authority_changed=false interest_changed=false",self.id,c.slot));
             } else if id == 0x0d {
                 if world.actors.get(c.slot).is_none_or(|actor| actor.alive())
                     || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
@@ -970,6 +980,10 @@ impl Session {
                     wire::PostmortemCamera::Unbind=>events.push(format!("SHARED_POSTMORTEM_UNBIND session={} slot={} authority_changed=false",self.id,c.slot)),
                     wire::PostmortemCamera::Refused=>events.push(format!("SHARED_UNSUPPORTED session={} method=bindToVehicle target={target} refused=true domain_applied=false",self.id)),
                 }
+            } else if wire::avatar_move_to(raw)?.is_some() {
+                // SPG-01: consumed at the sight's own cadence, so nothing is logged per record.
+                // The camera position moves neither authority nor interest.
+                if !spg_owner(world,c.slot) { return Err(bad()); }
             } else if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
