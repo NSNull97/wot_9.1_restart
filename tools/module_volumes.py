@@ -11,7 +11,9 @@ Rules:
 * a face of a cluster on a side runs through the whole component width, on the roof or floor through
   its whole height; on the front or rear it runs `FRONT_REAR_DEPTH_M` inward (owner 2026-11-09).
 
-Commands (the archive and the output stay under `local/`):
+The archive stays under `local/`; the built numbers are kept in `config/module_volumes/` (private repository).
+
+Commands:
   python -B -X utf8 tools/module_volumes.py build --archive ZIP --client DIR --out DIR [--only RESOURCE ...]
   python -B -X utf8 tools/module_volumes.py manifest --manifest M --dir DIR --out NEW
 """
