@@ -68,6 +68,23 @@ pub fn ammo_snapshot(mount:Mount,counts:[u16;3],current:u16,next:u16,clip:u8)->i
     }
     b.extend(setting(mount,Setting::Current,current)?);b.extend(setting(mount,Setting::Next,next)?);Ok(b)
 }
+/// DISP-01: only what changed since the last publication. The #717 client's `__processVehicleAmmo`
+/// takes any ammo row of the current shell as a shot and blooms its aiming circle (VERIFIED from
+/// bytecode), so a shell switch or a finished reload must not resend unchanged rows. Settings go
+/// first so a switch away from a clip shell does not read as a shot of the old shell.
+pub fn ammo_delta(mount:Mount,before:([u16;3],u16,u16,u8),now:([u16;3],u16,u16,u8))->io::Result<Vec<u8>>{
+    let p=*crate::p06t_shells091::profile(mount);
+    let (counts,current,next,clip)=now;
+    let visible=|shell:u16,current:u16,clip:u8|if shell==current&&p.clip_count>1{clip}else{0};
+    let mut b=Vec::new();
+    if before.1!=current{b.extend(setting(mount,Setting::Current,current)?);}
+    if before.2!=next{b.extend(setting(mount,Setting::Next,next)?);}
+    for(i,s)in p.shots.into_iter().enumerate(){
+        let (old,new)=((before.0[i],visible(s.compact_descr,before.1,before.3)),(counts[i],visible(s.compact_descr,current,clip)));
+        if old!=new{b.extend(ammo_row(mount,s.compact_descr,new.0,new.1)?);}
+    }
+    Ok(b)
+}
 /// Original FLOAT32 timeLeft/baseTime. Only authoritative nonnegative timers
 /// are emitted; negative original sentinels remain deliberately unavailable.
 /// 480 is the explicit LAB source-base ceiling120 * module/crew scale4.

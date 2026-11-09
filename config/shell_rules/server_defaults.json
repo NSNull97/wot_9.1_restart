@@ -439,6 +439,11 @@
         "value": 0.5,
         "status": "requires_verification",
         "source": "owner 2026-11-09 (DISP-01 question 2): sigma = half of the circle radius"
+      },
+      "shape": {
+        "value": "truncated_normal",
+        "status": "project_policy",
+        "source": "owner 2026-11-09 after the battle trace: the 2.0 U^alpha put 41 % of shots within 0.1 R; a truncated normal keeps the 75 % in k(A)*R"
       }
     }
   }

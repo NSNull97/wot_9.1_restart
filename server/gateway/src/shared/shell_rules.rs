@@ -159,7 +159,8 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     exact(damage, &["rounding"], "rules.damage")?;
     choice(damage, "rounding", "rules.damage", &["half_away_from_zero"])?;
     let accuracy = &rules["accuracy"];
-    exact(accuracy, &["central_probability", "reference_accuracy", "base", "slope", "min", "max", "circle", "spg_distribution", "spg_sigma_fraction"], "rules.accuracy")?;
+    exact(accuracy, &["central_probability", "reference_accuracy", "base", "slope", "min", "max", "circle", "shape", "spg_distribution", "spg_sigma_fraction"], "rules.accuracy")?;
+    choice(accuracy, "shape", "rules.accuracy", &["truncated_normal"])?;
     choice(accuracy, "circle", "rules.accuracy", &["classic_091"])?;
     choice(accuracy, "spg_distribution", "rules.accuracy", &["truncated_normal"])?;
     let parsed_accuracy = Accuracy {

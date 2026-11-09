@@ -82,14 +82,25 @@ impl State {
 pub fn central_zone(accuracy: &Accuracy, a: f64) -> f64 {
     (accuracy.base + accuracy.slope * (a - accuracy.reference)).clamp(accuracy.min, accuracy.max)
 }
-/// The radial fraction of the circle: Dual Dispersion `U^alpha`, or the SPG truncated normal.
-pub fn radial_fraction(accuracy: &Accuracy, gun: Gun, u: f64) -> f64 {
-    if gun.spg {
-        let s = accuracy.spg_sigma_fraction;
-        s * (-2. * (1. - u * (1. - (-1. / (2. * s * s)).exp())).ln()).sqrt()
-    } else {
-        u.powf(central_zone(accuracy, gun.radius_m).ln() / accuracy.central_probability.ln())
+/// Radial inverse CDF of a normal in the disc, truncated at the circle (`s` = sigma / R).
+fn truncated(s: f64, u: f64) -> f64 { s * (-2. * (1. - u * (1. - (-1. / (2. * s * s)).exp())).ln()).sqrt() }
+/// Share of a truncated normal of sigma `s` that falls inside `k * R`.
+fn share_inside(s: f64, k: f64) -> f64 { (1. - (-k * k / (2. * s * s)).exp()) / (1. - (-1. / (2. * s * s)).exp()) }
+/// Sigma / R that puts `probability` of the shots inside `k * R` (owner 2026-11-09: the 2.0 `U^alpha`
+/// put 41 % of a battle's shots within 0.1 R, so the 75 % target keeps a normal shape instead).
+pub fn central_sigma(k: f64, probability: f64) -> f64 {
+    let (mut low, mut high) = (0.02f64, 8f64);
+    for _ in 0..80 {
+        let middle = (low + high) / 2.;
+        if share_inside(middle, k) > probability { low = middle; } else { high = middle; }
     }
+    (low + high) / 2.
+}
+/// The radial fraction of the circle: the truncated normal holding the central share in `k(A)`,
+/// or the SPG truncated normal.
+pub fn radial_fraction(accuracy: &Accuracy, gun: Gun, u: f64) -> f64 {
+    let s = if gun.spg { accuracy.spg_sigma_fraction } else { central_sigma(central_zone(accuracy, gun.radius_m), accuracy.central_probability) };
+    truncated(s, u)
 }
 /// The shot's deviation from the barrel line: angle (radians) and direction (radians), from its seed.
 pub fn deviation(accuracy: &Accuracy, gun: Gun, angle: f64, seed: u64) -> (f64, f64) {

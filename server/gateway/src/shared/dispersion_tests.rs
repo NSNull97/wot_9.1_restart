@@ -59,7 +59,7 @@ const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
     for radius in [0.29, 0.35, 0.41, 0.57] {
         let g = Gun { radius_m: radius, ..GUN };
         let k = central_zone(&a, radius);
-        let (mut inside, mut quadrant) = (0u32, [0u32; 4]);
+        let (mut inside, mut near, mut quadrant) = (0u32, 0u32, [0u32; 4]);
         const N: u64 = 100_000;
         for seed in 0..N {
             let mixed = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ 0x5bd1_e995;
@@ -67,10 +67,12 @@ const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
             assert!((0. ..=1.).contains(&r), "inside the circle");
             assert!((0. ..std::f64::consts::TAU).contains(&t));
             if r <= k { inside += 1; }
+            if r <= 0.1 { near += 1; }
             quadrant[(t / std::f64::consts::FRAC_PI_2) as usize] += 1;
         }
         let share = f64::from(inside) / N as f64;
         assert!((share - 0.75).abs() < 0.006, "radius {radius}: {share}");
+        assert!(f64::from(near) / (N as f64) < 0.12, "radius {radius}: {near} shots at the very centre");
         for q in quadrant { assert!((f64::from(q) / N as f64 - 0.25).abs() < 0.008, "{quadrant:?}"); }
     }
 }

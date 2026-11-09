@@ -1264,6 +1264,8 @@ impl World {
     }
     /// One shared monotonic clock; bounded integration, no burst catch-up. The
     /// small flat boxes exist only to make remote-state publication observable.
+    /// The stand's layered shell law is on (key `shell_rules`).
+    pub fn layered_shells(&self)->bool{self.impact.layers()}
     pub fn advance(&mut self, now: Instant) -> io::Result<bool> {
         self.advance_with_external(now, None)
     }
