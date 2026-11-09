@@ -29,6 +29,8 @@ impl Rules {
 }
 
 /// `class`: client `constants.VEHICLE_CLASSES` index (light, medium, heavy, SPG, AT-SPG).
+pub const SPG_CLASS:u8=3;
+pub const MAX_SPG_IN_BATTLE:usize=2;
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Ticket {pub session:u32,pub account:String,pub tier:u8,pub class:u8,pub since:Instant}
 
@@ -109,6 +111,8 @@ impl Matchmaker {
             for (i,t) in self.queue.iter().enumerate() {
                 if picked.len()>=places {break;}
                 if i==anchor||t.tier.max(hi)-t.tier.min(lo)>self.rules.tier_spread {continue;}
+                // SPG-01 (section 9): at most one SPG a team, so two a battle.
+                if t.class==SPG_CLASS&&picked.iter().filter(|p|self.queue[**p].class==SPG_CLASS).count()>=MAX_SPG_IN_BATTLE {continue;}
                 lo=lo.min(t.tier);hi=hi.max(t.tier);picked.push(i);
             }
             picked.sort_unstable();

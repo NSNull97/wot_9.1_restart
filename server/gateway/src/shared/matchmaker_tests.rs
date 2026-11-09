@@ -186,3 +186,14 @@ fn mm01_queue_stats_count_waiting_players_by_class_and_tier(){
     mm.started(100);
     let left=mm.stats();assert_eq!(left.classes,[1,0,0,0,1]);assert_eq!(left.levels,[1,0,0,0,0,0,0,0,0,1]);
 }
+
+#[test]
+fn a_battle_takes_at_most_two_spgs(){
+    let now=Instant::now();let mut m=Matchmaker::new(rules(2,9,20));
+    let spg=|session:u32|Ticket{session,account:format!("a{session}"),tier:5,class:SPG_CLASS,since:now};
+    for session in 1..=3 {m.enqueue(spg(session)).unwrap();}
+    for session in 4..=5 {m.enqueue(Ticket{class:1,..spg(session)}).unwrap();}
+    let g=m.form(&[(0,77)],now);
+    assert_eq!(g.len(),1);assert_eq!(g[0].members.len(),4);
+    assert_eq!(g[0].members.iter().filter(|t|t.class==SPG_CLASS).count(),MAX_SPG_IN_BATTLE,"{:?}",sessions(&g[0]));
+}

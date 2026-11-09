@@ -165,3 +165,14 @@ fn fv(resource: &str) -> Shell { *crate::p06t_shells091::profile(Mount::Fv215b18
     assert_eq!(dmg(he, hidden, high), 0);
     assert!(resolve_splash_layered(he, &[target(1., 0.)], Rolls { seed: 0, penetration: 1., damage: 2. }).is_err(), "roll bound");
 }
+
+#[test] fn the_spg_blast_factor_stretches_the_splash_falloff() {
+    let he = fv("_183mm_HE_Mk1");
+    let t = SplashTarget { slot: 3, distance_m: 5.3, armor_mm: 0., los_clear: true };
+    assert_eq!(resolve_splash_layered(he, &[t], NEUTRAL).unwrap()[0].damage_hp, 0, "beyond the source radius");
+    let wide = resolve_splash_blast(he, &[t], NEUTRAL, 1.1).unwrap()[0].damage_hp;
+    assert_eq!(wide, (0.5f64 * 1750. * (1. - 5.3 / (5.05 * 1.1))).floor() as u16);
+    assert!(resolve_splash_blast(he, &[t], NEUTRAL, 0.5).is_err());
+    let near = SplashTarget { distance_m: 1., ..t };
+    assert_eq!(resolve_splash_blast(he, &[near], NEUTRAL, 1.).unwrap(), resolve_splash_layered(he, &[near], NEUTRAL).unwrap());
+}

@@ -103,3 +103,15 @@ const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
     }
     assert!(deviate([0.; 3], 0.1, 0.).is_err());
 }
+
+#[test] fn the_spg_profile_narrows_the_circle_and_widens_the_blast() {
+    let a = accuracy();
+    assert_eq!((a.spg_accuracy_divisor, a.spg_splash_radius_factor), (1.25, 1.1));
+    let spg = gun("ussr:Object_212").unwrap();
+    assert!(spg.spg);
+    assert_eq!(firing_gun(&a, "ussr:Object_212").unwrap().radius_m, spg.radius_m / 1.25);
+    assert_eq!(blast_factor(&a, "ussr:Object_212").unwrap(), 1.1);
+    let tank = gun("ussr:T-34-85").unwrap();
+    assert_eq!(firing_gun(&a, "ussr:T-34-85").unwrap(), tank);
+    assert_eq!(blast_factor(&a, "ussr:T-34-85").unwrap(), 1.);
+}

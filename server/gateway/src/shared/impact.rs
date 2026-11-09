@@ -965,7 +965,8 @@ impl Trace {
         terrain:&terrain::Terrain,geometry:&super::geometry::Bundle,target_actor:&super::model::Actor)->io::Result<()>{
         self.common(battle_id,shot_id,server_tick)?;let kind=self.kind_for_slot(target)?;
         let shell=self.selected_shell(shot_id).flatten().ok_or_else(||invalid("splash without selected source"))?;
-        let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||invalid("splash source radius"))?;
+        let blast=if self.layers{super::dispersion::blast_factor(&super::shell_rules::rules()?.accuracy,self.kind_for_slot(attacker)?.name())?}else{1.};
+        let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||invalid("splash source radius"))?*blast;
         if self.has_terminal(shot_id)||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
             ||terrain.map_id()!=self.map||geometry.vehicle_kind()!=kind||target_actor.vehicle_kind()!=kind||target_actor.health!=health_before
             ||!target_actor.alive()||health_before<=0||health_before>kind.max_health()||!(0..=kind.max_health()).contains(&health_after)
@@ -991,10 +992,10 @@ impl Trace {
         let excluded=self.excluded_before(u32::MAX);let(los_start,blocker)=splash_los_query(terrain,center,contact.endpoint,&excluded)?;
         let input=crate::p06t_damage::SplashTarget{slot:target as u8,distance_m:distance,
             armor_mm:plate.armor_mm.ok_or_else(||invalid("splash armor absent"))?+layers,los_clear:blocker.is_none()};
-        let computed=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_layered(shell,&[input],r)?[0],None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
+        let computed=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_blast(shell,&[input],r,blast)?[0],None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("splash recomputed damage/health/capacity"));}
-        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&shell,&input,rolls,layers,&computed);}
+        if super::shot_trace::enabled(){super::shot_trace::splash(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&shell,&input,rolls,layers,blast,&computed);}
         self.push(Event::SplashResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,anchor_order,center,shell,
             contact:contact.clone(),distance_m:distance,terrain_revision:terrain.source_revision(),excluded_instances:excluded,los_start,terrain_blocker:blocker,
             los_policy:SPLASH_LOS_POLICY,resolution:computed,health_before,health_after})?;
