@@ -71,7 +71,7 @@ FAMILY = {"normalization_deg": angle(), "ricochet_deg": angle(True), "caliber_ru
           "distance_falloff": ("bool",)}
 SCHEMA = {
     "laws": {"direct": ("law",), "track": ("law",), "unarmored_device": ("law",), "layers": ("law",), "he": ("law",),
-             "modules": ("law",)},
+             "modules": ("law",), "accuracy": ("law",)},
     "families": {name: FAMILY for name in ("armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive")},
     "caliber": {"normalization_ratio": ("number", 1.0, 20.0, False), "normalization_multiplier": ("number", 0.0, 10.0, False),
                 "no_ricochet_ratio": ("number", 1.0, 20.0, False)},
@@ -90,6 +90,12 @@ SCHEMA = {
                "he_on_spaced": ("enum", ("stop", "screen_formula")), "after_ricochet": ("enum", ("shot_ends",))},
     "engine": {"caliber_integer": ("bool",)},
     "damage": {"rounding": ("enum", ("half_away_from_zero",))},
+    # DISP-01 (configVersion 5): read by the layered law only.
+    "accuracy": {"central_probability": ("number", 0.5, 0.95, False), "reference_accuracy": ("number", 0.05, 2.0, False),
+                 "base": ("number", 0.05, 1.0, False), "slope": ("number", -5.0, 5.0, False),
+                 "min": ("number", 0.05, 1.0, False), "max": ("number", 0.05, 1.0, False),
+                 "circle": ("enum", ("classic_091",)), "spg_distribution": ("enum", ("truncated_normal",)),
+                 "spg_sigma_fraction": ("number", 0.1, 1.0, False)},
     # SHELL-04 (configVersion 4): read by the layered law only.
     "modules": dict({"internal_trace_calibers": ("number", 1.0, 100.0, False),
                      "chance_gate": ("enum", ("per_module_roll",)), "critical": ("enum", ("at_or_below_max_regen",)),

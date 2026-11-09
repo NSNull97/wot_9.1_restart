@@ -244,3 +244,4 @@ server/gateway/src/shared/chassis_armor_pins.rs text eol=lf
 
 # MODVOL-01: hash-bound volumes (manifest sha256); keep exact bytes.
 /config/module_volumes/*.json text eol=lf
+/config/catalog/gun_dispersion.v1.json text eol=lf

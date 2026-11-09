@@ -31,6 +31,11 @@
         "value": "project.modules-classic.v1",
         "status": "project_policy",
         "source": "SHELL-04 owner 2026-11-08: modules and crew by layers, server/gateway/src/shared/p06t_world.rs MODULES_POLICY"
+      },
+      "accuracy": {
+        "value": "project.dual-dispersion.v1",
+        "status": "project_policy",
+        "source": "DISP-01 owner 2026-11-09: server/gateway/src/shared/dispersion.rs ACCURACY_POLICY"
       }
     },
     "families": {
@@ -387,6 +392,53 @@
         "value": 0.15,
         "status": "verified_091",
         "source": "#717 res/scripts/item_defs/vehicles/common/vehicle.xml SHA 599ea82e materials chanceToHitByExplosion; no vehicle file overrides it"
+      }
+    },
+    "accuracy": {
+      "central_probability": {
+        "value": 0.75,
+        "status": "project_policy",
+        "source": "Shell Mechanics 2.0 section 3: approved target concentration"
+      },
+      "reference_accuracy": {
+        "value": 0.35,
+        "status": "experimental",
+        "source": "Shell Mechanics 2.0 section 3 k(A)"
+      },
+      "base": {
+        "value": 0.5,
+        "status": "experimental",
+        "source": "Shell Mechanics 2.0 section 3 k(A)"
+      },
+      "slope": {
+        "value": 0.8,
+        "status": "experimental",
+        "source": "Shell Mechanics 2.0 section 3 k(A)"
+      },
+      "min": {
+        "value": 0.35,
+        "status": "experimental",
+        "source": "Shell Mechanics 2.0 section 3 k(A)"
+      },
+      "max": {
+        "value": 0.7,
+        "status": "experimental",
+        "source": "Shell Mechanics 2.0 section 3 k(A)"
+      },
+      "circle": {
+        "value": "classic_091",
+        "status": "verified_091",
+        "source": "#717 Avatar.getOwnVehicleShotDispersionAngle; gun.shotDispersionAngle = atan(shotDispersionRadius / 100)"
+      },
+      "spg_distribution": {
+        "value": "truncated_normal",
+        "status": "requires_verification",
+        "source": "owner 2026-11-09 (DISP-01 question 2); the 0.9.1 server law is UNKNOWN"
+      },
+      "spg_sigma_fraction": {
+        "value": 0.5,
+        "status": "requires_verification",
+        "source": "owner 2026-11-09 (DISP-01 question 2): sigma = half of the circle radius"
       }
     }
   }

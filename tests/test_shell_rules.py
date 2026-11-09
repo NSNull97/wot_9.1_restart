@@ -17,7 +17,7 @@ class Snapshot(unittest.TestCase):
         self.assertEqual(sr.SNAPSHOT.read_bytes(), raw)
         self.assertEqual(sr.PINS.read_bytes(), sr.rust_pins(raw))
         doc = json.loads(raw)
-        self.assertEqual((doc['schema'], doc['config_version'], doc['profile']), ('wot091-shell-rules.v1', 4, 'classic_plus'))
+        self.assertEqual((doc['schema'], doc['config_version'], doc['profile']), ('wot091-shell-rules.v1', 5, 'classic_plus'))
         self.assertEqual([layer['name'] for layer in doc['layers']], list(sr.LAYERS))
 
     def test_values_are_the_former_lab_constants(self):

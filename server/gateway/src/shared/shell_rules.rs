@@ -26,7 +26,7 @@ pub struct FamilyRules { pub normalization_deg: f64, pub ricochet_deg: Option<f6
 pub struct Rules {
     pub rules_hash: String,
     pub config_version: u32,
-    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String, pub he_law: String, pub modules_law: String,
+    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String, pub he_law: String, pub modules_law: String, pub accuracy_law: String,
     /// Indexed by `family_index`.
     pub families: [FamilyRules; 4],
     pub normalization_ratio: f64, pub normalization_multiplier: f64, pub no_ricochet_ratio: f64,
@@ -45,7 +45,13 @@ pub struct Rules {
     /// configVersion 4 (SHELL-04, owner 2026-11-08), layered law only: internal trace length in
     /// engine-integer calibers and the #717 common/vehicle.xml hit chances [projectile, explosion].
     pub internal_trace_calibers: f64, pub module_chances: [[f64; 2]; 10],
+    /// configVersion 5 (DISP-01, owner 2026-11-09), layered law only.
+    pub accuracy: Accuracy,
 }
+/// Shell Mechanics 2.0 section 3: `k(A) = clamp(base + slope*(A - reference), min, max)`, the
+/// share of shots inside `k*R`, and the SPG truncated normal's sigma as a fraction of `R`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Accuracy { pub central_probability: f64, pub reference: f64, pub base: f64, pub slope: f64, pub min: f64, pub max: f64, pub spg_sigma_fraction: f64 }
 /// Module groups of #717 common/vehicle.xml MaterialInfo (crew: every role and seat).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModuleClass { Engine, AmmoBay, FuelTank, Radio, Track, Gun, GunBreech, TurretRotator, SurveyingDevice, Crew }
@@ -110,9 +116,9 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     if config_version != CONFIG_VERSION && expected_sha256 == RULES_SHA256 { return Err(bad("config_version differs from the pin".into())); }
     if !top["layers"].as_array().is_some_and(|l| l.len() == 7) { return Err(bad("layers".into())); }
     let rules = &top["rules"];
-    exact(rules, &["laws", "families", "caliber", "falloff", "high_explosive", "randomization", "layers", "engine", "damage", "modules"], "rules")?;
+    exact(rules, &["laws", "families", "caliber", "falloff", "high_explosive", "randomization", "layers", "engine", "damage", "modules", "accuracy"], "rules")?;
     let laws = &rules["laws"];
-    exact(laws, &["direct", "track", "unarmored_device", "layers", "he", "modules"], "rules.laws")?;
+    exact(laws, &["direct", "track", "unarmored_device", "layers", "he", "modules", "accuracy"], "rules.laws")?;
     let families = &rules["families"];
     let names = ["armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive"];
     exact(families, &names, "rules.families")?;
@@ -152,6 +158,18 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     let damage = &rules["damage"];
     exact(damage, &["rounding"], "rules.damage")?;
     choice(damage, "rounding", "rules.damage", &["half_away_from_zero"])?;
+    let accuracy = &rules["accuracy"];
+    exact(accuracy, &["central_probability", "reference_accuracy", "base", "slope", "min", "max", "circle", "spg_distribution", "spg_sigma_fraction"], "rules.accuracy")?;
+    choice(accuracy, "circle", "rules.accuracy", &["classic_091"])?;
+    choice(accuracy, "spg_distribution", "rules.accuracy", &["truncated_normal"])?;
+    let parsed_accuracy = Accuracy {
+        central_probability: number(accuracy, "central_probability", "rules.accuracy", 0.5, 0.95)?,
+        reference: number(accuracy, "reference_accuracy", "rules.accuracy", 0.05, 2.)?,
+        base: number(accuracy, "base", "rules.accuracy", 0.05, 1.)?, slope: number(accuracy, "slope", "rules.accuracy", -5., 5.)?,
+        min: number(accuracy, "min", "rules.accuracy", 0.05, 1.)?, max: number(accuracy, "max", "rules.accuracy", 0.05, 1.)?,
+        spg_sigma_fraction: number(accuracy, "spg_sigma_fraction", "rules.accuracy", 0.1, 1.)?,
+    };
+    if parsed_accuracy.min > parsed_accuracy.max || parsed_accuracy.max >= 1. { return Err(bad("rules.accuracy: k bounds".into())); }
     let modules = &rules["modules"];
     let mut module_keys = vec!["internal_trace_calibers", "chance_gate", "critical", "he", "device_damage_roll"];
     let chance_keys: Vec<String> = MODULE_CLASSES.iter().flat_map(|m| [format!("{m}_projectile"), format!("{m}_explosion")]).collect();
@@ -175,6 +193,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         layers_law: law(laws, "layers", crate::p06t_damage::LAYERS_POLICY)?,
         he_law: law(laws, "he", crate::p06t_damage::HE_POLICY)?,
         modules_law: law(laws, "modules", MODULES_POLICY)?,
+        accuracy_law: law(laws, "accuracy", crate::gateway091::shared::dispersion::ACCURACY_POLICY)?,
         families: table,
         normalization_ratio: number(caliber, "normalization_ratio", "rules.caliber", 1., 20.)?,
         normalization_multiplier: number(caliber, "normalization_multiplier", "rules.caliber", 0., 10.)?,
@@ -196,6 +215,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         hesh_splash_factor: number(he, "hesh_splash_factor", "rules.high_explosive", 0., 1.)?,
         internal_trace_calibers: number(modules, "internal_trace_calibers", "rules.modules", 1., 100.)?,
         module_chances,
+        accuracy: parsed_accuracy,
     })
 }
 
@@ -228,8 +248,20 @@ pub fn rolls_from_seed(rules: &Rules, seed: u64) -> Rolls {
     Rolls { seed, penetration, damage }
 }
 
+/// DISP-01: the two dispersion draws of a shot, the stream's third and fourth values after the
+/// penetration and damage rolls, in [0, 1).
+pub fn dispersion_draws(seed: u64) -> (f64, f64) {
+    let mut state = seed;
+    unit(&mut state); unit(&mut state);
+    let radial = unit(&mut state);
+    (radial, unit(&mut state))
+}
+
 /// A per-process secret: rolls are not predictable from a battle or shot id a client
 /// sees. The per-shot seed (not the secret) goes into the shot trace for replay.
+#[cfg(test)]
+fn process_secret() -> u64 { 0x5eed_0d15_9e75_ed01 } // Fixed in tests: a shot's rolls and deviation repeat run to run.
+#[cfg(not(test))]
 fn process_secret() -> u64 {
     static SECRET: OnceLock<u64> = OnceLock::new();
     *SECRET.get_or_init(|| {

@@ -266,6 +266,18 @@ fn spaced_rows(w:&World)->Vec<(crate::p06t_damage::LayerPass,&'static str)>{
 }
 /// Bounded search over aim points of the side-on MS-1 for a shot that crosses a spaced plate.
 fn spaced_shot(base:&World,now:Instant)->World{spaced_shot_where(base,now,|_|true)}
+/// DISP-01: the deviation of a battle's first shot depends on the battle id, so a search for a narrow
+/// target walks several battles over the aim grid.
+fn layered_battle_with(counts:[u16;3],first_id:u64,now:Instant,ys:&[f32],xs:&[f32],accept:impl Fn(&World)->bool)->(World,World){
+    for id in first_id..first_id+32{
+        let base=ready_layers(counts,id,now);
+        for y in ys{for x in xs{
+            let w=shoot(&base,[*x,*y,19.],now);
+            if accept(&w){return(base,w);}
+        }}
+    }
+    panic!("no layered battle over the aim grid met the condition");
+}
 fn spaced_shot_where(base:&World,now:Instant,accept:impl Fn(&World)->bool)->World{
     for y in [0.3,0.5,0.7,0.9,1.1,1.3,1.5,1.7]{for x in [-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5]{
         let w=shoot(base,[x,y,19.],now);
@@ -293,8 +305,8 @@ fn spaced_shot_where(base:&World,now:Instant,accept:impl Fn(&World)->bool)->Worl
 }
 
 #[test]fn layered_law_heat_stops_on_a_spaced_plate(){
-    let now=Instant::now();let base=ready_layers([0,4,0],414,now);
-    let w=spaced_shot(&base,now);
+    let now=Instant::now();
+    let (base,w)=layered_battle_with([0,4,0],414,now,&[0.3,0.5,0.7,0.9,1.1,1.3,1.5,1.7],&[-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5],|w|!spaced_rows(w).is_empty());
     let(pass,_)=spaced_rows(&w)[0];
     assert_eq!((pass.outcome,pass.power_after_mm),(crate::p06t_damage::PassOutcome::Stopped,0.));
     assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Terminal{reason:impact::TerminalReason::TestLabLayerImpact,..})));
@@ -324,14 +336,10 @@ fn splash_rows(w:&World)->Vec<(super::super::super::model::Contact,[f32;3],f64,c
     assert!(splash_rows(&w).is_empty());
 }
 #[test]fn layered_law_he_stopped_on_a_layer_splashes_the_target_through_the_layers_on_one_ray(){
-    let now=Instant::now();let base=ready_layers([0,0,4],416,now);
+    let now=Instant::now();
     let stopped=|w:&World|track_rows(w).iter().any(|r|r.2.stopped)
         ||spaced_rows(w).iter().any(|(p,_)|p.outcome!=crate::p06t_damage::PassOutcome::Passed);
-    let mut found=None;
-    'search: for y in [0.15,0.25,0.35,0.45,0.55,0.65,0.9,1.1,1.3,1.5]{for x in [-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5]{
-        let w=shoot(&base,[x,y,19.],now);if stopped(&w){found=Some(w);break 'search;}
-    }}
-    let w=found.expect("an MS-1 HE shot stopping on a track or a spaced plate");
+    let (base,w)=layered_battle_with([0,0,4],416,now,&[0.15,0.25,0.35,0.45,0.55,0.65,0.9,1.1,1.3,1.5],&[-1.5,-1.2,-0.9,-0.6,-0.3,0.,0.3,0.6,0.9,1.2,1.5],stopped);
     assert!(hull_rows(&w).is_empty(),"a detonated HE reaches no plate directly");
     let rows=splash_rows(&w);
     assert_eq!(rows.len(),1,"the detonation reaches the target hull within its radius");
@@ -403,4 +411,35 @@ fn chance_draws(w:&World,shot:u32,target:usize,first:u8)->Vec<(u8,f64)>{
     let lost=w.device_events.iter().find_map(|(slot,e)|match e.change{device::Change::Device{device,before,after,..}
         if *slot==1&&device==side&&before==max=>Some(before-after),_=>None}).expect("track module transition");
     assert_eq!(lost,expected.min(max),"{rolls:?}");
+}
+
+// DISP-01 (owner 2026-11-09): the shot leaves the barrel line by the seeded deviation, inside the circle.
+#[test]fn layered_law_shot_deviates_inside_the_circle_and_the_old_law_does_not(){
+    let now=Instant::now();
+    let aimed=|base:&World|{let mut w=base.clone();w.apply(0,1,&[Command::Aim(aim::Intent::Point([0.,1.,19.]))],now).unwrap();
+        for step in 1..=20{let at=now+STEP*step;w.advance(at).unwrap();w.advance_lifecycle(at).unwrap();}w};
+    let fire=|mut w:World|{let at=now+Duration::from_secs(2);w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();w};
+    let layered=aimed(&ready_layers([4,0,0],431,now));
+    let circle=layered.actors[0].dispersion.expect("the circle runs under the layered law");
+    let gun=super::super::super::dispersion::gun(VehicleKind::Ms1.name()).unwrap();
+    let (origin_a,bare)=aim::shot_geometry_pose_for(VehicleKind::Ms1,layered.actors[0].position,layered.actors[0].direction,layered.actors[0].aim.yaw,layered.actors[0].aim.pitch,1.);
+    let w=fire(layered.clone());
+    let p=&w.projectiles[0];
+    let rules=crate::gateway091::shared::shell_rules::rules().unwrap();
+    let seed=crate::gateway091::shared::shell_rules::shot_rolls(rules,w.id,1).seed;
+    let (r,_)=super::super::super::dispersion::deviation(&rules.accuracy,gun,circle.angle(gun),seed);
+    assert!(r>0.&&r<=circle.angle(gun),"{r} {}",circle.angle(gun));
+    assert_eq!(p.origin,origin_a);
+    let unit=|v:[f32;3]|{let v=v.map(f64::from);let n=v.iter().map(|x|x*x).sum::<f64>().sqrt();v.map(|x|x/n)};
+    let (a,b)=(unit(p.velocity),unit(bare));
+    let angle=(0..3).map(|i|a[i]*b[i]).sum::<f64>().clamp(-1.,1.).acos();
+    assert!((angle-r).abs()<1e-3,"{angle} {r}");
+    assert!(w.actors[0].dispersion.unwrap().factor>circle.factor,"the shot blooms the circle");
+    // The single-plate law has no circle and flies exactly along the barrel.
+    let old=aimed(&ready(true,[4,0,0],432,now));
+    assert!(old.actors[0].dispersion.is_none());
+    let (_,bare)=aim::shot_geometry_pose_for(VehicleKind::Ms1,old.actors[0].position,old.actors[0].direction,old.actors[0].aim.yaw,old.actors[0].aim.pitch,1.);
+    let w=fire(old);
+    let (a,b)=(unit(w.projectiles[0].velocity),unit(bare));
+    assert!((0..3).all(|i|(a[i]-b[i]).abs()<1e-5));
 }

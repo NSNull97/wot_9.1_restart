@@ -156,3 +156,18 @@ fn direct_case(armor: Option<f64>, angle: f32, distance: f64, spent: f64) -> Val
     bad["input"]["class"] = "hull".into();
     assert!(replay_record(&bad).is_err());
 }
+
+#[test] fn a_shot_record_replays_its_deviation_from_the_seed() {
+    let rules = crate::gateway091::shared::shell_rules::rules().unwrap();
+    let gun = super::super::dispersion::Gun { radius_m: 0.37, after_shot: 4., spg: false };
+    let ap = shell(Family::ArmorPiercing);
+    let (r, theta) = super::super::dispersion::deviation(&rules.accuracy, gun, 0.004, 99);
+    let record = stamp(shot_record(7, 40, 160, 0, KIND, &ap, 0.004, gun, 99, r, theta));
+    assert!(replay_record(&serde_json::from_str(&record.to_string()).unwrap()).unwrap(), "{record}");
+    let mut wrong = record.clone();
+    wrong["input"]["seed"] = format!("{:016x}", 100).into();
+    assert!(!replay_record(&wrong).unwrap());
+    let mut wrong = record.clone();
+    wrong["input"]["seed"] = "x".into();
+    assert!(replay_record(&wrong).is_err());
+}

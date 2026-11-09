@@ -88,6 +88,7 @@ pub(crate) mod projectile;
 pub(crate) mod collision;
 pub(crate) mod chassis_armor;
 pub(crate) mod module_volumes;
+pub(crate) mod dispersion;
 pub(crate) mod impact;
 pub(crate) mod wire;
 mod server;

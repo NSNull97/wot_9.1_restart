@@ -93,7 +93,8 @@ fn mutated(edit: impl Fn(&mut Value)) -> Vec<u8> {
 
 #[test] fn version_four_carries_the_verified_module_chances_and_ten_calibers() {
     let r = rules().unwrap();
-    assert_eq!((r.config_version, r.modules_law.as_str(), r.internal_trace_calibers), (4, MODULES_POLICY, 10.));
+    assert_eq!((r.modules_law.as_str(), r.internal_trace_calibers), (MODULES_POLICY, 10.));
+    assert!(r.config_version >= 4);
     assert_eq!((r.module_chance(ModuleClass::Engine, false), r.module_chance(ModuleClass::AmmoBay, false)), (0.45, 0.27));
     assert_eq!((r.module_chance(ModuleClass::Crew, false), r.module_chance(ModuleClass::Crew, true)), (0.33, 0.15));
     assert_eq!((r.module_chance(ModuleClass::Track, true), r.module_chance(ModuleClass::Gun, true)), (1., 0.33));

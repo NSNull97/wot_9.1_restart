@@ -547,7 +547,8 @@ impl World {
             if turret_moved || actor.speed.abs() > 0.5 { brain.settle_tick = self.tick; }
             let aim_s = self.tick.saturating_sub(brain.settle_tick) as f32 * 0.1;
             let tau = actor.vehicle_kind().aim().aiming_time;
-            let sigma = SIGMA0 * (1. + 3. * (-aim_s / tau).exp()) * metres;
+            // DISP-01: under the layered law the server's own dispersion replaces this invented error.
+            let sigma = if self.impact.layers() { 0. } else { SIGMA0 * (1. + 3. * (-aim_s / tau).exp()) * metres };
             let observed = self.actors[enemy].position;
             // Smoothed ground velocity of the target from its positions on consecutive ticks.
             let velocity = match brain.track {

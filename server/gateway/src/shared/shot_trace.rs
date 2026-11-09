@@ -155,6 +155,22 @@ fn splash_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usi
     v
 }
 
+/// DISP-01: the shot's deviation inside the aiming circle.
+#[allow(clippy::too_many_arguments)]
+pub fn shot(battle: u64, shot: u32, tick: u32, attacker: usize, attacker_kind: VehicleKind, shell: &Shell, angle: f64,
+            gun: super::dispersion::Gun, seed: u64, r: f64, theta: f64) {
+    write(shot_record(battle, shot, tick, attacker, attacker_kind, shell, angle, gun, seed, r, theta));
+}
+#[allow(clippy::too_many_arguments)]
+fn shot_record(battle: u64, shot: u32, tick: u32, attacker: usize, attacker_kind: VehicleKind, shell: &Shell, angle: f64,
+               gun: super::dispersion::Gun, seed: u64, r: f64, theta: f64) -> Value {
+    let mut v = context("shot", battle, shot, tick, attacker, attacker, attacker_kind);
+    v["shell"] = shell_json(shell);
+    v["input"] = json!({"angle_rad": fb(angle), "radius_m": fb(gun.radius_m), "spg": gun.spg, "seed": format!("{seed:016x}")});
+    v["result"] = json!({"r_rad": fb(r), "theta_rad": fb(theta)});
+    v
+}
+
 /// SHELL-04: one module or crew seat on the internal trace or in an explosion: the #717 chance of
 /// its group, the battle roll and whether it was hit (`roll < chance`); `damage` is the module
 /// damage of an explosion hit (None on the internal trace: the shell's device damage).
@@ -252,6 +268,12 @@ fn recompute(record: &Value) -> io::Result<Value> {
                 distance_m: f64_of(input, "distance_m")?, armor_mm: f64_of(input, "armor_mm")?, los_clear: input["los_clear"].as_bool().ok_or_else(|| bad("los"))? };
             let d = match rolls_of(record)? { Some(rolls) => law::resolve_splash_layered(shell, &[t], rolls)?[0], None => law::resolve_splash(shell, &[t])?[0] };
             json!({"slot": d.slot, "damage_hp": d.damage_hp})
+        }
+        Some("shot") => {
+            let seed = input["seed"].as_str().filter(|s| s.len() == 16).and_then(|s| u64::from_str_radix(s, 16).ok()).ok_or_else(|| bad("shot seed"))?;
+            let gun = super::dispersion::Gun { radius_m: f64_of(input, "radius_m")?, after_shot: 1., spg: input["spg"].as_bool().ok_or_else(|| bad("spg"))? };
+            let (r, theta) = super::dispersion::deviation(&crate::gateway091::shared::shell_rules::rules()?.accuracy, gun, f64_of(input, "angle_rad")?, seed);
+            json!({"r_rad": fb(r), "theta_rad": fb(theta)})
         }
         Some("module") => {
             let name = input["class"].as_str().ok_or_else(|| bad("module class"))?;

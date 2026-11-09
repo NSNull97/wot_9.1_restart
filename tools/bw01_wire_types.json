@@ -172,6 +172,10 @@
 "Transition"
 ],
 [
+"shared/dispersion.rs",
+"State"
+],
+[
 "shared/fragiles.rs",
 "Catalog"
 ],

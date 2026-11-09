@@ -84,6 +84,8 @@ pub struct Actor {
     pub input: Input,
     pub fire: fire::State,
     pub aim: aim::State,
+    /// DISP-01: the aiming circle of the layered law; None without it.
+    pub dispersion: Option<super::dispersion::State>,
     pub mileage_metres: f64,
     origin: [f32; 3],
     vehicle_kind: VehicleKind,
@@ -97,8 +99,8 @@ pub struct Actor {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Actor
 impl crate::bw_wire::Wire for Actor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,bot}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(bot,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,bot:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,bot}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(bot,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,bot:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -1074,7 +1076,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,bot:None });
+            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,bot:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -1226,7 +1228,9 @@ impl World {
                         if let Some((ammo_remaining,shell))=accepted {
                             if shots.len() >= self.shot_limit() || projectiles.len() >= self.shot_limit() { return Err(bad()); }
                             let sequence = shots.len() as u32 + 1;
-                            let projectile = if let Some(shell)=shell{Projectile::launch_shell_for_limit(sequence,slot,&next,now,self.shot_limit(),shell)?}
+                            // DISP-01: under the layered law the shot leaves the barrel line inside the aiming circle.
+                            let deviation=self.shot_deviation(&next,sequence)?;
+                            let projectile = if let Some(shell)=shell{Projectile::launch_deviated(sequence,slot,&next,now,self.shot_limit(),shell,deviation.map(|d|(d.r,d.theta)))?}
                                 else if self.mixed_profiles {Projectile::launch_for_limit(sequence,slot,&next,now,self.shot_limit())?}
                                 else {Projectile::launch(sequence, slot, &next, now)?};
                             let elapsed_ticks = now.duration_since(self.started.ok_or_else(|| bad())?).as_millis() / 100;
@@ -1237,6 +1241,12 @@ impl World {
                                 impact_trace.admission_shell(self.id,sequence,launch_tick,slot,counts_before.ok_or_else(||bad())?[index],ammo_remaining,shell)?;
                             }else{impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;}
                             impact_trace.launch(self.id, &projectile, launch_tick)?;
+                            if let Some(d)=deviation {
+                                if super::shot_trace::enabled(){super::shot_trace::shot(self.id,sequence,launch_tick,slot,next.vehicle_kind(),&projectile.shell.ok_or_else(||bad())?,d.angle,d.gun,d.seed,d.r,d.theta);}
+                                let spec=next.vehicle_kind().aim();let mult=next.devices.as_ref().map_or(1.,|c|f64::from(c.capabilities().dispersion_scale));let speed=next.speed;
+                                let (hull_yaw,turret_yaw)=(next.direction[0],next.aim.yaw);
+                                next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,mult);
+                            }
                             shots.push(Shot { sequence, slot, tick: launch_tick });
                             projectiles.push(projectile);
                         }
@@ -1307,6 +1317,7 @@ impl World {
         if tick_changed&&self.mixed_ammo{self.drain_fire(&mut next_actors,u64::from(tick-1000)*100)?;}
         if tick_changed {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
+            let layered_circle=self.impact.layers();
             for (slot, a) in next_actors.iter_mut().enumerate() {
                 if !a.ready || a.session.is_none() || !a.alive() {
                     // A parked/wreck body stays in the single physical scene and
@@ -1342,6 +1353,13 @@ impl World {
                         let caps=a.devices.as_ref().ok_or_else(||bad())?.capabilities();
                         a.aim.advance_pose_for_selected(a.vehicle_kind,a.position,a.direction,dt,armament.current(),caps)?;
                     }else{a.aim.advance_pose_for(a.vehicle_kind,a.position,a.direction,dt)?;}
+                    if layered_circle {
+                        let spec=a.vehicle_kind.aim();
+                        let mult=a.devices.as_ref().map_or(1.,|d|f64::from(d.capabilities().dispersion_scale));
+                        let (hull_yaw,turret_yaw)=(a.direction[0],a.aim.yaw);
+                        let (speed,state)=(a.speed,a.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)));
+                        state.step(&spec,speed,hull_yaw,turret_yaw,mult,dt)?;
+                    }
                 }
             }
             next_last = now; next_tick = tick;
