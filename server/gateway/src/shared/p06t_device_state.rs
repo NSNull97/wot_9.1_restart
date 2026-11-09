@@ -25,6 +25,10 @@ pub const MAX_HITS:usize=1920;
 /// Module hits of one shot: two internal (ordinals 0/1) plus SHELL-02 chassis tracks
 /// (ordinal 2 left, 3 right; `TRACK_ORDINALS`).
 pub const MAX_SHOT_HITS:usize=4;
+/// SHELL-04 classic modules (layered law): every module on the 10-caliber internal trace, at
+/// ordinals 4.. after the two legacy internal and the two track ordinals.
+pub const MAX_CLASSIC_SHOT_HITS:usize=16;
+pub const CLASSIC_FIRST_ORDINAL:u8=4;
 pub const TRACK_ORDINALS:[u8;2]=[2,3];
 pub const MAX_TIME_MS:u64=3_600_000;
 pub const FIRE_INTERVAL_MS:u64=1000;
@@ -43,6 +47,9 @@ impl crate::bw_wire::Wire for Condition {
 }
 // end BW-01 wire codec
 fn condition(hp:u16,max:u16)->Condition {if hp==0{Condition::Destroyed}else if u32::from(hp)*2<=u32::from(max){Condition::Critical}else{Condition::Normal}}
+/// SHELL-04 (owner 2026-11-08): damaged at 0 < HP <= maxRegenHealth, the HP a repaired module
+/// comes back with as critical (#717 DEVICE_REPAIRED_TO_CRITICAL); INFERRED threshold.
+fn classic_condition(hp:u16,regen:u16)->Condition {if hp==0{Condition::Destroyed}else if hp<=regen{Condition::Critical}else{Condition::Normal}}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Cause {pub shot:u32,pub attacker_slot:u8}
 // BW-01 wire codec (tools/bw01_wire_gen.py): Cause
@@ -117,11 +124,13 @@ pub struct State {
     repair_due:[Option<u64>;9],repair_cause:[Option<Cause>;9],
     observed_ms:Option<u64>,sequence:u32,seen:Vec<ModuleHit>,frozen:bool,
     fire_ticks:u32,proposed_fire_damage:u32,
+    /// SHELL-04 classic module rules (layered law); false keeps the LAB rules.
+    classic:bool,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): State
 impl crate::bw_wire::Wire for State {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage,classic}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);W::put(classic,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?,classic:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl State {
@@ -142,9 +151,24 @@ impl State {
         }
         Ok(Self {profile,policy,health:profile.caps().map(|c|c.max),
             crew:std::array::from_fn(|i|i<seats.len()),fire:None,repair_due:[None;9],repair_cause:[None;9],
-            observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0})
+            observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0,classic:false})
     }
     pub fn profile(&self)->Profile {self.profile}
+    /// SHELL-04: classic module rules before any hit (a later switch would rewrite history).
+    pub fn enable_classic(&mut self)->io::Result<()> {
+        if self.sequence!=0||!self.seen.is_empty() {return Err(bad("classic module rules after hits"));}
+        self.classic=true;Ok(())
+    }
+    pub fn classic(&self)->bool {self.classic}
+    /// Module hits of one shot (target, ordinal), in application order.
+    pub fn shot_hits(&self,shot:u32)->Vec<(Target,u8)> {self.seen.iter().filter(|h|h.cause.shot==shot).map(|h|(h.target,h.ordinal)).collect()}
+    /// This shot already hit this module or seat (tracks of a later explosion are skipped).
+    pub fn hit_by_shot(&self,shot:u32,target:Target)->bool {self.seen.iter().any(|h|h.cause.shot==shot&&h.target==target)}
+    fn condition_of(&self,index:usize,hp:u16)->Condition {
+        let caps=(*self.profile.caps())[index];
+        if self.classic {classic_condition(hp,caps.regen)} else {condition(hp,caps.max)}
+    }
+    fn shot_hit_limit(&self)->usize {if self.classic {MAX_CLASSIC_SHOT_HITS} else {MAX_SHOT_HITS}}
     pub fn policy_version(&self)->PolicyVersion {self.policy}
     pub fn policy_revision(&self)->&'static str {self.policy.revision()}
     pub fn source_caps_sha(&self)->&'static str {self.policy.source_caps_sha()}
@@ -180,7 +204,7 @@ impl State {
         if before!=after {
             self.health[index]=after;
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
-                before_condition:condition(before,max),after_condition:condition(after,max),repair:false})?;
+                before_condition:self.condition_of(index,before),after_condition:self.condition_of(index,after),repair:false})?;
             if after==0 && device.repairable() {
                 self.repair_due[index]=Some(at.checked_add(MODULE_REPAIR_DELAY_MS).ok_or_else(||bad("module repair clock overflow"))?);
                 self.repair_cause[index]=Some(cause);
@@ -230,7 +254,7 @@ impl State {
         source_shell(hit.shell)?;
         // RES-30: any attacker/shot of a 30-actor battle (was slot<6, shot<=960).
         use crate::gateway091::shared::model::{MAX_ACTORS,MAX_BATTLE_SHOTS};
-        if hit.cause.shot==0 || hit.cause.shot as usize>MAX_BATTLE_SHOTS || usize::from(hit.cause.attacker_slot)>=MAX_ACTORS || usize::from(hit.ordinal)>=MAX_SHOT_HITS
+        if hit.cause.shot==0 || hit.cause.shot as usize>MAX_BATTLE_SHOTS || usize::from(hit.cause.attacker_slot)>=MAX_ACTORS || usize::from(hit.ordinal)>=self.shot_hit_limit()
             || !hit.ignition_roll.is_finite() || !(0. ..1.).contains(&hit.ignition_roll)
             || matches!(hit.target,Target::Seat(s) if usize::from(s)>=self.profile.crew().len())
             || hit.ordinal==TRACK_ORDINALS[0]&&hit.target!=Target::Device(Device::LeftTrack)
@@ -242,17 +266,35 @@ impl State {
     /// A caller stages this State with the World clone. Structural errors roll
     /// back the complete batch, including the seen set, journal and fire clock.
     /// Exact duplicate hits are no-ops; a conflicting replay is an error.
-    pub fn apply_hits(&mut self,hits:&[ModuleHit],h:Health)->io::Result<Vec<Transition>> {
-        if hits.is_empty() || hits.len()>2 {return Err(bad("module hit batch bound"));}
+    pub fn apply_hits(&mut self,hits:&[ModuleHit],h:Health)->io::Result<Vec<Transition>> {self.apply_with(hits,None,h)}
+    /// SHELL-04 (owner 2026-11-08): external modules (tracks, gun) of an HE/HESH explosion take an
+    /// explicit device damage each (the shell's device damage scaled by the splash falloff).
+    pub fn apply_explosion_hits(&mut self,hits:&[ModuleHit],amounts:&[u16],h:Health)->io::Result<Vec<Transition>> {
+        if hits.iter().any(|hit|!matches!(hit.target,Target::Device(Device::LeftTrack|Device::RightTrack|Device::Gun))) {
+            return Err(bad("explosion module hit bounds"));
+        }
+        self.apply_classic_hits(hits,amounts,h)
+    }
+    /// SHELL-04 (owner 2026-11-08): classic hits with their module damage given (the shell's device
+    /// damage times the shot's damage roll, within +-25 %; seats ignore it).
+    pub fn apply_classic_hits(&mut self,hits:&[ModuleHit],amounts:&[u16],h:Health)->io::Result<Vec<Transition>> {
+        if !self.classic||amounts.len()!=hits.len()||hits.iter().zip(amounts).any(|(hit,a)|*a==0
+            ||u32::from(*a)*4>u32::from(hit.shell.device_damage)*5+2) {
+            return Err(bad("classic module hit damage bounds"));
+        }
+        self.apply_with(hits,Some(amounts),h)
+    }
+    fn apply_with(&mut self,hits:&[ModuleHit],amounts:Option<&[u16]>,h:Health)->io::Result<Vec<Transition>> {
+        if hits.is_empty() || hits.len()>if self.classic {MAX_CLASSIC_SHOT_HITS} else {2} {return Err(bad("module hit batch bound"));}
         let now=hits[0].at_ms;self.validate_context(now,h)?;
         let mut next=self.clone();let mut out=Vec::new();
-        for &hit in hits {
+        for (index,&hit) in hits.iter().enumerate() {
             next.validate_hit(hit)?;
             if hit.at_ms!=now || hit.cause!=hits[0].cause {return Err(bad("module hit batch identity"));}
             if let Some(old)=next.seen.iter().find(|old|old.cause.shot==hit.cause.shot&&old.ordinal==hit.ordinal) {
                 if *old!=hit {return Err(bad("module conflicting replay"));}continue;
             }
-            if next.seen.iter().filter(|old|old.cause.shot==hit.cause.shot).count()>=MAX_SHOT_HITS
+            if next.seen.iter().filter(|old|old.cause.shot==hit.cause.shot).count()>=next.shot_hit_limit()
                 || next.seen.iter().any(|old|old.cause.shot==hit.cause.shot&&old.target==hit.target)
                 || next.seen.len()>=MAX_HITS {return Err(bad("module hit history bound"));}
             if next.frozen || h.terminal || h.hp==0 || !next.crew_active() {next.frozen=true;continue;}
@@ -263,7 +305,8 @@ impl State {
             next.seen.push(hit);
             match hit.target {
                 Target::Device(device)=>{
-                    next.device(&mut out,device,hit.shell.device_damage,now,hit.cause,false)?;
+                    let amount=amounts.map_or(hit.shell.device_damage,|a|a[index]);
+                    next.device(&mut out,device,amount,now,hit.cause,false)?;
                     let ignition=(device==Device::Engine&&hit.shell.device_damage>=MIN_FIRE_STARTING_DAMAGE
                         &&hit.ignition_roll<next.profile.engine_fire_chance())
                         || (device==Device::FuelTank&&next.health[device as usize]==0);
@@ -311,7 +354,7 @@ impl State {
     }
     pub fn capabilities(&self)->Capabilities {
         let destroyed=|d:Device|self.health[d as usize]==0;
-        let critical=|d:Device|condition(self.health[d as usize],(*self.profile.caps())[d as usize].max)==Condition::Critical;
+        let critical=|d:Device|self.condition_of(d as usize,self.health[d as usize])==Condition::Critical;
         let mut wounded=0u8;for (seat,active) in self.crew().iter().enumerate(){if !active{wounded|=self.profile.crew()[seat].roles;}}
         let crew_active=self.crew_active();let track=destroyed(Device::LeftTrack)||destroyed(Device::RightTrack);
         let live=crew_active&&!self.frozen;
@@ -336,3 +379,7 @@ impl State {
 #[cfg(test)]
 #[path="p06t_device_v2_tests.rs"]
 mod tests_v2;
+
+#[cfg(test)]
+#[path="module_classic_tests.rs"]
+mod classic_tests;

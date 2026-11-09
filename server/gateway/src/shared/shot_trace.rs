@@ -17,7 +17,7 @@ use std::sync::{Mutex, OnceLock};
 use serde_json::{json, Value};
 use crate::p06t_damage::{self as law, DirectInput, Layer, LayerPass, Plate, Resolution, SplashDamage, SplashTarget, TrackPass};
 use crate::p06t_shells091::{Family, Shell};
-use crate::gateway091::shared::shell_rules::Rolls;
+use crate::gateway091::shared::shell_rules::{ModuleClass, Rolls, MODULE_CLASSES};
 use super::vehicle_profile::VehicleKind;
 
 pub const SCHEMA: &str = "wot091-shot-trace.v1";
@@ -155,6 +155,24 @@ fn splash_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usi
     v
 }
 
+/// SHELL-04: one module or crew seat on the internal trace or in an explosion: the #717 chance of
+/// its group, the battle roll and whether it was hit (`roll < chance`); `damage` is the module
+/// damage of an explosion hit (None on the internal trace: the shell's device damage).
+#[allow(clippy::too_many_arguments)]
+pub fn module(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
+              module: &str, class: ModuleClass, explosion: bool, chance: f64, roll: f64, applied: bool) {
+    write(module_record(battle, shot, tick, attacker, target, attacker_kind, shell, module, class, explosion, chance, roll, applied));
+}
+#[allow(clippy::too_many_arguments)]
+fn module_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
+                 module: &str, class: ModuleClass, explosion: bool, chance: f64, roll: f64, applied: bool) -> Value {
+    let mut v = context("module", battle, shot, tick, attacker, target, attacker_kind);
+    v["shell"] = shell_json(shell);
+    v["input"] = json!({"module": module, "class": MODULE_CLASSES[class as usize], "explosion": explosion, "roll": fb(roll)});
+    v["result"] = json!({"chance": fb(chance), "applied": applied});
+    v
+}
+
 /// SHELL-PEN: one spaced layer crossed under the layered law.
 #[allow(clippy::too_many_arguments)]
 pub fn layer(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
@@ -234,6 +252,15 @@ fn recompute(record: &Value) -> io::Result<Value> {
                 distance_m: f64_of(input, "distance_m")?, armor_mm: f64_of(input, "armor_mm")?, los_clear: input["los_clear"].as_bool().ok_or_else(|| bad("los"))? };
             let d = match rolls_of(record)? { Some(rolls) => law::resolve_splash_layered(shell, &[t], rolls)?[0], None => law::resolve_splash(shell, &[t])?[0] };
             json!({"slot": d.slot, "damage_hp": d.damage_hp})
+        }
+        Some("module") => {
+            let name = input["class"].as_str().ok_or_else(|| bad("module class"))?;
+            let index = MODULE_CLASSES.iter().position(|c| *c == name).ok_or_else(|| bad("module class"))?;
+            let explosion = input["explosion"].as_bool().ok_or_else(|| bad("explosion"))?;
+            let roll = f64_of(input, "roll")?;
+            if !(0. ..1.).contains(&roll) { return Err(bad("module roll")); }
+            let chance = crate::gateway091::shared::shell_rules::rules()?.module_chances[index][usize::from(explosion)];
+            json!({"chance": fb(chance), "applied": roll < chance})
         }
         _ => return Err(bad("record kind")),
     };

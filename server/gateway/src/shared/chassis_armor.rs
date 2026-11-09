@@ -200,6 +200,19 @@ impl ChassisArmor {
         Ok(())
     }
 
+    /// SHELL-04: mean vertex (vehicle frame) of one track side's triangles, the aim point of an
+    /// explosion's ray to that track.
+    pub fn side_centroid(&self, label: &str) -> Option<[f32; 3]> {
+        let mut sum = [0f64; 3]; let mut count = 0u32;
+        for t in self.triangles.iter().filter(|t| t.material == label) {
+            for index in [t.a, t.b, t.c] {
+                let v = self.vertices.get(index as usize)?;
+                for axis in 0..3 { sum[axis] += f64::from(v[axis]); }
+                count += 1;
+            }
+        }
+        (count > 0).then(|| std::array::from_fn(|axis| (sum[axis] / f64::from(count)) as f32))
+    }
     pub fn material(&self, label: &str) -> Option<&TrackMaterial> { self.materials.iter().find(|m| m.name == label) }
 
     /// SHELL-02: the device of a track material label (`leftTrackHealth`/`rightTrackHealth`).

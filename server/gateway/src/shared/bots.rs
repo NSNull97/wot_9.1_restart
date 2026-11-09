@@ -330,7 +330,7 @@ impl World {
             Some(fire::State::with_typed(kind.mount(), [source.capacity, 0, 0], source.shots[0].compact_descr)?)
         } else { None };
         let devices = if self.mixed_ammo {
-            Some(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(bad)?)?)
+            Some(self.classic_devices(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(bad)?)?)?)
         } else { None };
         let (previous, mixed) = (self.vehicle_kind, self.mixed_ammo);
         self.mixed_ammo = false; self.vehicle_kind = kind;

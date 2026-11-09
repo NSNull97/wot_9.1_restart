@@ -57,7 +57,7 @@ fn mutated(edit: impl Fn(&mut Value)) -> Vec<u8> {
 
 #[test] fn version_three_adds_the_he_screen_splash_and_hesh_settings() {
     let r = rules().unwrap();
-    assert_eq!(r.config_version, 3);
+    assert!(r.config_version >= 3);
     assert_eq!(r.he_law, crate::p06t_damage::HE_POLICY);
     assert!(r.he_screen_formula);
     assert_eq!((r.he_screen, r.hesh_screen), (Screen { resistance: 1., loss: 0.25 }, Screen { resistance: 1., loss: 0.75 }));
@@ -89,4 +89,17 @@ fn mutated(edit: impl Fn(&mut Value)) -> Vec<u8> {
     assert_ne!(shot_rolls(r, 778, 1).seed, shot_rolls(r, 777, 1).seed);
     let mut flat = r.clone(); flat.penetration_random_percent = 0.; flat.damage_random_percent = 0.;
     assert_eq!(rolls_from_seed(&flat, 99).penetration, 1.);
+}
+
+#[test] fn version_four_carries_the_verified_module_chances_and_ten_calibers() {
+    let r = rules().unwrap();
+    assert_eq!((r.config_version, r.modules_law.as_str(), r.internal_trace_calibers), (4, MODULES_POLICY, 10.));
+    assert_eq!((r.module_chance(ModuleClass::Engine, false), r.module_chance(ModuleClass::AmmoBay, false)), (0.45, 0.27));
+    assert_eq!((r.module_chance(ModuleClass::Crew, false), r.module_chance(ModuleClass::Crew, true)), (0.33, 0.15));
+    assert_eq!((r.module_chance(ModuleClass::Track, true), r.module_chance(ModuleClass::Gun, true)), (1., 0.33));
+    for (label, bad) in [
+        ("chance above one", mutated(|d| { d["rules"]["modules"]["engine_projectile"]["value"] = 1.5.into(); })),
+        ("missing chance", mutated(|d| { d["rules"]["modules"].as_object_mut().unwrap().remove("crew_explosion"); })),
+        ("unknown gate", mutated(|d| { d["rules"]["modules"]["chance_gate"]["value"] = "always".into(); })),
+    ] { assert!(parse(&bad, &digest(&bad)).is_err(), "{label}"); }
 }

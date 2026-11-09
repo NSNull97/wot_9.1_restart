@@ -578,3 +578,21 @@ fn bot02_outnumbered_without_a_line_moves_sideways_not_deeper(){
     assert!((distance(point,here)-1.5*REPOSITION_SIDE_M).abs()<3.&&(point[1]-here[1]).abs()<3.,"sideways, not toward the enemy: {point:?}");
     assert_ne!(w.actors[1].input,Input::STOP);
 }
+
+#[test]
+fn a_bot_of_a_layered_battle_has_classic_modules(){
+    // SHELL-04: a hit on a bot applies the classic module rules; a LAB state there failed the battle (owner 2026-11-09).
+    let now=Instant::now();let map=MapId::Prohorovka;
+    let build=|layers:bool|{
+        let mut w=World::new_for_roster(ID,now,map,2).unwrap();
+        let mut rules=lifecycle::Rules::for_map(map).unwrap();rules.prebattle_ms=1000;w.enable_lifecycle(rules).unwrap();
+        w.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();w.bind_geometry(Arc::new(geometry::tests::is7_bundle())).unwrap();
+        w.terrain=Some(Arc::new(terrain::tests::fixture_for_map(map)));
+        w.enable_mixed_ammo().unwrap();if layers{w.enable_shell_layers().unwrap();}
+        w.enable_bots(Plan{human_places:1,seed:1,kinds:vec![VehicleKind::Ms1]}).unwrap();
+        let identity=Identity{account:"bot-classic".into(),database:1,name:"classic".into()};
+        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE,VehicleKind::Ms1).unwrap(),0);w
+    };
+    assert!(build(true).actors[0].devices.as_ref().unwrap().classic(),"layered battle");
+    assert!(!build(false).actors[0].devices.as_ref().unwrap().classic(),"single-plate battle keeps the LAB rules");
+}

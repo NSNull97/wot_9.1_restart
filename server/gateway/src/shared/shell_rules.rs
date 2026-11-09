@@ -15,6 +15,8 @@ use crate::p06t_shells091::Family;
 include!("shell_rules_pins.rs");
 const SNAPSHOT: &[u8] = include_bytes!("../../../../config/shell_rules/snapshot.json");
 const SCHEMA: &str = "wot091-shell-rules.v1";
+/// SHELL-04 law of modules and crew under the layered law (owner 2026-11-08).
+pub const MODULES_POLICY: &str = "project.modules-classic.v1";
 const STATUSES: [&str; 5] = ["verified_091", "test_lab", "requires_verification", "experimental", "project_policy"];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -24,7 +26,7 @@ pub struct FamilyRules { pub normalization_deg: f64, pub ricochet_deg: Option<f6
 pub struct Rules {
     pub rules_hash: String,
     pub config_version: u32,
-    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String, pub he_law: String,
+    pub direct_law: String, pub track_law: String, pub unarmored_device_law: String, pub layers_law: String, pub he_law: String, pub modules_law: String,
     /// Indexed by `family_index`.
     pub families: [FamilyRules; 4],
     pub normalization_ratio: f64, pub normalization_multiplier: f64, pub no_ricochet_ratio: f64,
@@ -40,6 +42,17 @@ pub struct Rules {
     /// track by `max(0, (P - t*K) * (1 - L))`; splash falloff exponent; HESH splash factor.
     pub he_screen_formula: bool, pub he_falloff_exponent: f64,
     pub he_screen: Screen, pub hesh_screen: Screen, pub hesh_splash_factor: f64,
+    /// configVersion 4 (SHELL-04, owner 2026-11-08), layered law only: internal trace length in
+    /// engine-integer calibers and the #717 common/vehicle.xml hit chances [projectile, explosion].
+    pub internal_trace_calibers: f64, pub module_chances: [[f64; 2]; 10],
+}
+/// Module groups of #717 common/vehicle.xml MaterialInfo (crew: every role and seat).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ModuleClass { Engine, AmmoBay, FuelTank, Radio, Track, Gun, GunBreech, TurretRotator, SurveyingDevice, Crew }
+pub const MODULE_CLASSES: [&str; 10] = ["engine", "ammo_bay", "fuel_tank", "radio", "track", "gun", "gun_breech", "turret_rotator", "surveying_device", "crew"];
+impl Rules {
+    /// The source chance that a crossing (projectile) or an explosion hits this module.
+    pub fn module_chance(&self, class: ModuleClass, explosion: bool) -> f64 { self.module_chances[class as usize][usize::from(explosion)] }
 }
 /// Shell Mechanics 2.0 section 5 candidate: resistance `K` and extra loss `L` of a screen.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -97,9 +110,9 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     if config_version != CONFIG_VERSION && expected_sha256 == RULES_SHA256 { return Err(bad("config_version differs from the pin".into())); }
     if !top["layers"].as_array().is_some_and(|l| l.len() == 7) { return Err(bad("layers".into())); }
     let rules = &top["rules"];
-    exact(rules, &["laws", "families", "caliber", "falloff", "high_explosive", "randomization", "layers", "engine", "damage"], "rules")?;
+    exact(rules, &["laws", "families", "caliber", "falloff", "high_explosive", "randomization", "layers", "engine", "damage", "modules"], "rules")?;
     let laws = &rules["laws"];
-    exact(laws, &["direct", "track", "unarmored_device", "layers", "he"], "rules.laws")?;
+    exact(laws, &["direct", "track", "unarmored_device", "layers", "he", "modules"], "rules.laws")?;
     let families = &rules["families"];
     let names = ["armor_piercing", "armor_piercing_cr", "hollow_charge", "high_explosive"];
     exact(families, &names, "rules.families")?;
@@ -139,6 +152,21 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     let damage = &rules["damage"];
     exact(damage, &["rounding"], "rules.damage")?;
     choice(damage, "rounding", "rules.damage", &["half_away_from_zero"])?;
+    let modules = &rules["modules"];
+    let mut module_keys = vec!["internal_trace_calibers", "chance_gate", "critical", "he", "device_damage_roll"];
+    let chance_keys: Vec<String> = MODULE_CLASSES.iter().flat_map(|m| [format!("{m}_projectile"), format!("{m}_explosion")]).collect();
+    module_keys.extend(chance_keys.iter().map(String::as_str));
+    exact(modules, &module_keys, "rules.modules")?;
+    choice(modules, "chance_gate", "rules.modules", &["per_module_roll"])?;
+    choice(modules, "critical", "rules.modules", &["at_or_below_max_regen"])?;
+    choice(modules, "he", "rules.modules", &["external_on_non_penetration"])?;
+    choice(modules, "device_damage_roll", "rules.modules", &["shot_damage_roll"])?;
+    let mut module_chances = [[0.; 2]; 10];
+    for (index, name) in MODULE_CLASSES.iter().enumerate() {
+        for (kind, label) in ["projectile", "explosion"].iter().enumerate() {
+            module_chances[index][kind] = number(modules, &format!("{name}_{label}"), "rules.modules", 0., 1.)?;
+        }
+    }
     Ok(Rules {
         rules_hash: digest, config_version,
         direct_law: law(laws, "direct", crate::p06t_damage::POLICY)?,
@@ -146,6 +174,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         unarmored_device_law: law(laws, "unarmored_device", crate::p06t_damage::UNARMORED_DEVICE_POLICY)?,
         layers_law: law(laws, "layers", crate::p06t_damage::LAYERS_POLICY)?,
         he_law: law(laws, "he", crate::p06t_damage::HE_POLICY)?,
+        modules_law: law(laws, "modules", MODULES_POLICY)?,
         families: table,
         normalization_ratio: number(caliber, "normalization_ratio", "rules.caliber", 1., 20.)?,
         normalization_multiplier: number(caliber, "normalization_multiplier", "rules.caliber", 0., 10.)?,
@@ -165,6 +194,8 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         hesh_screen: Screen { resistance: number(he, "hesh_screen_resistance", "rules.high_explosive", 0., 10.)?,
             loss: number(he, "hesh_screen_loss", "rules.high_explosive", 0., 1.)? },
         hesh_splash_factor: number(he, "hesh_splash_factor", "rules.high_explosive", 0., 1.)?,
+        internal_trace_calibers: number(modules, "internal_trace_calibers", "rules.modules", 1., 100.)?,
+        module_chances,
     })
 }
 

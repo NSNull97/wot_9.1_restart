@@ -26,7 +26,7 @@ fn lab_attach(w:&mut World,slot:usize,counts:[u16;3]){
     w.mixed_ammo=true;
     let shell=source::PROFILES[0].shots[counts.iter().position(|v|*v>0).unwrap()];
     w.actors[slot].fire=fire::State::with_typed(source::Mount::Ms1Stock,counts,shell.compact_descr).unwrap();
-    w.actors[slot].devices=Some(device::State::new(caps::Profile::Ms1).unwrap());
+    w.actors[slot].devices=Some(w.classic_devices(device::State::new(caps::Profile::Ms1).unwrap()).unwrap());
 }
 fn ready(chassis:bool,counts:[u16;3],id:u64,now:Instant)->World{ready_at(chassis,counts,id,now,-100.,20.)}
 /// `ground`: flat terrain height; `target_z`: distance of the side-on target.
@@ -349,4 +349,58 @@ fn splash_rows(w:&World)->Vec<(super::super::super::model::Contact,[f32;3],f64,c
         assert_eq!(before-after,damage.damage_hp as i16);
     }
     assert_eq!(base.actors[1].health-w.actors[1].health,rows.iter().map(|r|r.3.damage_hp as i16).sum::<i16>());
+}
+
+// SHELL-04 (owner 2026-11-08): classic modules of the layered law in the live World.
+fn chance_draws(w:&World,shot:u32,target:usize,first:u8)->Vec<(u8,f64)>{
+    w.rng_draws.iter().filter(|(s,t,o,_)|*s==shot&&*t==target&&(first..first+0x20).contains(o))
+        .map(|(_,_,o,v)|(*o,(*v>>11)as f64/(1u64<<53)as f64)).collect()
+}
+#[test]fn layered_law_pierced_shot_rolls_each_box_of_the_ten_caliber_trace(){
+    let now=Instant::now();let base=ready_layers([4,0,0],417,now);
+    let mut found=None;
+    'search: for y in [0.5,0.7,0.9,1.1]{for x in [-0.9,-0.6,-0.3,0.,0.3,0.6,0.9]{
+        let w=shoot(&base,[x,y,19.],now);
+        if hull_rows(&w).iter().any(|r|r.0.decision==crate::p06t_damage::Decision::Pierced)&&!chance_draws(&w,1,1,0x40).is_empty(){found=Some(w);break 'search;}
+    }}
+    let w=found.expect("a pierced MS-1 hull shot with boxes on its internal trace");
+    let draws=chance_draws(&w,1,1,0x40);
+    let hits=w.actors[1].devices.as_ref().unwrap().shot_hits(1);
+    let internal:Vec<_>=hits.iter().filter(|(t,_)|!matches!(t,Target::Device(caps::Device::LeftTrack|caps::Device::RightTrack))).collect();
+    assert!(internal.iter().all(|(_,o)|*o>=device::CLASSIC_FIRST_ORDINAL),"classic ordinals only: {hits:?}");
+    assert!(internal.len()<=draws.len(),"a box is hit only after its chance roll");
+    // Every accepted box drew its roll below the largest #717 chance (0.45), so a box with roll >= 0.45 was never hit.
+    let accepted=draws.iter().filter(|(_,u)|*u<0.45).count();
+    assert!(internal.len()<=accepted,"{draws:?} {hits:?}");
+    // Draws are ordered by box index from 0x40 without gaps.
+    assert!(draws.iter().enumerate().all(|(i,(o,_))|*o==0x40+i as u8));
+}
+#[test]fn explosion_reaches_a_track_next_to_it_and_not_one_beyond_the_radius(){
+    let now=Instant::now();let base=ready_layers([0,0,4],418,now);
+    let actor=&base.actors[1];let bundle=base.geometry_for(VehicleKind::Ms1).unwrap().clone();
+    let chassis=bundle.chassis().unwrap();
+    let local=chassis.side_centroid("leftTrack").unwrap();
+    let rotated=super::super::super::pose::rotate(local,actor.direction);
+    let centroid:[f32;3]=std::array::from_fn(|i|actor.position[i]+rotated[i]);
+    // Outward from the vehicle centre through the track centroid.
+    let out:[f32;3]=std::array::from_fn(|i|centroid[i]-actor.position[i]);
+    let norm=(out[0]*out[0]+out[2]*out[2]).sqrt();
+    for (offset,reached) in [(0.15f32,true),(3.0,false)]{
+        let center=[centroid[0]+out[0]/norm*offset,centroid[1],centroid[2]+out[2]/norm*offset];
+        let modules=bundle.explosion_modules(actor,center,1.0,1,1,1021).unwrap();
+        assert_eq!(modules.iter().any(|(d,_)|*d==caps::Device::LeftTrack),reached,"{offset} {modules:?}");
+        for (_,distance) in &modules {assert!(*distance<=1.0);}
+    }
+}
+#[test]fn layered_law_track_takes_the_shot_rolled_module_damage(){
+    let now=Instant::now();let base=ready_layers([4,0,0],419,now);
+    let(w,_)=first_track_shot(&base,now);
+    let(side,_,_)=track_rows(&w)[0];
+    let rolls=w.impact.shot_rolls(w.id,1).unwrap().unwrap();
+    let shell=source::PROFILES[0].shots[0];
+    let expected=((f64::from(shell.device_damage)*rolls.damage).round() as u16).max(1);
+    let max=caps::Profile::Ms1.caps()[side as usize].max;
+    let lost=w.device_events.iter().find_map(|(slot,e)|match e.change{device::Change::Device{device,before,after,..}
+        if *slot==1&&device==side&&before==max=>Some(before-after),_=>None}).expect("track module transition");
+    assert_eq!(lost,expected.min(max),"{rolls:?}");
 }

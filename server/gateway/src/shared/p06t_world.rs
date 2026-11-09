@@ -7,6 +7,36 @@ use super::super::ammo_detonation as rack;
 /// below are explicit LAB policy; this surface never applies vehicle HP damage.
 pub const MODULE_ADMISSION_POLICY:&str="test_lab.p06t.plate-penetration-or-exterior-gun.v1";
 
+/// SHELL-04: battle-RNG journal ordinals of the per-box chance rolls (0x40 + box index).
+const MODULE_ROLL_ORDINAL:u8=0x40;
+/// SHELL-04: battle-RNG ordinals of the explosion chance rolls of external modules (0x60 + index).
+const EXPLOSION_ROLL_ORDINAL:u8=0x60;
+/// SHELL-04: the module group of a LAB target (#717 common/vehicle.xml MaterialInfo).
+pub(super) fn module_class(target:crate::p06t_lab_proxy::Target)->crate::gateway091::shared::shell_rules::ModuleClass{
+    use crate::gateway091::shared::shell_rules::ModuleClass as M;
+    match target{
+        crate::p06t_lab_proxy::Target::Seat(_)=>M::Crew,
+        crate::p06t_lab_proxy::Target::Device(d)=>match d{caps::Device::Engine=>M::Engine,caps::Device::AmmoBay=>M::AmmoBay,
+            caps::Device::FuelTank=>M::FuelTank,caps::Device::Radio=>M::Radio,caps::Device::LeftTrack|caps::Device::RightTrack=>M::Track,
+            caps::Device::Gun=>M::Gun,caps::Device::TurretRotator=>M::TurretRotator,caps::Device::SurveyingDevice=>M::SurveyingDevice},
+    }
+}
+/// SHELL-04 (owner 2026-11-08): module damage takes the shot's one damage roll (+-25 %), rounded
+/// half away from zero like HP damage, at least 1.
+fn rolled_device_damage(shell:crate::p06t_shells091::Shell,rolls:Option<crate::gateway091::shared::shell_rules::Rolls>)->io::Result<u16>{
+    let rolls=rolls.ok_or_else(||bad())?;
+    let amount=(f64::from(shell.device_damage)*rolls.damage).round();
+    if !amount.is_finite()||amount>f64::from(u16::MAX){return Err(bad());}
+    Ok((amount as u16).max(1))
+}
+/// The internal trace end: `start` toward `end`, at most `reach` metres (component-local).
+fn trace_end(start:[f32;3],end:[f32;3],reach:f64)->io::Result<[f32;3]>{
+    let d:[f64;3]=std::array::from_fn(|i|f64::from(end[i])-f64::from(start[i]));
+    let length=d.iter().map(|v|v*v).sum::<f64>().sqrt();
+    if !length.is_finite()||!reach.is_finite()||reach<=0.{return Err(bad());}
+    if length<=reach{return Ok(end);}
+    let k=reach/length;Ok(std::array::from_fn(|i|(f64::from(start[i])+d[i]*k)as f32))
+}
 impl World {
     /// Separate explicit LAB31 opt-in. It grants neither owned admission nor
     /// a historical damage claim and cannot be enabled after actor attachment.
@@ -22,6 +52,10 @@ impl World {
         if !self.mixed_ammo||!self.mixed_profiles||self.started.is_some()||!self.actors.is_empty()||!self.shots.is_empty()
             ||!self.projectiles.is_empty(){return Err(bad());}
         self.impact.enable_layers()
+    }
+    /// SHELL-04: under the layered law every new device state uses the classic module rules.
+    pub(crate) fn classic_devices(&self,mut state:device::State)->io::Result<device::State>{
+        if self.impact.layers(){state.enable_classic()?;}Ok(state)
     }
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
         let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
@@ -143,22 +177,54 @@ impl World {
                 let component=match ray.component{super::super::materials::Component::Hull=>crate::p06t_lab_proxy::Component::Hull,
                     super::super::materials::Component::Turret01=>crate::p06t_lab_proxy::Component::Turret,
                     super::super::materials::Component::Gun01|super::super::materials::Component::Gun02=>crate::p06t_lab_proxy::Component::Gun};
+                let classic=trace.layers();
+                let mut inputs=Vec::new();let mut amounts=Vec::new();
+                if classic {
+                    // SHELL-04 (owner 2026-11-08): the internal trace runs 10 engine-integer calibers from the
+                    // penetration point (inside the component box); each LAB box on it is hit with its #717
+                    // chance (HE/HESH: the explosion chance), one battle roll per box.
+                    let rules=crate::gateway091::shared::shell_rules::rules()?;
+                    let reach=rules.internal_trace_calibers*shell.caliber_mm.trunc()/1000.;
+                    let end=trace_end(ray.start,ray.end,reach)?;
+                    let hits=crate::p06t_lab_proxy::select_classic(profile,component,[ray.bbox_min,ray.bbox_max],ray.start,end,
+                        bundle.chassis().is_some())?;
+                    let explosion=shell.family==crate::p06t_shells091::Family::HighExplosive;
+                    for (index,hit) in hits.iter().enumerate() {
+                        let chance=rules.module_chance(module_class(hit.target),explosion);
+                        let roll=self.ignition_roll(projectile.sequence,slot,MODULE_ROLL_ORDINAL+index as u8)?;
+                        let applied=roll<chance;
+                        if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,contact.tick,projectile.slot,slot,
+                            projectile.vehicle_kind,&shell,&format!("{:?}",hit.target),module_class(hit.target),explosion,chance,roll,applied);}
+                        if !applied {continue;}
+                        let ordinal=device::CLASSIC_FIRST_ORDINAL+inputs.len() as u8;
+                        amounts.push(rolled_device_damage(shell,trace.shot_rolls(self.id,projectile.sequence)?)?);
+                        inputs.push(device::ModuleHit{cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},ordinal,
+                            at_ms:u64::from(contact.tick-1000)*100,target:hit.target,shell,
+                            ignition_roll:self.ignition_roll(projectile.sequence,slot,ordinal)?});
+                    }
+                } else {
                 let hits=crate::p06t_lab_proxy::select_with(profile,component,[ray.bbox_min,ray.bbox_max],ray.start,ray.end,
                     bundle.chassis().is_some())?;
-                let mut inputs=Vec::new();
                 for (ordinal,hit)in hits.iter().enumerate(){inputs.push(device::ModuleHit{
                     cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},ordinal:ordinal as u8,
                     at_ms:u64::from(contact.tick-1000)*100,target:hit.target,shell,
                     ignition_roll:self.ignition_roll(projectile.sequence,slot,ordinal as u8)?});}
+                }
                 if !inputs.is_empty(){
                     let actor=&mut actors[slot];let health=device::Health{hp:before as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
-                    let events=actor.devices.as_mut().ok_or_else(||bad())?.apply_hits(&inputs,health)?;
+                    let devices=actor.devices.as_mut().ok_or_else(||bad())?;
+                    let events=if classic{devices.apply_classic_hits(&inputs,&amounts,health)?}else{devices.apply_hits(&inputs,health)?};
                     if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
                     additional=self.apply_rack_transition(actors,slot,&events,before as u16,after as u16,
                         projectile.sequence,projectile.slot,contact.tick)?;
                     self.device_events.extend(events.into_iter().map(|event|(slot,event)));
                 }
             }
+        }
+        else if trace.layers()&&shell.family==crate::p06t_shells091::Family::HighExplosive
+            &&resolution.decision==crate::p06t_damage::Decision::NotPierced {
+            // SHELL-04: a non-penetrating HE/HESH reaches only the external modules around its explosion.
+            self.explosion_modules_mixed(actors,projectile,slot,contact.endpoint,contact.tick,bundle)?;
         }
         // Preserve the raw plate Trace/AppliedImpact. The one authoritative
         // HP/death record includes only the residual HP that detonation removes.
@@ -167,6 +233,47 @@ impl World {
         self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
             crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced)?;
         Ok(resolution)
+    }
+    /// SHELL-04 (owner 2026-11-08): external modules (tracks, gun) of one live vehicle around an
+    /// HE/HESH explosion: each reached module once per shot, hit with its #717 explosion chance,
+    /// device damage scaled by the splash falloff; internal modules and crew are not reached.
+    pub(super) fn explosion_modules_mixed(&mut self,actors:&mut[Actor],projectile:&Projectile,slot:usize,center:[f32;3],tick:u32,
+        bundle:&geometry::Bundle)->io::Result<()>{
+        let shell=projectile.shell.ok_or_else(||bad())?;
+        let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||bad())?;
+        let actor=actors.get(slot).ok_or_else(||bad())?;
+        if !actor.alive(){return Ok(());}
+        let devices=actor.devices.as_ref().ok_or_else(||bad())?;
+        if !devices.classic(){return Err(bad());}
+        let rules=crate::gateway091::shared::shell_rules::rules()?;
+        let reached=bundle.explosion_modules(actor,center,radius as f32,projectile.sequence,slot,tick)?;
+        let (mut hits,mut amounts)=(Vec::new(),Vec::new());
+        for (index,(device,distance)) in reached.into_iter().enumerate(){
+            let target=crate::p06t_lab_proxy::Target::Device(device);
+            if devices.hit_by_shot(projectile.sequence,target){continue;}
+            let chance=rules.module_chance(module_class(target),true);
+            let roll=self.ignition_roll(projectile.sequence,slot,EXPLOSION_ROLL_ORDINAL+index as u8)?;
+            let applied=roll<chance;
+            if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,tick,projectile.slot,slot,
+                projectile.vehicle_kind,&shell,&format!("{target:?}"),module_class(target),true,chance,roll,applied);}
+            if !applied{continue;}
+            let falloff=(1.-distance/radius).max(0.).powf(rules.he_falloff_exponent);
+            let roll_damage=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,projectile.sequence).damage;
+            let amount=(f64::from(shell.device_damage)*roll_damage*falloff).floor() as u16;
+            if amount==0{continue;}
+            let ordinal=match device{caps::Device::LeftTrack=>device::TRACK_ORDINALS[0],caps::Device::RightTrack=>device::TRACK_ORDINALS[1],
+                _=>device::CLASSIC_FIRST_ORDINAL};
+            hits.push(device::ModuleHit{cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},ordinal,
+                at_ms:u64::from(tick.checked_sub(1000).ok_or_else(||bad())?)*100,target,shell,ignition_roll:0.});
+            amounts.push(amount);
+        }
+        if hits.is_empty(){return Ok(());}
+        let actor=&mut actors[slot];
+        let health=device::Health{hp:actor.health as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
+        let events=actor.devices.as_mut().ok_or_else(||bad())?.apply_explosion_hits(&hits,&amounts,health)?;
+        if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+        self.device_events.extend(events.into_iter().map(|event|(slot,event)));
+        Ok(())
     }
     /// SHELL-02: one chassis track crossing of a live target. The Trace re-queries
     /// and records it; the track takes the shell's device damage (source track HP,
@@ -182,9 +289,13 @@ impl World {
         let input=device::ModuleHit{cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},
             ordinal,at_ms:u64::from(tick.checked_sub(1000).ok_or_else(||bad())?)*100,target:crate::p06t_lab_proxy::Target::Device(device),
             shell,ignition_roll:0.};
+        let rolls=trace.shot_rolls(self.id,projectile.sequence)?;
         let actor=&mut actors[slot];
         let health=device::Health{hp:actor.health as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
-        let events=actor.devices.as_mut().ok_or_else(||bad())?.apply_hits(&[input],health)?;
+        let devices=actor.devices.as_mut().ok_or_else(||bad())?;
+        // SHELL-04: under the layered law the track takes the rolled module damage too.
+        let events=if rolls.is_some(){devices.apply_classic_hits(&[input],&[rolled_device_damage(shell,rolls)?],health)?}
+            else{devices.apply_hits(&[input],health)?};
         if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
         self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         Ok(pass)
@@ -239,6 +350,7 @@ impl World {
         for slot in 0..actors.len(){
             if exclude_target==Some(slot)||!actors[slot].alive(){continue;}
             let bundle=self.geometry_for(actors[slot].vehicle_kind())?.clone();
+            if rolls.is_some(){self.explosion_modules_mixed(actors,projectile,slot,center,tick,&bundle)?;}
             let (contact,layers)=if rolls.is_some(){
                 let Some(found)=bundle.explosion_layers(&actors[slot],center,radius,projectile.sequence,slot,tick)?else{continue;};found
             }else{
