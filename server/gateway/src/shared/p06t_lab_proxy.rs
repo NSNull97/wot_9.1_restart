@@ -39,15 +39,17 @@ pub fn select(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;
 /// The remaining boxes stay invented LAB volumes: the #717 client carries no internal
 /// device volumes for any battle-registry vehicle (SHELL-02 census).
 pub fn select_with(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool)->io::Result<Vec<Hit>> {
-    select_limited(profile,component,bounds,start,end,chassis_tracks,2)
+    select_limited(profile,component,bounds,start,end,chassis_tracks,2,None)
 }
 /// SHELL-04 classic modules (owner 2026-11-08): every LAB box on the internal trace (the caller
 /// cuts the trace to 10 calibers), nearest first; the boxes stay invented LAB volumes.
 pub const CLASSIC_MAX_HITS:usize=12;
-pub fn select_classic(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool)->io::Result<Vec<Hit>> {
-    select_limited(profile,component,bounds,start,end,chassis_tracks,CLASSIC_MAX_HITS)
+pub fn select_classic(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool,
+    volumes:Option<&crate::gateway091::shared::module_volumes::ModuleVolumes>)->io::Result<Vec<Hit>> {
+    select_limited(profile,component,bounds,start,end,chassis_tracks,CLASSIC_MAX_HITS,volumes)
 }
-fn select_limited(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool,limit:usize)->io::Result<Vec<Hit>> {
+fn select_limited(profile:Profile,component:Component,bounds:[[f32;3];2],start:[f32;3],end:[f32;3],chassis_tracks:bool,limit:usize,
+    volumes:Option<&crate::gateway091::shared::module_volumes::ModuleVolumes>)->io::Result<Vec<Hit>> {
     if bounds.into_iter().flatten().chain(start).chain(end).any(|v|!v.is_finite()||v.abs()>100_000.)
         || (0..3).any(|i|bounds[0][i]>=bounds[1][i])
         || start==end || (0..3).any(|i|start[i]<bounds[0][i]-0.0002||start[i]>bounds[1][i]+0.0002
@@ -56,16 +58,16 @@ fn select_limited(profile:Profile,component:Component,bounds:[[f32;3];2],start:[
     let start=n(start);let end=n(end);
     if entry(start,end,[0.;3],[1.;3]).is_none(){return Err(bad());}
     let mut boxes:Vec<(Target,[f64;3],[f64;3])>=Vec::new();
-    let mut device=|d,low,high|boxes.push((Target::Device(d),low,high));
+    fn device(boxes:&mut Vec<(Target,[f64;3],[f64;3])>,d:Device,low:[f64;3],high:[f64;3]){boxes.push((Target::Device(d),low,high));}
     match component {
         Component::Hull=>{
-            device(Device::Engine,[0.2,0.25,0.05],[0.8,0.75,0.35]);
-            device(Device::FuelTank,[0.,0.25,0.2],[0.2,0.75,0.55]);
-            device(Device::AmmoBay,[0.25,0.25,0.4],[0.75,0.75,0.65]);
-            device(Device::Radio,[0.6,0.6,0.7],[0.9,0.9,0.9]);
+            device(&mut boxes,Device::Engine,[0.2,0.25,0.05],[0.8,0.75,0.35]);
+            device(&mut boxes,Device::FuelTank,[0.,0.25,0.2],[0.2,0.75,0.55]);
+            device(&mut boxes,Device::AmmoBay,[0.25,0.25,0.4],[0.75,0.75,0.65]);
+            device(&mut boxes,Device::Radio,[0.6,0.6,0.7],[0.9,0.9,0.9]);
             if !chassis_tracks {
-                device(Device::LeftTrack,[0.,0.,0.],[0.15,0.25,1.]);
-                device(Device::RightTrack,[0.85,0.,0.],[1.,0.25,1.]);
+                device(&mut boxes,Device::LeftTrack,[0.,0.,0.],[0.15,0.25,1.]);
+                device(&mut boxes,Device::RightTrack,[0.85,0.,0.],[1.,0.25,1.]);
             }
             for (seat,c) in profile.crew().iter().enumerate() {
                 if c.primary_driver {boxes.push((Target::Seat(seat as u8),[0.2,0.3,0.7],[0.45,0.6,0.95]));}
@@ -73,8 +75,8 @@ fn select_limited(profile:Profile,component:Component,bounds:[[f32;3];2],start:[
             }
         },
         Component::Turret=>{
-            device(Device::TurretRotator,[0.,0.,0.],[1.,0.2,1.]);
-            device(Device::SurveyingDevice,[0.,0.8,0.],[1.,1.,1.]);
+            device(&mut boxes,Device::TurretRotator,[0.,0.,0.],[1.,0.2,1.]);
+            device(&mut boxes,Device::SurveyingDevice,[0.,0.8,0.],[1.,1.,1.]);
             let seats:Vec<usize>=profile.crew().iter().enumerate().filter(|(_,c)|!c.primary_driver&&!c.primary_radioman).map(|(i,_)|i).collect();
             let count=seats.len() as f64;
             for (rank,seat) in seats.into_iter().enumerate() {
@@ -82,10 +84,31 @@ fn select_limited(profile:Profile,component:Component,bounds:[[f32;3];2],start:[
                 boxes.push((Target::Seat(seat as u8),[low,0.25,0.2],[high,0.75,0.8]));
             }
         },
-        Component::Gun=>device(Device::Gun,[0.;3],[1.;3]),
+        Component::Gun=>device(&mut boxes,Device::Gun,[0.;3],[1.;3]),
+    }
+    if let Some(v)=volumes {
+        // MODVOL-01: a device the skins mark uses only its volumes; a seat with a volume drops its LAB box.
+        let turret=component==Component::Turret;
+        let unit=|b:&crate::gateway091::shared::module_volumes::Aabb|(n(b.low).map(|x:f64|x.clamp(0.,1.)),n(b.high).map(|x:f64|x.clamp(0.,1.)));
+        boxes.retain(|(target,_,_)|!matches!(target,Target::Device(d) if v.replaces(*d)));
+        if component!=Component::Gun {
+            let mut seats:Vec<usize>=profile.crew().iter().enumerate().filter(|(_,c)|if turret{!c.primary_driver&&!c.primary_radioman}else{c.primary_driver||c.primary_radioman})
+                .map(|(i,_)|i).collect();
+            seats.sort_by_key(|&i|!profile.crew()[i].primary_driver);
+            let marked=&seats[..seats.len().min(v.crew(turret).len())];
+            boxes.retain(|(target,_,_)|!matches!(target,Target::Seat(s) if marked.contains(&usize::from(*s))));
+            for (seat,volumes) in marked.iter().zip(v.crew(turret)) {
+                for b in volumes {let(low,high)=unit(b);boxes.push((Target::Seat(*seat as u8),low,high));}
+            }
+            for device in [Device::Engine,Device::FuelTank,Device::AmmoBay] {
+                for b in v.device_boxes(turret,device) {let(low,high)=unit(b);boxes.push((Target::Device(device),low,high));}
+            }
+        }
     }
     let mut hits:Vec<_>=boxes.into_iter().filter_map(|(target,low,high)|entry(start,end,low,high).map(|entry_fraction|Hit{target,entry_fraction})).collect();
     hits.sort_by(|a,b|a.entry_fraction.total_cmp(&b.entry_fraction).then(a.target.key().cmp(&b.target.key())));
+    // One hit per module or seat: the nearest of its boxes (a volume can have several).
+    let mut seen=Vec::new();hits.retain(|h|if seen.contains(&h.target){false}else{seen.push(h.target);true});
     hits.truncate(limit);Ok(hits)
 }
 
@@ -96,12 +119,12 @@ mod classic_tests {
         // A diagonal hull trace through the engine, ammo bay and radio boxes.
         let bounds=[[0.;3],[1.;3]];
         let two=select_with(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.99,0.5,0.99],true).unwrap();
-        let all=select_classic(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.99,0.5,0.99],true).unwrap();
+        let all=select_classic(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.99,0.5,0.99],true,None).unwrap();
         assert_eq!(two.len(),2);assert!(all.len()>2,"{all:?}");
         assert_eq!(&all[..2],&two[..]);
         assert!(all.windows(2).all(|w|w[0].entry_fraction<=w[1].entry_fraction));
         // A short trace (10 calibers) reaches fewer boxes.
-        let short=select_classic(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.2,0.5,0.2],true).unwrap();
+        let short=select_classic(Profile::Is7,Component::Hull,bounds,[0.01,0.5,0.01],[0.2,0.5,0.2],true,None).unwrap();
         assert!(short.len()<all.len());
     }
 }
