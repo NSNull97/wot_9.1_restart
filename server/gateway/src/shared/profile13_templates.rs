@@ -19,6 +19,8 @@ struct Reference {path:PathBuf,sha256:String}
 struct Profile {kind:VehicleKind,pool:Reference,geometry:Reference,
     /// SHELL-02: optional pinned chassis bundle (`chassis-armor.v1`); absent keeps the old hit path.
     chassis:Option<Reference>,
+    /// MODVOL-01: optional pinned module volumes (`wot091-module-volumes.v1`); absent keeps the LAB boxes.
+    module_volumes:Option<Reference>,
     /// TESTVEH-01: optional stand-only uniform test armour (mm) of a generated kind; absent keeps source armour.
     test_armor_mm:Option<u16>}
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -55,9 +57,11 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
     for row in rows {
         let mut expected=vec!["kind","pool","geometry"];
         if row.get("chassis").is_some(){expected.push("chassis");}
+        if row.get("module_volumes").is_some(){expected.push("module_volumes");}
         if row.get("test_armor_mm").is_some(){expected.push("test_armor_mm");}
         keys(row,&expected)?;
         let chassis=if row.get("chassis").is_some(){Some(reference(&row["chassis"])?)}else{None};
+        let module_volumes=if row.get("module_volumes").is_some(){Some(reference(&row["module_volumes"])?)}else{None};
         let test_armor_mm=if row.get("test_armor_mm").is_some(){
             let mm=row["test_armor_mm"].as_u64().filter(|mm|(1..=2000).contains(mm)).ok_or_else(||bad("test armour bound"))?;
             Some(mm as u16)
@@ -66,14 +70,14 @@ fn parse(raw:&[u8])->io::Result<Manifest> {
         if version==Some(5)&&VehicleKind::from_label(label).is_none(){
             let kind=VehicleKind::from_owned_label(label).filter(|k|k.is_generated()).ok_or_else(||bad("unknown vehicle profile"))?;
             if generated.iter().any(|p|p.kind==kind){return Err(bad("duplicate vehicle profile"));}
-            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,test_armor_mm});continue;
+            generated.push(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,module_volumes,test_armor_mm});continue;
         }
         if test_armor_mm.is_some(){return Err(bad("test armour applies to generated kinds only"));}
         let kind=if version==Some(4){VehicleKind::from_extended_label(label)}else{VehicleKind::from_label(label)}
             .ok_or_else(||bad("unknown vehicle profile"))?;
         let index=kind.index();if index>=count{return Err(bad("kind requires version3 curated pool"));}
         if profiles[index].is_some(){return Err(bad("duplicate vehicle profile"));}
-        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,test_armor_mm:None});
+        profiles[index]=Some(Profile{kind,pool:reference(&row["pool"])?,geometry:reference(&row["geometry"])?,chassis,module_volumes,test_armor_mm:None});
     }
     generated.sort_by(|a,b|a.kind.label().cmp(b.kind.label()));
     let profiles:Vec<Profile>=profiles.into_iter().map(|p|p.ok_or_else(||bad("missing curated source profile"))).chain(generated.into_iter().map(Ok)).collect::<io::Result<_>>()?;
@@ -191,6 +195,15 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
             },
             None=>geometry,
         });
+        let geometry=match &profile.module_volumes {
+            Some(reference)=>{
+                let path=pin(local_root,reference,512*1024)?;
+                let volumes=super::module_volumes::ModuleVolumes::load(local_root,&path)?;
+                println!("MODVOL_BOUND kind={} sha256={} vehicle={} policy={}",profile.kind.label(),volumes.sha256,volumes.vehicle,super::module_volumes::POLICY);
+                Arc::new(Arc::try_unwrap(geometry).map_err(|_|bad("geometry shared before volumes"))?.with_module_volumes(Arc::new(volumes))?)
+            },
+            None=>geometry,
+        };
         super::server::validate_vehicle_binding(profile.kind,&pool,Some(&geometry))?;
         let terrain=super::server::terrain_for_pool_for_map(&pool,map)?;
         catalog.bind_geometry(&terrain)?;

@@ -187,7 +187,7 @@ impl World {
                     let reach=rules.internal_trace_calibers*shell.caliber_mm.trunc()/1000.;
                     let end=trace_end(ray.start,ray.end,reach)?;
                     let hits=crate::p06t_lab_proxy::select_classic(profile,component,[ray.bbox_min,ray.bbox_max],ray.start,end,
-                        bundle.chassis().is_some())?;
+                        bundle.chassis().is_some(),bundle.module_volumes())?;
                     let explosion=shell.family==crate::p06t_shells091::Family::HighExplosive;
                     for (index,hit) in hits.iter().enumerate() {
                         let chance=rules.module_chance(module_class(hit.target),explosion);

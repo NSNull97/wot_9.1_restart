@@ -241,3 +241,6 @@ server/gateway/src/shared/chassis_armor_pins.rs text eol=lf
 /config/shell_rules/*.json text eol=lf
 /server/gateway/src/shared/shell_rules_pins.rs text eol=lf
 /tools/shell_rules.py text eol=lf
+
+# MODVOL-01: hash-bound volumes (manifest sha256); keep exact bytes.
+/config/module_volumes/*.json text eol=lf

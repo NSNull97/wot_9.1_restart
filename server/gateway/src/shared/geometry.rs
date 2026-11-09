@@ -406,11 +406,13 @@ pub struct Bundle {
     reach_m:f32,
     /// SHELL-02: the pinned chassis (track) bundle of the same vehicle, when bound.
     chassis:Option<std::sync::Arc<super::chassis_armor::ChassisArmor>>,
+    /// MODVOL-01: internal module volumes of this vehicle, when the stand manifest binds them.
+    module_volumes:Option<std::sync::Arc<super::module_volumes::ModuleVolumes>>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Bundle
 impl crate::bw_wire::Wire for Bundle {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);W::put(reach_m,bw_o);W::put(chassis,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?,reach_m:W::get(bw_i)?,chassis:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis,module_volumes}=self;W::put(vehicle,bw_o);W::put(components,bw_o);W::put(hull,bw_o);W::put(turret,bw_o);W::put(gun,bw_o);W::put(materials,bw_o);W::put(bounds,bw_o);W::put(reach_m,bw_o);W::put(chassis,bw_o);W::put(module_volumes,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{vehicle:W::get(bw_i)?,components:W::get(bw_i)?,hull:W::get(bw_i)?,turret:W::get(bw_i)?,gun:W::get(bw_i)?,materials:W::get(bw_i)?,bounds:W::get(bw_i)?,reach_m:W::get(bw_i)?,chassis:W::get(bw_i)?,module_volumes:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 /// Rotations keep lengths, so each component's pivot chain plus its farthest
@@ -543,7 +545,7 @@ impl Bundle {
             components.push(Component { vertices, triangles });
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS}, reach_m, chassis: None })
+        Ok(Self { vehicle, components, hull, turret, gun, materials, bounds:if vehicle==VehicleKind::Ms1{NATIVE_BOUNDS}else{IS7_VISUAL_BOUNDS}, reach_m, chassis: None, module_volumes: None })
     }
     /// BATTLE-ANY bundle: the exact digest must be a registry geometry pin.
     /// Slots are Hull/Turret_01/Gun_01; source part names are checked, triangle
@@ -591,7 +593,7 @@ impl Bundle {
             components.push(Component{vertices,triangles});
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis:None})
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis:None,module_volumes:None})
     }
     fn from_p06t_source(vehicle:VehicleKind,raw:&[u8])->io::Result<Self>{
         use super::p06t_geometry_source::{Assembly,SourceBundle};
@@ -607,7 +609,7 @@ impl Bundle {
             components.push(Component{vertices:component.vertices,triangles:component.triangles});
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis:None})
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds,reach_m,chassis:None,module_volumes:None})
     }
     /// Separate closed P04M source export format; the enclosing raw digest was
     /// approved before JSON parsing. Visual bounds stay source facts, not a
@@ -659,7 +661,7 @@ impl Bundle {
             components.push(Component{vertices,triangles});
         }
         let reach_m=reach_of(&components,[hull,turret,gun]);
-        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds:spec.visual_bounds,reach_m,chassis:None})
+        Ok(Self{vehicle,components,hull,turret,gun,materials,bounds:spec.visual_bounds,reach_m,chassis:None,module_volumes:None})
     }
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle }
     pub fn geometry_revision(&self) -> &'static str { source_revision(self.vehicle) }
@@ -678,6 +680,18 @@ impl Bundle {
         self.chassis = Some(chassis); Ok(self)
     }
     pub fn chassis(&self) -> Option<&super::chassis_armor::ChassisArmor> { self.chassis.as_deref() }
+    /// MODVOL-01: bind this vehicle's module volumes (same vehicle, same component frames).
+    pub fn with_module_volumes(mut self, volumes: std::sync::Arc<super::module_volumes::ModuleVolumes>) -> io::Result<Self> {
+        if self.module_volumes.is_some() { return Err(bad()); }
+        let extents = |index: usize| -> [[f32; 3]; 2] {
+            let mut out = [[f32::INFINITY; 3], [f32::NEG_INFINITY; 3]];
+            for v in &self.components[index].vertices { for i in 0..3 { out[0][i] = out[0][i].min(v[i]); out[1][i] = out[1][i].max(v[i]); } }
+            out
+        };
+        volumes.check_binding(self.vehicle.name(), extents(0), extents(1))?;
+        self.module_volumes = Some(volumes); Ok(self)
+    }
+    pub fn module_volumes(&self) -> Option<&super::module_volumes::ModuleVolumes> { self.module_volumes.as_deref() }
     /// World chassis mesh of the checked actor pose (vehicle frame, no turret);
     /// None without a bound chassis. Same pose identity as `world_mesh`.
     pub fn chassis_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Option<Mesh>> {
