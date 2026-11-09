@@ -68,3 +68,14 @@ fn hex(bytes:Vec<u8>)->String{bytes.iter().map(|v|format!("{v:02x}")).collect()}
     for(left,base)in [(f32::NAN,60.),(61.,60.),(-1.,60.),(0.,0.),(0.,f32::INFINITY)]{assert!(w::reload(1002,left,base).is_err());}
     assert!(w::reload(0,0.,60.).is_err());
 }
+
+#[test] fn ammo_delta_sends_a_row_only_for_a_real_change() {
+    let m=Mount::Ms1Stock;
+    let (a,b)=(2570u16,2826u16);
+    let same=([4,2,3],a,b,0u8);
+    assert!(w::ammo_delta(m,same,same).unwrap().is_empty(),"a finished reload changes no ammo");
+    let switched=w::ammo_delta(m,same,([4,2,3],b,b,0)).unwrap();
+    assert_eq!(switched,w::setting(m,w::Setting::Current,b).unwrap(),"a switch sends the setting and no row");
+    let shot=w::ammo_delta(m,same,([3,2,3],a,b,0)).unwrap();
+    assert_eq!(shot,w::ammo_row(m,a,3,0).unwrap(),"a shot sends only its row");
+}

@@ -52,7 +52,12 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     let state=owner.fire.typed().ok_or_else(||model::bad())?;
     let key=(state.counts(),state.current().compact_descr,state.next().compact_descr,state.clip(),state.deadline(),state.base_reload_seconds().to_bits());
     if c.armament_sent!=Some(key){
-        let mut body=native::ammo_snapshot(state.mount(),state.counts(),state.current().compact_descr,state.next().compact_descr,state.clip())?;
+        let (counts,current,next,clip)=(state.counts(),state.current().compact_descr,state.next().compact_descr,state.clip());
+        // DISP-01: under the layered law only the changes, so the client's circle blooms on real shots alone.
+        let mut body=match c.armament_sent {
+            Some(old) if world.layered_shells()=>native::ammo_delta(state.mount(),(old.0,old.1,old.2,old.3),(counts,current,next,clip))?,
+            _=>native::ammo_snapshot(state.mount(),counts,current,next,clip)?,
+        };
         body.extend(native::reload(wire::vehicle_id(c.slot)?,state.remaining_seconds(now),state.base_reload_seconds())?);
         outbox.push_back(body);c.armament_sent=Some(key);
     }

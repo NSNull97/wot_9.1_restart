@@ -65,7 +65,15 @@ impl Projectile {
         if !crate::p06t_shells091::profile(actor.vehicle_kind().mount()).shots.contains(&shell){return Err(model::bad());}
         Self::launch_selected(sequence,slot,actor,now,shot_limit,Some(shell))
     }
+    /// DISP-01: a selected shell leaving the barrel line by `deviation` (angle, direction).
+    pub fn launch_deviated(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,shell:crate::p06t_shells091::Shell,deviation:Option<(f64,f64)>)->io::Result<Self>{
+        if !crate::p06t_shells091::profile(actor.vehicle_kind().mount()).shots.contains(&shell){return Err(model::bad());}
+        Self::launch_turned(sequence,slot,actor,now,shot_limit,Some(shell),deviation)
+    }
     fn launch_selected(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,selected:Option<crate::p06t_shells091::Shell>)->io::Result<Self>{
+        Self::launch_turned(sequence,slot,actor,now,shot_limit,selected,None)
+    }
+    fn launch_turned(sequence:u32,slot:usize,actor:&model::Actor,now:Instant,shot_limit:usize,selected:Option<crate::p06t_shells091::Shell>,deviation:Option<(f64,f64)>)->io::Result<Self>{
         let kind=actor.vehicle_kind(); let shell=kind.shell();
         // Keep the accepted f32 conversion order, including for selected AP.
         let (speed,gravity,max_distance)=selected.map_or((shell.speed(),shell.effective_gravity(),shell.max_distance),|shot|{
@@ -79,6 +87,7 @@ impl Projectile {
         let (origin, velocity) = aim::shot_geometry_pose_for(kind,
             actor.position, actor.direction, actor.aim.yaw, actor.aim.pitch, speed,
         );
+        let velocity = match deviation { Some((r,theta))=>super::dispersion::deviate(velocity,r,theta).map_err(|_|model::bad())?, None=>velocity };
         let velocity = regularize_horizontal_x(velocity)?;
         let flight_time = solve_range_time(velocity, gravity, max_distance)?;
         let terminal = position_at(origin, velocity, gravity, flight_time.as_secs_f32());

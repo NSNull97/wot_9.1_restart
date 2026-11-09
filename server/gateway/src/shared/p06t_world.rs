@@ -7,6 +7,8 @@ use super::super::ammo_detonation as rack;
 /// below are explicit LAB policy; this surface never applies vehicle HP damage.
 pub const MODULE_ADMISSION_POLICY:&str="test_lab.p06t.plate-penetration-or-exterior-gun.v1";
 
+#[derive(Clone,Copy,Debug)]
+pub(super) struct ShotDeviation{pub(super) angle:f64,pub(super) gun:super::super::dispersion::Gun,pub(super) seed:u64,pub(super) r:f64,pub(super) theta:f64}
 /// SHELL-04: battle-RNG journal ordinals of the per-box chance rolls (0x40 + box index).
 const MODULE_ROLL_ORDINAL:u8=0x40;
 /// SHELL-04: battle-RNG ordinals of the explosion chance rolls of external modules (0x60 + index).
@@ -54,6 +56,17 @@ impl World {
         self.impact.enable_layers()
     }
     /// SHELL-04: under the layered law every new device state uses the classic module rules.
+    /// DISP-01: the shot's deviation inside the actor's aiming circle under the layered law.
+    pub(super) fn shot_deviation(&self,actor:&Actor,sequence:u32)->io::Result<Option<ShotDeviation>>{
+        if !self.impact.layers(){return Ok(None);}
+        let rules=crate::gateway091::shared::shell_rules::rules()?;
+        let gun=super::super::dispersion::gun(actor.vehicle_kind().name())?;
+        // A shot before the first step has the resting circle (factor 1).
+        let angle=actor.dispersion.unwrap_or(super::super::dispersion::State::new(actor.direction[0],actor.aim.yaw)).angle(gun);
+        let seed=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,sequence).seed;
+        let (r,theta)=super::super::dispersion::deviation(&rules.accuracy,gun,angle,seed);
+        Ok(Some(ShotDeviation{angle,gun,seed,r,theta}))
+    }
     pub(crate) fn classic_devices(&self,mut state:device::State)->io::Result<device::State>{
         if self.impact.layers(){state.enable_classic()?;}Ok(state)
     }
