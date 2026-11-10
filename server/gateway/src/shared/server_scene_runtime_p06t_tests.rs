@@ -25,6 +25,11 @@ fn actor_kind(kind:VehicleKind)->model::Actor {
     // Past the reserve the hull stops and brakes.
     w.actors[0].aim.intent=aim::Intent::Point([100.*centre.sin(),0.,100.*centre.cos()]);
     assert_eq!(scene_inputs(&mut w,true).unwrap(),vec![Input::STOP]);
+    // Under way the hull is the player's: no turn with a throttle input.
+    w.actors[0].aim.intent=aim::Intent::Point([100.,0.,0.]);
+    w.actors[0].input=model::Input{throttle:1,steer:0,speed_percent:100};
+    assert_eq!(scene_inputs(&mut w,true).unwrap()[0].steer,0);
+    w.actors[0].input=model::Input::STOP;
     // The player's steering wins, and a lifecycle without actions stops everything.
     w.actors[0].aim.intent=aim::Intent::Point([100.,0.,0.]);
     w.actors[0].input=model::Input{throttle:0,steer:-1,speed_percent:100};

@@ -113,9 +113,7 @@ impl Actor {
     /// The player's input with the follow-the-aim hull turn in progress applied.
     pub fn drive_input(&self) -> Input {
         let (input, steer) = (self.input, self.hull_follow);
-        if steer == 0 || input.steer != 0 { input } else {
-            Input { steer, speed_percent: if input.throttle == 0 { 100 } else { input.speed_percent }, ..input }
-        }
+        if steer == 0 || input.steer != 0 || input.throttle != 0 { input } else { Input { steer, speed_percent: 100, ..input } }
     }
     #[cfg(test)] pub(crate) fn force_vehicle_kind(&mut self, kind: VehicleKind) { self.vehicle_kind = kind; }
     pub fn crew_active(&self)->bool{self.health>0&&self.devices.as_ref().is_none_or(|state|state.crew_active())}
@@ -468,7 +466,8 @@ impl World {
     }
     fn hull_follow_steer(&self, slot: usize) -> io::Result<i8> {
         let actor = self.actors.get(slot).ok_or_else(bad)?;
-        if !actor.autorotation || actor.input.steer != 0 || actor.bot.is_some() || !actor.alive()
+        // Only on the spot (owner 10.11): a throttle input leaves the hull to the player.
+        if !actor.autorotation || actor.input.steer != 0 || actor.input.throttle != 0 || actor.bot.is_some() || !actor.alive()
             || self.lifecycle.as_ref().is_some_and(|state| !state.allows_actions()) { return Ok(0); }
         let aim::Intent::Point(point) = actor.aim.intent else { return Ok(0); };
         let Some(limits) = actor.vehicle_kind.source_aim().and_then(|s| s.envelope.yaw_limits()) else { return Ok(0); };
@@ -1880,9 +1879,12 @@ pub(super) mod tests {
         assert_eq!(turn(&mut w, right), Input { throttle: 0, steer: 1, speed_percent: 100 });
         assert_eq!(turn(&mut w, left), Input { throttle: 0, steer: -1, speed_percent: 100 });
         assert_eq!(turn(&mut w, [0., 0., 100.]), Input::STOP);
-        // Moving keeps its throttle and cruise stage.
-        w.actors[0].input = Input { throttle: 1, steer: 0, speed_percent: 50 };
-        assert_eq!(turn(&mut w, right), Input { throttle: 1, steer: 1, speed_percent: 50 });
+        // Only on the spot: a throttle input in either direction ends the turn.
+        for throttle in [1, -1] {
+            w.actors[0].input = Input { throttle, steer: 0, speed_percent: 50 };
+            assert_eq!(turn(&mut w, right), w.actors[0].input);
+            assert_eq!(w.actors[0].hull_follow, 0);
+        }
         // The player's own steering wins.
         w.actors[0].input = Input { throttle: 1, steer: -1, speed_percent: 100 };
         assert_eq!(turn(&mut w, right), w.actors[0].input);
