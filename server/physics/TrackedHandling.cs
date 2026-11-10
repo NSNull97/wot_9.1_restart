@@ -9,6 +9,7 @@ namespace MapDrive;
 internal sealed class TrackedHandling
 {
     private const float LateralAccelerationBudget = 3f; // Project policy, m/s^2.
+    private const float ReferenceLateralBudget = 4.125f; // PHYS-01, owner decision 2026-11-10: tighter moving turns.
     private const float OuterPivotFrictionFraction = .001f;
     // Owner run 2026-10-14: 4% outer grip slid sideways on slopes in moving
     // turns. Low scrub stays limited to near-rest pivots.
@@ -55,7 +56,9 @@ internal sealed class TrackedHandling
     // grip is for powered turns on slopes.
     private const float CoastOuterFrictionFraction = .001f;
     // Near-rest ratio crossing before the pivot: rate per second, minimum time.
-    private const float CoastRatioRate = 20f, CoastTransitionSeconds = .1f;
+    private const float CoastRatioRate = 20f, CoastTransitionSeconds = .1f, CoastYawGain = 2f;
+    // PHYS-01: rolling forward the hand-off to the pivot comes early, above the speed the outer track's pull can hold.
+    private const float ForwardCoastEnterSpeed = 3f, ForwardCoastPivotSpeed = 2f;
     // An opposite W/S request brakes through zero instead of waiting for the
     // transmission to reverse against the existing momentum.
     private const float ReversalBrakeSpeed = .5f;
@@ -64,7 +67,29 @@ internal sealed class TrackedHandling
     private readonly float width, maximumYaw, halfMass, radius;
     private readonly bool poweredTurnLoss, intentReversalBrake;
     private readonly WheelSettingsTV[] wheels;
-    private readonly float[] lateral;
+    private readonly float[] lateral, longitudinal;
+    // PHYS-01 stage A: 1, or contact cohesion / cohesion while this hull touches another hull.
+    public float GripScale = 1;
+    // PHYS-01 stage C: with grip-limited traction the pivot no longer needs the outer supports' side grip cut,
+    // and the cut was what let a steering vehicle slide down a side slope.
+    public bool KeepSideGrip;
+    // PHYS-01: rotationIsAroundCenter=false in the chassis data of the client. Such a vehicle cannot
+    // counter-rotate its tracks; standing, it turns around the held inner track.
+    public bool PivotAroundTrack;
+    private const float PivotInnerRatio = .05f, PivotInnerDeceleration = 8f;
+    // A turn at low speed that does not turn (hull against a wall, a fence, another hull) may shed side grip so the
+    // tracks can shove the hull off the obstacle; this covers a standing pivot and a turn with W or S held. It engages
+    // only after the yaw stayed under a third of its target for StallSeconds, so an ordinary turn, also on a side
+    // slope, keeps full side grip. Project values.
+    private const float StallYawFraction = .33f, StallSeconds = .35f, StallReleaseSeconds = .25f, StallSideGrip = .15f;
+    // Above StallMaxSpeed only a hull that really touches a wall or another hull may release its grip, so a fast
+    // turn on open ground or a slope is never affected.
+    private const float StallMaxSpeed = 4f, BlockedMinYaw = .02f;
+    // A turn with W or S held on open ground gives up only part of its side grip: a heavy hull on a grade still
+    // turns, and a launch does not slide (owner battle 2026-11-10). A real wall contact gets the full release.
+    private const float StallPoweredSideGrip = .7f;
+    public bool HullBlocked;
+    private float pivotStall;
     private float yawTarget, motorInput;
     private int lastThrottle, reversalIntent;
     // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
@@ -88,20 +113,21 @@ internal sealed class TrackedHandling
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
-            !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length != 6)
+            !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length is not (6 or 10))
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
         poweredTurnLoss = enablePoweredTurnLoss;
         intentReversalBrake = enableIntentReversalBrake;
         halfMass = massKg / 2; radius = wheels[0].Radius;
         lateral = wheels.Select(w => w.LateralFriction).ToArray();
+        longitudinal = wheels.Select(w => w.LongitudinalFriction).ToArray();
         if (lateral.Any(x => !float.IsFinite(x) || x < .1f || x > 2))
             throw new InvalidDataException("tracked handling lateral friction bounds");
     }
 
     public void VerifyWheelSettings(VehicleConstraint constraint)
     {
-        if (constraint.WheelsCount != 6 || Enumerable.Range(0, 6)
+        if (constraint.WheelsCount != wheels.Length || Enumerable.Range(0, wheels.Length)
             .Any(i => constraint.GetWheel(i).Settings.Handle != wheels[i].Handle))
             throw new InvalidOperationException("tracked handling wheel settings are not constraint-owned references");
     }
@@ -123,20 +149,23 @@ internal sealed class TrackedHandling
 
         float speed = MathF.Abs(signedSpeed);
         if (brake || throttle != 0 || steer == 0) coastPhase = 0;
-        else if (speed >= CoastEnterSpeed)
+        else if (speed >= (KeepSideGrip && signedSpeed > 0 ? ForwardCoastEnterSpeed : CoastEnterSpeed))
         {
             coastPhase = 1;
             coastDirection = Math.Sign(signedSpeed);
         }
-        else if (coastPhase == 1 && speed <= CoastPivotSpeed)
+        else if (coastPhase == 1 && speed <= (KeepSideGrip && coastDirection > 0 ? ForwardCoastPivotSpeed : CoastPivotSpeed))
         {
-            coastPhase = 2;
+            // Rolling forward the yaw already has the pivot's sign and the tracks its ratios: no hand-off to wait for.
+            coastPhase = KeepSideGrip && coastDirection > 0 ? 0 : 2;
             coastTransitionTime = 0;
         }
-        float yawLimit = MathF.Min(maximumYaw, LateralAccelerationBudget / MathF.Max(speed, .1f));
+        float yawLimit = MathF.Min(maximumYaw, (KeepSideGrip ? ReferenceLateralBudget : LateralAccelerationBudget) / MathF.Max(speed, .1f));
         // Diagnostic coast curvature: passive rolling must not demand the
         // powered yaw rate as momentum decays. Minimum radius is project policy.
-        if (coastPhase == 1) yawLimit = MathF.Min(yawLimit, speed / (2 * width));
+        // PHYS-01: this cap faded the yaw to almost nothing just before rest, and the pivot then had to start again
+        // from zero: released W with a steer key held looked like "stop first, turn after" (owner battle 2026-11-10).
+        if (coastPhase == 1 && !KeepSideGrip) yawLimit = MathF.Min(yawLimit, speed / (2 * width));
         // Reverse steering follows the former domain convention: holding the
         // same steering key while reversing changes the body's yaw sign.
         int travelDirection = coastPhase == 1 ? coastDirection : throttle < 0 ? -1 : 1;
@@ -157,11 +186,20 @@ internal sealed class TrackedHandling
             (MovingGripFullSpeed - MovingGripStartSpeed), 0, 1);
         float outerFraction = coastPhase == 1 ? CoastOuterFrictionFraction : OuterPivotFrictionFraction +
             movingGrip * (OuterMovingFrictionFraction - OuterPivotFrictionFraction);
-        float pivotBlend = steer == 0 || brake ? 0 : 1;
+        float pivotBlend = steer == 0 || brake || KeepSideGrip ? 0 : 1;
+        bool pivoting = KeepSideGrip && !brake && steer != 0 && coastPhase == 0 && (speed < StallMaxSpeed || HullBlocked);
+        bool stalled = pivoting && MathF.Abs(yawTarget) > (HullBlocked ? BlockedMinYaw : .5f * maximumYaw) &&
+            MathF.Abs(actualYawRate) < StallYawFraction * MathF.Abs(yawTarget);
+        pivotStall = Math.Clamp(pivotStall + (stalled ? deltaTime / StallSeconds : -deltaTime / StallReleaseSeconds), 0, 2);
+        float stallFloor = HullBlocked || throttle == 0 ? StallSideGrip : StallPoweredSideGrip;
+        float stallGrip = 1 - (1 - stallFloor) * Math.Clamp(pivotStall - 1, 0, 1);
         for (int i = 0; i < wheels.Length; i++)
         {
-            float target = lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));
+            float target = GripScale * stallGrip * lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));
             wheels[i].LateralFriction = Approach(wheels[i].LateralFriction, target, lateral[i] * 5 * deltaTime);
+            float grip = GripScale * longitudinal[i];
+            if (wheels[i].LongitudinalFriction != grip)
+                wheels[i].LongitudinalFriction = Approach(wheels[i].LongitudinalFriction, grip, longitudinal[i] * 5 * deltaTime);
         }
 
         float left = 1, right = 1, motor = throttle;
@@ -190,6 +228,12 @@ internal sealed class TrackedHandling
                 if (sign != 0)
                 {
                     left = sign; right = -sign;
+                    if (PivotAroundTrack)
+                    {
+                        left = sign > 0 ? 1 : PivotInnerRatio; right = sign > 0 ? PivotInnerRatio : 1;
+                        var held = sign > 0 ? controller.RightTrack : controller.LeftTrack;
+                        Dissipate(held, TrackBrake(held, PivotInnerDeceleration, deltaTime));
+                    }
                     motor = Math.Clamp(4 * (MathF.Abs(yawTarget) - sign * actualYawRate) / maximumYaw, 0, 1);
                 }
                 else motor = 0;
@@ -211,6 +255,11 @@ internal sealed class TrackedHandling
                 float minimum = throttle != 0 && steer != 0 ? PoweredTurnMinimumRatio : .05f;
                 left = MathF.Max(minimum, ratioDirection * leftSpeed / divisor);
                 right = MathF.Max(minimum, ratioDirection * rightSpeed / divisor);
+                // PHYS-01: the outer track keeps pulling while the yaw is below target, so a rolling released-throttle
+                // turn does not wait for the speed; the track brakes below still shed it. Opposite track ratios at
+                // speed stopped the hull at once.
+                if (KeepSideGrip && coastPhase == 1 && yawTarget != 0)
+                    motor = coastDirection * Math.Clamp(CoastYawGain * (MathF.Abs(yawTarget) - MathF.Sign(yawTarget) * actualYawRate) / maximumYaw, 0, 1);
             }
         }
         if (steer == 0 && throttle == 0) motor = 0;
@@ -222,7 +271,7 @@ internal sealed class TrackedHandling
         // A rolling steer request carries momentum.  Engage the stronger
         // clutch/brake hand-off only inside the pivot window; doing it during
         // the whole moving turn looked like an accidental full stop.
-        if (coastPhase == 1 && speed <= CoastPivotSpeed + .25f)
+        if (coastPhase == 1 && speed <= CoastPivotSpeed + .25f && !KeepSideGrip)
         {
             // Bounded by the inner track's own brake torque and never past
             // zero: this can only dissipate track speed, not add energy.

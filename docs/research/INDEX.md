@@ -7,6 +7,10 @@
 2026-11-03 (REFACTOR-01 R2): `git show 8bda1b9:<путь>`. Разовые проверки принятых карточек (`tools/check_*_probe.py`,
 `verify_*_capture.py`, стендовые бенчи DOM-01, обвязки P05C/P09C/P09D и др., 18 файлов) удалены в R3: `git show 4e46418:tools/<имя>`.
 
+## Физика
+
+- [PHYSICS_DIVERGENCE_20261110.md](PHYSICS_DIVERGENCE_20261110.md) — чем движение и толкание отличаются от 0.9.1: коэффициенты `physics_shared.pyc`, замеры Jolt (толкание, перевороты, склон), формулы нативной физики UNKNOWN
+
 ## Общий тест 19 октября
 
 - [FULL_TEST_20261020.md](FULL_TEST_20261020.md) — отрыв башни (#717 SynchronousDetachment), поворот, zero-economy/100 слотов, бой на купленных пуловых танках, звук лампы; gate1685/1
