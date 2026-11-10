@@ -494,7 +494,8 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     except (*SOURCE_ERRORS, KeyError, TypeError) as error:
         raise ProfileError(vehicle_id + ": source fact: " + str(error)) from error
     try:
-        refuse_if(kind == "SPG" and not (TEST_LAB and vehicle_id in STAND_SPG), "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
+        # SPG-02: every SPG on the test_lab stand (was the eight of STAND_SPG).
+        refuse_if(kind == "SPG" and not TEST_LAB, "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
         refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
                   "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
         refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
@@ -503,9 +504,10 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             row["shots"] = shots(src, nation, names["gun"], gun, vf, gf, comp["shells"], factor, effects)
         except (*SOURCE_ERRORS, KeyError, TypeError) as error:
             raise ProfileError(vehicle_id + ": shell fact: " + str(error)) from error
-        # Every runtime codec (frozen loadout, ammo panel, stores) carries exactly
-        # three ordered stacks; fewer source shots are refused, never padded.
-        refuse_if(len(row["shots"]) != 3, "SHELL_SOURCE_UNSUPPORTED", "%d source shots, runtime needs 3" % len(row["shots"]))
+        # Main: every runtime codec carries exactly three ordered stacks. SPG-02 (test_lab): one to three source
+        # shots; the runtime keeps three cells and marks the missing ones absent (never a padded real shell).
+        refuse_if(not (1 <= len(row["shots"]) <= 3) or (not (TEST_LAB and kind == "SPG") and len(row["shots"]) != 3), "SHELL_SOURCE_UNSUPPORTED",
+                  "%d source shots, runtime needs 3" % len(row["shots"]))
         rule, radius, groups, wheels = _supports(vf, chassis)
         carrying, speed = movement["carrying_point"], movement["speed_limits_kmh"]
         node = decode(src.file(v["source"]), max_bytes=MAX_SOURCE, max_depth=32, max_nodes=60000)

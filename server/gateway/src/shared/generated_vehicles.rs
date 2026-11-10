@@ -201,8 +201,11 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
         let id=GeneratedId(u16::try_from(entries.len()).map_err(|_|bad("id"))?);
         let identity=&row["identity"];let g=&row["gun"];
         let descriptor=hex(s(&identity["descriptor_hex"])?)?;
-        let shots=arr(&row["shots"],3)?;
-        let parsed=[shell(&shots[0])?,shell(&shots[1])?,shell(&shots[2])?];
+        // SPG-02: one to three source shots; the missing cells are absent (compact 0, never loaded or sent).
+        let shots=row["shots"].as_array().filter(|a|(1..=3).contains(&a.len())).ok_or_else(||bad("shot count"))?;
+        let first=shell(&shots[0])?;
+        let parsed=[first,match shots.get(1){Some(v)=>shell(v)?,None=>(first.0.absent(),first.1)},
+            match shots.get(2){Some(v)=>shell(v)?,None=>(first.0.absent(),first.1)}];
         let nation=u8::try_from(u(&row["native_nation_id"])?).map_err(|_|bad("nation"))?;
         let type_cd=u32::try_from(u(&identity["type_compact_id"])?).map_err(|_|bad("type"))?;
         let gun_cd=u32::try_from(u(&identity["module_compact_ids"]["gun"])?).map_err(|_|bad("gun"))?;
@@ -227,7 +230,7 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
             movement_dispersion:f(&g["dispersion_vehicle_movement"])? as f32*3.6,
             hull_dispersion:f(&g["dispersion_vehicle_rotation"])? as f32/1f32.to_radians(),aiming_time:f(&g["aiming_seconds"])? as f32};
         let source_aim=SourceAim{envelope:env,yaw_rate:aim.yaw_rate,pitch_rate:aim.pitch_rate};
-        let suffix=arr(&row["shell_suffixes"],3)?;
+        let suffix=row["shell_suffixes"].as_array().filter(|a|a.len()==shots.len()).ok_or_else(||bad("suffix count"))?;
         let devices=arr(&row["devices"],9)?;
         let mut caps=[Cap{max:0,regen:0};9];
         for (i,d) in devices.iter().enumerate() {
@@ -256,7 +259,7 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
             type_compact_id:type_cd,gun_compact_id:gun_cd,
             max_hp:i16::try_from(u(&identity["max_hp"])?).map_err(|_|bad("hp"))?,mass_kg:f(&identity["mass_kg"])?,
             view_range:f(&row["view_range_m"])? as f32,aim,source_aim,gun,
-            suffixes:[s(&suffix[0])?.to_owned(),s(&suffix[1])?.to_owned(),s(&suffix[2])?.to_owned()],caps,crew,
+            suffixes:[s(&suffix[0])?.to_owned(),suffix.get(1).map_or(Ok(""),s)?.to_owned(),suffix.get(2).map_or(Ok(""),s)?.to_owned()],caps,crew,
             engine_fire_chance:f(&row["engine_fire_starting_chance"])?,
             geometry_revision:format!("battle-any-collision-717:{geometry_sha}"),materials_revision:format!("battle-any-materials-717:{geometry_sha}"),geometry_sha256:geometry_sha,
             geometry_bytes:u(&geometry["bytes"])?,parts,armor_ids,material_kinds,pivots,physics:row["physics"].clone(),handling:row["handling"].clone(),

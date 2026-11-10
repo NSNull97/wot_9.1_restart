@@ -28,6 +28,12 @@ impl crate::bw_wire::Wire for Family {
 impl Family {pub fn source_name(self)->&'static str {match self{Self::ArmorPiercing=>"ARMOR_PIERCING",Self::ArmorPiercingCr=>"ARMOR_PIERCING_CR",Self::HollowCharge=>"HOLLOW_CHARGE",Self::HighExplosive=>"HIGH_EXPLOSIVE"}}}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Shell {pub resource:&'static str,pub compact_descr:u16,pub family:Family,pub caliber_mm:f64,pub damage_hp:u16,pub device_damage:u16,pub penetration_mm:[f64;2],pub explosion_radius_m:Option<f64>,pub raw_speed_mps:f64,pub projectile_speed_factor:f64,pub speed_mps:f64,pub raw_gravity_mps2:f64,pub gravity_mps2:f64,pub max_distance_m:f64,pub premium_gold_flag:bool,pub effects_resource:&'static str,pub piercing_power_loss_factor_by_distance:Option<f64>}
+impl Shell {
+    /// SPG-02: a gun with fewer than three source shots keeps three cells; the missing ones are this marker.
+    /// It is never a real shell: compact 0 matches no client descriptor, its stack is always empty.
+    pub const fn absent(self)->Self{Self{compact_descr:0,damage_hp:0,device_damage:0,resource:"",effects_resource:"",premium_gold_flag:false,..self}}
+    pub const fn is_absent(&self)->bool{self.compact_descr==0}
+}
 // BW-01 wire codec (tools/bw01_wire_gen.py): Shell
 impl crate::bw_wire::Wire for Shell {
     fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{resource,compact_descr,family,caliber_mm,damage_hp,device_damage,penetration_mm,explosion_radius_m,raw_speed_mps,projectile_speed_factor,speed_mps,raw_gravity_mps2,gravity_mps2,max_distance_m,premium_gold_flag,effects_resource,piercing_power_loss_factor_by_distance}=self;W::put(resource,bw_o);W::put(compact_descr,bw_o);W::put(family,bw_o);W::put(caliber_mm,bw_o);W::put(damage_hp,bw_o);W::put(device_damage,bw_o);W::put(penetration_mm,bw_o);W::put(explosion_radius_m,bw_o);W::put(raw_speed_mps,bw_o);W::put(projectile_speed_factor,bw_o);W::put(speed_mps,bw_o);W::put(raw_gravity_mps2,bw_o);W::put(gravity_mps2,bw_o);W::put(max_distance_m,bw_o);W::put(premium_gold_flag,bw_o);W::put(effects_resource,bw_o);W::put(piercing_power_loss_factor_by_distance,bw_o);}
