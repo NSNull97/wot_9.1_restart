@@ -488,8 +488,12 @@ impl State {
         let Some(index)=self.catalog.objects.iter().position(|o|o.instance_id==instance_id) else{return Ok(None)};
         let object=&self.catalog.objects[index];let before=self.health[index];
         if !matches!(object.kind,ObjectKind::Fragile){return Ok(None);}
-        if before<=0||shot==0||shot>self.shot_limit(vehicle) as u32||shooter>=self.actor_limit()||tick==0||self.events.len()>=self.shot_limit(vehicle)
-            ||self.events.iter().any(|e|e.shot==shot)||self.latest_tick().is_some_and(|last|last>tick)
+        // ENV-01: one shot may break further objects only after it destroyed each earlier one (impact::ObstaclePass).
+        let per_shot=self.events.iter().filter(|e|e.shot==shot).count();
+        if before<=0||shot==0||shot>self.shot_limit(vehicle) as u32||shooter>=self.actor_limit()||tick==0
+            ||self.events.len()>=self.shot_limit(vehicle)*(1+super::impact::MAX_OBSTACLE_PASSES)
+            ||per_shot>super::impact::MAX_OBSTACLE_PASSES||self.events.iter().any(|e|e.shot==shot&&(e.health_after!=0||e.instance_id==instance_id))
+            ||self.latest_tick().is_some_and(|last|last>tick)
             ||material_kind!=object.material_kind||!(object.projectile_first_triangle..object.projectile_first_triangle+object.projectile_triangle_count).contains(&hit.triangle_id)
             ||!hit.t.is_finite()||!(0. ..=1.).contains(&hit.t)||hit.point.iter().chain(hit.normal.iter()).any(|v|!v.is_finite())
             ||hit.point.iter().any(|v|v.abs()>terrain::MAX_QUERY_COORDINATE)||(hit.normal.iter().map(|v|v*v).sum::<f32>()-1.).abs()>1e-4{return Err(bad());}

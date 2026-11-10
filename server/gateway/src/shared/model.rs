@@ -1423,6 +1423,8 @@ impl World {
                     let mut segment_start = if first || projectile.launched > prior_time { projectile.launched } else { prior_time };
                     let segment_limit = now.min(projectile.end_at()?);
                     let mut segment_tick_start = shot_tick.max(prior_tick);
+                    // ENV-01: after an obstacle pass the same chord is queried again from the pass point.
+                    let mut resume:Option<[f32;3]>=None;
                     while segment_start < segment_limit {
                         // Terrain-enabled flight keeps the nominal chord error
                         // bounded even after a delayed server poll. These are
@@ -1430,7 +1432,7 @@ impl World {
                         let segment_end = if self.terrain.is_some() {
                             segment_limit.min(segment_start.checked_add(STEP).ok_or_else(|| bad())?)
                         } else { segment_limit };
-                        let start_point = projectile.position_at(segment_start);
+                        let start_point = resume.take().unwrap_or_else(|| projectile.position_at(segment_start));
                         let end_point = projectile.position_at(segment_end);
                         impact_trace.segment(self.id, projectile.sequence, tick, segment_tick_start,
                             start_point, end_point)?;
@@ -1580,12 +1582,23 @@ impl World {
                                         impact_trace.destructible_transition(self.id,projectile.sequence,tick,&transition)?;
                                     }
                                 }
+                                let mut pass=None;
                                 if let Some(state)=&mut next_fragiles {
                                     let damaged=if let Some(shell)=projectile.shell{state.contact_shell_for(projectile.vehicle_kind,shell,projectile.sequence,projectile.slot,tick,hit)?}
                                         else{state.contact_for(projectile.vehicle_kind,projectile.sequence,projectile.slot,tick,hit)?};
                                     if let Some(damage)=damaged{
                                         impact_trace.fragile_damage(self.id,projectile.sequence,tick,&damage)?;
+                                        // ENV-01: a single-layer fragile it destroyed lets a shell with power to spare fly on.
+                                        if let Some(shell)=projectile.shell {
+                                            let single=state.catalog.instance(damage.instance_id).is_some_and(|o|matches!(o.kind,fragiles::ObjectKind::Fragile));
+                                            if single&&damage.health_after==0&&impact_trace.obstacle_passes(projectile.sequence)<impact::MAX_OBSTACLE_PASSES
+                                                &&shell.penetration_mm[0]-impact_trace.track_spent(projectile.sequence)?>impact::OBSTACLE_LOSS_MM {pass=Some(hit.point);}
+                                        }
                                     }
+                                }
+                                if let Some(point)=pass {
+                                    impact_trace.obstacle_pass(self.id,projectile.sequence,tick,point,impact::OBSTACLE_LOSS_MM)?;
+                                    resume=Some(point);continue;
                                 }
                                 projectile.terminal = hit.point; projectile.stopped = true;
                                 if projectile.shell.is_some(){self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,hit.point,tick,None,next_fragiles.as_ref())?;}

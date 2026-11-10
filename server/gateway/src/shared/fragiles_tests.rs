@@ -440,7 +440,9 @@ fn must_reject_unchanged(state: &mut State, shot: u32, shooter: usize, tick: u32
 fn repeated_shot_dead_target_or_decreasing_tick_is_atomic_failure() {
     let mut state = State::new(catalog());
     state.contact(1, 0, 1002, hit(0)).unwrap().unwrap();
-    must_reject_unchanged(&mut state, 1, 0, 1003, hit(1));
+    // ENV-01: the shot destroyed object 0 and flew on, so it may break object 1; never object 0 again.
+    let mut passed = state.clone(); passed.contact(1, 0, 1003, hit(1)).unwrap().unwrap(); assert_eq!(passed.scene_version(), 2);
+    must_reject_unchanged(&mut passed, 1, 0, 1004, hit(1));
     must_reject_unchanged(&mut state, 2, 0, 1003, hit(0));
     must_reject_unchanged(&mut state, 2, 0, 1001, hit(1));
     state.contact(2, 1, 1003, hit(1)).unwrap().unwrap();
