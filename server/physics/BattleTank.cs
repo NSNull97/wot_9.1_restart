@@ -22,6 +22,9 @@ internal sealed class BattleTank : IDisposable
     readonly Vector3 center;
     readonly float forwardLimit, reverseLimit;
     public Vector3 PreVelocity;
+    readonly float contactGrip;
+    // PHYS-01 stage A: set by the scene after each step; a hull-to-hull contact lowers this vehicle's grip from the next substep.
+    public bool HullContact;
     public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog)
         : this(system, source, catalog, true, true) { }
     // The explicit policy seam also compares baseline/candidate in one actual
@@ -31,6 +34,10 @@ internal sealed class BattleTank : IDisposable
         : this(system, source, catalog, enablePoweredTurnLoss, true) { }
     internal BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
         bool enablePoweredTurnLoss, bool enableIntentReversalBrake)
+        : this(system, source, catalog, enablePoweredTurnLoss, enableIntentReversalBrake, true) { }
+    // PHYS-01 stage A: referenceTraction=false keeps the former Jolt gearbox for a same-build comparison.
+    internal BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
+        bool enablePoweredTurnLoss, bool enableIntentReversalBrake, bool referenceTraction)
     {
         world = system; Source = source;
         var c = source.Config;
@@ -50,16 +57,37 @@ internal sealed class BattleTank : IDisposable
         {
             Position = p - center, SuspensionDirection = -Vector3.UnitY, WheelUp = Vector3.UnitY, WheelForward = Vector3.UnitZ,
             SuspensionMinLength = N("suspension_min", 0, 1), SuspensionMaxLength = N("suspension_max", .05f, 1), Radius = radius, Width = .25f,
-            LongitudinalFriction = N("longitudinal_friction", .1f, 2), LateralFriction = N("lateral_friction", .1f, 2),
+            // PHYS-01 stage A: grip is COHESION; the profile value stays validated but is not the traction law.
+            LongitudinalFriction = MathF.Max(N("longitudinal_friction", .1f, 2), referenceTraction ? ReferenceTraction.Cohesion : 0),
+            LateralFriction = N("lateral_friction", .1f, 2),
             SuspensionSpring = new SpringSettings(SpringMode.FrequencyAndDamping, 2, .7f)
         }).ToArray();
         using var settings = new TrackedVehicleControllerSettings();
-        var engine = settings.Engine; engine.MaxTorque = N("engine_max_torque_nm", 10, 10000); settings.Engine = engine;
+        var engine = settings.Engine; engine.MaxTorque = N("engine_max_torque_nm", 10, 10000);
         var transmission = settings.Transmission;
+        float differential = 0;
+        if (referenceTraction)
+        {
+            differential = ReferenceTraction.Configure(ref engine, transmission, engine.MaxTorque, radius,
+                MathF.Max(forwardLimit, reverseLimit), ReferenceTraction.TrackShare);
+        }
+        settings.Engine = engine;
         transmission.SwitchTime = TrackedHandling.GearSwitchTime; transmission.ClutchReleaseTime = TrackedHandling.ClutchReleaseTime;
         transmission.SwitchLatency = TrackedHandling.GearSwitchLatency; settings.Transmission = transmission;
-        settings.SetTrack(0, new VehicleTrackSettings { DrivenWheel = 1, Wheels = [0, 1, 2], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) });
-        settings.SetTrack(1, new VehicleTrackSettings { DrivenWheel = 4, Wheels = [3, 4, 5], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) });
+        var left = new VehicleTrackSettings { DrivenWheel = 1, Wheels = [0, 1, 2], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) };
+        var right = new VehicleTrackSettings { DrivenWheel = 4, Wheels = [3, 4, 5], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) };
+        if (referenceTraction)
+        {
+            // Jolt defaults (track angular damping .5/s, body linear damping .05/s) act as a speed-proportional
+            // drag of about .07*mass*speed and would bend the power law; resistance is an explicit stage D term.
+            left.DifferentialRatio = differential; right.DifferentialRatio = differential;
+            left.AngularDamping = 0; right.AngularDamping = 0;
+            var motion = Body.MotionProperties; motion.LinearDamping = 0;
+            // A hull pressed against a wall or another hull with friction 1 carried the pusher's weight on that
+            // contact (measured: supports held 24% of the weight) and so removed its traction.
+            Body.Friction = ReferenceTraction.HullFriction;
+        }
+        settings.SetTrack(0, left); settings.SetTrack(1, right);
         Constraint = new VehicleConstraint(Body, new VehicleConstraintSettings
         {
             // Owner policy 2026-10-17: shared battles allow side/roof rollovers.
@@ -72,6 +100,7 @@ internal sealed class BattleTank : IDisposable
         controller = Constraint.GetController<TrackedVehicleController>();
         handling = new TrackedHandling(MathF.Abs(points[3].X - points[0].X),
             CheckedInput.Number(c.GetProperty("handling").GetProperty("max_yaw_rate_rad_s"), .1f, 1.5f), mass, wheels, enablePoweredTurnLoss, enableIntentReversalBrake);
+        contactGrip = referenceTraction ? ReferenceTraction.ContactCohesion / ReferenceTraction.Cohesion : 1;
         handling.VerifyWheelSettings(Constraint);
         Fracture = catalog == null ? null : new AngularFractureResponse(mass, catalog, source.Binding);
     }
@@ -81,6 +110,9 @@ internal sealed class BattleTank : IDisposable
         var q = Body.Rotation; PreVelocity = Body.GetLinearVelocity();
         if (capture) Fracture?.BeginSubstep(substep, AngularMotionFrame.Capture(Body, Source.Binding));
         var forward = Vector3.Transform(Vector3.UnitZ, q); var up = Vector3.Transform(Vector3.UnitY, q);
+        // Project reading of CONTACT_COHESION: the lower grip belongs to the hull that is held on its brakes;
+        // a hull that drives keeps COHESION, otherwise equal vehicles could never move each other.
+        handling.GripScale = HullContact && input.Brake ? contactGrip : 1;
         handling.Apply(controller, Vector3.Dot(PreVelocity, forward), Vector3.Dot(Body.GetAngularVelocity(), up),
             input.Throttle, input.Steer, input.Brake, forwardLimit * input.SpeedPercent / 100, reverseLimit * input.SpeedPercent / 100, 1f / 60);
     }

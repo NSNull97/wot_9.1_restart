@@ -207,6 +207,7 @@ internal static class BattleScene
                         if (!AngularMotionFrame.SameBits(post[tank.Source.Slot].Motion.Angular, motion.Angular)) bodies.SetAngularVelocity(tank.Body.ID, motion.Angular);
                     }
                     bool hullContact = tankContacts.Values.Any(c => c.A == tank.Source.Slot || c.B == tank.Source.Slot);
+                    tank.HullContact = hullContact;
                     tank.HoldForwardAgainstContact(hullContact, controls[tank.Source.Slot].Throttle);
                     tank.AfterStep();
                 }

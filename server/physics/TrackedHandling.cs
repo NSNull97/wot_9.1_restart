@@ -64,7 +64,9 @@ internal sealed class TrackedHandling
     private readonly float width, maximumYaw, halfMass, radius;
     private readonly bool poweredTurnLoss, intentReversalBrake;
     private readonly WheelSettingsTV[] wheels;
-    private readonly float[] lateral;
+    private readonly float[] lateral, longitudinal;
+    // PHYS-01 stage A: 1, or contact cohesion / cohesion while this hull touches another hull.
+    public float GripScale = 1;
     private float yawTarget, motorInput;
     private int lastThrottle, reversalIntent;
     // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
@@ -95,6 +97,7 @@ internal sealed class TrackedHandling
         intentReversalBrake = enableIntentReversalBrake;
         halfMass = massKg / 2; radius = wheels[0].Radius;
         lateral = wheels.Select(w => w.LateralFriction).ToArray();
+        longitudinal = wheels.Select(w => w.LongitudinalFriction).ToArray();
         if (lateral.Any(x => !float.IsFinite(x) || x < .1f || x > 2))
             throw new InvalidDataException("tracked handling lateral friction bounds");
     }
@@ -160,8 +163,11 @@ internal sealed class TrackedHandling
         float pivotBlend = steer == 0 || brake ? 0 : 1;
         for (int i = 0; i < wheels.Length; i++)
         {
-            float target = lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));
+            float target = GripScale * lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));
             wheels[i].LateralFriction = Approach(wheels[i].LateralFriction, target, lateral[i] * 5 * deltaTime);
+            float grip = GripScale * longitudinal[i];
+            if (wheels[i].LongitudinalFriction != grip)
+                wheels[i].LongitudinalFriction = Approach(wheels[i].LongitudinalFriction, grip, longitudinal[i] * 5 * deltaTime);
         }
 
         float left = 1, right = 1, motor = throttle;
