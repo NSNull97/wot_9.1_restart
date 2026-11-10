@@ -8,6 +8,7 @@ namespace MapDrive;
 // IPC7 deliberately has one world, one update per substep and one batch reply.
 internal static class BattleScene
 {
+    const float LandingMargin = .05f; // metres, project value
     sealed record TankContact(int A, int B, int Substep, Vector3 Point, Vector3 Normal, Vector3 Relative);
     // MAPS-02: first overlap of one hull with one falling atom sensor in a batch.
     sealed record ColumnContact(uint Object, int Slot, int Substep, Vector3 Point, Vector3 Normal, Vector3 Velocity);
@@ -41,7 +42,8 @@ internal static class BattleScene
         using var jobs = new InlineJobSystem();
         using var world = new PhysicsSystem(new PhysicsSystemSettings
         {
-            MaxBodies = Math.Max(32, (manifest.Catalog?.Entries.Length ?? 0) + (manifest.Catalog?.Columns.Length ?? 0) + manifest.Actors.Length + 8),
+            // TURPHYS-01: one landed turret per actor at most.
+            MaxBodies = Math.Max(32, (manifest.Catalog?.Entries.Length ?? 0) + (manifest.Catalog?.Columns.Length ?? 0) + 2 * manifest.Actors.Length + 8),
             MaxBodyPairs = 8192, MaxContactConstraints = 8192,
             ObjectLayerPairFilter = pairs, BroadPhaseLayerInterface = broad, ObjectVsBroadPhaseLayerFilter = filter
         });
@@ -101,6 +103,25 @@ internal static class BattleScene
         var fixedStatics = new List<TurretFlight.Static> { new(terrain, Vector3.Zero, Quaternion.Identity), new(obstacles, Vector3.Zero, Quaternion.Identity),
             new(xWall, new(minX - .5f, 0, (maxZ + minZ) / 2), Quaternion.Identity), new(xWall, new(maxX + .5f, 0, (maxZ + minZ) / 2), Quaternion.Identity),
             new(zWall, new((maxX + minX) / 2, 0, minZ - .5f), Quaternion.Identity), new(zWall, new((maxX + minX) / 2, 0, maxZ + .5f), Quaternion.Identity) };
+        // TURPHYS-01: a turret that came to rest becomes a static obstacle of the battle world (live tanks bump into it,
+        // it does not move: the client shows it where its flight ended). It joins once no tank overlaps its bounds,
+        // so it never spawns inside a hull; later flights see it like any other static.
+        var landedShapes = new List<StaticCompoundShape>();
+        var landingQueue = new List<(StaticCompoundShape Shape, Vector3 Position, Quaternion Rotation, Vector3 Min, Vector3 Max)>();
+        static bool Apart((Vector3 Min, Vector3 Max) a, Vector3 min, Vector3 max) =>
+            a.Max.X < min.X || max.X < a.Min.X || a.Max.Y < min.Y || max.Y < a.Min.Y || a.Max.Z < min.Z || max.Z < a.Min.Z;
+        void LandTurrets()
+        {
+            for (int i = landingQueue.Count - 1; i >= 0; i--)
+            {
+                var t = landingQueue[i];
+                if (tanks.Any(tank => !Apart(tank.WorldBounds(LandingMargin), t.Min, t.Max))) continue;
+                using var creation = new BodyCreationSettings(t.Shape, t.Position, t.Rotation, MotionType.Static, 0) { Friction = 1 };
+                var body = bodies.CreateBody(creation); bodies.AddBody(body.ID, Activation.DontActivate); statics.Add(body.ID);
+                fixedStatics.Add(new(t.Shape, t.Position, t.Rotation));
+                landingQueue.RemoveAt(i);
+            }
+        }
         void Contact(in Body body1, in Body body2, in ContactManifold m, ref ContactSettings settings)
         {
             bool first = tankIds.TryGetValue(body1.ID.ID, out var a), second = tankIds.TryGetValue(body2.ID.ID, out var b);
@@ -195,6 +216,7 @@ internal static class BattleScene
         world.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, m, ref s);
         void Advance(BattleSceneInput.Control[] controls, int count)
         {
+            if (landingQueue.Count > 0) LandTurrets();
             for (int i = 0; i < count; i++)
             {
                 substep = i + 1;
@@ -269,6 +291,13 @@ internal static class BattleScene
                     var wrecks = flight.Wrecks.Select(s => tanks[s]).Select(t => new TurretFlight.Wreck(t.Source.Slot, t.Source.Binding.HalfExtents,
                         t.Body.Position, t.Body.Rotation)).ToList();
                     var result = TurretFlight.Simulate(flight, fixedStatics.Concat(present).ToList(), wrecks);
+                    tanks[flight.Slot].DropTurret();
+                    if (result.Slept)
+                    {
+                        var shape = TurretFlight.Shape(flight); landedShapes.Add(shape);
+                        var last = result.Samples[^1].Position; var landed = TurretFlight.WorldBounds(flight, last, result.Rotation);
+                        landingQueue.Add((shape, last, result.Rotation, landed.Min, landed.Max));
+                    }
                     var v = AngularMotionFrame.V;
                     var reply = JsonSerializer.SerializeToUtf8Bytes(new { version = 7, @event = "turret_flight", generation,
                         manifest_sha256 = manifest.Hash, catalog_sha256 = manifest.Catalog?.Hash ?? BattleSceneInput.EmptyCatalogHash,
@@ -324,6 +353,7 @@ internal static class BattleScene
             foreach (var id in statics)
                 if (catalogIds.TryGetValue(id.ID, out uint objectId) && pending.Contains(objectId)) bodies.DestroyBody(id);
                 else bodies.RemoveAndDestroyBody(id);
+            foreach (var shape in landedShapes) shape.Dispose();
         }
     }
 }

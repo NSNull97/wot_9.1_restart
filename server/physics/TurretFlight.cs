@@ -19,7 +19,19 @@ internal static class TurretFlight
         Vector3[] Turret, Vector3[] Gun, int[] Wrecks);
     public sealed record Static(Shape Shape, Vector3 Position, Quaternion Rotation);
     public sealed record Wreck(int Slot, Vector3 HalfExtents, Vector3 Position, Quaternion Rotation);
-    public sealed record Result(List<(Vector3 Position, Vector3 Direction)> Samples, bool Slept, int Substeps);
+    public sealed record Result(List<(Vector3 Position, Vector3 Direction)> Samples, bool Slept, int Substeps, Quaternion Rotation);
+    // Turret and gun convex hulls in the turret frame; the caller owns the shape.
+    public static StaticCompoundShape Shape(Request request)
+    {
+        using var hullTurret = new ConvexHullShapeSettings(request.Turret);
+        using var hullGun = new ConvexHullShapeSettings(request.Gun);
+        using var compound = new StaticCompoundShapeSettings();
+        compound.AddShape(Vector3.Zero, Quaternion.Identity, hullTurret);
+        compound.AddShape(Vector3.Zero, Quaternion.Identity, hullGun);
+        return new StaticCompoundShape(compound);
+    }
+    public static (Vector3 Min, Vector3 Max) WorldBounds(Request request, Vector3 position, Quaternion rotation) =>
+        Bounds(request.Turret.Concat(request.Gun), position, rotation);
 
     public static Request Parse(JsonElement request, BattleSceneInput.Manifest manifest, uint generation, long seq, CheckedInput.Scene scene)
     {
@@ -92,12 +104,7 @@ internal static class TurretFlight
                 if (w.Slot == request.Slot) parent = w; else AddStatic(box, w.Position, w.Rotation);
             }
             world.OptimizeBroadPhase();
-            using var hullTurret = new ConvexHullShapeSettings(request.Turret);
-            using var hullGun = new ConvexHullShapeSettings(request.Gun);
-            using var compound = new StaticCompoundShapeSettings();
-            compound.AddShape(Vector3.Zero, Quaternion.Identity, hullTurret);
-            compound.AddShape(Vector3.Zero, Quaternion.Identity, hullGun);
-            using var shape = new StaticCompoundShape(compound);
+            using var shape = Shape(request);
             var rotation = Rotation(request.Direction);
             // The request's yaw/pitch/roll must name the same basis that the
             // reply's ToYawPitchRoll reports (native Ry*Rx*Rz convention).
@@ -135,7 +142,7 @@ internal static class TurretFlight
                 samples.Add((position, BodyOrientation.ToYawPitchRoll(q)));
                 slept = !bodies.IsActive(turret.ID);
             }
-            return new(samples, slept, substeps);
+            return new(samples, slept, substeps, turret.Rotation);
         }
         finally
         {

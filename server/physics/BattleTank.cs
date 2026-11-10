@@ -15,6 +15,10 @@ internal sealed class BattleTank : IDisposable
     readonly PhysicsSystem world;
     readonly BoxShape shape;
     readonly OffsetCenterOfMassShape? offsetShape;
+    // TURPHYS-01: hull box plus turret box for collisions; the hull alone after the turret is torn off.
+    readonly StaticCompoundShape? turretShape;
+    readonly OffsetCenterOfMassShape? hullOnlyShape;
+    public bool TurretAttached { get; private set; }
     readonly VehicleCollisionTesterRay tester;
     readonly WheelSettingsTV[] wheels;
     readonly TrackedVehicleController controller;
@@ -61,7 +65,21 @@ internal sealed class BattleTank : IDisposable
             // PHYS-01 stage B: lowered centre of mass, gravity factor; power scales with gravity (GRAVITY_FACTOR_SCALED).
             float shift = ReferenceBody.CenterOfMassShift(ReferenceTraction.PowerWatts(N("engine_max_torque_nm", 10, 10000)), mass);
             powerScale = ReferenceBody.GravityFactor;
-            using var referenceSettings = ReferenceBody.Create(shape, source.Binding.HalfExtents, mass, shift * 2 * source.Binding.HalfExtents.Y,
+            float offsetY = shift * 2 * source.Binding.HalfExtents.Y;
+            Shape collision = shape;
+            if (ReferenceShapes.For(source.Kind) is { } turret)
+            {
+                using var compound = new StaticCompoundShapeSettings();
+                using var hullBox = new BoxShapeSettings(source.Binding.HalfExtents);
+                using var turretBox = new BoxShapeSettings(turret.TurretHalf);
+                compound.AddShape(Vector3.Zero, Quaternion.Identity, hullBox);
+                compound.AddShape(turret.TurretCenter, Quaternion.Identity, turretBox);
+                turretShape = new StaticCompoundShape(compound);
+                var hullOffset = new Vector3(0, offsetY, 0);
+                hullOnlyShape = new OffsetCenterOfMassShape(in hullOffset, shape);
+                collision = turretShape; TurretAttached = true;
+            }
+            using var referenceSettings = ReferenceBody.Create(collision, source.Binding.HalfExtents, mass, offsetY,
                 source.Spawn + Vector3.Transform(center, rotation), rotation, out offsetShape);
             Body = world.BodyInterface.CreateBody(referenceSettings);
             // The provided box tensor differs from the qualified one by an ulp or two; pin the qualified bits.
@@ -139,6 +157,31 @@ internal sealed class BattleTank : IDisposable
         contactGrip = referenceTraction ? ReferenceTraction.ContactCohesion / ReferenceTraction.Cohesion : 1;
         handling.VerifyWheelSettings(Constraint);
         Fracture = catalog == null ? null : new AngularFractureResponse(mass, catalog, source.Binding);
+    }
+    // World AABB of the hull box (and the turret box while attached), grown by margin.
+    public (Vector3 Min, Vector3 Max) WorldBounds(float margin)
+    {
+        var min = new Vector3(float.MaxValue); var max = new Vector3(float.MinValue);
+        void Add(Vector3 c, Vector3 h)
+        {
+            foreach (int x in new[] { -1, 1 }) foreach (int y in new[] { -1, 1 }) foreach (int z in new[] { -1, 1 })
+            {
+                var p = Body.Position + Vector3.Transform(c + new Vector3(x * h.X, y * h.Y, z * h.Z), Body.Rotation);
+                min = Vector3.Min(min, p); max = Vector3.Max(max, p);
+            }
+        }
+        Add(Vector3.Zero, Source.Binding.HalfExtents);
+        if (TurretAttached && ReferenceShapes.For(Source.Kind) is { } t) Add(t.TurretCenter, t.TurretHalf);
+        return (min - new Vector3(margin), max + new Vector3(margin));
+    }
+    // TURPHYS-01: the turret left the hull (turret flight). Collisions continue with the hull box alone; the centre of
+    // mass and the qualified mass and inertia stay as they were (mass without the turret is a later stage).
+    public void DropTurret()
+    {
+        if (!TurretAttached) return;
+        world.BodyInterface.SetShape(Body.ID, hullOnlyShape!, false, Activation.Activate);
+        TurretAttached = false;
+        Source.Binding.Verify(Body);
     }
     public void BeginAdvance() { Fracture?.BeginAdvance(); ObjectContacts.Clear(); ReservedContacts.Clear(); }
     public void BeforeStep(BattleSceneInput.Control input, int substep, bool capture)
@@ -230,6 +273,6 @@ internal sealed class BattleTank : IDisposable
     {
         world.RemoveStepListener(Constraint); world.RemoveConstraint(Constraint); Constraint.Dispose();
         world.BodyInterface.RemoveAndDestroyBody(Body.ID);
-        tester.Dispose(); foreach (var wheel in wheels) wheel.Dispose(); offsetShape?.Dispose(); shape.Dispose();
+        tester.Dispose(); foreach (var wheel in wheels) wheel.Dispose(); offsetShape?.Dispose(); hullOnlyShape?.Dispose(); turretShape?.Dispose(); shape.Dispose();
     }
 }

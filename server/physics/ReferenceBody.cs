@@ -35,12 +35,13 @@ internal static class ReferenceBody
         return MathF.Pow(arg, power) * valueRange + CmyMin;
     }
 
-    // The same box and tensor as TrackedBodySettings.Create, with the centre of mass moved by offsetY.
-    public static BodyCreationSettings Create(BoxShape box, Vector3 half, float mass, float offsetY,
+    // The same box tensor as TrackedBodySettings.Create, with the centre of mass at offsetY above the box centre
+    // whatever the collision shape (a hull box, or hull and turret boxes) puts its own centre of mass.
+    public static BodyCreationSettings Create(Shape collision, Vector3 half, float mass, float offsetY,
         Vector3 position, Quaternion rotation, out OffsetCenterOfMassShape shape)
     {
-        var offset = new Vector3(0, offsetY, 0);
-        shape = new OffsetCenterOfMassShape(in offset, box);
+        var offset = new Vector3(0, offsetY, 0) - collision.CenterOfMass;
+        shape = new OffsetCenterOfMassShape(in offset, collision);
         var properties = new MassProperties();
         properties.SetMassAndInertiaOfSolidBox(2 * half, 1);
         properties.ScaleToMass(mass);
