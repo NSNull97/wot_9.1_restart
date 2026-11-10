@@ -199,6 +199,35 @@ pub(crate) fn solve_for(kind: VehicleKind, position: [f32; 3], direction: [f32; 
         None => target_angles_pose_for(kind,position,direction,point,old_yaw,old_pitch),
     }
 }
+/// Yaw of `point` in the hull frame, measured at the turret pivot (no ballistics, so an
+/// out-of-range point still has a bearing). None when the point sits on the pivot.
+pub(crate) fn hull_bearing(kind: VehicleKind, position: [f32; 3], direction: [f32; 3], point: [f32; 3]) -> Option<f32> {
+    let relative: [f32; 3] = std::array::from_fn(|i| point[i] - position[i]);
+    let local = pose::inverse_rotate(relative, direction);
+    let pivot = kind.aim().pivot;
+    let (x, z) = (local[0] - pivot[0], local[2] - pivot[2]);
+    let radius = x.hypot(z);
+    (radius.is_finite() && radius > 0.001).then(|| x.atan2(z))
+}
+/// Half-angle by which the hull stops short of a traverse limit: the gun then reaches the
+/// target instead of resting on the stop, and a fixed gun has a dead band.
+pub(crate) const HULL_FOLLOW_MARGIN: f32 = 0.5 * PI / 180.;
+/// Over-rotation of a hull turn (owner 10.11, as in later game versions): once turning, the
+/// hull goes this far past the engage line, so a small further aim move the same way needs no
+/// new turn. At most `HULL_FOLLOW_RESERVE_SHARE` of the half-sector for a narrow traverse.
+pub(crate) const HULL_FOLLOW_RESERVE: f32 = 2.5 * PI / 180.;
+pub(crate) const HULL_FOLLOW_RESERVE_SHARE: f32 = 0.4;
+/// Hull steer (-1, 0, +1) that brings `bearing` inside the turret's yaw limits. `turning` is
+/// the steer of the previous step: a turn in progress continues up to the reserve.
+pub(crate) fn hull_follow_steer(bearing: f32, min: f32, max: f32, turning: i8) -> i8 {
+    let (centre, half) = (0.5 * (min + max), 0.5 * (max - min));
+    let engage = (half - HULL_FOLLOW_MARGIN).max(HULL_FOLLOW_MARGIN);
+    let release = (engage - HULL_FOLLOW_RESERVE.min(half * HULL_FOLLOW_RESERVE_SHARE)).max(0.);
+    let off = wrap(bearing - centre);
+    if off > engage || (turning > 0 && off > release) { 1 }
+    else if off < -engage || (turning < 0 && off < -release) { -1 }
+    else { 0 }
+}
 pub fn wrap(angle: f32) -> f32 { (angle + PI).rem_euclid(2. * PI) - PI }
 
 // MS-1's rear sector is35deg/+1; its0.4rad transition matched the original

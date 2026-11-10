@@ -679,9 +679,9 @@ impl IntegratedRuntime {
             let worker = self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
             if !self.synchronizing[slot] && !self.pose_pending[slot] && worker.ready() && !worker.pending()
                 && deadlines[slot].is_some() {
-                let actor = world.actors.get(slot).ok_or_else(|| model::bad())?;
-                let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
-                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0, speed_percent: actor.input.speed_percent };
+                let drive = world.advance_drive_input(slot)?;
+                let input = crate::map_drive_worker091::Input { throttle: drive.throttle,
+                    steer: drive.steer, brake: drive.throttle == 0 && drive.steer == 0, speed_percent: drive.speed_percent };
                 let seq = worker.advance(input, now)?;
                 self.dispatched[slot] = deadlines[slot];
                 println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={} speed_percent={}",
@@ -2374,7 +2374,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(|| model::bad())?.commands);
     if !c.correction && !commands.is_empty() {
         // Keep a bounded startup intent until ACK6; no pre-correction motion.
-        if commands.iter().any(|cmd| !matches!(cmd, model::Command::Aim(_) | model::Command::Move(model::Input::STOP))) { return Err(model::bad()); }
+        if commands.iter().any(|cmd| !matches!(cmd, model::Command::Aim(_) | model::Command::Autorotation(_) | model::Command::Move(model::Input::STOP))) { return Err(model::bad()); }
         next.shared.as_mut().ok_or_else(|| model::bad())?.commands = commands;
         *s = next; return Ok(());
     }
@@ -2774,7 +2774,7 @@ fn publish_av01(c:&mut Client,outbox:&mut std::collections::VecDeque<Vec<u8>>,wo
         if !visible[slot] {continue;}
         let actor=&world.actors[slot];
         let running=actor.alive()&&actor.devices.as_ref().is_none_or(|d|d.health()[crate::p06t_device_caps::Device::Engine as usize]>0);
-        let mode=av::engine_mode(running,actor.input);
+        let mode=av::engine_mode(running,world.drive_input(slot)?);
         if c.engine_sent[slot]!=Some(mode) {c.queue_private(outbox,av::engine_mode_update(slot,mode)?,&[slot])?;c.engine_sent[slot]=Some(mode);sent+=1;}
     }
     let fresh=world.impacts.get(impact_from..).unwrap_or(&[]);

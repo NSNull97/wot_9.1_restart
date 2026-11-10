@@ -1026,6 +1026,10 @@ impl Session {
                             events.push(format!("SHARED_UNSUPPORTED session={} method=move flags={flags} failsafe_stop=true", self.id));
                         },
                         drive::Method::IgnoredTelemetry(_) => {}, // validated then discarded
+                        drive::Method::UnsupportedCameraAutorotation(enabled) => {
+                            c.commands.push(Command::Autorotation(enabled));
+                            events.push(format!("SHARED_AUTOROTATION session={} slot={} enabled={enabled}",self.id,c.slot));
+                        },
                         drive::Method::Leave => {
                             // Original result handler queues Leave from the UI
                             // callback and confirm afterwards in the same turn.

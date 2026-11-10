@@ -96,11 +96,15 @@ pub struct Actor {
     pub devices:Option<crate::p06t_device_state::State>,
     /// BOT-01: server bot ordinal; such an actor has no Session and no account.
     pub bot:Option<u8>,
+    /// #717 VEHICLE_SETTING.AUTOROTATION_ENABLED, sent by the client's control modes.
+    pub autorotation:bool,
+    /// Hull steer of the follow-the-aim turn in progress (0: none).
+    pub hull_follow:i8,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Actor
 impl crate::bw_wire::Wire for Actor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,bot}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(bot,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,bot:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -112,7 +116,7 @@ impl Actor {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Armament(crate::p06t_armament091::Command), Leave }
+pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Armament(crate::p06t_armament091::Command), Leave, Autorotation(bool) }
 
 #[derive(Clone,Debug,PartialEq)]
 pub struct DamageRecord {
@@ -442,6 +446,31 @@ impl World {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
     pub fn expected_actors(&self) -> usize { self.expected_actors }
     pub fn mixed_profiles(&self) -> bool { self.mixed_profiles }
+    /// The input the physics receives. A vehicle with limited gun traverse has its hull turned
+    /// towards an aim point beyond the limits while the client's autorotation is on and the
+    /// player is not steering. Control law INFERRED (docs/research/P02_SNIPER_CAMERA_PROTOCOL.md).
+    pub fn drive_input(&self, slot: usize) -> io::Result<Input> {
+        let actor = self.actors.get(slot).ok_or_else(bad)?;
+        let (input, steer) = (actor.input, actor.hull_follow);
+        Ok(if steer == 0 || input.steer != 0 { input } else {
+            Input { steer, speed_percent: if input.throttle == 0 { 100 } else { input.speed_percent }, ..input }
+        })
+    }
+    /// One physics step of the turn: updates the turn in progress and returns `drive_input`.
+    pub fn advance_drive_input(&mut self, slot: usize) -> io::Result<Input> {
+        let steer = self.hull_follow_steer(slot)?;
+        self.actors.get_mut(slot).ok_or_else(bad)?.hull_follow = steer;
+        self.drive_input(slot)
+    }
+    fn hull_follow_steer(&self, slot: usize) -> io::Result<i8> {
+        let actor = self.actors.get(slot).ok_or_else(bad)?;
+        if !actor.autorotation || actor.input.steer != 0 || actor.bot.is_some() || !actor.alive()
+            || self.lifecycle.as_ref().is_some_and(|state| !state.allows_actions()) { return Ok(0); }
+        let aim::Intent::Point(point) = actor.aim.intent else { return Ok(0); };
+        let Some(limits) = actor.vehicle_kind.source_aim().and_then(|s| s.envelope.yaw_limits()) else { return Ok(0); };
+        let Some(bearing) = aim::hull_bearing(actor.vehicle_kind, actor.position, actor.direction, point) else { return Ok(0); };
+        Ok(aim::hull_follow_steer(bearing, limits.min, limits.max, actor.hull_follow))
+    }
     pub fn mixed_ammo(&self)->bool{self.mixed_ammo}
     /// Future reserves only: an old V2 receipt cannot opt itself into losses.
     /// Source-backed mixed simulation/terrain and lifecycle must be configured
@@ -1055,7 +1084,7 @@ impl World {
         if let Some(slot) = self.actors.iter().position(|a| a.identity.account == identity.account) {
             let a = &mut self.actors[slot];
             if a.session.is_some() || a.identity != identity || a.owned_loadout != loadout { return Err(bad()); }
-            a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park();
+            a.session = Some(session); a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); a.autorotation = true;
             return Ok(slot);
         }
         if self.actors.len() == self.expected_actors || self.actors.iter().any(|a| a.identity.database == identity.database) {
@@ -1075,7 +1104,7 @@ impl World {
             self.impact=trace;self.fragiles=fragiles;
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
-            position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
+            autorotation: true, hull_follow: 0, position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
             fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,bot:None });
         Ok(slot)
     }
@@ -1183,7 +1212,7 @@ impl World {
                 match command {
                     Command::Move(input) => { if !input.valid() { return Err(bad()); } continue; },
                     Command::Fire(_) | Command::Armament(_) => { outcomes.push(fire::Outcome::RejectedBattlePeriod); continue; },
-                    Command::Aim(_) | Command::Leave => {},
+                    Command::Aim(_) | Command::Leave | Command::Autorotation(_) => {},
                 }
             }
             // Native dead players may still emit neutral input/aim packets.
@@ -1196,11 +1225,13 @@ impl World {
                         continue;
                     },
                     Command::Fire(_) | Command::Armament(_) => {if next.fire.typed().is_some(){outcomes.push(fire::Outcome::RejectedVehicleState);}continue;},
+                    Command::Autorotation(_) => continue,
                     Command::Leave => {},
                 }
             }
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
+                Command::Autorotation(enabled) => next.autorotation = *enabled,
                 Command::Move(input) => {
                     if !input.valid() { return Err(bad()); }
                     next.input = *input;
@@ -1816,6 +1847,53 @@ pub(super) mod tests {
         w.advance(now+STEP*3).unwrap();assert_eq!(w.tick,1003);
         let launched=w.projectiles[0].position_at(w.projectiles[0].launched);
         assert!(w.impact.events().iter().any(|e|matches!(e,impact::Event::Segment{shot_id:1,segment_tick_start:1002,segment_tick_end:1003,start,..} if *start==launched)));
+    }
+    #[test] fn hull_follows_an_aim_point_beyond_the_traverse_limits_only() {
+        use std::f32::consts::PI;
+        let (min, max) = (-0.3f32, 0.3f32);
+        assert_eq!(aim::hull_follow_steer(0.1, min, max, 0), 0);
+        assert_eq!(aim::hull_follow_steer(0.5, min, max, 0), 1);
+        assert_eq!(aim::hull_follow_steer(-0.5, min, max, 0), -1);
+        assert_eq!(aim::hull_follow_steer(PI - 0.1, min, max, 0), 1);
+        assert_eq!(aim::hull_follow_steer(-PI + 0.1, min, max, 0), -1);
+        // The reserve: a turn in progress goes past the engage line, and only in its own direction.
+        assert_eq!(aim::hull_follow_steer(0.27, min, max, 0), 0);
+        assert_eq!(aim::hull_follow_steer(0.27, min, max, 1), 1);
+        assert_eq!(aim::hull_follow_steer(0.2, min, max, 1), 0);
+        assert_eq!(aim::hull_follow_steer(0.27, min, max, -1), 0);
+        assert_eq!(aim::hull_follow_steer(-0.27, min, max, -1), -1);
+        assert_eq!(aim::hull_follow_steer(0.5, min, max, -1), 1);
+        // A fixed gun: a dead band, not a steer flipping on every step.
+        assert_eq!(aim::hull_follow_steer(0.001, 0., 0., 0), 0);
+        let now = Instant::now();
+        let mut w = world(now);
+        w.actors[0].vehicle_kind = VehicleKind::Fv183;
+        let limits = VehicleKind::Fv183.source_aim().unwrap().envelope.yaw_limits().unwrap();
+        assert!(limits.max < 1.5 && limits.min > -1.5);
+        let right = [100., 0., 0.]; let left = [-100., 0., 0.];
+        w.actors[0].position = [0.; 3]; w.actors[0].direction = [0.; 3];
+        let turn = |w: &mut World, point: [f32; 3]| { w.actors[0].aim.intent = aim::Intent::Point(point); w.advance_drive_input(0).unwrap() };
+        assert_eq!(turn(&mut w, right), Input { throttle: 0, steer: 1, speed_percent: 100 });
+        assert_eq!(turn(&mut w, left), Input { throttle: 0, steer: -1, speed_percent: 100 });
+        assert_eq!(turn(&mut w, [0., 0., 100.]), Input::STOP);
+        // Moving keeps its throttle and cruise stage.
+        w.actors[0].input = Input { throttle: 1, steer: 0, speed_percent: 50 };
+        assert_eq!(turn(&mut w, right), Input { throttle: 1, steer: 1, speed_percent: 50 });
+        // The player's own steering wins.
+        w.actors[0].input = Input { throttle: 1, steer: -1, speed_percent: 100 };
+        assert_eq!(turn(&mut w, right), w.actors[0].input);
+        // The client's setting (sniper mode of such a vehicle sends false), and a locked gun.
+        w.actors[0].input = Input::STOP;
+        assert!(w.apply(0, 1, &[Command::Autorotation(false)], now).unwrap().is_empty());
+        assert!(!w.actors[0].autorotation);
+        assert_eq!(turn(&mut w, right), Input::STOP);
+        w.actors[0].autorotation = true;
+        w.actors[0].aim.intent = aim::Intent::Hold { yaw: 0., pitch: 0. };
+        assert_eq!(w.advance_drive_input(0).unwrap(), Input::STOP);
+        // A full-circle turret never turns the hull.
+        let mut t = world(now);
+        t.actors[0].aim.intent = aim::Intent::Point(right);
+        assert_eq!(t.advance_drive_input(0).unwrap(), Input::STOP);
     }
     pub fn world(now: Instant) -> World {
         let mut w = World::new(123, now).unwrap();
