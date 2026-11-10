@@ -60,7 +60,8 @@ def validate_request(value, account):
         require(type(value["terminal_state_json"]) is str and len(value["terminal_state_json"].encode("utf8"))<=8192,"INVALID_INPUT")
         value=dict(value,terminal_state_json=canonical(_json(value["terminal_state_json"])).decode("ascii"))
         remaining = value["remaining_ammunition"]
-        require(type(remaining) is list and len(remaining) == 3, "INVALID_INPUT")
+        # SPG-02: one row per real stack of the frozen loadout (1..3); the reservation checks the exact count.
+        require(type(remaining) is list and 1 <= len(remaining) <= 3, "INVALID_INPUT")
         for row in remaining:
             require(type(row) is dict and set(row) == {"shell_compact_id", "count"}, "INVALID_INPUT")
             _integer(row["shell_compact_id"], 1); _integer(row["count"], 0, 160)
@@ -245,7 +246,7 @@ class MixedAmmoStore(PoolStore):
             and f["native_inventory_id"] == row["native_inventory_id"] and type(f["native_inventory_id"]) is int
             and f["vehicle_inventory_id"] == row["vehicle_inventory_id"] == self.registry.inventory_id(row["account_id"], f["native_inventory_id"], p.kind), "CORRUPT_STORE")
         mount = self.mounts[p.assembly_id]; ammo = f["ammunition"]
-        require(type(ammo) is list and len(ammo) == 3, "CORRUPT_STORE")
+        require(type(ammo) is list and len(ammo) == len(mount.shell_ids) and 1 <= len(ammo) <= 3, "CORRUPT_STORE")
         for value, key in zip(ammo, mount.shell_ids):
             require(type(value) is dict and set(value) == {"shell_definition_id", "shell_compact_id", "family", "count"}
                 and value["shell_definition_id"] == key and type(value["shell_compact_id"]) is int
@@ -270,7 +271,7 @@ class MixedAmmoStore(PoolStore):
 
     def _terminal(self,frozen, remaining, hp, reason, *, terminal_state=None,abort=False):
         original = frozen["ammunition"]
-        require(type(remaining) is list and len(remaining) == 3, "INVALID_RESULT")
+        require(type(remaining) is list and len(remaining) == len(original), "INVALID_RESULT")
         for after, before in zip(remaining, original):
             require(type(after) is dict and set(after) == {"shell_compact_id", "count"}
                 and type(after["shell_compact_id"]) is int and after["shell_compact_id"] == before["shell_compact_id"]

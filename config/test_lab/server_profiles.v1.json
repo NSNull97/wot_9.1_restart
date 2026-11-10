@@ -49,6 +49,22 @@
      {"kind": "ussr-Object_212", "vehicle_id": "vehicle:ussr:Object_212", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
      {"kind": "ussr-Object_261", "vehicle_id": "vehicle:ussr:Object_261", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
      {"kind": "usa-T92", "vehicle_id": "vehicle:usa:T92", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
-     {"kind": "germany-G_E", "vehicle_id": "vehicle:germany:G_E", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
+     {"kind": "germany-G_E", "vehicle_id": "vehicle:germany:G_E", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "france-AMX_105AM", "vehicle_id": "vehicle:france:AMX_105AM", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-GW_Mk_VIe", "vehicle_id": "vehicle:germany:GW_Mk_VIe", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-G_Panther", "vehicle_id": "vehicle:germany:G_Panther", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-Hummel", "vehicle_id": "vehicle:germany:Hummel", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "uk-GB25_Loyd_Carrier", "vehicle_id": "vehicle:uk:GB25_Loyd_Carrier", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "uk-GB27_Sexton", "vehicle_id": "vehicle:uk:GB27_Sexton", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "uk-GB30_FV3805", "vehicle_id": "vehicle:uk:GB30_FV3805", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "uk-GB31_Conqueror_Gun", "vehicle_id": "vehicle:uk:GB31_Conqueror_Gun", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-M12", "vehicle_id": "vehicle:usa:M12", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-M37", "vehicle_id": "vehicle:usa:M37", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-M40M43", "vehicle_id": "vehicle:usa:M40M43", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-M44", "vehicle_id": "vehicle:usa:M44", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-T57", "vehicle_id": "vehicle:usa:T57", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-SU-8", "vehicle_id": "vehicle:ussr:SU-8", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-SU122A", "vehicle_id": "vehicle:ussr:SU122A", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-SU14_1", "vehicle_id": "vehicle:ussr:SU14_1", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
 ]
 }

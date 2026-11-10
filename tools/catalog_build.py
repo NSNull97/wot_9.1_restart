@@ -199,8 +199,9 @@ def build_document(original_root, profiles_path=PROFILES_PATH):
                 and [row["roles"] for row in cap["crew"]] == v["crew_roles"],
                 "device caps disagree with client source: " + p["kind"])
         if p["battle_admission"] != "none":
-            # Every admitted consumer freezes exactly three ordered stacks.
-            require(len(shells) == 3, "admitted profile needs three source shell stacks: " + p["kind"])
+            # Every admitted consumer freezes exactly three ordered stacks (SPG-02: test_lab SPGs one to three).
+            require(len(shells) == 3 or (TEST_LAB and "SPG" in v["tags"] and 1 <= len(shells) <= 3),
+                    "admitted profile needs three source shell stacks: " + p["kind"])
         classes = [t for t in v["tags"] if t in ("lightTank", "mediumTank", "heavyTank", "AT-SPG", "SPG")]
         require(len(classes) == 1, "vehicle class tag")
         vehicles.append({
@@ -257,7 +258,9 @@ def _generated_row(p, v, research, descriptor):
     require(encoded.hex() == identity["descriptor_hex"] and max_hp == identity["max_hp"]
             and v["native_compact_id"] == identity["type_compact_id"] and gun_params.get("maxAmmo") == gun["max_ammo"]
             and [list(r) for r in v["crew_roles"]] == identity["crew_roles"], "generated identity differs: " + p["kind"])
-    require(len(g["shots"]) == 3 and len(g["shell_suffixes"]) == 3, "admitted profile needs three shell stacks: " + p["kind"])
+    # SPG-02: a test_lab SPG may carry one or two shells; every other admitted row exactly three.
+    require(len(g["shell_suffixes"]) == len(g["shots"]) and (len(g["shots"]) == 3 or (TEST_LAB and g["vehicle_class"] == "SPG"
+            and 1 <= len(g["shots"]) <= 3)), "admitted profile needs three shell stacks: " + p["kind"])
     shells = [{"suffix": suffix, "shell_definition_id": "shell:" + p["kind"] + "-stock-" + suffix,
                "resource_name": s["resource"], "family": s["family"], "item_id": s["item_id"],
                "native_compact_id": s["compact_descr"]}
