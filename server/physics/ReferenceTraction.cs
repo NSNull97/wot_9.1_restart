@@ -10,11 +10,15 @@ namespace MapDrive;
 internal static class ReferenceTraction
 {
     public const float Cohesion = 1.3f, ContactCohesion = .9f;
-    // Hull box friction per contact pair; project values, not client numbers. Hull on hull .1: with friction 1
-    // a pushing hull hung on its target and unloaded its own supports. Hull on ground or objects .6: with .1
-    // a vehicle on its side slid for tens of metres (owner battle 2026-11-10, Malinovka mill).
+    // Hull box friction per contact; project values, not client numbers. Hull on hull and on a wall .1: with
+    // friction 1 a pushing hull hung on its target and unloaded its own supports, and a hull scraping a building
+    // could not peel away. Hull lying on the ground .6: with .1 a vehicle on its side slid for tens of metres
+    // (owner battles 2026-11-10, Malinovka). A contact counts as a wall when its normal is closer to horizontal.
     public const float HullOnHullFriction = .1f, HullOnGroundFriction = .6f;
-    public static float HullContactFriction(bool bothHulls) => bothHulls ? HullOnHullFriction : HullOnGroundFriction;
+    const float WallNormalY = .5f;
+    public static bool IsWall(bool bothHulls, float normalY) => bothHulls || MathF.Abs(normalY) < WallNormalY;
+    public static float HullContactFriction(bool bothHulls, float normalY) =>
+        IsWall(bothHulls, normalY) ? HullOnHullFriction : HullOnGroundFriction;
     public const float MinPowerSpeed = 1f;    // linMinPowerDivider, m/s
     public const float SourcePowerRpm = 2500; // the profile generator: torque = power / (2*pi*2500/60)
     // Share of the transmission torque that reaches one track; calibrated by tools/phys01_checks (accel).

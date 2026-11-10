@@ -48,16 +48,23 @@ internal static class Probe
             Filter = new ObjectVsBroadPhaseLayerFilterTable(Broad, 2, Pairs, 2); Jobs = new InlineJobSystem();
             System = new PhysicsSystem(new PhysicsSystemSettings { MaxBodies = 64, MaxBodyPairs = 8192, MaxContactConstraints = 8192,
                 ObjectLayerPairFilter = Pairs, BroadPhaseLayerInterface = Broad, ObjectVsBroadPhaseLayerFilter = Filter });
-            System.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, ref s);
-            System.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, ref s);
+            System.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, m, ref s);
+            System.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, m, ref s);
         }
-        void Contact(in Body a, in Body b, ref ContactSettings settings)
+        void Contact(in Body a, in Body b, in ContactManifold m, ref ContactSettings settings)
         {
             uint x = a.ID.ID, y = b.ID.ID;
             var first = Tanks.FirstOrDefault(t => t.Body.ID.ID == x); var second = Tanks.FirstOrDefault(t => t.Body.ID.ID == y);
             // Mirrors BattleScene.Contact.
-            if ((first?.ReferenceRules ?? false) || (second?.ReferenceRules ?? false))
-                settings.CombinedFriction = ReferenceTraction.HullContactFriction(first != null && second != null);
+            if (((first?.ReferenceRules ?? false) || (second?.ReferenceRules ?? false)) && !m.IsNull && m.PointCount > 0)
+            {
+                settings.CombinedFriction = ReferenceTraction.HullContactFriction(first != null && second != null, m.WorldSpaceNormal.Y);
+                if (ReferenceTraction.IsWall(first != null && second != null, m.WorldSpaceNormal.Y))
+                {
+                    if (first != null) first.WallTouch = true;
+                    if (second != null) second.WallTouch = true;
+                }
+            }
             if (first != null && second != null) HullContact = true;
         }
         public void Static(Vector3 half, Vector3 position, Quaternion rotation)
@@ -394,6 +401,35 @@ internal static class Probe
         Console.WriteLine($"## wall-pivot {kind} wall={(alongside ? "alongside" : "ahead")} steer={steer}: turned_deg_in_8s={F(yaw * 57.2958f)} moved_x={F(p.X)} moved_z={F(p.Z - c.Z)}");
     }
 
+
+    // Scrape a long wall at a shallow angle until the hull is pressed against it, then try one way out.
+    // Positive yaw and steer=1 turn the nose towards the wall at +X.
+    static void Wedge(string kind, float degrees, int throttle, int steer, string label)
+    {
+        using var w = new World(); Flat(w);
+        float yaw = degrees * MathF.PI / 180;
+        var t = w.Add(kind, new Vector3(0, .1f, -30), yaw);
+        var half = t.Source.Binding.HalfExtents;
+        float extent = half.X * MathF.Cos(yaw) + half.Z * MathF.Sin(yaw), wall = extent + 1.5f;
+        w.Static(new Vector3(.5f, 4, 120), new Vector3(wall + .5f, 4, 0), Quaternion.Identity);
+        float Gap()
+        {
+            float max = float.MinValue;
+            foreach (int sx in new[] { -1, 1 }) foreach (int sz in new[] { -1, 1 })
+                max = MathF.Max(max, Vector3.Transform(new Vector3(sx * half.X, 0, sz * half.Z), t.Body.Rotation).X + t.Body.CenterOfMassPosition.X);
+            return wall - max;
+        }
+        float Heading() { var f = Vector3.Transform(Vector3.UnitZ, t.Body.Rotation); return MathF.Atan2(f.X, f.Z) * 57.2958f; }
+        for (int i = 0; i < 180; i++) w.Step(Stop);
+        for (int i = 0; i < 60 * 8; i++) w.Step(C(1, 0));
+        for (int i = 0; i < 30; i++) w.Step(Stop);
+        float gap0 = Gap(), heading0 = Heading(); var p0 = t.Body.Position;
+        float maxGap = gap0;
+        for (int i = 0; i < 60 * 8; i++) { w.Step(C(throttle, steer)); maxGap = MathF.Max(maxGap, Gap()); }
+        var p = t.Body.Position; var delta = p - p0;
+        Console.WriteLine($"## wedge {kind} approach={degrees} {label}: start gap={F(gap0)} heading={F(heading0)}; after 8s gap={F(Gap())} max_gap={F(maxGap)} heading={F(Heading())} moved={F(delta.Length())} speed={F(Fwd(t))}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -432,6 +468,13 @@ internal static class Probe
             if (mode is "all" or "bump") foreach (string kind in new[] { "is7", Bat }) foreach (float h in new[] { .15f, .25f, .35f, .5f }) Bump(kind, h);
             if (mode is "all" or "side") foreach (string kind in new[] { "is7", Bat }) SideSlide(kind, 12);
             if (mode is "all" or "wall") foreach (string kind in new[] { "is7", Bat }) foreach (bool along in new[] { true, false }) foreach (int st in new[] { 1, -1 }) WallPivot(kind, along, st);
+            if (mode is "all" or "wedge") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 8f, 20f, 40f })
+            {
+                Wedge(kind, d, -1, 0, "reverse"); Wedge(kind, d, 1, 0, "forward");
+                Wedge(kind, d, 0, -1, "pivot-away"); Wedge(kind, d, 0, 1, "pivot-into");
+                Wedge(kind, d, -1, -1, "reverse+steerA"); Wedge(kind, d, -1, 1, "reverse+steerB");
+                Wedge(kind, d, 1, -1, "forward+away");
+            }
             if (mode is "all" or "basics") foreach (string kind in new[] { "is7", Bat }) Basics(kind);
             if (mode is "all" or "steep") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 40f, 45f, 50f, 55f }) Steep(kind, d);
             if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f }) foreach (float h in new[] { .8f, 1.2f, 2.7f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r, h);

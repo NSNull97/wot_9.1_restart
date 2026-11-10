@@ -105,8 +105,15 @@ internal static class BattleScene
         {
             bool first = tankIds.TryGetValue(body1.ID.ID, out var a), second = tankIds.TryGetValue(body2.ID.ID, out var b);
             // PHYS-01: hull friction depends on the pair (hull on hull slides, hull on ground grips); also while settling.
-            if ((first && a!.ReferenceRules) || (second && b!.ReferenceRules))
-                settings.CombinedFriction = ReferenceTraction.HullContactFriction(first && second);
+            if (((first && a!.ReferenceRules) || (second && b!.ReferenceRules)) && !m.IsNull && m.PointCount > 0)
+            {
+                settings.CombinedFriction = ReferenceTraction.HullContactFriction(first && second, m.WorldSpaceNormal.Y);
+                if (ReferenceTraction.IsWall(first && second, m.WorldSpaceNormal.Y) && !settings.IsSensor)
+                {
+                    if (first) a!.WallTouch = true;
+                    if (second) b!.WallTouch = true;
+                }
+            }
             if (!capture || callbackFault != 0) return;
             try
             {

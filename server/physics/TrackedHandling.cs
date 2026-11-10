@@ -74,10 +74,15 @@ internal sealed class TrackedHandling
     // counter-rotate its tracks; standing, it turns around the held inner track.
     public bool PivotAroundTrack;
     private const float PivotInnerRatio = .05f, PivotInnerDeceleration = 8f;
-    // A pivot that does not turn (hull against a wall, a fence, another hull) may shed side grip so the tracks can
-    // shove the hull off the obstacle. It engages only after the yaw stayed under a third of its target for
-    // StallSeconds, so an ordinary pivot, also on a side slope, keeps full side grip. Project values.
+    // A turn at low speed that does not turn (hull against a wall, a fence, another hull) may shed side grip so the
+    // tracks can shove the hull off the obstacle; this covers a standing pivot and a turn with W or S held. It engages
+    // only after the yaw stayed under a third of its target for StallSeconds, so an ordinary turn, also on a side
+    // slope, keeps full side grip. Project values.
     private const float StallYawFraction = .33f, StallSeconds = .35f, StallReleaseSeconds = .25f, StallSideGrip = .15f;
+    // Above StallMaxSpeed only a hull that really touches a wall or another hull may release its grip, so a fast
+    // turn on open ground or a slope is never affected.
+    private const float StallMaxSpeed = 4f, BlockedMinYaw = .02f;
+    public bool HullBlocked;
     private float pivotStall;
     private float yawTarget, motorInput;
     private int lastThrottle, reversalIntent;
@@ -173,8 +178,9 @@ internal sealed class TrackedHandling
         float outerFraction = coastPhase == 1 ? CoastOuterFrictionFraction : OuterPivotFrictionFraction +
             movingGrip * (OuterMovingFrictionFraction - OuterPivotFrictionFraction);
         float pivotBlend = steer == 0 || brake || KeepSideGrip ? 0 : 1;
-        bool pivoting = KeepSideGrip && !brake && steer != 0 && throttle == 0 && coastPhase == 0 && speed < 1;
-        bool stalled = pivoting && MathF.Abs(yawTarget) > .5f * maximumYaw && MathF.Abs(actualYawRate) < StallYawFraction * MathF.Abs(yawTarget);
+        bool pivoting = KeepSideGrip && !brake && steer != 0 && coastPhase == 0 && (speed < StallMaxSpeed || HullBlocked);
+        bool stalled = pivoting && MathF.Abs(yawTarget) > (HullBlocked ? BlockedMinYaw : .5f * maximumYaw) &&
+            MathF.Abs(actualYawRate) < StallYawFraction * MathF.Abs(yawTarget);
         pivotStall = Math.Clamp(pivotStall + (stalled ? deltaTime / StallSeconds : -deltaTime / StallReleaseSeconds), 0, 2);
         float stallGrip = 1 - (1 - StallSideGrip) * Math.Clamp(pivotStall - 1, 0, 1);
         for (int i = 0; i < wheels.Length; i++)
