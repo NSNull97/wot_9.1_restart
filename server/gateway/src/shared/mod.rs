@@ -739,7 +739,12 @@ impl Session {
         if c.phase == Phase::Enable {
             let late = drive::late_queue_info(payload)?;
             if late == Some(false) { return Ok(()); }
-            if payload != [9] && late != Some(true) { return Err(bad()); }
+            if payload != [9] && late != Some(true) {
+                // Diagnosis of a hung battle entry: the record decides whether this envelope can be admitted.
+                println!("SHARED_ENABLE_UNEXPECTED session={} bytes={} head={}",self.id,payload.len(),
+                    payload.iter().take(96).map(|b|format!("{b:02x}")).collect::<String>());
+                return Err(bad());
+            }
             c.announcement_parts.clear();
             let mut parts=if c.spotting_enabled {
                 c.refresh_interest(world)?;
