@@ -12,7 +12,9 @@ dotnet local/build/phys01-checks/bin/Phys01Checks.dll <repo-root> all           
 dotnet local/build/phys01-checks/bin/Phys01Checks.dll <repo-root> all baseline   # former Jolt gearbox
 ```
 
-Modes: `accel`, `stall`, `push`, `slope`, `turn`, `bump`, `basics` (pivot, reverse, brake), `steep`, `ramp`, `rock`, `side`, `wall`, `wedge`, `launch`, `coast`, `all`.
+Modes: `accel`, `stall`, `push`, `slope`, `turn`, `bump`, `basics` (pivot, reverse, brake), `steep`, `ramp`, `rock`, `side`, `wall`, `wedge`, `launch`, `coast`, `grade`, `ride`, `all`.
+A stand vehicle absent from the generated table joins `launch`, `coast`, `grade` and `ride` through `PHYS01_EXTRA_KIND`
+(a generated kind name) and `PHYS01_EXTRA_CONFIG` (its battle config file).
 Output is plain text, one `##` line per case. Build output goes to the ignored `local/build/phys01-checks/`.
 
 Two `slope ... 35deg steer=-1` cases end with `motion outside bounds`: the vehicle drives below the world floor
