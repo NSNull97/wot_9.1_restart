@@ -89,11 +89,13 @@ fn uuid(s:&str)->bool{s.len()==36&&s.bytes().enumerate().all(|(i,c)|if[8,13,18,2
 fn identifier(s:&str)->bool{!s.is_empty()&&s.len()<=96&&s.bytes().all(|c|c.is_ascii_alphanumeric()||b"_:-".contains(&c))}
 fn context(c:&Context)->io::Result<()>{if !uuid(&c.account_id)||!uuid(&c.run_id)||c.native_database_id<=0||!identifier(&c.command_key)||c.expected_revision>=i32::MAX as u64{return Err(bad("context"));}Ok(())}
 fn clock(tick:u32)->bool{(1000..=37000).contains(&tick)}
-fn rows_value(rows:&[Remaining;3])->Value{serde_json::json!(rows.iter().map(|r|serde_json::json!({"shell_compact_id":r.shell_compact_id,"count":r.count})).collect::<Vec<_>>())}
-fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad("stacks"))?;if a.len()!=3{return Err(bad("three stacks"));}
+// SPG-02: absent cells (compact 0, trailing) stay in the gateway; the domain sees one row per real stack.
+fn rows_value(rows:&[Remaining;3])->Value{serde_json::json!(rows.iter().filter(|r|r.shell_compact_id!=0).map(|r|serde_json::json!({"shell_compact_id":r.shell_compact_id,"count":r.count})).collect::<Vec<_>>())}
+fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad("stacks"))?;if !(1..=3).contains(&a.len()){return Err(bad("stack count"));}
     let mut out=Vec::new();for row in a{keys(row,&["shell_compact_id","count"])?;let id=u16::try_from(num(row,"shell_compact_id")?).map_err(|_|bad("shell width"))?;
         let count=u16::try_from(num(row,"count")?).map_err(|_|bad("count width"))?;
         if id==0||count>160||out.iter().any(|r:&Remaining|r.shell_compact_id==id){return Err(bad("stack/source bounds"));}out.push(Remaining{shell_compact_id:id,count});}
+    while out.len()<3{out.push(Remaining{shell_compact_id:0,count:0});}
     out.try_into().map_err(|_|bad("three stacks"))}
 fn event_value(e:Option<loss::LossEvent>)->Value{e.map_or(Value::Null,|e|serde_json::json!({"shot":e.shot,"attacker_slot":e.attacker_slot,"target_slot":e.target_slot,"tick":e.tick,"device_sequence":e.device_sequence}))}
 fn event(v:&Value)->io::Result<Option<loss::LossEvent>>{if v.is_null(){return Ok(None);}keys(v,&["shot","attacker_slot","target_slot","tick","device_sequence"])?;

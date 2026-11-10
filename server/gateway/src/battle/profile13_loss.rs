@@ -23,13 +23,15 @@ fn uuid(s:&str)->bool{s.len()==36&&s.bytes().enumerate().all(|(i,b)|if[8,13,18,2
 fn id(s:&str)->bool{!s.is_empty()&&s.len()<=96&&s.bytes().all(|b|b.is_ascii_alphanumeric()||b"_:-".contains(&b))}
 fn context(c:&Context)->io::Result<()>{if !uuid(&c.account_id)||!uuid(&c.run_id)||c.native_database_id<=0||!id(&c.command_key)
     ||c.expected_revision>i32::MAX as u64{return Err(bad("context"));}Ok(())}
-fn rows_value(rows:&[Remaining;3])->Value{Value::Array(rows.iter().map(|s|serde_json::json!({"shell_compact_id":s.shell_compact_id,"count":s.count})).collect())}
+// SPG-02: absent cells (compact 0, trailing) stay in the gateway; the domain sees one row per real stack.
+fn rows_value(rows:&[Remaining;3])->Value{Value::Array(rows.iter().filter(|s|s.shell_compact_id!=0).map(|s|serde_json::json!({"shell_compact_id":s.shell_compact_id,"count":s.count})).collect())}
 fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad("ammunition array"))?;
-    if a.len()!=3{return Err(bad("three ammunition stacks"));}let mut out=Vec::new();
+    if !(1..=3).contains(&a.len()){return Err(bad("ammunition stack count"));}let mut out=Vec::new();
     for r in a{keys(r,&["shell_compact_id","count"])?;let compact=u16::try_from(number(r,"shell_compact_id")?).map_err(|_|bad("shell width"))?;
         let count=u16::try_from(number(r,"count")?).map_err(|_|bad("count width"))?;
         if compact==0||count>160||out.iter().any(|old:&Remaining|old.shell_compact_id==compact){return Err(bad("source stack bounds/unique"));}
         out.push(Remaining{shell_compact_id:compact,count});}
+    while out.len()<3{out.push(Remaining{shell_compact_id:0,count:0});}
     out.try_into().map_err(|_|bad("stacks"))}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
