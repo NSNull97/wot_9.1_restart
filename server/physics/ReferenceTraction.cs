@@ -10,8 +10,11 @@ namespace MapDrive;
 internal static class ReferenceTraction
 {
     public const float Cohesion = 1.3f, ContactCohesion = .9f;
-    // Steel on steel/ground; Jolt combines two bodies as sqrt(a*b). Project value, not a client number.
-    public const float HullFriction = .1f;
+    // Hull box friction per contact pair; project values, not client numbers. Hull on hull .1: with friction 1
+    // a pushing hull hung on its target and unloaded its own supports. Hull on ground or objects .6: with .1
+    // a vehicle on its side slid for tens of metres (owner battle 2026-11-10, Malinovka mill).
+    public const float HullOnHullFriction = .1f, HullOnGroundFriction = .6f;
+    public static float HullContactFriction(bool bothHulls) => bothHulls ? HullOnHullFriction : HullOnGroundFriction;
     public const float MinPowerSpeed = 1f;    // linMinPowerDivider, m/s
     public const float SourcePowerRpm = 2500; // the profile generator: torque = power / (2*pi*2500/60)
     // Share of the transmission torque that reaches one track; calibrated by tools/phys01_checks (accel).

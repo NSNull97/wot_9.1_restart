@@ -103,13 +103,16 @@ internal static class BattleScene
             new(zWall, new((maxX + minX) / 2, 0, minZ - .5f), Quaternion.Identity), new(zWall, new((maxX + minX) / 2, 0, maxZ + .5f), Quaternion.Identity) };
         void Contact(in Body body1, in Body body2, in ContactManifold m, ref ContactSettings settings)
         {
+            bool first = tankIds.TryGetValue(body1.ID.ID, out var a), second = tankIds.TryGetValue(body2.ID.ID, out var b);
+            // PHYS-01: hull friction depends on the pair (hull on hull slides, hull on ground grips); also while settling.
+            if ((first && a!.ReferenceRules) || (second && b!.ReferenceRules))
+                settings.CombinedFriction = ReferenceTraction.HullContactFriction(first && second);
             if (!capture || callbackFault != 0) return;
             try
             {
                 jobs.CheckThread();
                 if (m.IsNull || m.PointCount == 0) return;
                 if (++callbackCount > 24576) throw new InvalidOperationException("IPC7 contact callback bound");
-                bool first = tankIds.TryGetValue(body1.ID.ID, out var a), second = tankIds.TryGetValue(body2.ID.ID, out var b);
                 if (diagnostics != null && (first || second))
                 {
                     // Private observation of the first actual manifold per

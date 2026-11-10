@@ -26,6 +26,7 @@ internal sealed class BattleTank : IDisposable
     readonly float contactGrip;
     // PHYS-01 stage A: set by the scene after each step; a hull-to-hull contact lowers this vehicle's grip from the next substep.
     public bool HullContact;
+    public readonly bool ReferenceRules;
     public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog)
         : this(system, source, catalog, true, true) { }
     // The explicit policy seam also compares baseline/candidate in one actual
@@ -100,9 +101,8 @@ internal sealed class BattleTank : IDisposable
             left.DifferentialRatio = differential; right.DifferentialRatio = differential;
             left.AngularDamping = 0; right.AngularDamping = 0;
             var motion = Body.MotionProperties; motion.LinearDamping = 0;
-            // A hull pressed against a wall or another hull with friction 1 carried the pusher's weight on that
-            // contact (measured: supports held 24% of the weight) and so removed its traction.
-            Body.Friction = ReferenceTraction.HullFriction;
+            // Hull friction is set per contact pair by ReferenceTraction.HullContactFriction (scene contact callback).
+            ReferenceRules = true;
         }
         settings.SetTrack(0, left); settings.SetTrack(1, right);
         Constraint = new VehicleConstraint(Body, new VehicleConstraintSettings

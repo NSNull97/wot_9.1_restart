@@ -48,13 +48,17 @@ internal static class Probe
             Filter = new ObjectVsBroadPhaseLayerFilterTable(Broad, 2, Pairs, 2); Jobs = new InlineJobSystem();
             System = new PhysicsSystem(new PhysicsSystemSettings { MaxBodies = 64, MaxBodyPairs = 8192, MaxContactConstraints = 8192,
                 ObjectLayerPairFilter = Pairs, BroadPhaseLayerInterface = Broad, ObjectVsBroadPhaseLayerFilter = Filter });
-            System.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b);
-            System.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b);
+            System.OnContactAdded += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, ref s);
+            System.OnContactPersisted += (PhysicsSystem _, in Body a, in Body b, in ContactManifold m, ref ContactSettings s) => Contact(a, b, ref s);
         }
-        void Contact(in Body a, in Body b)
+        void Contact(in Body a, in Body b, ref ContactSettings settings)
         {
             uint x = a.ID.ID, y = b.ID.ID;
-            if (Tanks.Any(t => t.Body.ID.ID == x) && Tanks.Any(t => t.Body.ID.ID == y)) HullContact = true;
+            var first = Tanks.FirstOrDefault(t => t.Body.ID.ID == x); var second = Tanks.FirstOrDefault(t => t.Body.ID.ID == y);
+            // Mirrors BattleScene.Contact.
+            if ((first?.ReferenceRules ?? false) || (second?.ReferenceRules ?? false))
+                settings.CombinedFriction = ReferenceTraction.HullContactFriction(first != null && second != null);
+            if (first != null && second != null) HullContact = true;
         }
         public void Static(Vector3 half, Vector3 position, Quaternion rotation)
         {
@@ -362,6 +366,19 @@ internal static class Probe
         }
     }
 
+
+    // A vehicle already lying on its side with forward speed: how far does it slide, and does throttle move it.
+    static void SideSlide(string kind, float speed)
+    {
+        using var w = new World(); Flat(w); var t = w.Add(kind, new Vector3(0, 6, 0), 0);
+        var half = t.Source.Binding.HalfExtents; var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI / 2);
+        w.System.BodyInterface.SetPositionAndRotation(t.Body.ID, new Vector3(0, half.X + .05f, 0), q, Activation.Activate);
+        w.System.BodyInterface.SetLinearVelocity(t.Body.ID, new Vector3(0, 0, speed));
+        int n = 0; while (n < 1800 && (n < 30 || t.Body.GetLinearVelocity().Length() > .1f)) { w.Step(C(1, 0)); n++; }
+        float tilt = MathF.Acos(Math.Clamp(Vector3.Transform(Vector3.UnitY, t.Body.Rotation).Y, -1, 1)) * 57.2958f;
+        Console.WriteLine($"## side-slide {kind} from {speed} m/s with throttle: distance={F(t.Body.Position.Z)} time={F(n / 60f)} final_tilt={F(tilt)}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -398,6 +415,7 @@ internal static class Probe
                     }
             if (mode is "all" or "turn") { foreach (string kind in new[] { "is7", Bat }) { Turn(kind, 1); Turn(kind, -1); } }
             if (mode is "all" or "bump") foreach (string kind in new[] { "is7", Bat }) foreach (float h in new[] { .15f, .25f, .35f, .5f }) Bump(kind, h);
+            if (mode is "all" or "side") foreach (string kind in new[] { "is7", Bat }) SideSlide(kind, 12);
             if (mode is "all" or "basics") foreach (string kind in new[] { "is7", Bat }) Basics(kind);
             if (mode is "all" or "steep") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 40f, 45f, 50f, 55f }) Steep(kind, d);
             if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f }) foreach (float h in new[] { .8f, 1.2f, 2.7f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r, h);
