@@ -134,21 +134,21 @@ impl World {
     }
     /// TURRET-01: six battle-RNG draws, journalled as (shot,target,0xe0+i) in
     /// this order, then the PROJECT launch policy over the actual event: the
-    /// attacker→target heading at the detonation and the lost share of the rack.
+    /// attacker→target heading at the detonation and the charge of the lost rack (shells x calibre^3).
     pub(super) fn turret_launch(&mut self,actors:&[Actor],event:&rack::Event)->io::Result<rack::Launch>{
         let(target,attacker)=(actors.get(event.target()).ok_or_else(||bad())?,actors.get(event.attacker()).ok_or_else(||bad())?);
         let dx=target.position[0]-attacker.position[0];let dz=target.position[2]-attacker.position[2];
         // Coincident positions: the attacker's own heading stands in.
         let heading=if dx.hypot(dz)>1e-3{dx.atan2(dz)}else{attacker.direction[0]};
         let lost=event.lost().iter().map(|n|f32::from(*n)).sum::<f32>();
-        let fill=(lost/f32::from(event.kind().ammo_limit().max(1))).min(1.);
+        let charge=rack::rack_charge(lost,event.kind().shell().caliber)?;
         if self.rng_draws.len()+rack::LAUNCH_DRAWS>MAX_BATTLE_SHOTS*MAX_ACTORS*2{return Err(bad());}
         let mut draws=[0u64;rack::LAUNCH_DRAWS];
         for(i,draw)in draws.iter_mut().enumerate(){
             let value=self.splitmix_next();
             self.rng_draws.push((event.shot(),event.target(),rack::LAUNCH_ORDINAL+i as u8,value));*draw=value;
         }
-        rack::Launch::derive(heading,fill,draws)
+        rack::Launch::derive(heading,charge,draws)
     }
     pub(super) fn direct_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,
         contact:&Contact,bundle:&geometry::Bundle)->io::Result<crate::p06t_damage::Resolution>{

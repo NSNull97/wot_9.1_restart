@@ -98,20 +98,21 @@ fn event()->Event{let Outcome::New(event)=Ledger::new(2).unwrap().apply(input())
 fn draws(seed:u64)->[u64;LAUNCH_DRAWS]{let mut state=seed;std::array::from_fn(|_|{state=state.wrapping_add(0x9e3779b97f4a7c15);
     let mut v=state;v=(v^(v>>30)).wrapping_mul(0xbf58476d1ce4e5b9);v=(v^(v>>27)).wrapping_mul(0x94d049bb133111eb);v^(v>>31)})}
 #[test]fn turret01_launch_same_draws_same_motion_different_events_differ(){
-    let a=Launch::derive(0.3,0.5,draws(7)).unwrap();assert_eq!(a,Launch::derive(0.3,0.5,draws(7)).unwrap());
-    // Another heading, rack fill or battle seed is another launch.
-    for other in [Launch::derive(1.3,0.5,draws(7)).unwrap(),Launch::derive(0.3,1.,draws(7)).unwrap(),Launch::derive(0.3,0.5,draws(8)).unwrap()]{
+    let a=Launch::derive(0.3,30.,draws(7)).unwrap();assert_eq!(a,Launch::derive(0.3,30.,draws(7)).unwrap());
+    // Another heading, rack charge or battle seed is another launch.
+    for other in [Launch::derive(1.3,30.,draws(7)).unwrap(),Launch::derive(0.3,60.,draws(7)).unwrap(),Launch::derive(0.3,30.,draws(8)).unwrap()]{
         assert_ne!(a.linear_velocity,other.linear_velocity);
     }
-    for seed in 0..500{let l=Launch::derive(seed as f32*0.1,(seed%11)as f32/10.,draws(seed)).unwrap();
-        assert!((5. ..=10.).contains(&l.linear_velocity[1]));let side=l.linear_velocity[0].hypot(l.linear_velocity[2]);assert!((1. ..=4.0001).contains(&side));
+    for seed in 0..500{let l=Launch::derive(seed as f32*0.1,(seed%11)as f32*20.,draws(seed)).unwrap();
+        assert!((0.9 ..=16.5).contains(&l.linear_velocity[1]));let side=l.linear_velocity[0].hypot(l.linear_velocity[2]);assert!((0.25 ..=4.0001).contains(&side));
         assert!(l.angular_velocity[0].abs()<=3.&&l.angular_velocity[1].abs()<=2.&&l.angular_velocity[2].abs()<=3.);}
     // Sideways motion keeps within 60 degrees of the shot heading.
     let l=Launch::derive(0.,0.,[0,u64::MAX,u64::MAX,0,0,0]).unwrap();assert!(l.linear_velocity[0]>0.&&l.linear_velocity[2]>0.);
-    assert!(Launch::derive(f32::NAN,0.5,draws(1)).is_err());assert!(Launch::derive(0.,1.5,draws(1)).is_err());
+    assert!(Launch::derive(f32::NAN,30.,draws(1)).is_err());assert!(Launch::derive(0.,-1.,draws(1)).is_err());
+    assert!(Launch::derive(0.,MAX_CHARGE+1.,draws(1)).is_err());
 }
 #[test]fn turret01_jolt_flight_holds_joint_then_plays_worker_trajectory_by_clock(){
-    let e=event();let launch=Launch::derive(0.,0.5,draws(3)).unwrap();let mut f=Flight::jolt(e,launch).unwrap();
+    let e=event();let launch=Launch::derive(0.,30.,draws(3)).unwrap();let mut f=Flight::jolt(e,launch).unwrap();
     assert!(f.awaiting_trajectory());assert_eq!(f.launch(),Some(launch));
     let s=f.advance(e.born_ms()+250,|_,_|panic!("Jolt flight never samples terrain")).unwrap();
     assert_eq!((s.position,s.phase),(e.joint().position,FlightPhase::Flying));
@@ -126,4 +127,16 @@ fn draws(seed:u64)->[u64;LAUNCH_DRAWS]{let mut state=seed;std::array::from_fn(|_
     let s=f.advance(MAX_TIME_MS,|_,_|panic!()).unwrap();assert_eq!((s.position[1],s.phase),(0.5,FlightPhase::Resting));
     // A legacy point flight has no Jolt body to install.
     assert!(Flight::new(e).install_trajectory(Trajectory{samples:vec![pose(1.)],slept:true}).is_err());
+}
+
+/// TURPHYS-01 owner example: one T-62A shell hops the turret, a full rack throws it far.
+#[test]fn turphys01_launch_grows_with_rack_charge(){
+    let one=rack_charge(1.,115.).unwrap();let full=rack_charge(40.,115.).unwrap();
+    assert!((one-1.520875).abs()<1e-3);assert!((full-60.835).abs()<1e-2);
+    let mid=[1u64<<63;LAUNCH_DRAWS];
+    let small=Launch::derive(0.,one,mid).unwrap();let big=Launch::derive(0.,full,mid).unwrap();
+    // Apex height v^2 / 2g: about 0.3 m for one shell, more than 10 m for the full rack.
+    assert!(small.linear_velocity[1].powi(2)/(2.*9.81)<0.4);assert!(big.linear_velocity[1].powi(2)/(2.*9.81)>10.);
+    let mut last=0.;for n in 1..=40{let up=Launch::derive(0.,rack_charge(n as f32,115.).unwrap(),mid).unwrap().linear_velocity[1];assert!(up>last);last=up;}
+    assert!(rack_charge(1.,0.).is_err());assert!(rack_charge(-1.,115.).is_err());assert!(rack_charge(f32::NAN,115.).is_err());
 }
