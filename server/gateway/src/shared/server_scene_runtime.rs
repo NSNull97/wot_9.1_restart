@@ -14,7 +14,7 @@ fn duty_active(tick:u32,scale:f32)->bool {
 }
 fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Input> {
     if actor.session.is_none() || !actor.ready || !actor.alive() || !allows_actions {return Ok(Input::STOP);}
-    let input=actor.input;
+    let input=actor.drive_input();
     if tick<1000 || !(-1..=1).contains(&input.throttle)||!(-1..=1).contains(&input.steer)
         || !crate::map_drive_worker091::partial_cruise_valid(input.throttle,false,input.speed_percent) {return Err(model::bad());}
     let Some(devices)=&actor.devices else {return Ok(Input {throttle:input.throttle,steer:input.steer,
@@ -39,6 +39,12 @@ fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Inp
     // A vehicle that cannot move at all (destroyed track/engine) stays braked.
     let immobile=caps.drive_scale<=0.&&caps.steer_scale<=0.;
     Ok(Input {throttle,steer,brake:throttle==0&&steer==0&&(immobile||input.throttle==0&&input.steer==0),speed_percent:speed})
+}
+
+/// One scene step: advances every actor's hull turn, then quantizes the inputs for the worker.
+fn scene_inputs(world:&mut World,allows_actions:bool)->io::Result<Vec<Input>> {
+    for slot in 0..world.actors.len() {world.advance_drive_input(slot)?;}
+    world.actors.iter().map(|a|actor_input(a,world.tick,allows_actions)).collect()
 }
 
 pub(super) struct BatchRuntime {
@@ -329,7 +335,7 @@ impl BatchRuntime {
         let deadline=drive_deadline(started,self.dispatched,now,&mut self.lag_resync)?;
         if let Some(deadline)=deadline{
             let allows_actions=world.lifecycle.as_ref().is_none_or(|s|s.allows_actions());
-            let inputs=world.actors.iter().map(|a|actor_input(a,world.tick,allows_actions)).collect::<io::Result<Vec<_>>>()?;
+            let inputs=scene_inputs(world,allows_actions)?;
             let seq=runtime.advance(&inputs,now)?;self.dispatched=Some(deadline);
             println!("P05C_SCENE_INPUT battle={} seq={} actors={} physical_sessions={:?} inputs={:?} world_tick={} devices_policy={}",
                 world.id,seq,inputs.len(),self.sessions,inputs,world.tick,

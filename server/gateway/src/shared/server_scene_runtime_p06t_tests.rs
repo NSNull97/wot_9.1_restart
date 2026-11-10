@@ -8,6 +8,30 @@ fn actor_kind(kind:VehicleKind)->model::Actor {
     w.attach(model::Identity{account:"p06t-control".into(),database:6961,name:"controls".into()},6961).unwrap();
     let mut a=w.actors[0].clone();a.ready=true;a.input=model::Input{throttle:1,steer:1,speed_percent:100};a
 }
+#[test] fn scene_inputs_turn_a_limited_traverse_hull_towards_the_aim_point() {
+    use super::super::super::aim;
+    let now=Instant::now();let mut w=World::new_for_vehicle(6962,now,crate::map_profile091::MapId::Prohorovka,VehicleKind::Ms1).unwrap();
+    w.attach(model::Identity{account:"hull-follow".into(),database:6962,name:"hull".into()},6962).unwrap();
+    w.tick=1000;let a=&mut w.actors[0];a.ready=true;a.force_vehicle_kind(VehicleKind::Fv183);
+    a.position=[0.;3];a.direction=[0.;3];a.aim.intent=aim::Intent::Point([100.,0.,0.]);
+    let turning=Input{throttle:0,steer:1,brake:false,speed_percent:100};
+    assert_eq!(scene_inputs(&mut w,true).unwrap(),vec![turning]);
+    // The reserve holds across steps: the point is back inside the engage line, the turn goes on.
+    let limits=VehicleKind::Fv183.source_aim().unwrap().envelope.yaw_limits().unwrap();
+    let (centre,half)=(0.5*(limits.min+limits.max),0.5*(limits.max-limits.min));
+    let inside=centre+half-(1.0f32).to_radians();
+    w.actors[0].aim.intent=aim::Intent::Point([100.*inside.sin(),0.,100.*inside.cos()]);
+    assert_eq!(scene_inputs(&mut w,true).unwrap(),vec![turning]);
+    // Past the reserve the hull stops and brakes.
+    w.actors[0].aim.intent=aim::Intent::Point([100.*centre.sin(),0.,100.*centre.cos()]);
+    assert_eq!(scene_inputs(&mut w,true).unwrap(),vec![Input::STOP]);
+    // The player's steering wins, and a lifecycle without actions stops everything.
+    w.actors[0].aim.intent=aim::Intent::Point([100.,0.,0.]);
+    w.actors[0].input=model::Input{throttle:0,steer:-1,speed_percent:100};
+    assert_eq!(scene_inputs(&mut w,true).unwrap()[0].steer,-1);
+    w.actors[0].input=model::Input::STOP;
+    assert_eq!(scene_inputs(&mut w,false).unwrap(),vec![Input::STOP]);
+}
 #[test] fn p06t_scene_critical_engine_and_driver_compound_before_valid_control_quantization() {
     let mut a=actor_kind(VehicleKind::T34);let mut state=Devices::new(Profile::T34).unwrap();
     let apply=|state:&mut Devices,shot,target|state.apply_hits(&[devices::ModuleHit{

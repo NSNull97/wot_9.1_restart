@@ -110,6 +110,14 @@ impl crate::bw_wire::Wire for Actor {
 
 impl Actor {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
+    /// The player's input with the follow-the-aim hull turn in progress applied.
+    pub fn drive_input(&self) -> Input {
+        let (input, steer) = (self.input, self.hull_follow);
+        if steer == 0 || input.steer != 0 { input } else {
+            Input { steer, speed_percent: if input.throttle == 0 { 100 } else { input.speed_percent }, ..input }
+        }
+    }
+    #[cfg(test)] pub(crate) fn force_vehicle_kind(&mut self, kind: VehicleKind) { self.vehicle_kind = kind; }
     pub fn crew_active(&self)->bool{self.health>0&&self.devices.as_ref().is_none_or(|state|state.crew_active())}
     pub fn alive(&self)->bool{self.crew_active()}
     pub fn public_modifiers(&self)->Vec<u8>{self.devices.as_ref().map_or_else(Vec::new,|state|state.public_modifiers())}
@@ -450,11 +458,7 @@ impl World {
     /// towards an aim point beyond the limits while the client's autorotation is on and the
     /// player is not steering. Control law INFERRED (docs/research/P02_SNIPER_CAMERA_PROTOCOL.md).
     pub fn drive_input(&self, slot: usize) -> io::Result<Input> {
-        let actor = self.actors.get(slot).ok_or_else(bad)?;
-        let (input, steer) = (actor.input, actor.hull_follow);
-        Ok(if steer == 0 || input.steer != 0 { input } else {
-            Input { steer, speed_percent: if input.throttle == 0 { 100 } else { input.speed_percent }, ..input }
-        })
+        Ok(self.actors.get(slot).ok_or_else(bad)?.drive_input())
     }
     /// One physics step of the turn: updates the turn in progress and returns `drive_input`.
     pub fn advance_drive_input(&mut self, slot: usize) -> io::Result<Input> {
