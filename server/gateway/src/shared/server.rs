@@ -3552,6 +3552,26 @@ mod tests {
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
     /// later 5-byte token-only keepalive failed `n>rx` until idle_timeout.
+    #[test] fn spg01_leave_envelope_admits_the_sight_camera_and_one_confirmation_only() {
+        let mut camera=vec![0x0f,16,0,0,0,0,0];
+        for value in [10f32,200.,-30.] {camera.extend(value.to_le_bytes());}
+        let confirm=[0x87u8,0,0];
+        let join=|parts:&[&[u8]]|parts.concat();
+        // Owner battle 2026-11-10: Leave, the confirmation and a camera record in one envelope.
+        for tail in [join(&[&confirm,&camera]),join(&[&camera,&confirm]),camera.clone(),confirm.to_vec(),Vec::new()] {
+            assert!(wire::leave_tail_allowed(&tail,true,true));
+        }
+        assert!(wire::leave_tail_allowed(&camera,false,true));
+        assert!(wire::leave_tail_allowed(&confirm,true,false));
+        // Refused: a tank's camera record, a confirmation nobody awaits or a second one, foreign bytes.
+        assert!(!wire::leave_tail_allowed(&camera,true,false));
+        assert!(!wire::leave_tail_allowed(&confirm,false,true));
+        assert!(!wire::leave_tail_allowed(&join(&[&confirm,&confirm]),true,true));
+        assert!(!wire::leave_tail_allowed(&join(&[&confirm,&[0xff]]),true,true));
+        assert!(!wire::leave_tail_allowed(&camera[..18],true,true));
+        let mut own_aim=camera.clone(); own_aim[3]=1;
+        assert!(!wire::leave_tail_allowed(&own_aim,true,true));
+    }
     #[test] fn spg01_strategic_camera_records_are_strict_and_refused_for_a_tank() {
         let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
         let bind=|target:u32|{let mut raw=vec![0x0d,8,0,0,0,0,0];raw.extend(target.to_le_bytes());raw};

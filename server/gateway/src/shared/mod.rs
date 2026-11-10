@@ -1038,9 +1038,8 @@ impl Session {
                         drive::Method::Leave => {
                             // Original result handler queues Leave from the UI
                             // callback and confirm afterwards in the same turn.
-                            let confirm_tail=c.natural_result.is_some() && self.battle_results.avatar_pending()
-                                && payload.get(at..)==Some(&[0x87,0,0][..]);
-                            if at != payload.len() && !confirm_tail { return Err(bad()); }
+                            let confirm_awaited=c.natural_result.is_some() && self.battle_results.avatar_pending();
+                            if !wire::leave_tail_allowed(payload.get(at..).ok_or_else(||bad())?,confirm_awaited,spg_owner(world,c.slot)) { return Err(bad()); }
                             c.commands.push(Command::Leave); c.phase = Phase::Leaving;
                         },
                         other => events.push(format!("SHARED_UNSUPPORTED session={} method={other:?} domain_applied=false", self.id)),

@@ -268,6 +268,18 @@ pub fn avatar_move_to(payload: &[u8]) -> io::Result<Option<[f32;3]>> {
     aim::Intent::Point(point).validate()?;
     Ok(Some(point))
 }
+/// What may follow Leave in its own envelope: the result confirmation queued by the same UI
+/// callback (once, only while one is awaited) and the strategic sight's camera records of an
+/// SPG, in the order the client's tick put them.
+pub fn leave_tail_allowed(mut tail: &[u8], confirm_awaited: bool, spg: bool) -> bool {
+    let mut confirm = confirm_awaited;
+    while !tail.is_empty() {
+        if confirm && tail.starts_with(&[0x87, 0, 0]) { confirm = false; tail = &tail[3..]; }
+        else if spg && tail.len() >= 19 && matches!(avatar_move_to(&tail[..19]), Ok(Some(_))) { tail = &tail[19..]; }
+        else { return false; }
+    }
+    true
+}
 /// Measured natural-return suffix: an explicit old Avatar mailbox followed by
 /// its own Vehicle. The caller must keep this in the dead, retired epoch; this
 /// validates a queued camera call and never transfers control to a new entity.
