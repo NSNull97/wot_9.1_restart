@@ -12,7 +12,7 @@ dotnet local/build/phys01-checks/bin/Phys01Checks.dll <repo-root> all           
 dotnet local/build/phys01-checks/bin/Phys01Checks.dll <repo-root> all baseline   # former Jolt gearbox
 ```
 
-Modes: `accel`, `stall`, `push`, `slope`, `turn`, `bump`, `basics` (pivot, reverse, brake), `steep`, `ramp`, `rock`, `all`.
+Modes: `accel`, `stall`, `push`, `slope`, `turn`, `bump`, `basics` (pivot, reverse, brake), `steep`, `ramp`, `rock`, `side`, `wall`, `wedge`, `launch`, `coast`, `all`.
 Output is plain text, one `##` line per case. Build output goes to the ignored `local/build/phys01-checks/`.
 
 Two `slope ... 35deg steer=-1` cases end with `motion outside bounds`: the vehicle drives below the world floor

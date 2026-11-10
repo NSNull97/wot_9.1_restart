@@ -82,7 +82,10 @@ internal sealed class TrackedHandling
     // Above StallMaxSpeed only a hull that really touches a wall or another hull may release its grip, so a fast
     // turn on open ground or a slope is never affected.
     private const float StallMaxSpeed = 4f, BlockedMinYaw = .02f;
-    public bool HullBlocked;
+    // A turn with W or S held on open ground gives up only part of its side grip: a heavy hull on a grade still
+    // turns, and a launch does not slide (owner battle 2026-11-10). A real wall contact gets the full release.
+    private const float StallPoweredSideGrip = .7f;
+    public bool HullBlocked, SteepGrade;
     private float pivotStall;
     private float yawTarget, motorInput;
     private int lastThrottle, reversalIntent;
@@ -177,12 +180,16 @@ internal sealed class TrackedHandling
             (MovingGripFullSpeed - MovingGripStartSpeed), 0, 1);
         float outerFraction = coastPhase == 1 ? CoastOuterFrictionFraction : OuterPivotFrictionFraction +
             movingGrip * (OuterMovingFrictionFraction - OuterPivotFrictionFraction);
-        float pivotBlend = steer == 0 || brake || KeepSideGrip ? 0 : 1;
+        // A released-throttle turn has only the difference of the track brakes to swing the hull; with full side grip
+        // a heavy hull stopped first and turned afterwards (owner battle 2026-11-10), so it keeps the coast scrub,
+        // except on a steep grade where a hull already rolling downhill would then slide away.
+        float pivotBlend = steer == 0 || brake || (KeepSideGrip && (coastPhase != 1 || SteepGrade)) ? 0 : 1;
         bool pivoting = KeepSideGrip && !brake && steer != 0 && coastPhase == 0 && (speed < StallMaxSpeed || HullBlocked);
         bool stalled = pivoting && MathF.Abs(yawTarget) > (HullBlocked ? BlockedMinYaw : .5f * maximumYaw) &&
             MathF.Abs(actualYawRate) < StallYawFraction * MathF.Abs(yawTarget);
         pivotStall = Math.Clamp(pivotStall + (stalled ? deltaTime / StallSeconds : -deltaTime / StallReleaseSeconds), 0, 2);
-        float stallGrip = 1 - (1 - StallSideGrip) * Math.Clamp(pivotStall - 1, 0, 1);
+        float stallFloor = HullBlocked || throttle == 0 ? StallSideGrip : StallPoweredSideGrip;
+        float stallGrip = 1 - (1 - stallFloor) * Math.Clamp(pivotStall - 1, 0, 1);
         for (int i = 0; i < wheels.Length; i++)
         {
             float target = GripScale * stallGrip * lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));

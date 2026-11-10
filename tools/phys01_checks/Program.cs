@@ -430,6 +430,61 @@ internal static class Probe
         Console.WriteLine($"## wedge {kind} approach={degrees} {label}: start gap={F(gap0)} heading={F(heading0)}; after 8s gap={F(Gap())} max_gap={F(maxGap)} heading={F(Heading())} moved={F(delta.Length())} speed={F(Fwd(t))}");
     }
 
+
+    // Start from rest with W/S and a steer key on a gentle slope. Yaw 0 heads along the contour, 90 up the slope.
+    static void Launch(string kind, float degrees, float headingDegrees, int throttle, int steer)
+    {
+        using var w = new World(); float alpha = degrees * MathF.PI / 180;
+        var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, alpha);
+        var n = Vector3.Transform(Vector3.UnitY, q); var across = Vector3.Transform(Vector3.UnitX, q);
+        w.Static(new Vector3(800, .5f, 800), -.5f * n, q);
+        var t = w.Add(kind, new Vector3(0, 50, 0), 0);
+        var center = CheckedInput.Vector(t.Source.Config.GetProperty("body_center_offset"), -5, 5);
+        var pose = q * Quaternion.CreateFromAxisAngle(Vector3.UnitY, headingDegrees * MathF.PI / 180);
+        w.System.BodyInterface.SetPositionAndRotation(t.Body.ID, Vector3.Transform(center + new Vector3(0, .12f, 0), q), pose, Activation.Activate);
+        w.System.BodyInterface.SetLinearVelocity(t.Body.ID, Vector3.Zero);
+        for (int i = 0; i < 180; i++) w.Step(Stop);
+        var p0 = t.Body.Position; float maxLat = 0, maxDrift = 0, latAtMax = 0, travelLat = 0; float yaw = 0;
+        for (int i = 1; i <= 60 * 5; i++)
+        {
+            w.Step(C(throttle, steer));
+            var v = t.Body.GetLinearVelocity();
+            float lat = Vector3.Dot(v, Vector3.Transform(Vector3.UnitX, t.Body.Rotation)), fwd = Fwd(t);
+            travelLat += MathF.Abs(lat) / 60;
+            yaw += Vector3.Dot(t.Body.GetAngularVelocity(), Vector3.Transform(Vector3.UnitY, t.Body.Rotation)) / 60;
+            if (MathF.Abs(lat) > maxLat) { maxLat = MathF.Abs(lat); latAtMax = i / 60f; }
+            if (v.Length() > 1) maxDrift = MathF.Max(maxDrift, MathF.Atan2(MathF.Abs(lat), MathF.Abs(fwd)) * 57.2958f);
+        }
+        Console.WriteLine($"## launch {kind} {degrees}deg heading={headingDegrees} throttle={throttle} steer={steer}: max_lateral={F(maxLat)} at={F(latAtMax)}s max_drift_deg={F(maxDrift)} sideways_travel={F(travelLat)} downhill={F(-Vector3.Dot(t.Body.Position - p0, across))} yaw_deg={F(yaw * 57.2958f)} speed={F(Fwd(t))}");
+    }
+
+
+    // Run up to a speed, release W and keep the steer key: does the hull turn while it sheds speed?
+    static void Coast(string kind, float degrees, float target, int steer)
+    {
+        using var w = new World(); float alpha = degrees * MathF.PI / 180;
+        var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, alpha);
+        var n = Vector3.Transform(Vector3.UnitY, q);
+        w.Static(new Vector3(1200, .5f, 1200), -.5f * n, q);
+        var t = w.Add(kind, new Vector3(0, 50, 0), 0);
+        var center = CheckedInput.Vector(t.Source.Config.GetProperty("body_center_offset"), -5, 5);
+        w.System.BodyInterface.SetPositionAndRotation(t.Body.ID, Vector3.Transform(center + new Vector3(0, .12f, -600), q), q, Activation.Activate);
+        w.System.BodyInterface.SetLinearVelocity(t.Body.ID, Vector3.Zero);
+        for (int i = 0; i < 180; i++) w.Step(Stop);
+        for (int i = 0; i < 60 * 40 && Fwd(t) < target; i++) w.Step(C(1, 0));
+        float start = Fwd(t), yaw = 0, maxLat = 0, firstFive = -1, yawAtStop = -1, stopT = -1, distance = 0;
+        for (int i = 1; i <= 60 * 6; i++)
+        {
+            w.Step(C(0, steer));
+            float fwd = Fwd(t), rate = Vector3.Dot(t.Body.GetAngularVelocity(), Vector3.Transform(Vector3.UnitY, t.Body.Rotation));
+            yaw += rate / 60; distance += MathF.Abs(fwd) / 60;
+            maxLat = MathF.Max(maxLat, MathF.Abs(Vector3.Dot(t.Body.GetLinearVelocity(), Vector3.Transform(Vector3.UnitX, t.Body.Rotation))));
+            if (firstFive < 0 && MathF.Abs(yaw) * 57.2958f > 5) firstFive = i / 60f;
+            if (stopT < 0 && MathF.Abs(fwd) < 1) { stopT = i / 60f; yawAtStop = yaw * 57.2958f; }
+        }
+        Console.WriteLine($"## coast {kind} {degrees}deg from={F(start)} steer={steer}: first_5deg={F(firstFive)}s below_1ms={F(stopT)}s yaw_until_then={F(yawAtStop)} rolled={F(distance)} yaw_6s={F(yaw * 57.2958f)} max_lateral={F(maxLat)} speed={F(Fwd(t))}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -475,6 +530,8 @@ internal static class Probe
                 Wedge(kind, d, -1, -1, "reverse+steerA"); Wedge(kind, d, -1, 1, "reverse+steerB");
                 Wedge(kind, d, 1, -1, "forward+away");
             }
+            if (mode is "all" or "launch") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 0f, 3f, 6f, 10f, 15f }) foreach (float h in new[] { 0f, 45f, 90f, 135f, 180f }) foreach (int th in new[] { 1, -1 }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, th, st);
+            if (mode is "all" or "coast") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 0f, 10f }) foreach (float v in new[] { 3f, 6f, 10f }) foreach (int st in new[] { 1, -1 }) Coast(kind, d, v, st);
             if (mode is "all" or "basics") foreach (string kind in new[] { "is7", Bat }) Basics(kind);
             if (mode is "all" or "steep") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 40f, 45f, 50f, 55f }) Steep(kind, d);
             if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f }) foreach (float h in new[] { .8f, 1.2f, 2.7f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r, h);
