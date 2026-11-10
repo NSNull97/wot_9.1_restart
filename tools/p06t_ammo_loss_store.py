@@ -73,7 +73,8 @@ def require_loss_compatible(connection, account_id, *, contract=None):
 
 
 def _rows(value):
-    require(type(value) is list and len(value) == 3, "INVALID_INPUT")
+    # SPG-02: one row per real stack (1..3); _accounting binds the exact count to the frozen loadout.
+    require(type(value) is list and 1 <= len(value) <= 3, "INVALID_INPUT")
     for row in value:
         require(type(row) is dict and set(row) == {"shell_compact_id", "count"}, "INVALID_INPUT")
         _integer(row["shell_compact_id"], 1, 65535); _integer(row["count"], 0, 160)
@@ -176,7 +177,7 @@ class AmmoLossStore(MixedAmmoStore):
         return dict(policy_sha256=POLICY_SHA256, loadout=base["frozen"], loadout_sha256=base["frozen_sha256"])
 
     def _accounting(self, frozen, remaining, fired, lost, event, hp, reason, terminal_state, *, abort=False):
-        for rows in (remaining, fired, lost): _rows(rows)
+        for rows in (remaining, fired, lost): _rows(rows); require(len(rows) == len(frozen["ammunition"]), "INVALID_RESULT")
         _event(event)
         for initial, a, b, d in zip(frozen["ammunition"], remaining, fired, lost):
             require(all(r["shell_compact_id"] == initial["shell_compact_id"] for r in (a, b, d))
