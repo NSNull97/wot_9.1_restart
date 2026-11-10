@@ -70,6 +70,10 @@ internal sealed class TrackedHandling
     // PHYS-01 stage C: with grip-limited traction the pivot no longer needs the outer supports' side grip cut,
     // and the cut was what let a steering vehicle slide down a side slope.
     public bool KeepSideGrip;
+    // PHYS-01: rotationIsAroundCenter=false in the chassis data of the client. Such a vehicle cannot
+    // counter-rotate its tracks; standing, it turns around the held inner track.
+    public bool PivotAroundTrack;
+    private const float PivotInnerRatio = .05f, PivotInnerDeceleration = 8f;
     private float yawTarget, motorInput;
     private int lastThrottle, reversalIntent;
     // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
@@ -199,6 +203,12 @@ internal sealed class TrackedHandling
                 if (sign != 0)
                 {
                     left = sign; right = -sign;
+                    if (PivotAroundTrack)
+                    {
+                        left = sign > 0 ? 1 : PivotInnerRatio; right = sign > 0 ? PivotInnerRatio : 1;
+                        var held = sign > 0 ? controller.RightTrack : controller.LeftTrack;
+                        Dissipate(held, TrackBrake(held, PivotInnerDeceleration, deltaTime));
+                    }
                     motor = Math.Clamp(4 * (MathF.Abs(yawTarget) - sign * actualYawRate) / maximumYaw, 0, 1);
                 }
                 else motor = 0;

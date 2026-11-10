@@ -23,7 +23,9 @@ internal sealed class BattleTank : IDisposable
     readonly Vector3 center;
     readonly float forwardLimit, reverseLimit;
     public Vector3 PreVelocity;
-    readonly float contactGrip;
+    readonly float contactGrip, rollingResistance;
+    readonly ReferenceCharacteristics.Row? characteristics;
+    const float OverspeedGain = 4f, OverspeedMaxDeceleration = 8f; // project values, 1/s and m/s^2
     // PHYS-01 stage A: set by the scene after each step; a hull-to-hull contact lowers this vehicle's grip from the next substep.
     public bool HullContact;
     public readonly bool ReferenceRules;
@@ -118,6 +120,12 @@ internal sealed class BattleTank : IDisposable
         handling = new TrackedHandling(MathF.Abs(points[3].X - points[0].X),
             CheckedInput.Number(c.GetProperty("handling").GetProperty("max_yaw_rate_rad_s"), .1f, 1.5f), mass, wheels, enablePoweredTurnLoss, enableIntentReversalBrake);
         handling.KeepSideGrip = referenceTraction;
+        if (referenceTraction)
+        {
+            characteristics = ReferenceCharacteristics.For(source.Kind);
+            handling.PivotAroundTrack = !characteristics.RotationIsAroundCenter;
+            rollingResistance = characteristics.Resistance * mass * 9.81f * ReferenceBody.GravityFactor;
+        }
         contactGrip = referenceTraction ? ReferenceTraction.ContactCohesion / ReferenceTraction.Cohesion : 1;
         handling.VerifyWheelSettings(Constraint);
         Fracture = catalog == null ? null : new AngularFractureResponse(mass, catalog, source.Binding);
@@ -131,8 +139,27 @@ internal sealed class BattleTank : IDisposable
         // Project reading of CONTACT_COHESION: the lower grip belongs to the hull that is held on its brakes;
         // a hull that drives keeps COHESION, otherwise equal vehicles could never move each other.
         handling.GripScale = HullContact && input.Brake ? contactGrip : 1;
+        if (characteristics != null) ApplyResistance(forward, input);
         handling.Apply(controller, Vector3.Dot(PreVelocity, forward), Vector3.Dot(Body.GetAngularVelocity(), up),
             input.Throttle, input.Steer, input.Brake, forwardLimit * input.SpeedPercent / 100, reverseLimit * input.SpeedPercent / 100, 1f / 60);
+    }
+    // PHYS-01 stage D. Rolling resistance FORWARD_FRICTION * terrainResistance * weight on the supports that
+    // touch the ground (the product is an INFERRED reading of the client parameters), and a resistance that
+    // grows with the excess over the speed limit, so a slope cannot carry the vehicle far past it.
+    void ApplyResistance(Vector3 forward, BattleSceneInput.Control input)
+    {
+        int grounded = 0; for (int i = 0; i < 6; i++) if (Constraint.GetWheel(i).HasContact) grounded++;
+        if (grounded == 0) return;
+        float speed = Vector3.Dot(PreVelocity, forward), magnitude = MathF.Abs(speed);
+        float mass = Source.Binding.MassKg;
+        float limit = (speed < 0 ? reverseLimit : forwardLimit) * input.SpeedPercent / 100;
+        float force = rollingResistance * grounded / 6 * Math.Clamp(magnitude / .5f, 0, 1);
+        if (magnitude > limit) force += mass * MathF.Min(OverspeedGain * (magnitude - limit), OverspeedMaxDeceleration);
+        // Never more than what stops the forward motion within this step.
+        force = MathF.Min(force, mass * magnitude * 60);
+        if (force <= 0) return;
+        var push = forward * (-MathF.Sign(speed) * force);
+        world.BodyInterface.AddForce(Body.ID, in push);
     }
     // Contact hold is a bounded server-side traction policy.  When a forward
     // command is active and this hull is pushing another hull, a solver impulse

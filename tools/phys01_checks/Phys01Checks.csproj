@@ -19,6 +19,7 @@
     <EmbeddedResource Include="../../server/physics/Profiles/extended-definitions.json" LogicalName="MapDrive.ExtendedDefinitions" />
     <EmbeddedResource Include="../../server/physics/Profiles/generated-definitions.json" LogicalName="MapDrive.GeneratedDefinitions" />
     <EmbeddedResource Include="../../server/contracts/map_registry.json" LogicalName="MapDrive.MapRegistry" />
+    <EmbeddedResource Include="../../server/physics/Profiles/reference-characteristics.json" LogicalName="MapDrive.ReferenceCharacteristics" />
     <PackageReference Include="JoltPhysicsSharp" Version="[2.22.0]" />
     <PackageReference Include="JoltPhysics.Native" Version="[1.1.0]" />
   </ItemGroup>
