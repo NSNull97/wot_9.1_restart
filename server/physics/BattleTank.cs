@@ -31,6 +31,8 @@ internal sealed class BattleTank : IDisposable
     public readonly bool ReferenceRules;
     // Set by the scene contact callback during a step: the hull touches a wall or another hull.
     public bool WallTouch;
+    // The wire contract carries six supports: front, middle and rear of each side, whatever the physical count.
+    private readonly int[] reported;
     public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog)
         : this(system, source, catalog, true, true) { }
     // The explicit policy seam also compares baseline/candidate in one actual
@@ -75,14 +77,19 @@ internal sealed class BattleTank : IDisposable
         source.Binding.Verify(Body);
         var points = c.GetProperty("wheel_points").EnumerateArray().Select(v => CheckedInput.Vector(v, -5, 5)).ToArray();
         if (points.Length != 6) throw new InvalidDataException("IPC7 support count");
-        wheels = points.Select(p => new WheelSettingsTV
+        var supports = referenceTraction ? ReferenceBody.FivePairs(points) : points;
+        // Jolt derives each support's spring from its own frequency, so total stiffness grows with the support count;
+        // the frequency keeps the ride height of the qualified six supports.
+        float suspensionFrequency = 2 * MathF.Sqrt(points.Length / (float)supports.Length);
+        reported = supports.Length == points.Length ? [0, 1, 2, 3, 4, 5] : [0, 2, 4, 5, 7, 9];
+        wheels = supports.Select(p => new WheelSettingsTV
         {
             Position = p - center, SuspensionDirection = -Vector3.UnitY, WheelUp = Vector3.UnitY, WheelForward = Vector3.UnitZ,
             SuspensionMinLength = N("suspension_min", 0, 1), SuspensionMaxLength = N("suspension_max", .05f, 1), Radius = radius, Width = .25f,
             // PHYS-01 stage A: grip is COHESION; the profile value stays validated but is not the traction law.
             LongitudinalFriction = MathF.Max(N("longitudinal_friction", .1f, 2), referenceTraction ? ReferenceTraction.Cohesion : 0),
             LateralFriction = MathF.Min(N("lateral_friction", .1f, 2), referenceTraction ? ReferenceBody.SideFriction : 2),
-            SuspensionSpring = new SpringSettings(SpringMode.FrequencyAndDamping, 2, .7f)
+            SuspensionSpring = new SpringSettings(SpringMode.FrequencyAndDamping, suspensionFrequency, .7f)
         }).ToArray();
         using var settings = new TrackedVehicleControllerSettings();
         var engine = settings.Engine; engine.MaxTorque = N("engine_max_torque_nm", 10, 10000);
@@ -96,8 +103,9 @@ internal sealed class BattleTank : IDisposable
         settings.Engine = engine;
         transmission.SwitchTime = TrackedHandling.GearSwitchTime; transmission.ClutchReleaseTime = TrackedHandling.ClutchReleaseTime;
         transmission.SwitchLatency = TrackedHandling.GearSwitchLatency; settings.Transmission = transmission;
-        var left = new VehicleTrackSettings { DrivenWheel = 1, Wheels = [0, 1, 2], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) };
-        var right = new VehicleTrackSettings { DrivenWheel = 4, Wheels = [3, 4, 5], MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) };
+        int perSide = supports.Length / 2;
+        var left = new VehicleTrackSettings { DrivenWheel = (uint)(perSide / 2), Wheels = Enumerable.Range(0, perSide).Select(i => (uint)i).ToArray(), MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) };
+        var right = new VehicleTrackSettings { DrivenWheel = (uint)(perSide + perSide / 2), Wheels = Enumerable.Range(perSide, perSide).Select(i => (uint)i).ToArray(), MaxBrakeTorque = brake, Inertia = TrackedHandling.TrackInertia(mass, radius) };
         if (referenceTraction)
         {
             // Jolt defaults (track angular damping .5/s, body linear damping .05/s) act as a speed-proportional
@@ -151,12 +159,12 @@ internal sealed class BattleTank : IDisposable
     // grows with the excess over the speed limit, so a slope cannot carry the vehicle far past it.
     void ApplyResistance(Vector3 forward, BattleSceneInput.Control input)
     {
-        int grounded = 0; for (int i = 0; i < 6; i++) if (Constraint.GetWheel(i).HasContact) grounded++;
+        int grounded = 0; for (int i = 0; i < wheels.Length; i++) if (Constraint.GetWheel(i).HasContact) grounded++;
         if (grounded == 0) return;
         float speed = Vector3.Dot(PreVelocity, forward), magnitude = MathF.Abs(speed);
         float mass = Source.Binding.MassKg;
         float limit = (speed < 0 ? reverseLimit : forwardLimit) * input.SpeedPercent / 100;
-        float force = rollingResistance * grounded / 6 * Math.Clamp(magnitude / .5f, 0, 1);
+        float force = rollingResistance * grounded / wheels.Length * Math.Clamp(magnitude / .5f, 0, 1);
         if (magnitude > limit) force += mass * MathF.Min(OverspeedGain * (magnitude - limit), OverspeedMaxDeceleration);
         // Never more than what stops the forward motion within this step.
         force = MathF.Min(force, mass * magnitude * 60);
@@ -182,7 +190,7 @@ internal sealed class BattleTank : IDisposable
     public void AfterStep()
     {
         int mask = 0;
-        for (int i = 0; i < 6; i++) if (Constraint.GetWheel(i).HasContact) mask |= 1 << i;
+        for (int i = 0; i < reported.Length; i++) if (Constraint.GetWheel(reported[i]).HasContact) mask |= 1 << i;
         if (masks.Count == 6) masks.Dequeue(); masks.Enqueue(mask);
         var pos = Body.Position; var velocity = Body.GetLinearVelocity(); var angular = Body.GetAngularVelocity();
         var bounds = Source.Config.GetProperty("bounds_xz");
@@ -193,7 +201,7 @@ internal sealed class BattleTank : IDisposable
     static bool Finite(Vector3 v, float max) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z) && MathF.Abs(v.X) <= max && MathF.Abs(v.Y) <= max && MathF.Abs(v.Z) <= max;
     public void CheckSettled()
     {
-        if (Enumerable.Range(0, 6).Count(i => Constraint.GetWheel(i).HasContact) < 3 || Body.GetLinearVelocity().Length() > 1)
+        if (reported.Count(i => Constraint.GetWheel(i).HasContact) < 3 || Body.GetLinearVelocity().Length() > 1)
             throw new InvalidOperationException($"IPC7 actor failed to settle slot={Source.Slot} kind={Source.Kind} position={Body.Position} velocity={Body.GetLinearVelocity()}");
     }
     public object Metrics(BattleSceneInput.Control input) => MixedContactDiagnostics.Capture(
@@ -211,7 +219,7 @@ internal sealed class BattleTank : IDisposable
             state = new
             {
                 position = v(origin), direction = v(BodyOrientation.ToYawPitchRoll(q)),
-                speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = Enumerable.Range(0, 6).Count(i => Constraint.GetWheel(i).HasContact),
+                speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = reported.Count(i => Constraint.GetWheel(i).HasContact),
                 linear_velocity = v(velocity), angular_velocity = v(angular), wheel_contact_masks = masks.ToArray(),
                 object_contacts = ObjectContacts.ToArray(), fractures = Fracture?.Receipts.Select(r => r.ToWire()).ToArray() ?? [],
                 body_binding = Source.Binding.ToWire(), motion_witnesses = Fracture?.Witnesses.Select(w => w.ToWire()).ToArray() ?? []

@@ -9,6 +9,7 @@ namespace MapDrive;
 internal sealed class TrackedHandling
 {
     private const float LateralAccelerationBudget = 3f; // Project policy, m/s^2.
+    private const float ReferenceLateralBudget = 5.25f; // PHYS-01, owner decision 2026-11-10: tighter moving turns.
     private const float OuterPivotFrictionFraction = .001f;
     // Owner run 2026-10-14: 4% outer grip slid sideways on slopes in moving
     // turns. Low scrub stays limited to near-rest pivots.
@@ -112,7 +113,7 @@ internal sealed class TrackedHandling
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
-            !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length != 6)
+            !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length is not (6 or 10))
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
         poweredTurnLoss = enablePoweredTurnLoss;
@@ -126,7 +127,7 @@ internal sealed class TrackedHandling
 
     public void VerifyWheelSettings(VehicleConstraint constraint)
     {
-        if (constraint.WheelsCount != 6 || Enumerable.Range(0, 6)
+        if (constraint.WheelsCount != wheels.Length || Enumerable.Range(0, wheels.Length)
             .Any(i => constraint.GetWheel(i).Settings.Handle != wheels[i].Handle))
             throw new InvalidOperationException("tracked handling wheel settings are not constraint-owned references");
     }
@@ -159,7 +160,7 @@ internal sealed class TrackedHandling
             coastPhase = KeepSideGrip && coastDirection > 0 ? 0 : 2;
             coastTransitionTime = 0;
         }
-        float yawLimit = MathF.Min(maximumYaw, LateralAccelerationBudget / MathF.Max(speed, .1f));
+        float yawLimit = MathF.Min(maximumYaw, (KeepSideGrip ? ReferenceLateralBudget : LateralAccelerationBudget) / MathF.Max(speed, .1f));
         // Diagnostic coast curvature: passive rolling must not demand the
         // powered yaw rate as momentum decays. Minimum radius is project policy.
         // PHYS-01: this cap faded the yaw to almost nothing just before rest, and the pivot then had to start again

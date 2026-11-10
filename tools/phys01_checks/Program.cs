@@ -148,11 +148,11 @@ internal static class Probe
         for (int i = 1; i <= 600; i++)
         {
             w.Step(C(1, 0));
-            if (i > 300) { for (int k = 0; k < 6; k++) sum += MathF.Abs(t.Constraint.GetWheel(k).LongitudinalLambda); n++; }
+            if (i > 300) { for (int k = 0; k < t.Constraint.WheelsCount; k++) sum += MathF.Abs(t.Constraint.GetWheel(k).LongitudinalLambda); n++; }
         }
         double force = sum / n * 60 * TrackedBodySettings.StockCollisionSteps; // impulse per collision sub-step
         var ctl = t.Constraint.GetController<TrackedVehicleController>();
-        Console.WriteLine("   wheels: " + string.Join(" | ", Enumerable.Range(0, 6).Select(k => { var wh = t.Constraint.GetWheel(k); return $"N={F(wh.SuspensionLambda * 240 / 1000)}kN L={F(wh.LongitudinalLambda * 240 / 1000)}kN c={wh.HasContact}"; })) + $" trackW={F(ctl.LeftTrack.AngularVelocity)}/{F(ctl.RightTrack.AngularVelocity)} pitchUpY={F(Vector3.Transform(Vector3.UnitZ, t.Body.Rotation).Y)} motor={F(ctl.ForwardInput)} offered_Nm={F(ctl.Engine.GetTorque(1))}");
+        Console.WriteLine("   wheels: " + string.Join(" | ", Enumerable.Range(0, t.Constraint.WheelsCount).Select(k => { var wh = t.Constraint.GetWheel(k); return $"N={F(wh.SuspensionLambda * 240 / 1000)}kN L={F(wh.LongitudinalLambda * 240 / 1000)}kN c={wh.HasContact}"; })) + $" trackW={F(ctl.LeftTrack.AngularVelocity)}/{F(ctl.RightTrack.AngularVelocity)} pitchUpY={F(Vector3.Transform(Vector3.UnitZ, t.Body.Rotation).Y)} motor={F(ctl.ForwardInput)} offered_Nm={F(ctl.Engine.GetTorque(1))}");
         Console.WriteLine($"## stall {kind}: mean_longitudinal_force_kN={F((float)force / 1000)} F/W={F((float)(force / (Mass(t) * 9.81)))} gear={ctl.Transmission.CurrentGear} rpm={F(ctl.Engine.CurrentRPM)} v={F(Fwd(t))}");
     }
 
@@ -176,7 +176,7 @@ internal static class Probe
                 marks.Add($"+{F((i - contact) / 60f)}s vA={F(Fwd(a))} vB={F(b.Body.GetLinearVelocity().Z)} dB={F(b.Body.Position.Z - startB)}");
         }
         string Load(BattleTank t) { var c = t.Constraint.GetController<TrackedVehicleController>(); float w = Mass(t) * 9.81f / 1000;
-            return $"N/W={F(Enumerable.Range(0, 6).Sum(k => t.Constraint.GetWheel(k).SuspensionLambda) * 240 / 1000 / w)} L/W={F(Enumerable.Range(0, 6).Sum(k => t.Constraint.GetWheel(k).LongitudinalLambda) * 240 / 1000 / w)} contacts={Enumerable.Range(0, 6).Count(k => t.Constraint.GetWheel(k).HasContact)} trackV={F(c.LeftTrack.AngularVelocity * t.Constraint.GetWheel(0).Settings.Radius)} motor={F(c.ForwardInput)} brake={F(c.BrakeInput)} pitch={F(MathF.Asin(Vector3.Transform(Vector3.UnitZ, t.Body.Rotation).Y) * 57.2958f)}"; }
+            return $"N/W={F(Enumerable.Range(0, t.Constraint.WheelsCount).Sum(k => t.Constraint.GetWheel(k).SuspensionLambda) * 240 / 1000 / w)} L/W={F(Enumerable.Range(0, t.Constraint.WheelsCount).Sum(k => t.Constraint.GetWheel(k).LongitudinalLambda) * 240 / 1000 / w)} contacts={Enumerable.Range(0, t.Constraint.WheelsCount).Count(k => t.Constraint.GetWheel(k).HasContact)} trackV={F(c.LeftTrack.AngularVelocity * t.Constraint.GetWheel(0).Settings.Radius)} motor={F(c.ForwardInput)} brake={F(c.BrakeInput)} pitch={F(MathF.Asin(Vector3.Transform(Vector3.UnitZ, t.Body.Rotation).Y) * 57.2958f)}"; }
         marks.Add("pusher " + Load(a)); marks.Add("target " + Load(b));
         var upB = Vector3.Transform(Vector3.UnitY, b.Body.Rotation); var upA = Vector3.Transform(Vector3.UnitY, a.Body.Rotation);
         Console.WriteLine($"## push {label}: {pusher}({Mass(a)}kg) -> {target}({Mass(b)}kg) gap={gap} braked={targetBraked} contact_t={F(contact / 60f)} v_at_contact={F(vContact)}");
@@ -210,7 +210,7 @@ internal static class Probe
                 var v = t.Body.GetLinearVelocity(); float lat = Vector3.Dot(v, Vector3.Transform(Vector3.UnitX, t.Body.Rotation));
                 maxSlip = MathF.Max(maxSlip, MathF.Abs(lat));
             }
-            Console.WriteLine($"## slope {label} {kind} {degrees}deg throttle={throttle} steer={steer}: settle_slide_down={F(settleDown)}m settle_tilt={F(tiltSettle)} max_tilt_vs_plane={F(maxTilt)} final_tilt={F(Tilt())} rollover_at={(over < 0 ? "none" : F(over / 60f) + "s")} max_lateral_speed={F(maxSlip)} downhill_travel={F(-Vector3.Dot(t.Body.Position, across))} forward_travel={F(t.Body.Position.Z)} speed={F(Fwd(t))} contacts={Enumerable.Range(0, 6).Count(k => t.Constraint.GetWheel(k).HasContact)}");
+            Console.WriteLine($"## slope {label} {kind} {degrees}deg throttle={throttle} steer={steer}: settle_slide_down={F(settleDown)}m settle_tilt={F(tiltSettle)} max_tilt_vs_plane={F(maxTilt)} final_tilt={F(Tilt())} rollover_at={(over < 0 ? "none" : F(over / 60f) + "s")} max_lateral_speed={F(maxSlip)} downhill_travel={F(-Vector3.Dot(t.Body.Position, across))} forward_travel={F(t.Body.Position.Z)} speed={F(Fwd(t))} contacts={Enumerable.Range(0, t.Constraint.WheelsCount).Count(k => t.Constraint.GetWheel(k).HasContact)}");
         }
         catch (Exception e) { error = e.Message; Console.WriteLine($"## slope {label} {kind} {degrees}deg throttle={throttle} steer={steer}: ERROR {error} max_tilt={F(maxTilt)} rollover_at={(over < 0 ? "none" : F(over / 60f) + "s")}"); }
     }
@@ -498,6 +498,15 @@ internal static class Probe
         if (Environment.GetEnvironmentVariable("PHYS01_EXTRA_KIND") is { Length: > 0 } extra) yield return extra;
     }
 
+    // Ride height at rest: the suspension must carry the hull at the same height whatever the support count.
+    static void Ride(string kind)
+    {
+        using var w = new World(); Flat(w);
+        var t = w.Add(kind, new Vector3(0, .1f, 0), 0);
+        for (int i = 0; i < 360; i++) w.Step(Stop);
+        Console.WriteLine($"## ride {kind}: body_y={t.Body.Position.Y:F4} wheels={t.Constraint.WheelsCount} grounded={Enumerable.Range(0, t.Constraint.WheelsCount).Count(k => t.Constraint.GetWheel(k).HasContact)}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -543,6 +552,7 @@ internal static class Probe
                 Wedge(kind, d, -1, -1, "reverse+steerA"); Wedge(kind, d, -1, 1, "reverse+steerB");
                 Wedge(kind, d, 1, -1, "forward+away");
             }
+            if (mode is "all" or "ride") foreach (string kind in Kinds(Bat)) Ride(kind);
             if (mode is "all" or "grade") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 15f, 20f, 25f }) foreach (float h in new[] { 45f, 135f }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, 1, st);
             if (mode is "all" or "launch") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 3f, 6f, 10f, 15f }) foreach (float h in new[] { 0f, 45f, 90f, 135f, 180f }) foreach (int th in new[] { 1, -1 }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, th, st);
             if (mode is "all" or "coast") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 10f, 20f }) foreach (float v in new[] { 3f, 6f, 10f }) foreach (int st in new[] { 1, -1 }) Coast(kind, d, v, st);

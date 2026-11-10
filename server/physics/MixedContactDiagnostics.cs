@@ -29,7 +29,7 @@ internal sealed class MixedContactDiagnostics : IDisposable
     {
         CheckedInput.Sha256(configSha256);
         if (slot is < 0 or > 5 || kind is not ("ms1" or "is7" or "t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")&&!GeneratedVehicleProfiles.IsGenerated(kind)
-            || constraint.WheelsCount != 6)
+            || constraint.WheelsCount is not (6 or 10))
             throw new InvalidDataException("mixed diagnostic actor identity");
         var rotation = body.Rotation;
         var linear = body.GetLinearVelocity();
@@ -41,7 +41,7 @@ internal sealed class MixedContactDiagnostics : IDisposable
             angular_velocity_rad_s = F(track.AngularVelocity), inertia_kg_m2 = F(track.Inertia),
             differential_ratio = F(track.DifferentialRatio), max_brake_torque_nm = F(track.MaxBrakeTorque)
         };
-        var wheels = Enumerable.Range(0, 6).Select(index => {
+        var wheels = Enumerable.Range(0, constraint.WheelsCount).Select(index => {
             var wheel = constraint.GetWheel(index);
             bool contact = wheel.HasContact;
             return new {
