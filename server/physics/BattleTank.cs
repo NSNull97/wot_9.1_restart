@@ -204,6 +204,18 @@ internal sealed class BattleTank : IDisposable
         if (reported.Count(i => Constraint.GetWheel(i).HasContact) < 3 || Body.GetLinearVelocity().Length() > 1)
             throw new InvalidOperationException($"IPC7 actor failed to settle slot={Source.Slot} kind={Source.Kind} position={Body.Position} velocity={Body.GetLinearVelocity()}");
     }
+    // PHYS-01: the wire speed is the only movement value the client's filter receives. A hull on its side or roof has
+    // no supports on the ground and stands still while its tracks run, so it reports the tracks' surface speed.
+    // That the client scrolls its tracks from this value is INFERRED; it needs an owner battle to confirm.
+    internal float ReportedSpeed()
+    {
+        var q = Body.Rotation;
+        float body = Vector3.Dot(Body.GetLinearVelocity(), Vector3.Transform(Vector3.UnitZ, q));
+        if (!ReferenceRules || Vector3.Transform(Vector3.UnitY, q).Y > LyingUpY || reported.Any(i => Constraint.GetWheel(i).HasContact)) return body;
+        float tracks = (controller.LeftTrack.AngularVelocity + controller.RightTrack.AngularVelocity) / 2 * wheels[0].Radius;
+        return Math.Clamp(tracks, -reverseLimit, forwardLimit);
+    }
+    const float LyingUpY = .5f; // hull tilted more than 60 degrees; project value
     public object Metrics(BattleSceneInput.Control input) => MixedContactDiagnostics.Capture(
         Source.Slot, Source.Kind, Source.ConfigHash, Body, Constraint, controller, input);
     public object State()
@@ -219,7 +231,7 @@ internal sealed class BattleTank : IDisposable
             state = new
             {
                 position = v(origin), direction = v(BodyOrientation.ToYawPitchRoll(q)),
-                speed = Vector3.Dot(velocity, forward), rspeed = angular.Y, contacts = reported.Count(i => Constraint.GetWheel(i).HasContact),
+                speed = ReportedSpeed(), rspeed = angular.Y, contacts = reported.Count(i => Constraint.GetWheel(i).HasContact),
                 linear_velocity = v(velocity), angular_velocity = v(angular), wheel_contact_masks = masks.ToArray(),
                 object_contacts = ObjectContacts.ToArray(), fractures = Fracture?.Receipts.Select(r => r.ToWire()).ToArray() ?? [],
                 body_binding = Source.Binding.ToWire(), motion_witnesses = Fracture?.Witnesses.Select(w => w.ToWire()).ToArray() ?? []

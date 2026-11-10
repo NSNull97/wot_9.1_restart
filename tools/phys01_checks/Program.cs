@@ -507,6 +507,24 @@ internal static class Probe
         Console.WriteLine($"## ride {kind}: body_y={t.Body.Position.Y:F4} wheels={t.Constraint.WheelsCount} grounded={Enumerable.Range(0, t.Constraint.WheelsCount).Count(k => t.Constraint.GetWheel(k).HasContact)}");
     }
 
+    // A hull on its roof: the wire speed must follow the tracks while the throttle is held.
+    static void Inverted(string kind)
+    {
+        using var w = new World(); Flat(w);
+        var t = w.Add(kind, new Vector3(0, .1f, 0), 0);
+        var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI);
+        w.System.BodyInterface.SetPositionAndRotation(t.Body.ID, new Vector3(0, 2.5f, 0), q, Activation.Activate);
+        for (int i = 0; i < 180; i++) w.Step(Stop);
+        string Row(string label) => $"{label}: reported={F(t.ReportedSpeed())} body={F(Fwd(t))} moved={F(t.Body.Position.Length())}";
+        Console.Write($"## inverted {kind} {Row("rest")}");
+        for (int i = 0; i < 120; i++) w.Step(C(1, 0));
+        Console.Write($" | {Row("W 2s")}");
+        for (int i = 0; i < 30; i++) w.Step(Stop);
+        Console.Write($" | {Row("stop")}");
+        for (int i = 0; i < 120; i++) w.Step(C(-1, 0));
+        Console.WriteLine($" | {Row("S 2s")}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -553,6 +571,7 @@ internal static class Probe
                 Wedge(kind, d, 1, -1, "forward+away");
             }
             if (mode is "all" or "ride") foreach (string kind in Kinds(Bat)) Ride(kind);
+            if (mode is "all" or "inverted") foreach (string kind in Kinds(Bat)) Inverted(kind);
             if (mode is "all" or "grade") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 15f, 20f, 25f }) foreach (float h in new[] { 45f, 135f }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, 1, st);
             if (mode is "all" or "launch") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 3f, 6f, 10f, 15f }) foreach (float h in new[] { 0f, 45f, 90f, 135f, 180f }) foreach (int th in new[] { 1, -1 }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, th, st);
             if (mode is "all" or "coast") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 10f, 20f }) foreach (float v in new[] { 3f, 6f, 10f }) foreach (int st in new[] { 1, -1 }) Coast(kind, d, v, st);
