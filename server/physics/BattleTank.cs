@@ -31,7 +31,6 @@ internal sealed class BattleTank : IDisposable
     public readonly bool ReferenceRules;
     // Set by the scene contact callback during a step: the hull touches a wall or another hull.
     public bool WallTouch;
-    const float SteepGradeUpY = .94f; // cos 20 degrees, project value
     public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog)
         : this(system, source, catalog, true, true) { }
     // The explicit policy seam also compares baseline/candidate in one actual
@@ -143,7 +142,6 @@ internal sealed class BattleTank : IDisposable
         // a hull that drives keeps COHESION, otherwise equal vehicles could never move each other.
         handling.GripScale = HullContact && input.Brake ? contactGrip : 1;
         handling.HullBlocked = WallTouch; WallTouch = false;
-        handling.SteepGrade = Vector3.Transform(Vector3.UnitY, q).Y < SteepGradeUpY;
         if (characteristics != null) ApplyResistance(forward, input);
         handling.Apply(controller, Vector3.Dot(PreVelocity, forward), Vector3.Dot(Body.GetAngularVelocity(), up),
             input.Throttle, input.Steer, input.Brake, forwardLimit * input.SpeedPercent / 100, reverseLimit * input.SpeedPercent / 100, 1f / 60);

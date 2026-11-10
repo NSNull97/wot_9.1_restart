@@ -22,6 +22,12 @@ internal static class Probe
     {
         JsonNode physics; double yaw;
         if (kind == "is7") { physics = JsonNode.Parse(Is7Physics)!; yaw = 0.4886921905584123; }
+        else if (Environment.GetEnvironmentVariable("PHYS01_EXTRA_KIND") == kind)
+        {
+            // A stand vehicle absent from the generated table: its battle config file gives physics and handling.
+            physics = JsonNode.Parse(File.ReadAllBytes(Environment.GetEnvironmentVariable("PHYS01_EXTRA_CONFIG")!))!;
+            yaw = physics["handling"]!["max_yaw_rate_rad_s"]!.GetValue<double>();
+        }
         else
         {
             var d = Definitions[kind];
@@ -472,17 +478,24 @@ internal static class Probe
         w.System.BodyInterface.SetLinearVelocity(t.Body.ID, Vector3.Zero);
         for (int i = 0; i < 180; i++) w.Step(Stop);
         for (int i = 0; i < 60 * 40 && Fwd(t) < target; i++) w.Step(C(1, 0));
-        float start = Fwd(t), yaw = 0, maxLat = 0, firstFive = -1, yawAtStop = -1, stopT = -1, distance = 0;
+        float start = Fwd(t), yaw = 0, maxLat = 0, firstFive = -1, yawAtStop = -1, stopT = -1, distance = 0, minRate = float.MaxValue, minRateT = 0, maxRate = 0;
         for (int i = 1; i <= 60 * 6; i++)
         {
             w.Step(C(0, steer));
             float fwd = Fwd(t), rate = Vector3.Dot(t.Body.GetAngularVelocity(), Vector3.Transform(Vector3.UnitY, t.Body.Rotation));
             yaw += rate / 60; distance += MathF.Abs(fwd) / 60;
+            if (i > 45 && i <= 60 * 4) { float r = rate * steer; if (r < minRate) { minRate = r; minRateT = i / 60f; } maxRate = MathF.Max(maxRate, r); }
             maxLat = MathF.Max(maxLat, MathF.Abs(Vector3.Dot(t.Body.GetLinearVelocity(), Vector3.Transform(Vector3.UnitX, t.Body.Rotation))));
             if (firstFive < 0 && MathF.Abs(yaw) * 57.2958f > 5) firstFive = i / 60f;
             if (stopT < 0 && MathF.Abs(fwd) < 1) { stopT = i / 60f; yawAtStop = yaw * 57.2958f; }
         }
-        Console.WriteLine($"## coast {kind} {degrees}deg from={F(start)} steer={steer}: first_5deg={F(firstFive)}s below_1ms={F(stopT)}s yaw_until_then={F(yawAtStop)} rolled={F(distance)} yaw_6s={F(yaw * 57.2958f)} max_lateral={F(maxLat)} speed={F(Fwd(t))}");
+        Console.WriteLine($"## coast {kind} {degrees}deg from={F(start)} steer={steer}: first_5deg={F(firstFive)}s below_1ms={F(stopT)}s yaw_until_then={F(yawAtStop)} rolled={F(distance)} yaw_6s={F(yaw * 57.2958f)} yaw_rate_dps_0.75..4s=min {F(minRate * 57.2958f)} at {F(minRateT)}s max {F(maxRate * 57.2958f)} max_lateral={F(maxLat)} speed={F(Fwd(t))}");
+    }
+
+    static IEnumerable<string> Kinds(string bat)
+    {
+        yield return "is7"; yield return bat;
+        if (Environment.GetEnvironmentVariable("PHYS01_EXTRA_KIND") is { Length: > 0 } extra) yield return extra;
     }
 
     public static int Main(string[] args)
@@ -530,8 +543,9 @@ internal static class Probe
                 Wedge(kind, d, -1, -1, "reverse+steerA"); Wedge(kind, d, -1, 1, "reverse+steerB");
                 Wedge(kind, d, 1, -1, "forward+away");
             }
-            if (mode is "all" or "launch") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 0f, 3f, 6f, 10f, 15f }) foreach (float h in new[] { 0f, 45f, 90f, 135f, 180f }) foreach (int th in new[] { 1, -1 }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, th, st);
-            if (mode is "all" or "coast") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 0f, 10f }) foreach (float v in new[] { 3f, 6f, 10f }) foreach (int st in new[] { 1, -1 }) Coast(kind, d, v, st);
+            if (mode is "all" or "grade") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 15f, 20f, 25f }) foreach (float h in new[] { 45f, 135f }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, 1, st);
+            if (mode is "all" or "launch") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 3f, 6f, 10f, 15f }) foreach (float h in new[] { 0f, 45f, 90f, 135f, 180f }) foreach (int th in new[] { 1, -1 }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, th, st);
+            if (mode is "all" or "coast") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 10f, 20f }) foreach (float v in new[] { 3f, 6f, 10f }) foreach (int st in new[] { 1, -1 }) Coast(kind, d, v, st);
             if (mode is "all" or "basics") foreach (string kind in new[] { "is7", Bat }) Basics(kind);
             if (mode is "all" or "steep") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 40f, 45f, 50f, 55f }) Steep(kind, d);
             if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f }) foreach (float h in new[] { .8f, 1.2f, 2.7f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r, h);
