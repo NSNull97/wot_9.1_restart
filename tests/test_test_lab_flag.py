@@ -15,7 +15,7 @@ sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
 import test_vehicles as tv  # noqa: E402
 
 MAIN_CATALOG = '76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe'
-TEST_LAB_CATALOG = 'bedd6d49ef86055a77017fa5466efd96553eb731626efe7f464c6b8ccc167746'
+TEST_LAB_CATALOG = '323834929cdce73314c9659b50ef889c33b993423c3eb0a48a4b0b5901e905e8'
 
 
 def run(argv, flag, cwd=ROOT):
@@ -45,7 +45,7 @@ class PythonLayer(unittest.TestCase):
 
     def test_test_lab_mode(self):
         catalog, last, table, rows, research = python(self.CODE, '1')
-        self.assertEqual((catalog, last, research, rows), (TEST_LAB_CATALOG, 'ussr-T62A_T', tv.TEST_LAB_RESEARCH_SHA256, 375))
+        self.assertEqual((catalog, last, research, rows), (TEST_LAB_CATALOG, 'germany-G_E', tv.TEST_LAB_RESEARCH_SHA256, 375))
         self.assertNotEqual(table, python(self.CODE, None)[2])
 
     def test_worker_catalogue_activation_follows_the_mode(self):
@@ -111,7 +111,7 @@ class NodeLayer(unittest.TestCase):
 
     def test_modes(self):
         self.assertEqual(self.node(None)[0::2], [MAIN_CATALOG, tv.BASE_RESEARCH_SHA256])
-        self.assertEqual(self.node('1'), [TEST_LAB_CATALOG, 'ussr-T62A_T', tv.TEST_LAB_RESEARCH_SHA256])
+        self.assertEqual(self.node('1'), [TEST_LAB_CATALOG, 'germany-G_E', tv.TEST_LAB_RESEARCH_SHA256])
         bad = run(['node', '--input-type=module', '-e', self.CODE], 'true')
         self.assertNotEqual(bad.returncode, 0)
 

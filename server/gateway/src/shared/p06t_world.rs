@@ -60,7 +60,7 @@ impl World {
     pub(super) fn shot_deviation(&self,actor:&Actor,sequence:u32)->io::Result<Option<ShotDeviation>>{
         if !self.impact.layers(){return Ok(None);}
         let rules=crate::gateway091::shared::shell_rules::rules()?;
-        let gun=super::super::dispersion::gun(actor.vehicle_kind().name())?;
+        let gun=super::super::dispersion::firing_gun(&rules.accuracy,actor.vehicle_kind().name())?;
         // A shot before the first step has the resting circle (factor 1).
         let angle=actor.dispersion.unwrap_or(super::super::dispersion::State::new(actor.direction[0],actor.aim.yaw)).angle(gun);
         let seed=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,sequence).seed;
@@ -253,7 +253,8 @@ impl World {
     pub(super) fn explosion_modules_mixed(&mut self,actors:&mut[Actor],projectile:&Projectile,slot:usize,center:[f32;3],tick:u32,
         bundle:&geometry::Bundle)->io::Result<()>{
         let shell=projectile.shell.ok_or_else(||bad())?;
-        let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||bad())?;
+        let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||bad())?
+            *super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.name())?;
         let actor=actors.get(slot).ok_or_else(||bad())?;
         if !actor.alive(){return Ok(());}
         let devices=actor.devices.as_ref().ok_or_else(||bad())?;
@@ -355,7 +356,8 @@ impl World {
         center:[f32;3],tick:u32,exclude_target:Option<usize>,fragile_state:Option<&fragiles::State>)->io::Result<()> {
         let shell=projectile.shell.ok_or_else(||bad())?;
         if shell.family!=crate::p06t_shells091::Family::HighExplosive{return Ok(());}
-        let radius=shell.explosion_radius_m.ok_or_else(||bad())?as f32;
+        let blast=if trace.layers(){super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.name())?}else{1.};
+        let radius=(shell.explosion_radius_m.ok_or_else(||bad())?*blast)as f32;
         let terrain=self.terrain.as_ref().ok_or_else(||bad())?.clone();
         let excluded=fragile_state.map_or_else(Vec::new,|state|state.projectile_excluded());
         // SHELL-03: under the layered law one ray per vehicle through its screens and tracks, with the shot's damage roll.
@@ -376,7 +378,7 @@ impl World {
             let clear=impact::splash_los(&terrain,center,contact.endpoint,&excluded)?;
             let input=crate::p06t_damage::SplashTarget{
                 slot:slot as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||bad())?+layers,los_clear:clear};
-            let result=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_layered(shell,&[input],r)?[0],
+            let result=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_blast(shell,&[input],r,blast)?[0],
                 None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
             let before=actors[slot].health;let after=(i32::from(before)-i32::from(result.damage_hp)).max(0)as i16;
             trace.splash_resolution(self.id,projectile.sequence,tick,projectile.slot,slot,&contact,center,&result,before,after,

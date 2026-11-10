@@ -248,6 +248,38 @@ pub fn postmortem_camera(w: &World, own: usize, target: u32) -> io::Result<Postm
         else { return Ok(PostmortemCamera::Refused); };
     Ok(if w.team(slot)?==w.team(own)? {PostmortemCamera::Ally(slot)} else {PostmortemCamera::Refused})
 }
+/// SPG-01: the strategic sight of a live SPG. #717 AvatarInputHandler.onControlModeChanged
+/// unbinds (OBJECT_ID 0) on entering a manual-bind mode and binds the own vehicle on leaving it.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum SpgCamera {Unbind,Rebind}
+pub fn spg_bind(payload: &[u8], own: usize) -> io::Result<SpgCamera> {
+    let target=postmortem_bind_target(payload)?;
+    if target==0 {Ok(SpgCamera::Unbind)} else if target==vehicle_id(own)? {Ok(SpgCamera::Rebind)} else {Err(model::bad())}
+}
+/// SPG-01: #717 Cell Avatar.moveTo(VECTOR3), zero current-Avatar mailbox, from StrategicCamera.enable
+/// and AvatarPositionControl.__followCameraTick. Same id as Vehicle.trackPointWithGun, which names
+/// the own vehicle in its mailbox: None leaves that record to `aim_intent`. The point is an
+/// untrusted camera position and is only bounded here.
+pub fn avatar_move_to(payload: &[u8]) -> io::Result<Option<[f32;3]>> {
+    if payload.first()!=Some(&0x0f) || payload.get(3..7)!=Some(&[0;4][..]) {return Ok(None);}
+    if payload.len()!=19 || payload[1..3]!=[16,0] {return Err(model::bad());}
+    let value=|n:usize| f32::from_le_bytes(payload[7+n*4..11+n*4].try_into().expect("checked moveTo layout"));
+    let point=[value(0),value(1),value(2)];
+    aim::Intent::Point(point).validate()?;
+    Ok(Some(point))
+}
+/// What may follow Leave in its own envelope: the result confirmation queued by the same UI
+/// callback (once, only while one is awaited) and the strategic sight's camera records of an
+/// SPG, in the order the client's tick put them.
+pub fn leave_tail_allowed(mut tail: &[u8], confirm_awaited: bool, spg: bool) -> bool {
+    let mut confirm = confirm_awaited;
+    while !tail.is_empty() {
+        if confirm && tail.starts_with(&[0x87, 0, 0]) { confirm = false; tail = &tail[3..]; }
+        else if spg && tail.len() >= 19 && matches!(avatar_move_to(&tail[..19]), Ok(Some(_))) { tail = &tail[19..]; }
+        else { return false; }
+    }
+    true
+}
 /// Measured natural-return suffix: an explicit old Avatar mailbox followed by
 /// its own Vehicle. The caller must keep this in the dead, retired epoch; this
 /// validates a queued camera call and never transfers control to a new entity.

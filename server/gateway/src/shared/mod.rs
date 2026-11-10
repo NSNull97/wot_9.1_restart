@@ -19,6 +19,10 @@ fn record_size(payload: &[u8], at: usize) -> io::Result<Option<usize>> {
         _ => return Ok(None),
     }))
 }
+/// SPG-01: the strategic sight exists on an SPG only; any other vehicle keeps refusing its records.
+fn spg_owner(world: &World, slot: usize) -> bool {
+    world.actors.get(slot).is_some_and(|actor| dispersion::gun(actor.vehicle_kind().name()).is_ok_and(|gun| gun.spg))
+}
 fn var2_size(payload: &[u8], at: usize) -> io::Result<usize> {
     if payload.len() - at < 3 { return Err(bad()); }
     Ok(3 + u16::from_le_bytes([payload[at+1], payload[at+2]]) as usize)
@@ -735,7 +739,12 @@ impl Session {
         if c.phase == Phase::Enable {
             let late = drive::late_queue_info(payload)?;
             if late == Some(false) { return Ok(()); }
-            if payload != [9] && late != Some(true) { return Err(bad()); }
+            if payload != [9] && late != Some(true) {
+                // Diagnosis of a hung battle entry: the record decides whether this envelope can be admitted.
+                println!("SHARED_ENABLE_UNEXPECTED session={} bytes={} head={}",self.id,payload.len(),
+                    payload.iter().take(96).map(|b|format!("{b:02x}")).collect::<String>());
+                return Err(bad());
+            }
             c.announcement_parts.clear();
             let mut parts=if c.spotting_enabled {
                 c.refresh_interest(world)?;
@@ -958,6 +967,12 @@ impl Session {
                     // No callback echo, no domain command, no hidden-state read.
                     events.push(format!("SHARED_AUTOAIM_CANCEL session={} domain_applied=false native_callback=false",self.id));
                 }
+            } else if id == 0x0d && c.correction && c.binding.is_some_and(|(_,ack)| ack)
+                && world.actors.get(c.slot).is_some_and(|actor| actor.alive()) && spg_owner(world,c.slot) {
+                // SPG-01: the strategic sight switches the camera binding. Authority,
+                // interest and the published vehicle stay where they are.
+                let camera=wire::spg_bind(raw,c.slot)?;
+                events.push(format!("SHARED_SPG_CAMERA session={} slot={} request={camera:?} authority_changed=false interest_changed=false",self.id,c.slot));
             } else if id == 0x0d {
                 if world.actors.get(c.slot).is_none_or(|actor| actor.alive())
                     || !c.correction || !c.binding.is_some_and(|(_,ack)| ack) { return Err(bad()); }
@@ -970,6 +985,10 @@ impl Session {
                     wire::PostmortemCamera::Unbind=>events.push(format!("SHARED_POSTMORTEM_UNBIND session={} slot={} authority_changed=false",self.id,c.slot)),
                     wire::PostmortemCamera::Refused=>events.push(format!("SHARED_UNSUPPORTED session={} method=bindToVehicle target={target} refused=true domain_applied=false",self.id)),
                 }
+            } else if wire::avatar_move_to(raw)?.is_some() {
+                // SPG-01: consumed at the sight's own cadence, so nothing is logged per record.
+                // The camera position moves neither authority nor interest.
+                if !spg_owner(world,c.slot) { return Err(bad()); }
             } else if let Some(commands) = fire::parse(raw)? {
                 if !c.correction { return Err(bad()); }
                 c.commands.extend(commands.into_iter().map(Command::Fire));
@@ -1012,12 +1031,15 @@ impl Session {
                             events.push(format!("SHARED_UNSUPPORTED session={} method=move flags={flags} failsafe_stop=true", self.id));
                         },
                         drive::Method::IgnoredTelemetry(_) => {}, // validated then discarded
+                        drive::Method::UnsupportedCameraAutorotation(enabled) => {
+                            c.commands.push(Command::Autorotation(enabled));
+                            events.push(format!("SHARED_AUTOROTATION session={} slot={} enabled={enabled}",self.id,c.slot));
+                        },
                         drive::Method::Leave => {
                             // Original result handler queues Leave from the UI
                             // callback and confirm afterwards in the same turn.
-                            let confirm_tail=c.natural_result.is_some() && self.battle_results.avatar_pending()
-                                && payload.get(at..)==Some(&[0x87,0,0][..]);
-                            if at != payload.len() && !confirm_tail { return Err(bad()); }
+                            let confirm_awaited=c.natural_result.is_some() && self.battle_results.avatar_pending();
+                            if !wire::leave_tail_allowed(payload.get(at..).ok_or_else(||bad())?,confirm_awaited,spg_owner(world,c.slot)) { return Err(bad()); }
                             c.commands.push(Command::Leave); c.phase = Phase::Leaving;
                         },
                         other => events.push(format!("SHARED_UNSUPPORTED session={} method={other:?} domain_applied=false", self.id)),

@@ -41,6 +41,14 @@
      "client_ui": {"crew": false, "ammo": false}},
     {"kind": "ussr-T62A_T", "vehicle_id": "vehicle:ussr:T62A_T", "device_profile": "battle-any",
      "battle_admission": "always", "legacy_inventory": null,
-     "client_ui": {"crew": false, "ammo": false}}
-  ]
+     "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "france-Bat_Chatillon155_58", "vehicle_id": "vehicle:france:Bat_Chatillon155_58", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-Grille", "vehicle_id": "vehicle:germany:Grille", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "uk-GB28_Bishop", "vehicle_id": "vehicle:uk:GB28_Bishop", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-Sexton_I", "vehicle_id": "vehicle:usa:Sexton_I", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-Object_212", "vehicle_id": "vehicle:ussr:Object_212", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-Object_261", "vehicle_id": "vehicle:ussr:Object_261", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-T92", "vehicle_id": "vehicle:usa:T92", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-G_E", "vehicle_id": "vehicle:germany:G_E", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
+]
 }

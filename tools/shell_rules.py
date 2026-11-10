@@ -95,7 +95,8 @@ SCHEMA = {
                  "base": ("number", 0.05, 1.0, False), "slope": ("number", -5.0, 5.0, False),
                  "min": ("number", 0.05, 1.0, False), "max": ("number", 0.05, 1.0, False),
                  "circle": ("enum", ("classic_091",)), "shape": ("enum", ("truncated_normal",)), "spg_distribution": ("enum", ("truncated_normal",)),
-                 "spg_sigma_fraction": ("number", 0.1, 1.0, False)},
+                 "spg_sigma_fraction": ("number", 0.1, 1.0, False),
+                 "spg_accuracy_divisor": ("number", 1.0, 3.0, False), "spg_splash_radius_factor": ("number", 1.0, 3.0, False)},
     # SHELL-04 (configVersion 4): read by the layered law only.
     "modules": dict({"internal_trace_calibers": ("number", 1.0, 100.0, False),
                      "chance_gate": ("enum", ("per_module_roll",)), "critical": ("enum", ("at_or_below_max_regen",)),

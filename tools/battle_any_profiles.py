@@ -49,6 +49,12 @@ import test_vehicles  # noqa: E402
 # TESTVEH-01: WOT091_TEST_LAB=1 builds/checks the test_lab variant (config/test_lab,
 # *_test_lab bindings); the main variant never contains a test vehicle.
 TEST_LAB = test_vehicles.enabled()
+# SPG-01 (owner 2026-11-09): the SPGs admitted on a test_lab stand, those the runtime can take now.
+# The main variant refuses every SPG; one- and two-shell SPGs need a separate card.
+STAND_SPG = frozenset("vehicle:" + name for name in (
+    "france:Bat_Chatillon155_58", "france:Lorraine155_51", "germany:Bison_I", "germany:G_E", "germany:Grille",
+    "germany:Sturmpanzer_II", "uk:GB28_Bishop", "uk:GB78_Sexton_I", "usa:Sexton_I", "usa:T92", "ussr:Object_212",
+    "ussr:Object_261", "ussr:S-51", "ussr:SU-14", "ussr:SU-5"))
 _DIR = test_vehicles.TEST_LAB_DIR if TEST_LAB else ROOT / "config" / "catalog"
 _SUFFIX = "_test_lab" if TEST_LAB else ""
 TABLE = _DIR / "battle_profiles.v1.json"
@@ -241,6 +247,13 @@ class Sources:
     def pins(self):
         return {"files": {k: v[1] for k, v in sorted(self.files.items())},
                 "packages": dict(sorted(self.packages.items()))}
+
+
+def _regen(value):
+    """maxRegenHealth; a fractional source value (GB28_Bishop 27.5) rounds down (SPG-01, project policy)."""
+    number = float(value)
+    require(0 < number <= 100000, "device regen")
+    return int(number)
 
 
 def mesh(raw):
@@ -481,7 +494,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     except (*SOURCE_ERRORS, KeyError, TypeError) as error:
         raise ProfileError(vehicle_id + ": source fact: " + str(error)) from error
     try:
-        refuse_if(kind == "SPG", "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
+        refuse_if(kind == "SPG" and not (TEST_LAB and vehicle_id in STAND_SPG), "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
         refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
                   "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
         refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
@@ -575,7 +588,7 @@ def runtime_facts(v, vf, comp, names, chassis, turret, row):
     """Device caps, crew seats, stack suffixes and labels the battle runtime binds (P06T rules)."""
     def cap(tree, prefix):
         return dict(max_health=_int(tree[prefix + "/maxHealth[1]"], "device max", 100000),
-                    max_regen_health=_int(tree[prefix + "/maxRegenHealth[1]"], "device regen", 100000))
+                    max_regen_health=_regen(tree[prefix + "/maxRegenHealth[1]"]))
     engine = "/shared[1]/" + names["engine"] + "[1]"
     sources = (("engines", engine), (None, "/hull[1]/ammoBayHealth[1]"),
                ("fueltanks", "/shared[1]/" + names["fuelTank"] + "[1]"), ("radios", "/shared[1]/" + names["radio"] + "[1]"),

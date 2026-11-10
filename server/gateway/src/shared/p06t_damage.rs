@@ -70,8 +70,8 @@ pub const HESH_SHELLS: [u16; 2] = [17754, 21082];
 pub fn hesh(shell: Shell) -> bool { shell.family == Family::HighExplosive && HESH_SHELLS.contains(&shell.compact_descr) }
 /// Layered HE damage: `D*roll*k*F(d)*factor - armour_factor*armour`, `F(d) = max(0, 1-d/R)^n`,
 /// floored as the LAB formula; `k` is the HESH splash factor for splash, 1 for a direct hit.
-fn layered_he(r: &Rules, shell: Shell, distance: f64, armor: f64, roll: f64, splash: bool) -> io::Result<u16> {
-    let radius=shell.explosion_radius_m.filter(|v|*v>0.).ok_or_else(||bad("HE source radius missing"))?;
+fn layered_he(r: &Rules, shell: Shell, distance: f64, armor: f64, roll: f64, splash: bool, blast: f64) -> io::Result<u16> {
+    let radius=shell.explosion_radius_m.filter(|v|*v>0.).ok_or_else(||bad("HE source radius missing"))?*blast;
     if !distance.is_finite() || distance<0. { return Err(bad("HE distance bound")); }
     valid_armor(armor)?;
     let k=if splash && hesh(shell) { r.hesh_splash_factor } else { 1. };
@@ -228,7 +228,7 @@ fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>) -> io::Res
         Some(roll)=>(f64::from(i.shell.damage_hp)*roll.damage).round().clamp(0.,f64::from(u16::MAX)) as u16,
         None=>i.shell.damage_hp };}
     else if i.shell.family==Family::HighExplosive {r.damage_hp=match rolls {
-        Some(roll)=>layered_he(rules,i.shell,0.,armor,roll.damage,false)?, None=>attenuated_he(rules,i.shell,0.,armor)? };}
+        Some(roll)=>layered_he(rules,i.shell,0.,armor,roll.damage,false,1.)?, None=>attenuated_he(rules,i.shell,0.,armor)? };}
     Ok(r)
 }
 /// Geometry/source identity is established by the Trace source-witness adapter.
@@ -263,9 +263,14 @@ pub fn resolve_splash(shell:Shell,targets:&[SplashTarget])->io::Result<Vec<Splas
 /// SHELL-03 layered splash: `armor_mm` is the nominal armour on the one ray to the vehicle
 /// (screens and tracks crossed plus the main plate); the shot's damage roll scales D.
 pub fn resolve_splash_layered(shell:Shell,targets:&[SplashTarget],rolls:Rolls)->io::Result<Vec<SplashDamage>> {
-    valid_roll(rolls)?; splash_with(shell,targets,Some(rolls))
+    valid_roll(rolls)?; splash_with(shell,targets,Some((rolls,1.)))
 }
-fn splash_with(shell:Shell,targets:&[SplashTarget],rolls:Option<Rolls>)->io::Result<Vec<SplashDamage>> {
+/// SPG-01: the same with the attacker's blast radius factor (section 9: x 1.10 for an SPG).
+pub fn resolve_splash_blast(shell:Shell,targets:&[SplashTarget],rolls:Rolls,blast:f64)->io::Result<Vec<SplashDamage>> {
+    if !blast.is_finite()||!(1. ..=3.).contains(&blast) {return Err(bad("damage blast factor"));}
+    valid_roll(rolls)?; splash_with(shell,targets,Some((rolls,blast)))
+}
+fn splash_with(shell:Shell,targets:&[SplashTarget],rolls:Option<(Rolls,f64)>)->io::Result<Vec<SplashDamage>> {
     source_shell(shell)?;
     let rules=rules()?;
     if shell.family!=Family::HighExplosive || targets.len()>MAX_TARGETS {return Err(bad("damage splash family/count"));}
@@ -279,7 +284,7 @@ fn splash_with(shell:Shell,targets:&[SplashTarget],rolls:Option<Rolls>)->io::Res
             return Err(bad("damage splash identity/distance"));
         }
         valid_armor(target.armor_mm)?;seen[slot]=true;
-        let damage=if !target.los_clear {0} else if let Some(roll)=rolls {layered_he(rules,shell,target.distance_m,target.armor_mm,roll.damage,true)?}
+        let damage=if !target.los_clear {0} else if let Some((roll,blast))=rolls {layered_he(rules,shell,target.distance_m,target.armor_mm,roll.damage,true,blast)?}
             else {attenuated_he(rules,shell,target.distance_m,target.armor_mm)?};
         out.push(SplashDamage {slot:target.slot,damage_hp:damage});
     }

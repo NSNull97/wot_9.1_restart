@@ -51,7 +51,9 @@ pub struct Rules {
 /// Shell Mechanics 2.0 section 3: `k(A) = clamp(base + slope*(A - reference), min, max)`, the
 /// share of shots inside `k*R`, and the SPG truncated normal's sigma as a fraction of `R`.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Accuracy { pub central_probability: f64, pub reference: f64, pub base: f64, pub slope: f64, pub min: f64, pub max: f64, pub spg_sigma_fraction: f64 }
+pub struct Accuracy { pub central_probability: f64, pub reference: f64, pub base: f64, pub slope: f64, pub min: f64, pub max: f64, pub spg_sigma_fraction: f64,
+    /// SPG-01: section 9 test profile of the SPGs (numeric dispersion / divisor, splash radius x factor).
+    pub spg_accuracy_divisor: f64, pub spg_splash_radius_factor: f64 }
 /// Module groups of #717 common/vehicle.xml MaterialInfo (crew: every role and seat).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ModuleClass { Engine, AmmoBay, FuelTank, Radio, Track, Gun, GunBreech, TurretRotator, SurveyingDevice, Crew }
@@ -159,7 +161,7 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
     exact(damage, &["rounding"], "rules.damage")?;
     choice(damage, "rounding", "rules.damage", &["half_away_from_zero"])?;
     let accuracy = &rules["accuracy"];
-    exact(accuracy, &["central_probability", "reference_accuracy", "base", "slope", "min", "max", "circle", "shape", "spg_distribution", "spg_sigma_fraction"], "rules.accuracy")?;
+    exact(accuracy, &["central_probability", "reference_accuracy", "base", "slope", "min", "max", "circle", "shape", "spg_distribution", "spg_sigma_fraction", "spg_accuracy_divisor", "spg_splash_radius_factor"], "rules.accuracy")?;
     choice(accuracy, "shape", "rules.accuracy", &["truncated_normal"])?;
     choice(accuracy, "circle", "rules.accuracy", &["classic_091"])?;
     choice(accuracy, "spg_distribution", "rules.accuracy", &["truncated_normal"])?;
@@ -169,6 +171,8 @@ pub fn parse(raw: &[u8], expected_sha256: &str) -> io::Result<Rules> {
         base: number(accuracy, "base", "rules.accuracy", 0.05, 1.)?, slope: number(accuracy, "slope", "rules.accuracy", -5., 5.)?,
         min: number(accuracy, "min", "rules.accuracy", 0.05, 1.)?, max: number(accuracy, "max", "rules.accuracy", 0.05, 1.)?,
         spg_sigma_fraction: number(accuracy, "spg_sigma_fraction", "rules.accuracy", 0.1, 1.)?,
+        spg_accuracy_divisor: number(accuracy, "spg_accuracy_divisor", "rules.accuracy", 1., 3.)?,
+        spg_splash_radius_factor: number(accuracy, "spg_splash_radius_factor", "rules.accuracy", 1., 3.)?,
     };
     if parsed_accuracy.min > parsed_accuracy.max || parsed_accuracy.max >= 1. { return Err(bad("rules.accuracy: k bounds".into())); }
     let modules = &rules["modules"];

@@ -37,6 +37,16 @@ pub fn gun(name: &str) -> io::Result<Gun> {
         .map_err(|_| bad())?.get(name).copied().ok_or_else(bad)
 }
 
+/// SPG-01: the gun as the section 9 profile fires it (numeric dispersion / divisor for an SPG).
+pub fn firing_gun(accuracy: &Accuracy, name: &str) -> io::Result<Gun> {
+    let g = gun(name)?;
+    Ok(if g.spg { Gun { radius_m: g.radius_m / accuracy.spg_accuracy_divisor, ..g } } else { g })
+}
+/// SPG-01: the blast radius factor of the attacker's kind (1 for everything but an SPG).
+pub fn blast_factor(accuracy: &Accuracy, name: &str) -> io::Result<f64> {
+    Ok(if gun(name)?.spg { accuracy.spg_splash_radius_factor } else { 1. })
+}
+
 /// The rates one server step gave the actor, in the client's units (m/s, rad/s).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Motion { pub speed: f32, pub hull_rate: f32, pub turret_rate: f32 }

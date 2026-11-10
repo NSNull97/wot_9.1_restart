@@ -679,9 +679,9 @@ impl IntegratedRuntime {
             let worker = self.workers[slot].as_mut().ok_or_else(|| model::bad())?;
             if !self.synchronizing[slot] && !self.pose_pending[slot] && worker.ready() && !worker.pending()
                 && deadlines[slot].is_some() {
-                let actor = world.actors.get(slot).ok_or_else(|| model::bad())?;
-                let input = crate::map_drive_worker091::Input { throttle: actor.input.throttle,
-                    steer: actor.input.steer, brake: actor.input.throttle == 0 && actor.input.steer == 0, speed_percent: actor.input.speed_percent };
+                let drive = world.advance_drive_input(slot)?;
+                let input = crate::map_drive_worker091::Input { throttle: drive.throttle,
+                    steer: drive.steer, brake: drive.throttle == 0 && drive.steer == 0, speed_percent: drive.speed_percent };
                 let seq = worker.advance(input, now)?;
                 self.dispatched[slot] = deadlines[slot];
                 println!("SHARED_INTEGRATED_WORKER_INPUT battle={} slot={} seq={} throttle={} steer={} brake={} speed_percent={}",
@@ -2374,7 +2374,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     let commands = std::mem::take(&mut next.shared.as_mut().ok_or_else(|| model::bad())?.commands);
     if !c.correction && !commands.is_empty() {
         // Keep a bounded startup intent until ACK6; no pre-correction motion.
-        if commands.iter().any(|cmd| !matches!(cmd, model::Command::Aim(_) | model::Command::Move(model::Input::STOP))) { return Err(model::bad()); }
+        if commands.iter().any(|cmd| !matches!(cmd, model::Command::Aim(_) | model::Command::Autorotation(_) | model::Command::Move(model::Input::STOP))) { return Err(model::bad()); }
         next.shared.as_mut().ok_or_else(|| model::bad())?.commands = commands;
         *s = next; return Ok(());
     }
@@ -2774,7 +2774,7 @@ fn publish_av01(c:&mut Client,outbox:&mut std::collections::VecDeque<Vec<u8>>,wo
         if !visible[slot] {continue;}
         let actor=&world.actors[slot];
         let running=actor.alive()&&actor.devices.as_ref().is_none_or(|d|d.health()[crate::p06t_device_caps::Device::Engine as usize]>0);
-        let mode=av::engine_mode(running,actor.input);
+        let mode=av::engine_mode(running,world.drive_input(slot)?);
         if c.engine_sent[slot]!=Some(mode) {c.queue_private(outbox,av::engine_mode_update(slot,mode)?,&[slot])?;c.engine_sent[slot]=Some(mode);sent+=1;}
     }
     let fresh=world.impacts.get(impact_from..).unwrap_or(&[]);
@@ -3552,6 +3552,51 @@ mod tests {
     /// Owner 2026-10-29 (-11, battle ...827, session 4): the dead player's
     /// observer camera bound an ally; rejection stalled reliable17381 and every
     /// later 5-byte token-only keepalive failed `n>rx` until idle_timeout.
+    #[test] fn spg01_leave_envelope_admits_the_sight_camera_and_one_confirmation_only() {
+        let mut camera=vec![0x0f,16,0,0,0,0,0];
+        for value in [10f32,200.,-30.] {camera.extend(value.to_le_bytes());}
+        let confirm=[0x87u8,0,0];
+        let join=|parts:&[&[u8]]|parts.concat();
+        // Owner battle 2026-11-10: Leave, the confirmation and a camera record in one envelope.
+        for tail in [join(&[&confirm,&camera]),join(&[&camera,&confirm]),camera.clone(),confirm.to_vec(),Vec::new()] {
+            assert!(wire::leave_tail_allowed(&tail,true,true));
+        }
+        assert!(wire::leave_tail_allowed(&camera,false,true));
+        assert!(wire::leave_tail_allowed(&confirm,true,false));
+        // Refused: a tank's camera record, a confirmation nobody awaits or a second one, foreign bytes.
+        assert!(!wire::leave_tail_allowed(&camera,true,false));
+        assert!(!wire::leave_tail_allowed(&confirm,false,true));
+        assert!(!wire::leave_tail_allowed(&join(&[&confirm,&confirm]),true,true));
+        assert!(!wire::leave_tail_allowed(&join(&[&confirm,&[0xff]]),true,true));
+        assert!(!wire::leave_tail_allowed(&camera[..18],true,true));
+        let mut own_aim=camera.clone(); own_aim[3]=1;
+        assert!(!wire::leave_tail_allowed(&own_aim,true,true));
+    }
+    #[test] fn spg01_strategic_camera_records_are_strict_and_refused_for_a_tank() {
+        let now=Instant::now(); let (_,mut b,_)=visible_pair(now);
+        let bind=|target:u32|{let mut raw=vec![0x0d,8,0,0,0,0,0];raw.extend(target.to_le_bytes());raw};
+        let mut move_to=vec![0x0f,16,0,0,0,0,0];
+        for value in [10f32,200.,-30.] {move_to.extend(value.to_le_bytes());}
+        assert_eq!(wire::avatar_move_to(&move_to).unwrap(),Some([10.,200.,-30.]));
+        let own=wire::vehicle_id(1).unwrap();
+        assert_eq!(wire::spg_bind(&bind(0),1).unwrap(),wire::SpgCamera::Unbind);
+        assert_eq!(wire::spg_bind(&bind(own),1).unwrap(),wire::SpgCamera::Rebind);
+        assert!(wire::spg_bind(&bind(wire::vehicle_id(0).unwrap()),1).is_err());
+        // The vehicle's own aim record keeps its route.
+        let mut aim=move_to.clone(); aim[3..7].copy_from_slice(&own.to_le_bytes());
+        assert_eq!(wire::avatar_move_to(&aim).unwrap(),None);
+        let mut nan=move_to.clone(); nan[7..11].copy_from_slice(&f32::NAN.to_le_bytes());
+        assert!(wire::avatar_move_to(&nan).is_err());
+        let mut far=move_to.clone(); far[7..11].copy_from_slice(&2_000_000f32.to_le_bytes());
+        assert!(wire::avatar_move_to(&far).is_err());
+        let mut long=move_to.clone(); long.push(0); assert!(wire::avatar_move_to(&long).is_err());
+        let mut length=move_to.clone(); length[1]=15; assert!(wire::avatar_move_to(&length).is_err());
+        // A tank has no strategic sight: both records stay refused and the channel does not advance.
+        for raw in [move_to,bind(0),bind(own)] {
+            let before=b.rx; assert!(b.receive(&frame(&b,&raw),now).is_err()); assert_eq!(b.rx,before);
+        }
+        assert!(b.shared.as_ref().unwrap().commands.is_empty());
+    }
     #[test] fn postmortem01_observer_camera_switch_to_ally_unbind_and_enemy_keeps_channel_live() {
         let now=Instant::now(); let (_,mut b,mut w)=visible_pair(now);
         // Alive owner: an observer bind is still outside the measured contract.
