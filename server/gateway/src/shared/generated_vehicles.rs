@@ -287,6 +287,24 @@ fn hex(text:&str)->io::Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    /// SPG-02: a two-shell test_lab SPG keeps three cells, one absent; the client sees two rows and cannot select it.
+    #[cfg(feature="test_lab")]
+    #[test]fn spg02_two_shell_spg_has_an_absent_cell_never_sent_or_selected(){
+        use crate::p06t_armament091::{State,Command,Selection,Outcome,Refusal};
+        let kind=crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label("usa-M37").unwrap();
+        let p=*crate::p06t_shells091::profile(kind.mount());
+        assert!(!p.shots[0].is_absent()&&!p.shots[1].is_absent()&&p.shots[2].is_absent());
+        assert_eq!(crate::profile13_v2091::real_shots(&p),2);
+        let mut state=State::new(kind.mount(),[10,5,0],p.shots[0].compact_descr).unwrap();
+        let rows=crate::armament_wire091::ammo_snapshot(kind.mount(),state.counts(),p.shots[0].compact_descr,p.shots[0].compact_descr,state.clip()).unwrap();
+        // Two ammo rows of 11 bytes (0x13 0x44, i32, u16, u8, i16) and two settings of 7 (0x13 0x40, u8, i32).
+        assert_eq!(rows.len(),2*11+2*7);assert!(!rows.windows(6).any(|w|w==[0x13,0x44,0,0,0,0]));
+        assert!(crate::armament_wire091::ammo_row(kind.mount(),0,0,0).is_err());
+        let now=std::time::Instant::now();
+        assert_eq!(state.apply(&[Command::Select(Selection::Next,0)],now).unwrap(),vec![Outcome::Refused(Refusal::Empty)]);
+        assert!(State::new(kind.mount(),[10,5,1],p.shots[0].compact_descr).is_err(),"an absent cell is never loaded");
+        assert!(State::new(kind.mount(),[0,0,3],0).is_err());
+    }
     use super::*;
     use super::super::vehicle_profile::VehicleKind;
 

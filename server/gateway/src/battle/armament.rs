@@ -32,7 +32,9 @@ impl State {
     pub fn new(mount:Mount,counts:[u16;3],initial:u16)->io::Result<Self>{
         let source=*crate::p06t_shells091::profile(mount);
         let total=counts.iter().try_fold(0u16,|n,c|n.checked_add(*c)).ok_or_else(||bad("armament count overflow"))?;
-        let current=source.shots.iter().position(|s|s.compact_descr==initial).ok_or_else(||bad("armament initial shell source"))?;
+        let current=source.shots.iter().position(|s|s.compact_descr==initial&&!s.is_absent()).ok_or_else(||bad("armament initial shell source"))?;
+        // SPG-02: an absent cell (fewer than three source shells) is never loaded.
+        if source.shots.iter().zip(counts).any(|(s,c)|s.is_absent()&&c>0){return Err(bad("armament absent cell loaded"));}
         if total==0||total>source.capacity||counts[current]==0||source.clip_count==0||source.clip_count>6
             ||!source.reload_seconds.is_finite()||!(0.1..=120.).contains(&source.reload_seconds)
             ||!source.clip_interval_seconds.is_finite()||!(0. ..=120.).contains(&source.clip_interval_seconds)

@@ -41,7 +41,7 @@ pub fn command(record:&[u8])->io::Result<Option<Intent>>{
     }
 }
 
-fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact).ok_or_else(||bad("P06T shell not mounted"))}
+fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact&&!s.is_absent()).ok_or_else(||bad("P06T shell not mounted"))}
 /// quantity includes the clip under the explicitly documented server lab policy.
 /// timeRemaining=0 is intentional: original shell consumer ignores this field.
 pub fn ammo_row(mount:Mount,compact:u16,quantity:u16,in_clip:u8)->io::Result<Vec<u8>>{
@@ -62,7 +62,8 @@ pub fn ammo_snapshot(mount:Mount,counts:[u16;3],current:u16,next:u16,clip:u8)->i
     let current_count=counts[p.shots.iter().position(|s|s.compact_descr==current).ok_or_else(||bad("P06T current source"))?];
     if total>p.capacity||clip>p.clip_count||u16::from(clip)>current_count{return Err(bad("P06T ammo total/clip source capacity"));}
     let mut b=Vec::new();
-    for(i,s)in p.shots.into_iter().enumerate(){
+    // SPG-02: an absent cell is no client shell; it never becomes a row.
+    for(i,s)in p.shots.into_iter().enumerate().filter(|(_,s)|!s.is_absent()){
         let visible_clip=if s.compact_descr==current&&p.clip_count>1{clip}else{0};
         b.extend(ammo_row(mount,s.compact_descr,counts[i],visible_clip)?);
     }
@@ -79,7 +80,7 @@ pub fn ammo_delta(mount:Mount,before:([u16;3],u16,u16,u8),now:([u16;3],u16,u16,u
     let mut b=Vec::new();
     if before.1!=current{b.extend(setting(mount,Setting::Current,current)?);}
     if before.2!=next{b.extend(setting(mount,Setting::Next,next)?);}
-    for(i,s)in p.shots.into_iter().enumerate(){
+    for(i,s)in p.shots.into_iter().enumerate().filter(|(_,s)|!s.is_absent()){
         let (old,new)=((before.0[i],visible(s.compact_descr,before.1,before.3)),(counts[i],visible(s.compact_descr,current,clip)));
         if old!=new{b.extend(ammo_row(mount,s.compact_descr,new.0,new.1)?);}
     }
