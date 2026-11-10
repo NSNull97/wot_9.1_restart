@@ -9,7 +9,7 @@ namespace MapDrive;
 internal sealed class TrackedHandling
 {
     private const float LateralAccelerationBudget = 3f; // Project policy, m/s^2.
-    private const float ReferenceLateralBudget = 4.5f; // PHYS-01, owner decision 2026-11-10: tighter moving turns.
+    private const float ReferenceLateralBudget = 4.125f; // PHYS-01, owner decision 2026-11-10: tighter moving turns.
     private const float OuterPivotFrictionFraction = .001f;
     // Owner run 2026-10-14: 4% outer grip slid sideways on slopes in moving
     // turns. Low scrub stays limited to near-rest pivots.
