@@ -12,6 +12,9 @@ internal static class ReferenceCharacteristics
     // The imported maps carry no ground kind yet, so every map counts as hard ground: on it the hull traverse
     // equals the chassis rotationSpeed shown by the client. 0 hard, 1 medium, 2 soft.
     public const int GroundKind = 0;
+    // Owner decision 2026-11-10: every vehicle pivots around its centre for now; whether vehicles with
+    // rotationIsAroundCenter=false must turn around a held track is decided after a check in the modern game.
+    public const bool HonourRotationIsAroundCenter = false;
     public sealed record Row(float[] TerrainResistance, bool RotationIsAroundCenter)
     {
         // rotationSpeedLimit = power / (rotationEnergy * terrainResistance): the traverse falls with the ground.

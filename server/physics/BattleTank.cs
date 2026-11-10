@@ -123,7 +123,7 @@ internal sealed class BattleTank : IDisposable
         if (referenceTraction)
         {
             characteristics = ReferenceCharacteristics.For(source.Kind);
-            handling.PivotAroundTrack = !characteristics.RotationIsAroundCenter;
+            handling.PivotAroundTrack = ReferenceCharacteristics.HonourRotationIsAroundCenter && !characteristics.RotationIsAroundCenter;
             rollingResistance = characteristics.Resistance * mass * 9.81f * ReferenceBody.GravityFactor;
         }
         contactGrip = referenceTraction ? ReferenceTraction.ContactCohesion / ReferenceTraction.Cohesion : 1;

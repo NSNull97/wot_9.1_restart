@@ -379,6 +379,21 @@ internal static class Probe
         Console.WriteLine($"## side-slide {kind} from {speed} m/s with throttle: distance={F(t.Body.Position.Z)} time={F(n / 60f)} final_tilt={F(tilt)}");
     }
 
+
+    // Pivot on the spot with the hull against a wall: alongside (side gap) or nose-on. A vehicle must be able
+    // to work itself free; reports the yaw reached and how far the hull moved off the wall.
+    static void WallPivot(string kind, bool alongside, int steer)
+    {
+        using var w = new World(); Flat(w); var t = w.Add(kind, new Vector3(0, .1f, 0), 0);
+        var half = t.Source.Binding.HalfExtents; var c = CheckedInput.Vector(t.Source.Config.GetProperty("body_center_offset"), -5, 5);
+        if (alongside) w.Static(new Vector3(.5f, 3, 30), new Vector3(half.X + .55f, 3, 0), Quaternion.Identity);
+        else w.Static(new Vector3(30, 3, .5f), new Vector3(0, 3, c.Z + half.Z + .55f), Quaternion.Identity);
+        for (int i = 0; i < 180; i++) w.Step(Stop);
+        float yaw = 0; for (int i = 0; i < 480; i++) { w.Step(C(0, steer)); yaw += t.Body.GetAngularVelocity().Y / 60; }
+        var p = t.Body.Position;
+        Console.WriteLine($"## wall-pivot {kind} wall={(alongside ? "alongside" : "ahead")} steer={steer}: turned_deg_in_8s={F(yaw * 57.2958f)} moved_x={F(p.X)} moved_z={F(p.Z - c.Z)}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -416,6 +431,7 @@ internal static class Probe
             if (mode is "all" or "turn") { foreach (string kind in new[] { "is7", Bat }) { Turn(kind, 1); Turn(kind, -1); } }
             if (mode is "all" or "bump") foreach (string kind in new[] { "is7", Bat }) foreach (float h in new[] { .15f, .25f, .35f, .5f }) Bump(kind, h);
             if (mode is "all" or "side") foreach (string kind in new[] { "is7", Bat }) SideSlide(kind, 12);
+            if (mode is "all" or "wall") foreach (string kind in new[] { "is7", Bat }) foreach (bool along in new[] { true, false }) foreach (int st in new[] { 1, -1 }) WallPivot(kind, along, st);
             if (mode is "all" or "basics") foreach (string kind in new[] { "is7", Bat }) Basics(kind);
             if (mode is "all" or "steep") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 40f, 45f, 50f, 55f }) Steep(kind, d);
             if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f }) foreach (float h in new[] { .8f, 1.2f, 2.7f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r, h);
