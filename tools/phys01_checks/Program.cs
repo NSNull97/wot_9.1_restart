@@ -279,15 +279,16 @@ internal static class Probe
     }
 
     // Flat ground, a one-track ramp (rises along +Z) under the right track.
-    static void Ramp(string kind, float rampDegrees, float runUp)
+    // The slab ends at topHeight: a rock or embankment under one track, then a drop back to the ground.
+    static void Ramp(string kind, float rampDegrees, float runUp, float topHeight)
     {
         using var w = new World(); Flat(w);
         var t = w.Add(kind, new Vector3(0, .1f, -runUp), 0);
         float x = MathF.Abs(t.Source.Config.GetProperty("wheel_points")[3][0].GetSingle());
         float a = rampDegrees * MathF.PI / 180; var q = Quaternion.CreateFromAxisAngle(Vector3.UnitX, -a);
-        // 8 m long slab, top surface starts at ground level at z=0.
+        float halfLength = topHeight / MathF.Sin(a) / 2;
         var along = Vector3.Transform(Vector3.UnitZ, q); var nrm = Vector3.Transform(Vector3.UnitY, q);
-        w.Static(new Vector3(.7f, .25f, 4), new Vector3(x, 0, 0) + along * 4 - nrm * .25f, q);
+        w.Static(new Vector3(.7f, .25f, halfLength), new Vector3(x, 0, 0) + along * halfLength - nrm * .25f, q);
         for (int i = 0; i < 180; i++) w.Step(Stop);
         float maxTilt = 0; int over = -1; float vBefore = 0; string error = "";
         float Tilt() => MathF.Acos(Math.Clamp(Vector3.Transform(Vector3.UnitY, t.Body.Rotation).Y, -1, 1)) * 57.2958f;
@@ -303,7 +304,7 @@ internal static class Probe
             }
         }
         catch (Exception e) { error = " ERROR " + e.Message; }
-        Console.WriteLine($"## one-track ramp {kind} ramp={rampDegrees}deg run_up={runUp}m v_before={F(vBefore)}: max_tilt={F(maxTilt)} rollover={(over < 0 ? "none" : "YES")} final_tilt={F(Tilt())} final_z={F(t.Body.Position.Z)} final_x={F(t.Body.Position.X)}{error}");
+        Console.WriteLine($"## one-track ramp {kind} ramp={rampDegrees}deg top={topHeight}m run_up={runUp}m v_before={F(vBefore)}: max_tilt={F(maxTilt)} rollover={(over < 0 ? "none" : "YES")} final_tilt={F(Tilt())} final_z={F(t.Body.Position.Z)} final_x={F(t.Body.Position.X)}{error}");
     }
 
     // Steep traverse: where does the hull slide and where does it tip, standing and moving.
@@ -399,7 +400,7 @@ internal static class Probe
             if (mode is "all" or "bump") foreach (string kind in new[] { "is7", Bat }) foreach (float h in new[] { .15f, .25f, .35f, .5f }) Bump(kind, h);
             if (mode is "all" or "basics") foreach (string kind in new[] { "is7", Bat }) Basics(kind);
             if (mode is "all" or "steep") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 40f, 45f, 50f, 55f }) Steep(kind, d);
-            if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f, 40f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r);
+            if (mode is "all" or "ramp") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 20f, 30f }) foreach (float h in new[] { .8f, 1.2f, 2.7f }) foreach (float r in new[] { 12f, 150f }) Ramp(kind, d, r, h);
             if (mode is "all" or "rock") foreach (string kind in new[] { "is7", Bat }) foreach (float d in new[] { 15f, 25f, 30f }) foreach (float h in new[] { .3f, .5f, .7f }) { SlopeRock(kind, d, h, true, 60); SlopeRock(kind, d, h, false, 60); }
         }
         finally { Foundation.Shutdown(); }

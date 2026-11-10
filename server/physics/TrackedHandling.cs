@@ -67,6 +67,9 @@ internal sealed class TrackedHandling
     private readonly float[] lateral, longitudinal;
     // PHYS-01 stage A: 1, or contact cohesion / cohesion while this hull touches another hull.
     public float GripScale = 1;
+    // PHYS-01 stage C: with grip-limited traction the pivot no longer needs the outer supports' side grip cut,
+    // and the cut was what let a steering vehicle slide down a side slope.
+    public bool KeepSideGrip;
     private float yawTarget, motorInput;
     private int lastThrottle, reversalIntent;
     // 0: ordinary drive/pivot; 1: rolling turn; 2: near-rest ratio transition.
@@ -160,7 +163,7 @@ internal sealed class TrackedHandling
             (MovingGripFullSpeed - MovingGripStartSpeed), 0, 1);
         float outerFraction = coastPhase == 1 ? CoastOuterFrictionFraction : OuterPivotFrictionFraction +
             movingGrip * (OuterMovingFrictionFraction - OuterPivotFrictionFraction);
-        float pivotBlend = steer == 0 || brake ? 0 : 1;
+        float pivotBlend = steer == 0 || brake || KeepSideGrip ? 0 : 1;
         for (int i = 0; i < wheels.Length; i++)
         {
             float target = GripScale * lateral[i] * (i % 3 == 1 ? 1 : 1 - pivotBlend * (1 - outerFraction));
