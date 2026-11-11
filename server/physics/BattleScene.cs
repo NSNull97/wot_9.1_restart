@@ -104,8 +104,10 @@ internal static class BattleScene
             new(xWall, new(minX - .5f, 0, (maxZ + minZ) / 2), Quaternion.Identity), new(xWall, new(maxX + .5f, 0, (maxZ + minZ) / 2), Quaternion.Identity),
             new(zWall, new((maxX + minX) / 2, 0, minZ - .5f), Quaternion.Identity), new(zWall, new((maxX + minX) / 2, 0, maxZ + .5f), Quaternion.Identity) };
         // TURPHYS-01: a turret that came to rest becomes a static obstacle of the battle world (live tanks bump into it,
-        // it does not move: the client shows it where its flight ended). It joins once no tank overlaps its bounds,
-        // so it never spawns inside a hull; later flights see it like any other static.
+        // it does not move: the client shows it where its flight ended). It joins once no live tank (turret still on)
+        // overlaps its bounds, so it never spawns inside a moving hull; a wreck was an obstacle of its flight, so a
+        // turret that fell back onto its own (or another) wreck rests on it and joins at once (owner 2026-11-11:
+        // such turrets stayed passable). Later flights see it like any other static.
         var landedShapes = new List<StaticCompoundShape>();
         var landingQueue = new List<(StaticCompoundShape Shape, Vector3 Position, Quaternion Rotation, Vector3 Min, Vector3 Max)>();
         static bool Apart((Vector3 Min, Vector3 Max) a, Vector3 min, Vector3 max) =>
@@ -115,7 +117,7 @@ internal static class BattleScene
             for (int i = landingQueue.Count - 1; i >= 0; i--)
             {
                 var t = landingQueue[i];
-                if (tanks.Any(tank => !Apart(tank.WorldBounds(LandingMargin), t.Min, t.Max))) continue;
+                if (tanks.Any(tank => tank.TurretAttached && !Apart(tank.WorldBounds(LandingMargin), t.Min, t.Max))) continue;
                 using var creation = new BodyCreationSettings(t.Shape, t.Position, t.Rotation, MotionType.Static, 0) { Friction = 1 };
                 var body = bodies.CreateBody(creation); bodies.AddBody(body.ID, Activation.DontActivate); statics.Add(body.ID);
                 fixedStatics.Add(new(t.Shape, t.Position, t.Rotation));
@@ -292,7 +294,8 @@ internal static class BattleScene
                         t.Body.Position, t.Body.Rotation)).ToList();
                     var result = TurretFlight.Simulate(flight, fixedStatics.Concat(present).ToList(), wrecks);
                     tanks[flight.Slot].DropTurret();
-                    if (result.Slept)
+                    // The client shows the turret at the last sample, slept or at the bounded end of its flight
+                    // (still rolling after 10 s): it becomes an obstacle there either way.
                     {
                         var shape = TurretFlight.Shape(flight); landedShapes.Add(shape);
                         var last = result.Samples[^1].Position; var landed = TurretFlight.WorldBounds(flight, last, result.Rotation);
