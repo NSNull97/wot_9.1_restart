@@ -562,7 +562,8 @@ class _Native(object):
                 or loaded[3] != 0 or loaded[5] != 0):
             return dict(allowed=False, reason='unsupported_ap_loadout', queued=False)
         shells = item.shells
-        if type(shells) not in (tuple, list) or len(shells) != 3:
+        # SPG-02: one getter per shell of the gun (one to three), as the catalogue hint lists them.
+        if type(shells) not in (tuple, list) or len(shells) != len(shell_ids):
             raise ValueError('three original profile13 shell getters required')
         gui = tuple((_integer(s.intCD, 1, 65535, 'shell ID'),
                      _integer(s.count, 0, capacity, 'shell count')) for s in shells)
