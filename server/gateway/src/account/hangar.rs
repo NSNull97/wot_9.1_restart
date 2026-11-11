@@ -301,10 +301,10 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                 // Explicit opt-in test_lab only; native capture is the gate.
                 Incoming::CrewService(crate::crew_service091::Request::decode(&packet[3..])?)
             },
-            0x97 if ammo_service && length==72 && command_of(packet)==108 => {
+            0x97 if ammo_service && [56,64,72].contains(&length) && command_of(packet)==108 => {
                 Incoming::AmmoService(crate::ammo_service091::Request::decode(&packet[3..])?)
             },
-            0x97 if interactive && length==72 && command_of(packet)==108 => {
+            0x97 if interactive && [56,64,72].contains(&length) && command_of(packet)==108 => {
                 // Actual auth09 packet222: doCmdIntArr, CMD_SET_AND_FILL_LAYOUTS.
                 // Only its measured 16-INT32 layout shape is recognized here.
                 // The command is unavailable; no ammo/equipment/price is applied.

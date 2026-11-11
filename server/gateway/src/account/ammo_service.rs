@@ -107,10 +107,11 @@ impl Request {
     /// Decode only the bounded envelope. Unsupported semantic arguments remain
     /// available for a real native RES_NOT_AVAILABLE response, not disconnect.
     pub fn decode(payload:&[u8])->io::Result<Self> {
-        if payload.len()!=72 {return Err(invalid("ammo command payload length"));}
+        // SPG-02: a gun with n shells sends 10+2n arguments (12, 14 or 16); the rest of the array stays 0.
+        if ![56,64,72].contains(&payload.len()) {return Err(invalid("ammo command payload length"));}
         let id=i16::from_le_bytes([payload[0],payload[1]]);
         if id<=0 || payload[2..4]!=108i16.to_le_bytes()
-            || payload[4..8]!=16u32.to_le_bytes() {
+            || payload[4..8]!=(((payload.len()-8)/4) as u32).to_le_bytes() {
             return Err(invalid("ammo command envelope"));
         }
         let mut arguments=[0;16];
@@ -120,6 +121,8 @@ impl Request {
         Ok(Self{id,arguments})
     }
 
+    /// The arguments the client sent: 10 + 2n for a layout of n shells, else all 16.
+    pub fn sent(&self)->&[i32] {match self.arguments[2]{2|4=>&self.arguments[..10+self.arguments[2] as usize],_=>&self.arguments[..]}}
     pub fn shop_revision(&self)->i32 {self.arguments[0]}
     pub fn vehicle_inventory_id(&self)->i32 {self.arguments[1]}
 
@@ -141,15 +144,18 @@ impl Request {
     /// P04M caller must first bind actual inventory -> curated mounted source.
     /// The legacy selector above retains its exact two-vehicle policy.
     pub(crate) fn layout_for_catalog(&self,compatible:[i32;3],capacity:u32,shop:i32)->io::Result<[ShellCount;3]> {
-        if self.id<=0 || self.shop_revision()!=shop || self.arguments[2]!=6
-            || self.arguments[9]!=6 || self.arguments[10..]!=[0;6] {return Err(invalid("pool ammo service layout/shop"));}
-        self.checked_layout(compatible,capacity)
+        // SPG-02: n = the catalogue gun's real shells (absent ones are 0, trailing).
+        let n=compatible.iter().take_while(|c|**c!=0).count();let k=2*n;
+        if self.id<=0 || self.shop_revision()!=shop || n==0 || compatible[n..].iter().any(|c|*c!=0) || self.arguments[2]!=k as i32
+            || self.arguments[3+k]!=6 || self.arguments[4+k..]!=vec![0;12-k][..] {return Err(invalid("pool ammo service layout/shop"));}
+        self.checked_layout_n(compatible,capacity,n)
     }
-    fn checked_layout(&self,compatible:[i32;3],capacity:u32)->io::Result<[ShellCount;3]> {
+    fn checked_layout(&self,compatible:[i32;3],capacity:u32)->io::Result<[ShellCount;3]> {self.checked_layout_n(compatible,capacity,3)}
+    fn checked_layout_n(&self,compatible:[i32;3],capacity:u32,n:usize)->io::Result<[ShellCount;3]> {
         let mut layout=[ShellCount{compact_id:0,count:0};3];
         let mut seen=[0;3];
         let mut total=0u32;
-        for index in 0..3 {
+        for index in 0..n {
             let compact_id=self.arguments[3+index*2];
             let unsigned=compact_id.checked_abs().ok_or_else(||invalid("ammo compact ID overflow"))?;
             let count=u32::try_from(self.arguments[4+index*2]).map_err(|_|invalid("negative ammo count"))?;
@@ -228,6 +234,18 @@ mod tests {
         bytes.extend(16u32.to_le_bytes());
         for argument in request.arguments {bytes.extend(argument.to_le_bytes());}
         bytes
+    }
+    /// SPG-02: a two-shell gun sends 14 arguments; decode keeps them, the layout follows the catalogue gun.
+    #[test]fn spg02_two_shell_layout_decodes_and_validates_against_the_catalogue_gun(){
+        let args:[i32;14]=[5,7,4,3338,10,3594,5,6,0,0,0,0,0,0];
+        let mut payload=226i16.to_le_bytes().to_vec();payload.extend(108i16.to_le_bytes());payload.extend(14u32.to_le_bytes());
+        for v in args{payload.extend(v.to_le_bytes());}
+        let r=Request::decode(&payload).unwrap();assert_eq!(r.sent(),&args[..]);
+        let layout=r.layout_for_catalog([3338,3594,0],30,5).unwrap();
+        assert_eq!(layout,[ShellCount{compact_id:3338,count:10},ShellCount{compact_id:3594,count:5},ShellCount{compact_id:0,count:0}]);
+        assert!(r.layout_for_catalog([3338,3594,3850],30,5).is_err(),"a three-shell gun needs six layout values");
+        let mut wrong=payload.clone();wrong[4..8].copy_from_slice(&16u32.to_le_bytes());assert!(Request::decode(&wrong).is_err());
+        assert!(Request::decode(&payload[..payload.len()-4]).is_err());
     }
     fn sync(id:i16,revision:i64,hash:i32)->Vec<u8> {
         let mut bytes=vec![0x8e,20,0];bytes.extend(id.to_le_bytes());bytes.extend(100i16.to_le_bytes());

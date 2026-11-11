@@ -415,20 +415,22 @@ class PoolStore(ResultsStore):
 
     def _validate_layout(self, layout):
         if not self.pool_active(): return super()._validate_layout(layout)
-        require(type(layout) is list and len(layout) == 16 and all(type(v) is int and -2**31 <= v < 2**31 for v in layout), "INVALID_INPUT")
+        # Native setVehicleLayout: [shop, vehicle, 2*n, (shell, count)*n, 6, 0*6]; SPG-02: n is the gun's shell count (1..3).
+        require(type(layout) is list and len(layout) in (12, 14, 16) and all(type(v) is int and -2**31 <= v < 2**31 for v in layout), "INVALID_INPUT")
         require(layout[0] in (3, 4, 5), "SHOP_REVISION_MISMATCH")
-        require(layout[2] == layout[9] == 6 and layout[10:] == [0] * 6, "INVALID_INPUT")
+        k = layout[2]
+        require(k in (2, 4, 6) and len(layout) == 10 + k and layout[3 + k] == 6 and layout[4 + k:] == [0] * 6, "INVALID_INPUT")
         owned = next((r for r in self._research(self.pool_account)["vehicles"] if r["native_id"] == layout[1]), None)
         require(owned is not None, "UNKNOWN_VEHICLE")
         p = self.registry.by_vehicle.get(owned["vehicle_id"])
         require(p is not None, "UNSUPPORTED_MOUNT")
         mount = self.mounts[p.assembly_id]
         expected = {self.shells[key].native_compact_id: key for key in mount.shell_ids}
-        values = layout[3:9]
-        require({abs(values[i]) for i in (0, 2, 4)} == set(expected), "INCOMPATIBLE_SHELL")
-        require(all(0 <= values[i] <= mount.capacity for i in (1, 3, 5)), "INVALID_QUANTITY")
-        require(sum(values[i] for i in (1, 3, 5)) <= mount.capacity, "CAPACITY_EXCEEDED")
-        return mount, {expected[abs(values[i])]: values[i + 1] for i in (0, 2, 4)}
+        values = layout[3:3 + k]; shells, counts = range(0, k, 2), range(1, k, 2)
+        require(k == 2 * len(expected) and {abs(values[i]) for i in shells} == set(expected), "INCOMPATIBLE_SHELL")
+        require(all(0 <= values[i] <= mount.capacity for i in counts), "INVALID_QUANTITY")
+        require(sum(values[i] for i in counts) <= mount.capacity, "CAPACITY_EXCEEDED")
+        return mount, {expected[abs(values[i])]: values[i + 1] for i in shells}
 
     def layouts(self, account):
         if not self.pool_active(): return super().layouts(account)
@@ -441,7 +443,7 @@ class PoolStore(ResultsStore):
         for native, raw in rows:
             require(type(raw) is str and len(raw) <= 128, "CORRUPT_STORE")
             try:
-                layout = json.loads(raw); mount, counts = self._validate_layout([5, native, 6, *layout, 6, 0, 0, 0, 0, 0, 0])
+                layout = json.loads(raw); mount, counts = self._validate_layout([5, native, len(layout), *layout, 6, 0, 0, 0, 0, 0, 0])
             except (ValueError, TypeError, TransactionError) as error: raise TransactionError("CORRUPT_STORE") from error
             require(ammo[owned[native]["vehicle_inventory_id"]]["loaded"] == counts, "CORRUPT_STORE")
             result[native] = layout
@@ -668,7 +670,7 @@ class PoolStore(ResultsStore):
 
     def _pool_ammo_response(self, request, revision, depot):
         mount, desired = self._validate_layout(request["layout"])
-        native, layout = request["layout"][1], request["layout"][3:9]
+        native, layout = request["layout"][1], request["layout"][3:3 + request["layout"][2]]
         data = {"prevRev": request["wire_revision"], "rev": request["wire_revision"] + 1,
             "inventory": {1: {"shells": {native: [n if i % 2 else abs(n) for i, n in enumerate(layout)]},
                 "shellsLayout": {native: {(mount.turret_native_compact_id, mount.gun_native_compact_id): layout}}},
@@ -731,7 +733,7 @@ class PoolStore(ResultsStore):
                 require(c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (n, account, shell)).rowcount == 1, "CORRUPT_STORE")
             self._failpoint("after_depot_update")
             require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?", (canonical(desired).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
-            c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(request["layout"][3:9]), account, owned["native_id"]))
+            c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(request["layout"][3:3 + request["layout"][2]]), account, owned["native_id"]))
             self._failpoint("after_ammo_update")
             destination = profile["revision"] + 1
             self._save_crew_projection(account, destination, public_before["profile_json"])

@@ -802,7 +802,7 @@ impl Config {
         use crate::p04m_companion091::Request;
         if !self.p04m_pool||!self.profile13_battle||!pool.matches(&profile.account_id,profile.database_id,revision){return Err(invalid("P04M bound service owner/revision/opt-in"));}
         let (path,status,layout,barracks)=match request{
-            Request::Ammo(r)=>{pool.ammo_layout(&r)?;("/internal/native/ammo","serviced",r.arguments.iter().map(|v|*v as i64).collect::<Vec<_>>(),None)},
+            Request::Ammo(r)=>{pool.ammo_layout(&r)?;("/internal/native/ammo","serviced",r.sent().iter().map(|v|*v as i64).collect::<Vec<_>>(),None)},
             Request::Crew(r)=>{pool.recruit(r)?;("/internal/native/crew","recruited",r.layout().to_vec(),None)},
             Request::Transfer(r)=>{pool.transfer(r)?;("/internal/native/crew-transfer","transferred",r.layout().to_vec(),None)},
             Request::Barracks(r)=>{pool.barracks(r)?;("/internal/native/crew-recruit-barracks","recruited",r.layout().to_vec(),Some(r))},
