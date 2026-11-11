@@ -312,8 +312,8 @@ mod tests {
     fn embedded_registry_verifies_and_excludes_legacy_kinds() {
         let r=registry().unwrap();
         // main: 232 generated rows minus the five hand-closed kinds; test_lab: the
-        // qualified rows of config/test_lab/battle_qualification.v1.json (CONTENT-0 2.5).
-        assert_eq!(r.entries().len(),if cfg!(feature="test_lab"){327}else{227});
+        // qualified rows of config/test_lab/battle_qualification.v1.json (CONTENT-0 2.3b).
+        assert_eq!(r.entries().len(),if cfg!(feature="test_lab"){331}else{227});
         for refused in ["vehicle:france:AMX_13_90","vehicle:france:AMX_M4_1945"] {assert!(r.by_vehicle(refused).is_none(),"{refused}");}
         for (i,e) in r.entries().iter().enumerate() {
             assert_eq!(e.id.get(),i);assert_eq!(r.by_label(&e.label),Some(e.id));
