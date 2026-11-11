@@ -348,6 +348,15 @@
      {"kind": "france-B1", "vehicle_id": "vehicle:france:B1", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
      {"kind": "france-ELC_AMX", "vehicle_id": "vehicle:france:ELC_AMX", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
      {"kind": "uk-GB63_TOG_II", "vehicle_id": "vehicle:uk:GB63_TOG_II", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
-     {"kind": "uk-GB79_FV206", "vehicle_id": "vehicle:uk:GB79_FV206", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
+     {"kind": "uk-GB79_FV206", "vehicle_id": "vehicle:uk:GB79_FV206", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "china-Ch24_Type64", "vehicle_id": "vehicle:china:Ch24_Type64", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "france-AMX_13_75", "vehicle_id": "vehicle:france:AMX_13_75", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "france-D2", "vehicle_id": "vehicle:france:D2", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-Pz_IV_AusfH", "vehicle_id": "vehicle:germany:Pz_IV_AusfH", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "japan-Ke_Ni", "vehicle_id": "vehicle:japan:Ke_Ni", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "japan-Ke_Ni_B", "vehicle_id": "vehicle:japan:Ke_Ni_B", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "uk-GB40_Gun_Carrier_Churchill", "vehicle_id": "vehicle:uk:GB40_Gun_Carrier_Churchill", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-M4A2E4", "vehicle_id": "vehicle:usa:M4A2E4", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-Object_430", "vehicle_id": "vehicle:ussr:Object_430", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
 ]
 }
