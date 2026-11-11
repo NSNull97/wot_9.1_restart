@@ -160,6 +160,12 @@ impl State {
         self.classic=true;Ok(())
     }
     pub fn classic(&self)->bool {self.classic}
+    /// TURPHYS-01 test_lab turret test: a passive test bot's ammo bay starts at 1 HP (before any
+    /// hit), so the first penetrating hit that reaches it destroys it and the real rack path runs.
+    pub fn weaken_ammo_bay_for_turret_test(&mut self)->io::Result<()> {
+        if self.sequence!=0||!self.seen.is_empty() {return Err(bad("turret test ammo bay after hits"));}
+        self.health[Device::AmmoBay as usize]=1;Ok(())
+    }
     /// Module hits of one shot (target, ordinal), in application order.
     pub fn shot_hits(&self,shot:u32)->Vec<(Target,u8)> {self.seen.iter().filter(|h|h.cause.shot==shot).map(|h|(h.target,h.ordinal)).collect()}
     /// This shot already hit this module or seat (tracks of a later explosion are skipped).

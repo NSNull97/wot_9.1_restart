@@ -230,7 +230,7 @@ fn bot01_mixed_ammo_bot_has_a_stock_lab_loadout_and_shoots_through_the_typed_led
     w.enable_mixed_ammo().unwrap();
     for slot in 0..2{
         let identity=Identity{account:format!("bot01:{slot}"),database:DATABASE_BASE+slot as i32,name:format!("Bot-{:02}",slot+1)};
-        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE+slot as u32,VehicleKind::Ms1).unwrap(),slot);
+        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE+slot as u32,VehicleKind::Ms1,None).unwrap(),slot);
         w.actors[slot].bot=Some(slot as u8);
     }
     let source=crate::p06t_shells091::profile(VehicleKind::Ms1.mount());
@@ -246,6 +246,32 @@ fn bot01_mixed_ammo_bot_has_a_stock_lab_loadout_and_shoots_through_the_typed_led
     assert_eq!(w.actors[0].fire.typed().unwrap().counts()[0],source.capacity-1);
     // The bot never gained an owned terminal: writers have nothing to read.
     assert!(w.terminal_state_json(0).is_err());
+}
+
+#[test]
+fn turphys01_turret_test_bots_are_passive_targets_with_stepped_racks_and_a_one_hp_ammo_bay(){
+    let now=Instant::now();let map=MapId::Prohorovka;
+    let mut w=prepared(map,1,6,3,now);
+    assert!(w.enable_bot_turret_test().is_err(),"needs mixed ammo and ammo detonation");
+    w.enable_mixed_ammo().unwrap();w.enable_ammo_detonation().unwrap();
+    assert!(!w.bot_turret_test());w.enable_bot_turret_test().unwrap();assert!(w.bot_turret_test());
+    let capacity=crate::p06t_shells091::profile(VehicleKind::Ms1.mount()).capacity;
+    let steps:Vec<u16>=(0..5).map(|k|turret_test_rack(VehicleKind::Ms1,k)).collect();
+    assert_eq!(steps,vec![1,capacity/4,capacity/2,capacity,1],"one shell, a quarter, a half, full, again");
+    let bay=crate::p06t_device_caps::Device::AmmoBay as usize;
+    for (slot,rack) in [(0usize,Some(steps[1])),(1,None)]{
+        let identity=Identity{account:format!("bot01:{slot}"),database:DATABASE_BASE+slot as i32,name:format!("Bot-{:02}",slot+1)};
+        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE+slot as u32,VehicleKind::Ms1,rack).unwrap(),slot);
+    }
+    assert_eq!(w.actors[0].fire.typed().unwrap().counts(),[steps[1],0,0]);
+    assert_eq!(w.actors[0].devices.as_ref().unwrap().health()[bay],1,"test bot: 1 HP ammo bay");
+    assert_eq!(w.actors[1].fire.typed().unwrap().counts(),[capacity,0,0],"an ordinary bot keeps the full rack");
+    assert!(w.actors[1].devices.as_ref().unwrap().health()[bay]>1,"an ordinary bot keeps its ammo bay");
+    // The rack path destroys the weakened bay on any module hit that reaches it.
+    let mut state=crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(VehicleKind::Ms1).unwrap()).unwrap();
+    state.weaken_ammo_bay_for_turret_test().unwrap();assert_eq!(state.health()[bay],1);
+    // Without the switch nothing changes: an ordinary plan has no turret test.
+    let plain=prepared(map,1,6,3,now);assert!(!plain.bot_turret_test());
 }
 
 /// Natural results: bots are ordinary roster rows of the natives' result
@@ -307,7 +333,7 @@ fn bot01_generated_kind_bot_seats_typed_and_shoots(){
     let mut w=world(true);w.enable_bots(plan).unwrap();
     // The native place: seated by the same server path (test stand-in for an owned player).
     let human=Identity{account:"bot01-native".into(),database:1,name:"native".into()};
-    assert_eq!(w.attach_bot_actor(human,1,VehicleKind::Ms1).unwrap(),0);
+    assert_eq!(w.attach_bot_actor(human,1,VehicleKind::Ms1,None).unwrap(),0);
     assert_eq!(w.fill_bots().unwrap(),2);
     let source=crate::p06t_shells091::profile(kv3.mount());
     for slot in 1..3{
@@ -591,7 +617,7 @@ fn a_bot_of_a_layered_battle_has_classic_modules(){
         w.enable_mixed_ammo().unwrap();if layers{w.enable_shell_layers().unwrap();}
         w.enable_bots(Plan{human_places:1,seed:1,kinds:vec![VehicleKind::Ms1]}).unwrap();
         let identity=Identity{account:"bot-classic".into(),database:1,name:"classic".into()};
-        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE,VehicleKind::Ms1).unwrap(),0);w
+        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE,VehicleKind::Ms1,None).unwrap(),0);w
     };
     assert!(build(true).actors[0].devices.as_ref().unwrap().classic(),"layered battle");
     assert!(!build(false).actors[0].devices.as_ref().unwrap().classic(),"single-plate battle keeps the LAB rules");

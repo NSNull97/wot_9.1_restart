@@ -144,7 +144,7 @@ impl Ledger{
 
 /// TURRET-01 PROJECT launch policy (no 0.9.1 client data exists for it): the
 /// detached turret+gun is a dynamic Jolt body in the battle-scene worker.
-pub const JOLT_POLICY:&str="project.turret01.detached-turret-jolt-launch.v1";
+pub const JOLT_POLICY:&str="project.turphys01.detached-turret-jolt-launch.v3-rack-charge-unsaturated";
 /// One battle-RNG draw per launch parameter, journalled in this order.
 pub const LAUNCH_DRAWS:usize=6;
 /// RNG journal ordinals of the launch draws (ignition rolls use 0..=15).
@@ -153,6 +153,20 @@ pub const LAUNCH_ORDINAL:u8=0xe0;
 pub const MAX_TRAJECTORY_SAMPLES:usize=101;
 const MAX_LAUNCH_SPEED:f32=20.;
 const MAX_LAUNCH_SPIN:f32=10.;
+/// TURPHYS-01 PROJECT rule (owner 2026-11-10): the blast grows with the shells lost in the rack and their calibre.
+/// `charge` = shells x (calibre / 100 mm)^3, a proxy of the explosive mass; FULL_CHARGE is about a full T-62A rack
+/// (40 x 115 mm). Not 0.9.1 data: the client carries no detonation impulse.
+pub const FULL_CHARGE:f32=60.;
+pub const MAX_CHARGE:f32=2000.;
+const CHARGE_EXPONENT:f32=0.75;
+/// Vertical launch speed bound (m/s, after the random factor): the scale stops near a charge of 100.
+const MAX_UP:f32=18.;
+/// Rack charge of `shells` rounds of `calibre_mm`.
+pub fn rack_charge(shells:f32,calibre_mm:f64)->io::Result<f32>{
+    if !shells.is_finite()||shells<0.||!calibre_mm.is_finite()||!(1. ..=500.).contains(&calibre_mm){return Err(bad("rack charge source bounds"));}
+    let charge=shells*((calibre_mm/100.).powi(3))as f32;
+    if !charge.is_finite()||charge>MAX_CHARGE{return Err(bad("rack charge bounds"));}Ok(charge)
+}
 
 /// Initial body motion derived by Root from the actual detonation event and the
 /// battle RNG. Velocities, not impulses: the resting place does not depend on a
@@ -166,18 +180,22 @@ impl crate::bw_wire::Wire for Launch {
 }
 // end BW-01 wire codec
 impl Launch{
-    /// PROJECT policy `JOLT_POLICY`: up 5..10 m/s (more with fuller rack),
-    /// 1..4 m/s sideways along the attacker→target heading +-60 degrees,
-    /// spin up to 3/2/3 rad/s about yaw-free X/Y/Z. `heading` is the shot's
-    /// horizontal direction (radians, client yaw convention), `fill` the lost
-    /// share of the rack 0..=1. `draws` are raw SplitMix64 outputs in order.
-    pub fn derive(heading:f32,fill:f32,draws:[u64;LAUNCH_DRAWS])->io::Result<Self>{
-        if !heading.is_finite()||!(0. ..=1.).contains(&fill){return Err(bad("turret launch source bounds"));}
+    /// PROJECT policy `JOLT_POLICY` (v3, owner 2026-11-11: small racks barely lift, big calibres and racks throw
+    /// further, no ceiling at a full T-62A rack). Strength s = (charge / FULL_CHARGE)^0.75, unbounded: one T-62A
+    /// shell s ~ 0.06, a full T-62A rack s = 1, a full IS-7 rack s ~ 1.07. Up min(18, (1 + 14 s)(0.9..1.1)) m/s: one
+    /// shell lifts the turret ~ 0.2 m, a full T-62A rack ~ 11 m, a full IS-7 ~ 13 m, a charge of 100 and more ~ 16 m;
+    /// sideways min(5, 0.5 + 3.5 s)(0.5..1) m/s along the attacker->target heading +-60 degrees; spin scales with
+    /// 0.3 + 0.7 min(s, 1.5) up to 3/2/3 rad/s about yaw-free X/Y/Z. `heading` is the shot's horizontal direction
+    /// (radians, client yaw convention), `charge` from `rack_charge`. `draws` are raw SplitMix64 outputs in order.
+    pub fn derive(heading:f32,charge:f32,draws:[u64;LAUNCH_DRAWS])->io::Result<Self>{
+        if !heading.is_finite()||!charge.is_finite()||!(0. ..=MAX_CHARGE).contains(&charge){return Err(bad("turret launch source bounds"));}
         let u=draws.map(|v|((v>>11)as f64/(1u64<<53)as f64)as f32);
-        let up=5.+3.*fill+2.*u[0];
-        let azimuth=heading+(u[1]-0.5)*2.*PI/3.;let side=1.+3.*u[2];
+        let s=(charge/FULL_CHARGE).powf(CHARGE_EXPONENT);
+        let up=((1.+14.*s)*(0.9+0.2*u[0])).min(MAX_UP);
+        let azimuth=heading+(u[1]-0.5)*2.*PI/3.;let side=(0.5+3.5*s).min(5.)*(0.5+0.5*u[2]);
+        let spin=0.3+0.7*s.min(1.5);
         let launch=Self{linear_velocity:[side*azimuth.sin(),up,side*azimuth.cos()],
-            angular_velocity:[(u[3]-0.5)*6.,(u[4]-0.5)*4.,(u[5]-0.5)*6.],draws};
+            angular_velocity:[(u[3]-0.5)*6.*spin,(u[4]-0.5)*4.*spin,(u[5]-0.5)*6.*spin],draws};
         launch.validate()?;Ok(launch)
     }
     pub fn validate(self)->io::Result<()>{

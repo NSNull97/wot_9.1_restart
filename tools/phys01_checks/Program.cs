@@ -507,6 +507,33 @@ internal static class Probe
         Console.WriteLine($"## ride {kind}: body_y={t.Body.Position.Y:F4} wheels={t.Constraint.WheelsCount} grounded={Enumerable.Range(0, t.Constraint.WheelsCount).Count(k => t.Constraint.GetWheel(k).HasContact)}");
     }
 
+    // TURPHYS-01: a hull on its roof must rest on its turret box, not sink the turret into the ground; dropping the
+    // turret must not move the centre of mass.
+    static void Roof(string kind)
+    {
+        using var w = new World(); Flat(w);
+        var t = w.Add(kind, new Vector3(0, .1f, 0), 0);
+        var row = ReferenceShapes.For(kind);
+        var q = Quaternion.CreateFromAxisAngle(Vector3.UnitZ, MathF.PI);
+        w.System.BodyInterface.SetPositionAndRotation(t.Body.ID, new Vector3(0, 4, 0), q, Activation.Activate);
+        for (int i = 0; i < 300; i++) w.Step(Stop);
+        float Lowest(Vector3 c, Vector3 h)
+        {
+            float min = float.MaxValue;
+            foreach (int x in new[] { -1, 1 }) foreach (int y in new[] { -1, 1 }) foreach (int z in new[] { -1, 1 })
+                min = MathF.Min(min, (t.Body.Position + Vector3.Transform(c + new Vector3(x * h.X, y * h.Y, z * h.Z), t.Body.Rotation)).Y);
+            return min;
+        }
+        float hull = Lowest(Vector3.Zero, t.Source.Binding.HalfExtents);
+        float turret = row == null ? float.NaN : Lowest(row.TurretCenter, row.TurretHalf);
+        var up = Vector3.Transform(Vector3.UnitY, t.Body.Rotation);
+        var com = t.Body.CenterOfMassPosition;
+        t.DropTurret();
+        float moved = (t.Body.CenterOfMassPosition - com).Length();
+        for (int i = 0; i < 120; i++) w.Step(Stop);
+        Console.WriteLine($"## roof {kind}: turret_box={(row != null)} up_y={F(up.Y)} lowest_hull_y={F(hull)} lowest_turret_y={F(turret)} com_shift_on_drop={moved:E2} after_drop_lowest_hull_y={F(Lowest(Vector3.Zero, t.Source.Binding.HalfExtents))} up_y_after={F(Vector3.Transform(Vector3.UnitY, t.Body.Rotation).Y)}");
+    }
+
     public static int Main(string[] args)
     {
         if (args.Length < 1 || !Directory.Exists(Path.Combine(args[0], "server/physics"))) { Console.Error.WriteLine("usage: Phys01Checks <repo-root> [mode] [baseline]"); return 2; }
@@ -553,6 +580,7 @@ internal static class Probe
                 Wedge(kind, d, 1, -1, "forward+away");
             }
             if (mode is "all" or "ride") foreach (string kind in Kinds(Bat)) Ride(kind);
+            if (mode is "all" or "roof") foreach (string kind in Kinds(Bat)) Roof(kind);
             if (mode is "all" or "grade") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 15f, 20f, 25f }) foreach (float h in new[] { 45f, 135f }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, 1, st);
             if (mode is "all" or "launch") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 3f, 6f, 10f, 15f }) foreach (float h in new[] { 0f, 45f, 90f, 135f, 180f }) foreach (int th in new[] { 1, -1 }) foreach (int st in new[] { 1, -1 }) Launch(kind, d, h, th, st);
             if (mode is "all" or "coast") foreach (string kind in Kinds(Bat)) foreach (float d in new[] { 0f, 10f, 20f }) foreach (float v in new[] { 3f, 6f, 10f }) foreach (int st in new[] { 1, -1 }) Coast(kind, d, v, st);

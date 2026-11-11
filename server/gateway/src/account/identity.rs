@@ -289,6 +289,8 @@ pub struct Config {
     pub team_base_spawn:bool,
     /// BOT-01: server bots fill each arena after `human_places` native places (absent: none).
     pub bots:Option<crate::gateway091::shared::model::bots::Plan>,
+    /// TURPHYS-01 test_lab: passive bots with stepped racks and a 1 HP ammo bay (`bots.turret_test`).
+    pub bots_turret_test:bool,
     /// MM-01: "В бой" queues; rules match players into arenas (absent: fixed roster, old path).
     pub matchmaker:Option<crate::gateway091::shared::matchmaker::Rules>,
     /// NET-01: `pose_delivery` (absent: reliable poses, one reliable body per loop — the old path).
@@ -447,10 +449,11 @@ impl Config {
             return Err(invalid("arenas requires connection_capacity of at least arenas*battle_players"));
         }
         // BOT-01: {"policy":<this build's>,"human_places":H,"seed":S[,"kinds":[labels]]}.
+        let mut bots_turret_test=false;
         let bots=match value.remove("bots"){
             None=>None,
             Some(Value::Object(b))=>{
-                if b.keys().any(|k|!["policy","human_places","seed","kinds"].contains(&k.as_str()))
+                if b.keys().any(|k|!["policy","human_places","seed","kinds","turret_test"].contains(&k.as_str()))
                     ||b.get("policy").and_then(Value::as_str)!=Some(crate::gateway091::shared::model::bots::POLICY){
                     return Err(invalid("bots must name this build's bot policy with human_places, seed and optional kinds"));
                 }
@@ -467,6 +470,9 @@ impl Config {
                 };
                 let plan=crate::gateway091::shared::model::bots::Plan{human_places,seed,kinds};
                 plan.validate(battle_players).map_err(|_|invalid("bots kinds must be distinct profile13 vehicles"))?;
+                // TURPHYS-01: the passive stepped-rack turret test exists only in a test_lab build.
+                bots_turret_test=match b.get("turret_test"){None=>false,Some(Value::Bool(true)) if cfg!(feature="test_lab")=>true,
+                    _=>return Err(invalid("bots turret_test is true in a test_lab build only"))};
                 Some(plan)
             },
             _=>return Err(invalid("bots must be an object")),
@@ -596,7 +602,7 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,shell_layers,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,bots_turret_test,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,shell_layers,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
@@ -1343,6 +1349,11 @@ mod tests {
         row["connection_capacity"]=6.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,2);
         // Owner's one-client stand: 6 places, 1 native, 5 bots.
         row["bots"]["human_places"]=1.into();assert_eq!(load(&row).unwrap().bots.unwrap().human_places,1);
+        // TURPHYS-01: the turret test switch is accepted only as true in a test_lab build.
+        let mut turret=row.clone();turret["bots"]["turret_test"]=true.into();
+        assert_eq!(load(&turret).map(|c|c.bots_turret_test).ok(),cfg!(feature="test_lab").then_some(true));
+        turret["bots"]["turret_test"]=false.into();assert!(load(&turret).is_err());
+        assert!(!load(&row).unwrap().bots_turret_test);
     }
     #[test] fn bw01_battle_worker_configuration_is_explicit_bounded_and_absent_by_default() {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();

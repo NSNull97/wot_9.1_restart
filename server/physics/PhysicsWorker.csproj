@@ -17,5 +17,6 @@
     <EmbeddedResource Condition="'$(TestLab)' == 'true'" Include="../../config/test_lab/generated-definitions.json" LogicalName="MapDrive.GeneratedDefinitions" />
     <EmbeddedResource Include="../contracts/map_registry.json" LogicalName="MapDrive.MapRegistry" />
     <EmbeddedResource Include="Profiles/reference-characteristics.json" LogicalName="MapDrive.ReferenceCharacteristics" />
+    <EmbeddedResource Include="Profiles/turret-shapes.json" LogicalName="MapDrive.TurretShapes" />
   </ItemGroup>
 </Project>
