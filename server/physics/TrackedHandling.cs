@@ -102,7 +102,7 @@ internal sealed class TrackedHandling
     // convergence. This is not an imported historical drivetrain parameter.
     public static float TrackInertia(float massKg, float radius)
     {
-        if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 ||
+        if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 200000 ||
             !float.IsFinite(radius) || radius < .05f || radius > 1)
             throw new InvalidDataException("tracked inertia mass/radius bounds");
         return MathF.Max(10, .02f * massKg * radius * radius);
@@ -113,7 +113,7 @@ internal sealed class TrackedHandling
     {
         if (!float.IsFinite(trackWidth) || trackWidth < .5f || trackWidth > 5 ||
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
-            !float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || supportWheels.Length is not (6 or 10))
+            !float.IsFinite(massKg) || massKg < 1000 || massKg > 200000 || supportWheels.Length is not (6 or 10))
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
         width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
         poweredTurnLoss = enablePoweredTurnLoss;

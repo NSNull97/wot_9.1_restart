@@ -104,7 +104,7 @@ impl Kernel {
             .chain(m.inverse_inertia.iter().flatten()).chain(std::iter::once(&m.inverse_mass))
             .any(|x|!x.is_finite()) { return Err(Error::NonFinite); }
         if m.com.iter().chain(&c.point).any(|x|x.abs()>2000.0) || !motion_bounds(m.velocity,m.omega)
-            || m.inverse_mass < (1.0f32/100000.0f32) || m.inverse_mass > (1.0f32/1000.0f32)
+            || m.inverse_mass < (1.0f32/200000.0f32) || m.inverse_mass > (1.0f32/1000.0f32)
             || m.inverse_inertia.iter().flatten().any(|x|x.abs()>1.0) { return Err(Error::Bounds); }
         let n=d(c.normal);let len=dot(n,n).sqrt();
         if n.iter().any(|x|x.abs()>2.0) || !(0.999..=1.001).contains(&len) { return Err(Error::Normal); }

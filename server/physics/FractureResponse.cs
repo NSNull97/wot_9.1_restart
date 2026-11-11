@@ -35,7 +35,7 @@ internal sealed class FractureResponse
 
     public FractureResponse(float massKg, CheckedInput.CatalogSpec catalog)
     {
-        if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 100000 || !catalog.Fractures || catalog.Version == 8)
+        if (!float.IsFinite(massKg) || massKg < 1000 || massKg > 200000 || !catalog.Fractures || catalog.Version == 8)
             throw new InvalidDataException("fracture profile/mass mismatch");
         mass = massKg;
         wholeObjectEnergy = catalog.Version is 6 or 7;

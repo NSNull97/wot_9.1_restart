@@ -21,7 +21,7 @@ pub fn policy_for(kind:VehicleKind)->&'static str { match kind {
 /// contact below this kinetic-energy floor remains a contact candidate but
 /// does not remove the object, so a light tap cannot fell every tree.
 pub const RAMMING_MIN_MASS_KG:f32=1000.;
-pub const RAMMING_MAX_MASS_KG:f32=100000.;
+pub const RAMMING_MAX_MASS_KG:f32=200000.;
 pub const RAMMING_MIN_ENERGY_J:f32=8_000.;
 pub const FENCE_RAM_POLICY:&str="test_lab-fence-energy-v1";
 pub const WHOLE_RAM_POLICY:&str="test_lab-whole-object-energy-v1";

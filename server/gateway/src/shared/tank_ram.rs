@@ -10,7 +10,7 @@ fn damage(energy:f64,target:f64,other:f64)->i16{(energy*other/(target+other)/DAM
 pub fn resolve(c:Contact,mass_a:f64,mass_b:f64)->io::Result<Option<Resolution>>{
     if c.slot_a>=c.slot_b||c.substep==0||c.substep>6||c.point.iter().any(|v|!v.is_finite()||v.abs()>2000.)||c.normal.iter().any(|v|!v.is_finite())||
        (c.normal.iter().map(|v|f64::from(*v).powi(2)).sum::<f64>()-1.).abs()>0.002||c.relative_velocity.iter().any(|v|!v.is_finite()||v.abs()>50.002)||
-       !mass_a.is_finite()||!mass_b.is_finite()||!(1000. ..=100000.).contains(&mass_a)||!(1000. ..=100000.).contains(&mass_b){return Err(io::Error::new(io::ErrorKind::InvalidData,POLICY));}
+       !mass_a.is_finite()||!mass_b.is_finite()||!(1000. ..=200000.).contains(&mass_a)||!(1000. ..=200000.).contains(&mass_b){return Err(io::Error::new(io::ErrorKind::InvalidData,POLICY));}
     let signed=dot(c.relative_velocity,c.normal);if signed<MIN_CLOSING_SPEED{return Ok(None);}let reduced=mass_a*mass_b/(mass_a+mass_b);let energy=0.5*reduced*signed*signed;
     if !energy.is_finite()||energy<=0.{return Err(io::Error::new(io::ErrorKind::InvalidData,POLICY));}
     Ok(Some(Resolution{attacker:c.slot_a,target:c.slot_b,closing_speed:signed,energy_j:energy,damage_a:damage(energy,mass_a,mass_b),damage_b:damage(energy,mass_b,mass_a)}))

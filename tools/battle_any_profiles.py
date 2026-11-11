@@ -91,9 +91,9 @@ PHYSICS_POLICY = "p06t-extended-six-support-v2"
 SUPPORT_RADIUS = "named-equal-main-W_L0-W_R0-or-group-W_L-W_R"
 # Numeric envelope enforced by server/physics StockVehicleProfiles/Extended
 # ValidateProjection; a vehicle outside it is refused, never clamped.
-ENVELOPE = {"mass_kg": (1000, 100000), "max_forward_mps": (1, 20), "max_reverse_mps": (.5, 10),
+ENVELOPE = {"mass_kg": (1000, 200000), "max_forward_mps": (1, 25), "max_reverse_mps": (.5, 15),
             "engine_max_torque_nm": (10, 10000), "wheel_radius": (.05, 1),
-            "track_max_brake_torque": (100, 300000), "max_yaw_rate_rad_s": (.1, 1.0)}
+            "track_max_brake_torque": (100, 300000), "max_yaw_rate_rad_s": (.1, 1.5)}
 # Constant per-row projection mapping, identical to extended-definitions.json.
 MAPPING = {"policy": PHYSICS_POLICY, "classification": "INFERRED_TEST_LAB_ONLY", "historical_fidelity": False,
            "support_radius": SUPPORT_RADIUS, "support_count": 6, "support_y_offset": .28,
@@ -546,9 +546,13 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
         for field, (low, high) in ENVELOPE.items():
             value = handling[field] if field in handling else physics[field]
             refuse_if(not low <= value <= high, "PHYSICS_ENVELOPE_EXCEEDED", field + "=" + repr(value))
-        refuse_if(not all(.1 <= x <= 5 for x in physics["body_half_extents"]) or
+        refuse_if(not all(.1 <= x <= 6 for x in physics["body_half_extents"]) or
                   not all(-5 <= x <= 5 for x in physics["body_center_offset"]) or
-                  not all(-5 <= x <= 5 for p in physics["wheel_points"] for x in p), "PHYSICS_ENVELOPE_EXCEEDED", "body/support bounds")
+                  not all(-5 <= x <= 5 for p in physics["wheel_points"] for x in p), "PHYSICS_ENVELOPE_EXCEEDED",
+                  "body/support bounds half=%r center=%r supports=%r" % (
+                      [round(x, 3) for x in physics["body_half_extents"]],
+                      [round(x, 3) for x in physics["body_center_offset"]],
+                      [round(x, 3) for x in physics["wheel_points"][0] + physics["wheel_points"][-1]]))
         bundle = dict(schema=BUNDLE_SCHEMA, vehicle_id=vehicle_id, classification="VERIFIED_STATIC_ORIGINAL_717",
             identity=row["identity"], members=dict(sorted(members.items())),
             wheel_source=dict(groups=groups, individual_wheels=wheels),

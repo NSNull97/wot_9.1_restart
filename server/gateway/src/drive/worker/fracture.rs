@@ -56,7 +56,7 @@ pub(super) fn parse(value: &Value, contacts: &[ObjectContact], spec: &CatalogSpe
     map: &MapSpec, seq: u32) -> io::Result<Vec<Receipt>> {
     let rows = value.as_array().ok_or_else(bad)?;
     if rows.len()>32 || (seq==0 && !rows.is_empty()) || !map.mass_kg.is_finite()
-        || !(1000. ..=100000.).contains(&map.mass_kg) { return Err(bad()); }
+        || !(1000. ..=200000.).contains(&map.mass_kg) { return Err(bad()); }
     let mut receipts: Vec<Receipt> = Vec::with_capacity(rows.len());
     let mut ids = BTreeSet::new();
     for (index,row) in rows.iter().enumerate() {

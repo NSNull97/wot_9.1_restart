@@ -60,7 +60,7 @@ internal static class AngularContactResponse
         public Frame(Vector3 centerOfMass,float inverseMassValue,IReadOnlyList<float> rawNativeInverseInertia)
         {
             Require(Bounded(centerOfMass,2000),"COM bound");
-            Require(float.IsFinite(inverseMassValue)&&inverseMassValue>=(float)(1d/100000)
+            Require(float.IsFinite(inverseMassValue)&&inverseMassValue>=(float)(1d/200000)
                 &&inverseMassValue<=(float)(1d/1000),"inverse mass bound");
             Require(rawNativeInverseInertia.Count==9,"matrix size");
             foreach(float x in rawNativeInverseInertia)Require(float.IsFinite(x)&&Math.Abs((double)x)<=1,"matrix bound");

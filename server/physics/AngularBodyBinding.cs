@@ -45,7 +45,7 @@ internal sealed class AngularBodyBinding
             return handling.GetProperty("version").GetInt32()==1&&handling.GetProperty("policy").GetString()=="p05b-track-yaw-v1"
                 &&SameNumeric(handling.GetProperty("max_yaw_rate_rad_s"),want.GetProperty("max_yaw_rate_rad_s"));
         }
-        var half=CheckedInput.Vector(config.GetProperty("body_half_extents"),.1f,5);
+        var half=CheckedInput.Vector(config.GetProperty("body_half_extents"),.1f,6);
         if(Matches(Ms1))return new("ms1","48f8ac675afafbe8605bd97bd92dc2c37f26673b65a548d4f0402b815f7ee9a1",4691,half,
             0x395f8781,0x390ec909,0x3919bf9b,0x3a25f4bb);
         if(Matches(Is7))return new("is7","2b72923c904678b5471ca4c8e01125f787d0baeb8cf2153c322a126fa1b6cfd7",68190,half,
@@ -58,7 +58,7 @@ internal sealed class AngularBodyBinding
         float inverseMass,Vector3 principal,Quaternion rotation)
     {
         CheckedInput.Sha256(profileHash);
-        if(kind is not ("t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")&&!GeneratedVehicleProfiles.IsGenerated(kind)||!float.IsFinite(massKg)||massKg<1000||massKg>100000
+        if(kind is not ("t26" or "t34" or "t3485" or "wt-e100-128" or "fv215b-183")&&!GeneratedVehicleProfiles.IsGenerated(kind)||!float.IsFinite(massKg)||massKg<1000||massKg>200000
             ||!float.IsFinite(inverseMass)||inverseMass<=0
             ||!float.IsFinite(principal.X)||!float.IsFinite(principal.Y)||!float.IsFinite(principal.Z)
             ||principal.X<=0||principal.Y<=0||principal.Z<=0
