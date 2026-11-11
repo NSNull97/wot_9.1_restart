@@ -155,7 +155,8 @@ fn shared_source_reference(kind:VehicleKind,version:u8,source:Option<(PathBuf,St
 }
 
 /// Refuse an unrepresentable generated source envelope before a battle can
-/// start or reserve an owner. The existing wire quantizer is not widened.
+/// start or reserve an owner. The wire quantizer spans the source absolute
+/// envelope (the client's `pitchLimits['absolute']`, see `aim::wire_pitch_range`).
 pub(super) fn require_source_wire_support(kind:VehicleKind)->io::Result<()> {
     super::aim::source_controller_supported(kind).map(|_|())
         .map_err(|_|bad("generated source pitch exceeds the supported wire range"))
@@ -363,7 +364,9 @@ mod tests {
         let mut v=value();let base=v["catalog"].clone();v["version"]=3.into();v["shared_physics"]=base.clone();
         v["profiles"]=serde_json::json!(VehicleKind::ALL.map(|kind|serde_json::json!({"kind":kind.label(),"pool":base.clone(),"geometry":base.clone()})));v
     }
-    #[test]fn generated_wide_source_manifest_fails_before_catalog_or_pool_access(){
+    /// CONTENT-0 2.5: a wide front/back pitch kind now passes the wire gate; the
+    /// manifest then fails on the (absent) catalog, not on its pitch envelope.
+    #[test]fn generated_wide_source_manifest_passes_the_wire_gate(){
         let mut v=five();v["version"]=5.into();
         let mut row=v["profiles"][0].clone();row["kind"]="germany-Pz_IV_AusfH".into();
         v["profiles"].as_array_mut().unwrap().push(row);
@@ -371,10 +374,12 @@ mod tests {
         let stamp=std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
         let dir=root.join("test-runs").join(format!("generated-wide-manifest-{}-{stamp}",std::process::id()));fs::create_dir_all(&dir).unwrap();
         let manifest=dir.join("manifest.json");fs::write(&manifest,serde_json::to_vec(&v).unwrap()).unwrap();
-        // The source catalog and pools in `five()` do not exist: an error from
-        // the real load path must identify the unsupported envelope first.
-        let error=match load(&root,&manifest){Ok(_)=>panic!("unsupported manifest loaded"),Err(error)=>error};
-        assert!(error.to_string().contains("generated source pitch exceeds the supported wire range"),"{error}");
+        // The source catalog and pools in `five()` do not exist: the real load
+        // path still fails, but no longer on the wide pitch envelope.
+        let error=match load(&root,&manifest){Ok(_)=>panic!("manifest without catalog loaded"),Err(error)=>error};
+        assert!(!error.to_string().contains("generated source pitch exceeds the supported wire range"),"{error}");
+        assert!(require_source_wire_support(VehicleKind::Generated(super::super::generated_vehicles::registry().unwrap()
+            .by_label("germany-Pz_IV_AusfH").unwrap())).is_ok());
     }
     #[test]fn p04m_manifest3_requires_all_five_curated_kinds_in_canonical_resource_order() {
         let v=five();let parsed=parse(&serde_json::to_vec(&v).unwrap()).unwrap();

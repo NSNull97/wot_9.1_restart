@@ -10,13 +10,14 @@ pub const SPACE: u32 = 1;
 /// Keep this serializer at the wire boundary, not in the aiming simulation.
 pub fn packed_angles(state: &aim::State) -> io::Result<u16> { packed_angles_for(VehicleKind::Ms1,state) }
 pub fn packed_angles_for(kind: VehicleKind,state: &aim::State) -> io::Result<u16> {
-    let spec=kind.aim();
+    // Quantize over the client's `pitchLimits['absolute']` (aim::wire_pitch_range).
+    let (wire_min,wire_max)=aim::wire_pitch_range(kind)?;
     if !state.yaw.is_finite() || !state.pitch.is_finite() || state.yaw.abs() > std::f32::consts::PI
-        || !(spec.min_pitch..=spec.max_pitch).contains(&state.pitch) { return Err(model::bad()); }
+        || !(wire_min..=wire_max).contains(&state.pitch) { return Err(model::bad()); }
     if aim::source_controller_supported(kind)?{let(min,max)=aim::pitch_limits_for(kind,state.yaw)?;
         if !(min..=max).contains(&state.pitch){return Err(model::bad());}}
     let yaw = ((state.yaw as f64 + std::f64::consts::PI) * 1024. / (2. * std::f64::consts::PI)).round() as u16 & 1023;
-    let pitch = ((state.pitch as f64 - spec.min_pitch as f64) * 63. / (spec.max_pitch as f64 - spec.min_pitch as f64)).round() as u16;
+    let pitch = ((state.pitch as f64 - wire_min as f64) * 63. / (wire_max as f64 - wire_min as f64)).round() as u16;
     Ok((yaw << 6) | pitch)
 }
 pub fn aim_intent(raw: &[u8], own: usize) -> io::Result<Option<aim::Intent>> {

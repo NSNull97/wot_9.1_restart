@@ -162,16 +162,28 @@ impl State {
         self.yaw=next_yaw;self.pitch=next_pitch;Ok(())
     }
 }
-/// Generated source pitch must fit the existing wire basic range. Do not
-/// silently clip source motion or reinterpret the native pitch quantizer.
-/// Reject these profiles explicitly until their wire contract is resolved.
+/// Source-aim kinds use the extended controller. A generated kind's wire
+/// range is its source absolute envelope (see `wire_pitch_range`); it must
+/// contain the basic range of `kind.aim()`, otherwise it is refused explicitly.
 pub(crate) fn source_controller_supported(kind:VehicleKind)->io::Result<bool>{
     let Some(source)=kind.source_aim() else{return Ok(false)};
     if kind.is_generated(){
-        let range=source.envelope.absolute();let wire=kind.aim();
-        if range.min<wire.min_pitch||range.max>wire.max_pitch{return Err(bad());}
+        let range=source.envelope.absolute();let basic=kind.aim();
+        if !(range.min<=basic.min_pitch&&basic.max_pitch<=range.max&&range.min<range.max){return Err(bad());}
     }
     Ok(true)
+}
+/// Pitch range of the native `gunAnglesPacked` six-bit quantizer.
+/// VERIFIED (#717 bytecode): `Vehicle.set_gunAnglesPacked` decodes with
+/// `typeDescriptor.gun['pitchLimits']['absolute']`, and `vehicles.pyc
+/// _readGunPitchExtraLimits` widens `absolute` to min/max over basic, front
+/// and back. Generated kinds therefore quantize over `envelope.absolute()`;
+/// the per-yaw sector clamp stays authoritative before encoding. The legacy
+/// hand-closed kinds keep their pinned basic limits (their absolute == basic).
+pub(crate) fn wire_pitch_range(kind:VehicleKind)->io::Result<(f32,f32)>{
+    if kind.is_generated()&&source_controller_supported(kind)?{
+        let a=kind.source_aim().ok_or_else(bad)?.envelope.absolute();return Ok((a.min,a.max));}
+    let spec=kind.aim();Ok((spec.min_pitch,spec.max_pitch))
 }
 /// Fallible authoritative bounds for the explicit extended route. Callers must
 /// use both values; old `pitch_max_for` remains a legacy upper-bound wrapper.
