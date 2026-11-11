@@ -254,7 +254,9 @@ def main(argv=None):
     raw = canonical(build(a.client))
     if a.mode == "build":
         OUT.write_bytes(raw)
-    elif OUT.read_bytes() != raw:
+    elif OUT.read_bytes().replace(b"
+", b"
+") != raw:  # a checkout may turn LF into CRLF
         raise SystemExit("content0 inventory differs from the client and server tables")
     document = json.loads(raw)
     print(json.dumps(dict(status="PASS", sha256=sha(raw), summary=document["summary"]), ensure_ascii=False, sort_keys=True))
