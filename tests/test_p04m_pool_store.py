@@ -160,6 +160,21 @@ class PoolStoreTests(unittest.TestCase):
         self.assertEqual(self.store.activate_pool(request, authenticated_account_id=self.account), dict(result, replayed=True))
         self.assertEqual(state, self.state())
 
+    def test_content0_depot_is_one_row_per_shell_compact_id(self):
+        # CONTENT-0 step 1: one depot count per shell compact ID, as the #717 client inventory 10.
+        from p09c_ammo_catalog import SHELLS
+        self.activate_pool(); depot = self.profile()["depot"]
+        self.assertEqual(sorted(depot), list(self.store.depot_keys))
+        cds = [self.store.depot_cd[key] for key in depot]
+        self.assertEqual(len(cds), len(set(cds)))
+        for key, shell in self.store.shells.items():
+            self.assertEqual(self.store.depot_cd[self.store.depot_key[key]], shell.native_compact_id)
+        for key in SHELLS:
+            self.assertEqual(self.store.depot_key[key], key, "legacy MS-1/IS-7 rows keep their P09C keys")
+        state = self.state()
+        self.assertEqual(self.store.share_depot(account_id=self.account)["status"], "unchanged")
+        self.assertEqual(state, self.state())
+
     def test_activation_failpoints_roll_back_schema_rows_and_crew_table(self):
         request = self.pool_request()
         for point in ("after_pool_crew_schema", "after_pool_owner", "before_pool_activation_commit"):
