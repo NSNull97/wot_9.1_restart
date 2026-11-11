@@ -2,7 +2,7 @@
  * Bridge binding; used only when the bridge option `catalog` names this hash. */
 const freeze = v => { if (v && typeof v === 'object') { Object.values(v).forEach(freeze); Object.freeze(v); } return v; };
 export const CATALOG_SCHEMA = "wot091-server-catalog.v1";
-export const CATALOG_SHA256 = "7f40dfa067bb245037f9997104913ca81cd3524ac565d705c7beaa914c9a8bd4";
+export const CATALOG_SHA256 = "b9a0082b55db85556918d13d2aee11f681da25a79ecf84e51425f5d6b40d8e51";
 export const CATALOG_VEHICLES = freeze([
   {
     "ammo_capacity": 96,
@@ -47044,5 +47044,600 @@ export const CATALOG_VEHICLES = freeze([
     "type_id": 65,
     "vehicle_class": "lightTank",
     "vehicle_id": "vehicle:ussr:MT25"
+  },
+  {
+    "ammo_capacity": 112,
+    "battle_admission": "always",
+    "client_ui": {
+      "ammo": false,
+      "crew": false
+    },
+    "crew": [
+      {
+        "roles": [
+          "commander",
+          "gunner",
+          "loader"
+        ],
+        "seat": 0
+      },
+      {
+        "roles": [
+          "gunner"
+        ],
+        "seat": 1
+      },
+      {
+        "roles": [
+          "driver",
+          "loader"
+        ],
+        "seat": 2
+      },
+      {
+        "roles": [
+          "radioman"
+        ],
+        "seat": 3
+      }
+    ],
+    "descriptor_hex": "410408000400ca0004000600020000",
+    "descriptor_sha256": "cc92b91f63d1434d08ecbff1fd6dcf0fed12e9e46753b2b5290e93229ad9c4ee",
+    "devices": [
+      {
+        "device": "engine",
+        "max_health": 50,
+        "max_regen_health": 25
+      },
+      {
+        "device": "ammoBay",
+        "max_health": 140,
+        "max_regen_health": 90
+      },
+      {
+        "device": "fuelTank",
+        "max_health": 125,
+        "max_regen_health": 50
+      },
+      {
+        "device": "radio",
+        "max_health": 100,
+        "max_regen_health": 49
+      },
+      {
+        "device": "leftTrack",
+        "max_health": 120,
+        "max_regen_health": 90
+      },
+      {
+        "device": "rightTrack",
+        "max_health": 120,
+        "max_regen_health": 90
+      },
+      {
+        "device": "gun",
+        "max_health": 70,
+        "max_regen_health": 35
+      },
+      {
+        "device": "turretRotator",
+        "max_health": 100,
+        "max_regen_health": 50
+      },
+      {
+        "device": "surveyingDevice",
+        "max_health": 60,
+        "max_regen_health": 30
+      }
+    ],
+    "kind": "france-B1",
+    "legacy_inventory": null,
+    "max_hp": 380,
+    "modules": {
+      "chassis": {
+        "module_id": "module:france:chassis:Chassis_B1",
+        "native_compact_id": 2114
+      },
+      "engine": {
+        "module_id": "module:france:engine:Renault_S6Bis",
+        "native_compact_id": 1093
+      },
+      "fuelTank": {
+        "module_id": "module:france:fuelTank:Medium",
+        "native_compact_id": 51782
+      },
+      "gun": {
+        "module_id": "module:france:gun:_47mm_SA34",
+        "native_compact_id": 580
+      },
+      "radio": {
+        "module_id": "module:france:radio:ER_51",
+        "native_compact_id": 1095
+      },
+      "turret": {
+        "module_id": "module:france:turret:Turret_1_B1",
+        "native_compact_id": 1603
+      }
+    },
+    "nation": "france",
+    "nation_id": 4,
+    "native_compact_id": 1089,
+    "resource_name": "B1",
+    "shells": [
+      {
+        "family": "ARMOR_PIERCING",
+        "item_id": 6,
+        "native_compact_id": 1610,
+        "resource_name": "_47mm_Odr_mle._1892",
+        "shell_definition_id": "shell:france-B1-stock-ap",
+        "suffix": "ap"
+      },
+      {
+        "family": "ARMOR_PIERCING_CR",
+        "item_id": 65,
+        "native_compact_id": 16714,
+        "resource_name": "_47mm_Odr_mle_1935_b",
+        "shell_definition_id": "shell:france-B1-stock-apcr",
+        "suffix": "apcr"
+      },
+      {
+        "family": "HIGH_EXPLOSIVE",
+        "item_id": 66,
+        "native_compact_id": 16970,
+        "resource_name": "_47mm_Oe_type_D",
+        "shell_definition_id": "shell:france-B1-stock-he",
+        "suffix": "he"
+      }
+    ],
+    "tier": 4,
+    "type_id": 4,
+    "vehicle_class": "heavyTank",
+    "vehicle_id": "vehicle:france:B1"
+  },
+  {
+    "ammo_capacity": 60,
+    "battle_admission": "always",
+    "client_ui": {
+      "ammo": false,
+      "crew": false
+    },
+    "crew": [
+      {
+        "roles": [
+          "commander",
+          "gunner",
+          "radioman",
+          "loader"
+        ],
+        "seat": 0
+      },
+      {
+        "roles": [
+          "driver"
+        ],
+        "seat": 1
+      }
+    ],
+    "descriptor_hex": "41375d003900cb0001004900110000",
+    "descriptor_sha256": "dac847af14e2449da47b27a98e3e3182e330f12980c0d23b784a1a016b81b593",
+    "devices": [
+      {
+        "device": "engine",
+        "max_health": 82,
+        "max_regen_health": 40
+      },
+      {
+        "device": "ammoBay",
+        "max_health": 125,
+        "max_regen_health": 85
+      },
+      {
+        "device": "fuelTank",
+        "max_health": 150,
+        "max_regen_health": 50
+      },
+      {
+        "device": "radio",
+        "max_health": 100,
+        "max_regen_health": 49
+      },
+      {
+        "device": "leftTrack",
+        "max_health": 90,
+        "max_regen_health": 70
+      },
+      {
+        "device": "rightTrack",
+        "max_health": 90,
+        "max_regen_health": 70
+      },
+      {
+        "device": "gun",
+        "max_health": 100,
+        "max_regen_health": 50
+      },
+      {
+        "device": "turretRotator",
+        "max_health": 80,
+        "max_regen_health": 40
+      },
+      {
+        "device": "surveyingDevice",
+        "max_health": 60,
+        "max_regen_health": 30
+      }
+    ],
+    "kind": "france-ELC_AMX",
+    "legacy_inventory": null,
+    "max_hp": 400,
+    "modules": {
+      "chassis": {
+        "module_id": "module:france:chassis:Chassis_ELC_AMX",
+        "native_compact_id": 23874
+      },
+      "engine": {
+        "module_id": "module:france:engine:Sovam_de_150cv",
+        "native_compact_id": 14661
+      },
+      "fuelTank": {
+        "module_id": "module:france:fuelTank:Average",
+        "native_compact_id": 52038
+      },
+      "gun": {
+        "module_id": "module:france:gun:_75mm_SA32",
+        "native_compact_id": 4420
+      },
+      "radio": {
+        "module_id": "module:france:radio:ER_52",
+        "native_compact_id": 327
+      },
+      "turret": {
+        "module_id": "module:france:turret:Turret_1_ELC_AMX",
+        "native_compact_id": 18755
+      }
+    },
+    "nation": "france",
+    "nation_id": 4,
+    "native_compact_id": 14145,
+    "resource_name": "ELC_AMX",
+    "shells": [
+      {
+        "family": "ARMOR_PIERCING",
+        "item_id": 40,
+        "native_compact_id": 10314,
+        "resource_name": "_75mm_Odr_mle.1910",
+        "shell_definition_id": "shell:france-ELC_AMX-stock-ap",
+        "suffix": "ap"
+      },
+      {
+        "family": "HOLLOW_CHARGE",
+        "item_id": 41,
+        "native_compact_id": 10570,
+        "resource_name": "_75mm_OCO_mle._1926",
+        "shell_definition_id": "shell:france-ELC_AMX-stock-heat",
+        "suffix": "heat"
+      },
+      {
+        "family": "HIGH_EXPLOSIVE",
+        "item_id": 2,
+        "native_compact_id": 586,
+        "resource_name": "_75mm_OE_mle_1915",
+        "shell_definition_id": "shell:france-ELC_AMX-stock-he",
+        "suffix": "he"
+      }
+    ],
+    "tier": 5,
+    "type_id": 55,
+    "vehicle_class": "lightTank",
+    "vehicle_id": "vehicle:france:ELC_AMX"
+  },
+  {
+    "ammo_capacity": 144,
+    "battle_admission": "always",
+    "client_ui": {
+      "ammo": false,
+      "crew": false
+    },
+    "crew": [
+      {
+        "roles": [
+          "commander"
+        ],
+        "seat": 0
+      },
+      {
+        "roles": [
+          "gunner"
+        ],
+        "seat": 1
+      },
+      {
+        "roles": [
+          "driver"
+        ],
+        "seat": 2
+      },
+      {
+        "roles": [
+          "radioman"
+        ],
+        "seat": 3
+      },
+      {
+        "roles": [
+          "loader"
+        ],
+        "seat": 4
+      },
+      {
+        "roles": [
+          "loader"
+        ],
+        "seat": 5
+      }
+    ],
+    "descriptor_hex": "51d23f003600cd0002003c00240000",
+    "descriptor_sha256": "c1d3d8086d326823a0f8b4a26b5ab67c8234fe3c3a79b3eb96e3861377cfe8d2",
+    "devices": [
+      {
+        "device": "engine",
+        "max_health": 247,
+        "max_regen_health": 123
+      },
+      {
+        "device": "ammoBay",
+        "max_health": 220,
+        "max_regen_health": 150
+      },
+      {
+        "device": "fuelTank",
+        "max_health": 200,
+        "max_regen_health": 70
+      },
+      {
+        "device": "radio",
+        "max_health": 160,
+        "max_regen_health": 96
+      },
+      {
+        "device": "leftTrack",
+        "max_health": 170,
+        "max_regen_health": 130
+      },
+      {
+        "device": "rightTrack",
+        "max_health": 170,
+        "max_regen_health": 130
+      },
+      {
+        "device": "gun",
+        "max_health": 144,
+        "max_regen_health": 72
+      },
+      {
+        "device": "turretRotator",
+        "max_health": 140,
+        "max_regen_health": 70
+      },
+      {
+        "device": "surveyingDevice",
+        "max_health": 90,
+        "max_regen_health": 45
+      }
+    ],
+    "kind": "uk-GB63_TOG_II",
+    "legacy_inventory": null,
+    "max_hp": 1400,
+    "modules": {
+      "chassis": {
+        "module_id": "module:uk:chassis:Chassis_GB63_TOG_II",
+        "native_compact_id": 16210
+      },
+      "engine": {
+        "module_id": "module:uk:engine:Paxman_Ricardo",
+        "native_compact_id": 13909
+      },
+      "fuelTank": {
+        "module_id": "module:uk:fuelTank:Large",
+        "native_compact_id": 52566
+      },
+      "gun": {
+        "module_id": "module:uk:gun:OQF_17pdr_Gun_Mk_VII_A",
+        "native_compact_id": 9300
+      },
+      "radio": {
+        "module_id": "module:uk:radio:British_Wireless_set_N19",
+        "native_compact_id": 599
+      },
+      "turret": {
+        "module_id": "module:uk:turret:Turret_1_GB63_TOG_II",
+        "native_compact_id": 15443
+      }
+    },
+    "nation": "uk",
+    "nation_id": 5,
+    "native_compact_id": 53841,
+    "resource_name": "GB63_TOG_II",
+    "shells": [
+      {
+        "family": "ARMOR_PIERCING",
+        "item_id": 40,
+        "native_compact_id": 10330,
+        "resource_name": "_17pdr_AP_Mk3T",
+        "shell_definition_id": "shell:uk-GB63_TOG_II-stock-ap",
+        "suffix": "ap"
+      },
+      {
+        "family": "ARMOR_PIERCING_CR",
+        "item_id": 41,
+        "native_compact_id": 10586,
+        "resource_name": "_17pdr_APC_Mk4T",
+        "shell_definition_id": "shell:uk-GB63_TOG_II-stock-apcr",
+        "suffix": "apcr"
+      },
+      {
+        "family": "HIGH_EXPLOSIVE",
+        "item_id": 42,
+        "native_compact_id": 10842,
+        "resource_name": "_17pdr_HE_Mk1T",
+        "shell_definition_id": "shell:uk-GB63_TOG_II-stock-he",
+        "suffix": "he"
+      }
+    ],
+    "tier": 6,
+    "type_id": 210,
+    "vehicle_class": "heavyTank",
+    "vehicle_id": "vehicle:uk:GB63_TOG_II"
+  },
+  {
+    "ammo_capacity": 48,
+    "battle_admission": "always",
+    "client_ui": {
+      "ammo": false,
+      "crew": false
+    },
+    "crew": [
+      {
+        "roles": [
+          "commander",
+          "radioman"
+        ],
+        "seat": 0
+      },
+      {
+        "roles": [
+          "gunner"
+        ],
+        "seat": 1
+      },
+      {
+        "roles": [
+          "gunner"
+        ],
+        "seat": 2
+      },
+      {
+        "roles": [
+          "driver"
+        ],
+        "seat": 3
+      },
+      {
+        "roles": [
+          "loader"
+        ],
+        "seat": 4
+      },
+      {
+        "roles": [
+          "loader"
+        ],
+        "seat": 5
+      }
+    ],
+    "descriptor_hex": "512f63000d00cb0011005400400000",
+    "descriptor_sha256": "09c025b42736e81896c42c8403bc6b63b2cbda753d480e4e4b90bfce48b1a863",
+    "devices": [
+      {
+        "device": "engine",
+        "max_health": 247,
+        "max_regen_health": 123
+      },
+      {
+        "device": "ammoBay",
+        "max_health": 134,
+        "max_regen_health": 67
+      },
+      {
+        "device": "fuelTank",
+        "max_health": 150,
+        "max_regen_health": 50
+      },
+      {
+        "device": "radio",
+        "max_health": 140,
+        "max_regen_health": 84
+      },
+      {
+        "device": "leftTrack",
+        "max_health": 130,
+        "max_regen_health": 100
+      },
+      {
+        "device": "rightTrack",
+        "max_health": 130,
+        "max_regen_health": 100
+      },
+      {
+        "device": "gun",
+        "max_health": 180,
+        "max_regen_health": 90
+      },
+      {
+        "device": "turretRotator",
+        "max_health": 100,
+        "max_regen_health": 50
+      },
+      {
+        "device": "surveyingDevice",
+        "max_health": 80,
+        "max_regen_health": 40
+      }
+    ],
+    "kind": "uk-GB79_FV206",
+    "legacy_inventory": null,
+    "max_hp": 430,
+    "modules": {
+      "chassis": {
+        "module_id": "module:uk:chassis:Chassis_GB79_FV206",
+        "native_compact_id": 25426
+      },
+      "engine": {
+        "module_id": "module:uk:engine:Rolls_Royse_Meteor_MkIV",
+        "native_compact_id": 3413
+      },
+      "fuelTank": {
+        "module_id": "module:uk:fuelTank:Average",
+        "native_compact_id": 52054
+      },
+      "gun": {
+        "module_id": "module:uk:gun:_5.5inch_SPG_Gun",
+        "native_compact_id": 16468
+      },
+      "radio": {
+        "module_id": "module:uk:radio:N19Mk3",
+        "native_compact_id": 4439
+      },
+      "turret": {
+        "module_id": "module:uk:turret:Turret_1_GB79_FV206",
+        "native_compact_id": 21587
+      }
+    },
+    "nation": "uk",
+    "nation_id": 5,
+    "native_compact_id": 12113,
+    "resource_name": "GB79_FV206",
+    "shells": [
+      {
+        "family": "HIGH_EXPLOSIVE",
+        "item_id": 95,
+        "native_compact_id": 24410,
+        "resource_name": "_5.5inch_HE_Mk_4",
+        "shell_definition_id": "shell:uk-GB79_FV206-stock-he",
+        "suffix": "he"
+      },
+      {
+        "family": "HIGH_EXPLOSIVE",
+        "item_id": 100,
+        "native_compact_id": 25690,
+        "resource_name": "_5.5inch_HE_Mk_5",
+        "shell_definition_id": "shell:uk-GB79_FV206-stock-he2",
+        "suffix": "he2"
+      }
+    ],
+    "tier": 8,
+    "type_id": 47,
+    "vehicle_class": "SPG",
+    "vehicle_id": "vehicle:uk:GB79_FV206"
   }
 ]);

@@ -2,7 +2,7 @@
 //! Gateway binding. Used only when the gateway config carries
 //! `"catalog":{"version":1,"sha256":CATALOG_SHA256}`; legacy lists stay the default.
 pub const CATALOG_SCHEMA:&str="wot091-server-catalog.v1";
-pub const CATALOG_SHA256:&str="7f40dfa067bb245037f9997104913ca81cd3524ac565d705c7beaa914c9a8bd4";
+pub const CATALOG_SHA256:&str="b9a0082b55db85556918d13d2aee11f681da25a79ecf84e51425f5d6b40d8e51";
 pub const CATALOG_JSON:&str=include_str!("../../../../config/test_lab/catalog.v1.json");
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Admission{Always,ZeroEconomyPolicy,None}
@@ -961,6 +961,18 @@ pub const VEHICLES:&[Vehicle]=&[
     Vehicle{kind:"ussr-MT25",vehicle_id:"vehicle:ussr:MT25",native_compact_id:16641,descriptor:&[0x01,0x41,0x92,0x00,0x0a,0x00,0xcb,0x00,0x05,0x00,0x7a,0x00,0x13,0x00,0x00],
         max_hp:510,ammo_capacity:300,seats:5,primary_roles:&["commander","gunner","radioman","driver","loader"],gun_compact_id:4868,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:ussr-MT25-stock-ap",family:"ARMOR_PIERCING",native_compact_id:3338},Shell{suffix:"apcr",shell_definition_id:"shell:ussr-MT25-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:3594},Shell{suffix:"he",shell_definition_id:"shell:ussr-MT25-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:3850}],
         devices:&[(145,72),(140,90),(150,60),(120,60),(110,85),(110,85),(68,34),(120,60),(80,40)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"france-B1",vehicle_id:"vehicle:france:B1",native_compact_id:1089,descriptor:&[0x41,0x04,0x08,0x00,0x04,0x00,0xca,0x00,0x04,0x00,0x06,0x00,0x02,0x00,0x00],
+        max_hp:380,ammo_capacity:112,seats:4,primary_roles:&["commander","gunner","driver","radioman"],gun_compact_id:580,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:france-B1-stock-ap",family:"ARMOR_PIERCING",native_compact_id:1610},Shell{suffix:"apcr",shell_definition_id:"shell:france-B1-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:16714},Shell{suffix:"he",shell_definition_id:"shell:france-B1-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:16970}],
+        devices:&[(50,25),(140,90),(125,50),(100,49),(120,90),(120,90),(70,35),(100,50),(60,30)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"france-ELC_AMX",vehicle_id:"vehicle:france:ELC_AMX",native_compact_id:14145,descriptor:&[0x41,0x37,0x5d,0x00,0x39,0x00,0xcb,0x00,0x01,0x00,0x49,0x00,0x11,0x00,0x00],
+        max_hp:400,ammo_capacity:60,seats:2,primary_roles:&["commander","driver"],gun_compact_id:4420,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:france-ELC_AMX-stock-ap",family:"ARMOR_PIERCING",native_compact_id:10314},Shell{suffix:"heat",shell_definition_id:"shell:france-ELC_AMX-stock-heat",family:"HOLLOW_CHARGE",native_compact_id:10570},Shell{suffix:"he",shell_definition_id:"shell:france-ELC_AMX-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:586}],
+        devices:&[(82,40),(125,85),(150,50),(100,49),(90,70),(90,70),(100,50),(80,40),(60,30)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"uk-GB63_TOG_II",vehicle_id:"vehicle:uk:GB63_TOG_II",native_compact_id:53841,descriptor:&[0x51,0xd2,0x3f,0x00,0x36,0x00,0xcd,0x00,0x02,0x00,0x3c,0x00,0x24,0x00,0x00],
+        max_hp:1400,ammo_capacity:144,seats:6,primary_roles:&["commander","gunner","driver","radioman","loader","loader"],gun_compact_id:9300,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:uk-GB63_TOG_II-stock-ap",family:"ARMOR_PIERCING",native_compact_id:10330},Shell{suffix:"apcr",shell_definition_id:"shell:uk-GB63_TOG_II-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:10586},Shell{suffix:"he",shell_definition_id:"shell:uk-GB63_TOG_II-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:10842}],
+        devices:&[(247,123),(220,150),(200,70),(160,96),(170,130),(170,130),(144,72),(140,70),(90,45)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"uk-GB79_FV206",vehicle_id:"vehicle:uk:GB79_FV206",native_compact_id:12113,descriptor:&[0x51,0x2f,0x63,0x00,0x0d,0x00,0xcb,0x00,0x11,0x00,0x54,0x00,0x40,0x00,0x00],
+        max_hp:430,ammo_capacity:48,seats:6,primary_roles:&["commander","gunner","gunner","driver","loader","loader"],gun_compact_id:16468,shells:&[Shell{suffix:"he",shell_definition_id:"shell:uk-GB79_FV206-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:24410},Shell{suffix:"he2",shell_definition_id:"shell:uk-GB79_FV206-stock-he2",family:"HIGH_EXPLOSIVE",native_compact_id:25690}],
+        devices:&[(247,123),(134,67),(150,50),(140,84),(130,100),(130,100),(180,90),(100,50),(80,40)],battle_admission:Admission::Always,legacy_inventory:None},
 ];
 pub fn by_kind(kind:&str)->Option<&'static Vehicle>{VEHICLES.iter().find(|v|v.kind==kind)}
 
