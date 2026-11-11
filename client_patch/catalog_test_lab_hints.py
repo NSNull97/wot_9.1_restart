@@ -6,7 +6,7 @@ map_drive_client reads this table only when installed with --catalog-v1, the
 crew/ammunition windows (crew_vehicles) only when installed with --crew-any.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = '0cc5c78e218f2892563ac205f75a5b5e944a699f525af487c4e4e55c47b727ad'
+CATALOG_SHA256 = '11b9a14cc2479ee51776cef49f1395bfac08e518325c46acdf0a272d379c180f'
 VEHICLES = (
     {
         'ammo_capacity': 96,
@@ -1979,30 +1979,6 @@ VEHICLES = (
         'vehicle_class': 'lightTank',
     },
     {
-        'ammo_capacity': 42,
-        'battle_admission': 'always',
-        'client_ui': {
-            'ammo': False,
-            'crew': False,
-        },
-        'crew_roles': (
-            ('commander', 'radioman', 'loader'),
-            ('gunner', 'loader'),
-            ('driver',),
-        ),
-        'descriptor_sha256': '3ae712b0bf7baec3f19367db7a1d14d9db2a0a44618678163807761807c1b5bb',
-        'gun_compact_id': 68,
-        'kind': 'france-AMX_13_75',
-        'max_hp': 900,
-        'native_compact_id': 5185,
-        'primary_roles': ('commander', 'gunner', 'driver'),
-        'seats': 3,
-        'shell_compact_ids': (74, 330, 586),
-        'turret_compact_id': 7747,
-        'type_id': 20,
-        'vehicle_class': 'lightTank',
-    },
-    {
         'ammo_capacity': 30,
         'battle_admission': 'always',
         'client_ui': {
@@ -3350,32 +3326,6 @@ VEHICLES = (
         'vehicle_class': 'mediumTank',
     },
     {
-        'ammo_capacity': 87,
-        'battle_admission': 'always',
-        'client_ui': {
-            'ammo': False,
-            'crew': False,
-        },
-        'crew_roles': (
-            ('commander',),
-            ('gunner',),
-            ('driver',),
-            ('radioman',),
-            ('loader',),
-        ),
-        'descriptor_sha256': '2beecc97c326ab7d7ac24adc9b2dd147e6972c13c1b6dbac6ff142d859832573',
-        'gun_compact_id': 532,
-        'kind': 'germany-Pz_IV_AusfH',
-        'max_hp': 440,
-        'native_compact_id': 18193,
-        'primary_roles': ('commander', 'gunner', 'driver', 'radioman', 'loader'),
-        'seats': 5,
-        'shell_compact_ids': (5402, 5658, 5914),
-        'turret_compact_id': 37395,
-        'type_id': 71,
-        'vehicle_class': 'mediumTank',
-    },
-    {
         'ammo_capacity': 72,
         'battle_admission': 'always',
         'client_ui': {
@@ -3916,54 +3866,6 @@ VEHICLES = (
         'vehicle_class': 'lightTank',
     },
     {
-        'ammo_capacity': 106,
-        'battle_admission': 'always',
-        'client_ui': {
-            'ammo': False,
-            'crew': False,
-        },
-        'crew_roles': (
-            ('commander', 'radioman', 'loader'),
-            ('gunner',),
-            ('driver',),
-        ),
-        'descriptor_sha256': '1b8134be4e60cfb9cfa57deaff981835aed790edd406abd18c019452495249b9',
-        'gun_compact_id': 2916,
-        'kind': 'japan-Ke_Ni',
-        'max_hp': 220,
-        'native_compact_id': 2401,
-        'primary_roles': ('commander', 'gunner', 'driver'),
-        'seats': 3,
-        'shell_compact_ids': (3690, 3946, 4202),
-        'turret_compact_id': 4451,
-        'type_id': 9,
-        'vehicle_class': 'lightTank',
-    },
-    {
-        'ammo_capacity': 106,
-        'battle_admission': 'always',
-        'client_ui': {
-            'ammo': False,
-            'crew': False,
-        },
-        'crew_roles': (
-            ('commander', 'radioman', 'loader'),
-            ('gunner',),
-            ('driver',),
-        ),
-        'descriptor_sha256': 'f0263b5ff52f3e3d1234388277d528d617f8029944ad650c089bb246c9060b51',
-        'gun_compact_id': 1380,
-        'kind': 'japan-Ke_Ni_B',
-        'max_hp': 260,
-        'native_compact_id': 51809,
-        'primary_roles': ('commander', 'gunner', 'driver'),
-        'seats': 3,
-        'shell_compact_ids': (3690, 3946, 4202),
-        'turret_compact_id': 355,
-        'type_id': 202,
-        'vehicle_class': 'lightTank',
-    },
-    {
         'ammo_capacity': 240,
         'battle_admission': 'always',
         'client_ui': {
@@ -4385,31 +4287,6 @@ VEHICLES = (
         'shell_compact_ids': (1114, 1370, 1626),
         'turret_compact_id': 16723,
         'type_id': 32,
-        'vehicle_class': 'AT-SPG',
-    },
-    {
-        'ammo_capacity': 65,
-        'battle_admission': 'always',
-        'client_ui': {
-            'ammo': False,
-            'crew': False,
-        },
-        'crew_roles': (
-            ('commander', 'radioman'),
-            ('gunner',),
-            ('driver',),
-            ('loader',),
-        ),
-        'descriptor_sha256': '3ca8d60f2aeb79831b941881e296c3b574bd6546160fb17e46c9bde3ebedc088',
-        'gun_compact_id': 14420,
-        'kind': 'uk-GB40_Gun_Carrier_Churchill',
-        'max_hp': 650,
-        'native_compact_id': 9809,
-        'primary_roles': ('commander', 'gunner', 'driver', 'loader'),
-        'seats': 4,
-        'shell_compact_ids': (21850, 22106, 22362),
-        'turret_compact_id': 18259,
-        'type_id': 38,
         'vehicle_class': 'AT-SPG',
     },
     {
@@ -4899,32 +4776,6 @@ VEHICLES = (
         'shell_compact_ids': (5930, 6186, 6442),
         'turret_compact_id': 15907,
         'type_id': 35,
-        'vehicle_class': 'mediumTank',
-    },
-    {
-        'ammo_capacity': 90,
-        'battle_admission': 'always',
-        'client_ui': {
-            'ammo': False,
-            'crew': False,
-        },
-        'crew_roles': (
-            ('commander',),
-            ('gunner',),
-            ('driver',),
-            ('radioman',),
-            ('loader',),
-        ),
-        'descriptor_sha256': 'aeb570f26ef6017cf6c83ca64faf07f92eaab33f2951123352af972d4f8e9d1d',
-        'gun_compact_id': 7716,
-        'kind': 'usa-M4A2E4',
-        'max_hp': 480,
-        'native_compact_id': 52257,
-        'primary_roles': ('commander', 'gunner', 'driver', 'radioman', 'loader'),
-        'seats': 5,
-        'shell_compact_ids': (3626, 3882, 4138),
-        'turret_compact_id': 13091,
-        'type_id': 204,
         'vehicle_class': 'mediumTank',
     },
     {
