@@ -42,7 +42,9 @@ SHOP_REVISION = 5
 EARLIER_SHOP_REVISIONS = (3, 4)
 MAX_STATE = 256 * 1024
 MAX_NATIVE_RESPONSE = 4096
-MAX_NATIVE_CONTEXT = 16 * 1024
+# CONTENT-0 step 2 (stand -15, 11.11): an owner hangar of nine vehicles with crews reached 17.4 KB and refused the
+# SU-5 research; the context is a subset of the profile, kept with the journal below MAX_STATE.
+MAX_NATIVE_CONTEXT = 128 * 1024
 MAX_OWNED = 256
 MAX_ITEMS = 8192
 MAX_QUANTITY = 1000000
