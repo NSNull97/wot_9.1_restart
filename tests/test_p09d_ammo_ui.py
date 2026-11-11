@@ -88,9 +88,22 @@ class MountTests(unittest.TestCase):
         for bad in ([2570, True, 2826, 6, 3082, 7], [2570, -1, 2826, 6, 3082, 7],
                     [2570, 1, 2570, 6, 3082, 7], [2570, 1, -2570, 6, 3082, 7],
                     [0, 1, 2826, 6, 3082, 7], [2570, 1000001, 2826, 6, 3082, 7],
-                    [2570, 1], list(range(100))):
+                    [2570, 1, 2570, 6], [2570], [], [2570, 1, 2826, 6, 3082, 7, 3338, 8], list(range(100))):
             with self.subTest(bad=bad), self.assertRaises(ValueError):
                 ui.flat(bad, True)
+
+    def test_spg02_one_and_two_pair_rows(self):
+        self.assertEqual(ui.flat([2570, 5]), [2570, 5])
+        self.assertEqual(ui.flat([2570, 5, -2826, 6], True), [2570, 5, -2826, 6])
+
+    def test_spg02_two_shell_mount_admitted_and_short_shots_denied(self):
+        mounts = {3329: (5891, 5892, 96, (2570, 2826))}
+        value = item()
+        del value.descriptor.gun['shots'][2]
+        with mock.patch.object(ui.crew_vehicles, 'mounts', return_value=mounts):
+            self.assertEqual(ui.mounted(value)['compatible_shells'], [2570, 2826])
+            del value.descriptor.gun['shots'][1]
+            self.assertIsNone(ui.mounted(value))
 
     def test_loaded_negative_shell_id_rejects(self):
         with self.assertRaises(ValueError):

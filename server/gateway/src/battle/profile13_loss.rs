@@ -23,13 +23,15 @@ fn uuid(s:&str)->bool{s.len()==36&&s.bytes().enumerate().all(|(i,b)|if[8,13,18,2
 fn id(s:&str)->bool{!s.is_empty()&&s.len()<=96&&s.bytes().all(|b|b.is_ascii_alphanumeric()||b"_:-".contains(&b))}
 fn context(c:&Context)->io::Result<()>{if !uuid(&c.account_id)||!uuid(&c.run_id)||c.native_database_id<=0||!id(&c.command_key)
     ||c.expected_revision>i32::MAX as u64{return Err(bad("context"));}Ok(())}
-fn rows_value(rows:&[Remaining;3])->Value{Value::Array(rows.iter().map(|s|serde_json::json!({"shell_compact_id":s.shell_compact_id,"count":s.count})).collect())}
+// SPG-02: absent cells (compact 0, trailing) stay in the gateway; the domain sees one row per real stack.
+fn rows_value(rows:&[Remaining;3])->Value{Value::Array(rows.iter().filter(|s|s.shell_compact_id!=0).map(|s|serde_json::json!({"shell_compact_id":s.shell_compact_id,"count":s.count})).collect())}
 fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad("ammunition array"))?;
-    if a.len()!=3{return Err(bad("three ammunition stacks"));}let mut out=Vec::new();
+    if !(1..=3).contains(&a.len()){return Err(bad("ammunition stack count"));}let mut out=Vec::new();
     for r in a{keys(r,&["shell_compact_id","count"])?;let compact=u16::try_from(number(r,"shell_compact_id")?).map_err(|_|bad("shell width"))?;
         let count=u16::try_from(number(r,"count")?).map_err(|_|bad("count width"))?;
         if compact==0||count>160||out.iter().any(|old:&Remaining|old.shell_compact_id==compact){return Err(bad("source stack bounds/unique"));}
         out.push(Remaining{shell_compact_id:compact,count});}
+    while out.len()<3{out.push(Remaining{shell_compact_id:0,count:0});}
     out.try_into().map_err(|_|bad("stacks"))}
 
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
@@ -57,7 +59,7 @@ impl crate::bw_wire::Wire for FrozenLoss {
 // end BW-01 wire codec
 fn base_value(f:&Frozen)->Value{serde_json::json!({"kind":f.kind.label(),"descriptor_hex":f.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),
     "native_inventory_id":f.native_inventory_id,"vehicle_inventory_id":f.vehicle_inventory_id,"max_hp":f.max_hp,"crew_ids":f.crew_ids,"capacity":f.capacity,
-    "initial_shell_compact_id":f.initial_shell_compact_id,"ammunition":f.ammunition.iter().map(|r|serde_json::json!({"shell_definition_id":r.shell_definition_id,
+    "initial_shell_compact_id":f.initial_shell_compact_id,"ammunition":f.ammunition.iter().filter(|r|r.shell_compact_id!=0).map(|r|serde_json::json!({"shell_definition_id":r.shell_definition_id,
         "shell_compact_id":r.shell_compact_id,"family":r.family.source_name(),"count":r.count})).collect::<Vec<_>>()})}
 fn wrapper_value(f:&FrozenLoss)->Value{serde_json::json!({"policy_sha256":f.policy_sha256,"loadout":base_value(&f.base),"loadout_sha256":f.base.sha256})}
 impl FrozenLoss{pub fn validate_owned(&self,account:&str)->io::Result<()>{if parse_frozen(&wrapper_value(self),account,&self.sha256)?!=*self{return Err(bad("changed frozen wrapper"));}Ok(())}}
@@ -233,6 +235,26 @@ mod tests{
                 let reply=parse_reply(&raw,&c,&r).unwrap();if let Some(s)=reply.reservation{s.frozen.validate_owned(&c.account_id).unwrap();}}
             seen+=1;
         }assert_eq!(seen,9);
+    }
+    #[cfg(feature="test_lab")]
+    #[test]fn spg02_two_shell_frozen_wrappers_revalidate_without_the_absent_cell(){
+        // Stand -14 (11.11): SU-8 was ejected from the queue because the absent third cell entered the re-hash.
+        base::enable_catalog_v1().unwrap();let account="271022a3-41e0-406e-b6fa-59930c320442";
+        let kind=crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label("usa-M37").unwrap();
+        let p=*crate::p06t_shells091::profile(kind.mount());assert_eq!(crate::profile13_v2091::real_shots(&p),2);
+        let entry=crate::gateway091::shared::vehicle_catalog::VEHICLES.iter().find(|e|e.kind=="usa-M37").unwrap();
+        let crew=(0..entry.seats).map(|i|format!("{account}:recruit-crew:{i}")).collect::<Vec<_>>();
+        let ammunition=(0..2).map(|i|serde_json::json!({"shell_definition_id":format!("shell:usa-M37-stock-{}",entry.shells[i].suffix),
+            "shell_compact_id":p.shots[i].compact_descr,"family":p.shots[i].family.source_name(),"count":if i==0{7u16}else{3}})).collect::<Vec<_>>();
+        let loadout=serde_json::json!({"kind":"usa-M37","descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":8,"vehicle_inventory_id":format!("{account}:p09e-vehicle:8"),"max_hp":kind.max_health(),"crew_ids":crew,
+            "capacity":p.capacity,"ammunition":ammunition,"initial_shell_compact_id":p.shots[0].compact_descr});
+        let loadout_sha=digest(&loadout).unwrap();
+        let base=base::parse_frozen_with(&loadout,account,&loadout_sha,true).unwrap();assert_eq!(base.ammunition[2].shell_compact_id,0);
+        base.validate_owned(account).unwrap();
+        let wrapper=serde_json::json!({"policy_sha256":POLICY_SHA256,"loadout":loadout,"loadout_sha256":loadout_sha});
+        let frozen=FrozenLoss{base,policy_sha256:POLICY_SHA256.into(),sha256:digest(&wrapper).unwrap()};
+        assert_eq!(wrapper_value(&frozen),wrapper);
     }
     #[test]fn res30_loss_event_slots_and_shots_of_a_thirty_actor_battle(){
         use crate::gateway091::shared::model::{MAX_BATTLE_SHOTS,MAX_DAMAGE_EVENTS};

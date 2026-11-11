@@ -688,6 +688,16 @@ class NativeEligibilityTests(unittest.TestCase):
         self.assertFalse(self.native.eligibility(shared_lab=True)['allowed'])
 
 
+class Spg02LayoutTests(unittest.TestCase):
+    def test_one_to_three_pairs_follow_the_gun(self):
+        self.assertEqual(module._flat([2570, 5, 2826, 6], 2), (2570, 5, 2826, 6))
+        self.assertEqual(module._flat([2570, 5], 1), (2570, 5))
+        self.assertEqual(module._flat([1, 2, 3, 4, 5, 6]), (1, 2, 3, 4, 5, 6))
+        for value, pairs in (([2570, 5, 2826, 6], 3), ([1, 2, 3, 4, 5, 6], 2), ([], 0), ([1, 2] * 4, 4)):
+            with self.subTest(value=value, pairs=pairs), self.assertRaises(ValueError):
+                module._flat(value, pairs)
+
+
 class SourceBoundaryTests(unittest.TestCase):
     @unittest.skipIf(sys.version_info[0]<3,'host-only safe Python2 static decoder')
     def test_shared_lab_original_queue_chain_and_unready_ammo_branch_are_pinned(self):

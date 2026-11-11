@@ -164,9 +164,10 @@ def _bool(value, field):
     return value
 
 
-def _flat(value):
-    if type(value) not in (list, tuple) or len(value) != 6:
-        raise ValueError('native mounted shell layout must contain six integers')
+def _flat(value, pairs=3):
+    # SPG-02: a CAT-01 gun has one to three shells; the caller names how many.
+    if type(value) not in (list, tuple) or pairs not in (1, 2, 3) or len(value) != 2 * pairs:
+        raise ValueError('native mounted shell layout must contain one integer pair per shell')
     return tuple(_integer(v, -65535, 65535, 'shell layout') for v in value)
 
 
@@ -551,7 +552,7 @@ class _Native(object):
         if (repair != (0, health) or not crew_full
                 or not _bool(current.isReadyToFight(), 'isReadyToFight')):
             return dict(allowed=False, reason='unsupported_crew_readiness', queued=False)
-        loaded = _flat(inventory['shells'].get(selected))
+        loaded = _flat(inventory['shells'].get(selected), len(shell_ids))
         if p06t_mixed_ammo:
             counts = loaded[1::2]
             if (tuple(loaded[::2]) != shell_ids
@@ -559,10 +560,11 @@ class _Native(object):
                     or not 1 <= sum(counts) <= capacity):
                 return dict(allowed=False, reason='unsupported_mixed_loadout', queued=False)
         elif (tuple(loaded[::2]) != shell_ids or not 1 <= loaded[1] <= capacity
-                or loaded[3] != 0 or loaded[5] != 0):
+                or any(loaded[3::2])):
             return dict(allowed=False, reason='unsupported_ap_loadout', queued=False)
         shells = item.shells
-        if type(shells) not in (tuple, list) or len(shells) != 3:
+        # SPG-02: one getter per shell of the gun (one to three), as the catalogue hint lists them.
+        if type(shells) not in (tuple, list) or len(shells) != len(shell_ids):
             raise ValueError('three original profile13 shell getters required')
         gui = tuple((_integer(s.intCD, 1, 65535, 'shell ID'),
                      _integer(s.count, 0, capacity, 'shell count')) for s in shells)

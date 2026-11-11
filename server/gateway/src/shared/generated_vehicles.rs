@@ -201,8 +201,11 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
         let id=GeneratedId(u16::try_from(entries.len()).map_err(|_|bad("id"))?);
         let identity=&row["identity"];let g=&row["gun"];
         let descriptor=hex(s(&identity["descriptor_hex"])?)?;
-        let shots=arr(&row["shots"],3)?;
-        let parsed=[shell(&shots[0])?,shell(&shots[1])?,shell(&shots[2])?];
+        // SPG-02: one to three source shots; the missing cells are absent (compact 0, never loaded or sent).
+        let shots=row["shots"].as_array().filter(|a|(1..=3).contains(&a.len())).ok_or_else(||bad("shot count"))?;
+        let first=shell(&shots[0])?;
+        let parsed=[first,match shots.get(1){Some(v)=>shell(v)?,None=>(first.0.absent(),first.1)},
+            match shots.get(2){Some(v)=>shell(v)?,None=>(first.0.absent(),first.1)}];
         let nation=u8::try_from(u(&row["native_nation_id"])?).map_err(|_|bad("nation"))?;
         let type_cd=u32::try_from(u(&identity["type_compact_id"])?).map_err(|_|bad("type"))?;
         let gun_cd=u32::try_from(u(&identity["module_compact_ids"]["gun"])?).map_err(|_|bad("gun"))?;
@@ -227,7 +230,7 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
             movement_dispersion:f(&g["dispersion_vehicle_movement"])? as f32*3.6,
             hull_dispersion:f(&g["dispersion_vehicle_rotation"])? as f32/1f32.to_radians(),aiming_time:f(&g["aiming_seconds"])? as f32};
         let source_aim=SourceAim{envelope:env,yaw_rate:aim.yaw_rate,pitch_rate:aim.pitch_rate};
-        let suffix=arr(&row["shell_suffixes"],3)?;
+        let suffix=row["shell_suffixes"].as_array().filter(|a|a.len()==shots.len()).ok_or_else(||bad("suffix count"))?;
         let devices=arr(&row["devices"],9)?;
         let mut caps=[Cap{max:0,regen:0};9];
         for (i,d) in devices.iter().enumerate() {
@@ -256,7 +259,7 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
             type_compact_id:type_cd,gun_compact_id:gun_cd,
             max_hp:i16::try_from(u(&identity["max_hp"])?).map_err(|_|bad("hp"))?,mass_kg:f(&identity["mass_kg"])?,
             view_range:f(&row["view_range_m"])? as f32,aim,source_aim,gun,
-            suffixes:[s(&suffix[0])?.to_owned(),s(&suffix[1])?.to_owned(),s(&suffix[2])?.to_owned()],caps,crew,
+            suffixes:[s(&suffix[0])?.to_owned(),suffix.get(1).map_or(Ok(""),s)?.to_owned(),suffix.get(2).map_or(Ok(""),s)?.to_owned()],caps,crew,
             engine_fire_chance:f(&row["engine_fire_starting_chance"])?,
             geometry_revision:format!("battle-any-collision-717:{geometry_sha}"),materials_revision:format!("battle-any-materials-717:{geometry_sha}"),geometry_sha256:geometry_sha,
             geometry_bytes:u(&geometry["bytes"])?,parts,armor_ids,material_kinds,pivots,physics:row["physics"].clone(),handling:row["handling"].clone(),
@@ -284,6 +287,24 @@ fn hex(text:&str)->io::Result<Vec<u8>> {
 
 #[cfg(test)]
 mod tests {
+    /// SPG-02: a two-shell test_lab SPG keeps three cells, one absent; the client sees two rows and cannot select it.
+    #[cfg(feature="test_lab")]
+    #[test]fn spg02_two_shell_spg_has_an_absent_cell_never_sent_or_selected(){
+        use crate::p06t_armament091::{State,Command,Selection,Outcome,Refusal};
+        let kind=crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label("usa-M37").unwrap();
+        let p=*crate::p06t_shells091::profile(kind.mount());
+        assert!(!p.shots[0].is_absent()&&!p.shots[1].is_absent()&&p.shots[2].is_absent());
+        assert_eq!(crate::profile13_v2091::real_shots(&p),2);
+        let mut state=State::new(kind.mount(),[10,5,0],p.shots[0].compact_descr).unwrap();
+        let rows=crate::armament_wire091::ammo_snapshot(kind.mount(),state.counts(),p.shots[0].compact_descr,p.shots[0].compact_descr,state.clip()).unwrap();
+        // Two ammo rows of 11 bytes (0x13 0x44, i32, u16, u8, i16) and two settings of 7 (0x13 0x40, u8, i32).
+        assert_eq!(rows.len(),2*11+2*7);assert!(!rows.windows(6).any(|w|w==[0x13,0x44,0,0,0,0]));
+        assert!(crate::armament_wire091::ammo_row(kind.mount(),0,0,0).is_err());
+        let now=std::time::Instant::now();
+        assert_eq!(state.apply(&[Command::Select(Selection::Next,0)],now).unwrap(),vec![Outcome::Refused(Refusal::Empty)]);
+        assert!(State::new(kind.mount(),[10,5,1],p.shots[0].compact_descr).is_err(),"an absent cell is never loaded");
+        assert!(State::new(kind.mount(),[0,0,3],0).is_err());
+    }
     use super::*;
     use super::super::vehicle_profile::VehicleKind;
 

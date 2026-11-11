@@ -93,7 +93,8 @@ impl Kind{
         // Native role IDs (web/src/p04m-pool.mjs ROLE_IDS): commander 1, radioman 2, driver 3, gunner 4, loader 5.
         Self::Catalog(_)=>self.row().map_or_else(Vec::new,|e|e.primary_roles.iter().map(|r|match *r{"commander"=>1,"radioman"=>2,"driver"=>3,"gunner"=>4,"loader"=>5,_=>0}).collect())}}
     fn ammo(self)->([i32;3],u32){match self{Self::Ms1=>([2570,2826,3082],96),Self::Is7=>([14602,14858,15114],30),Self::T26=>([1034,1290,1546],160),Self::T34=>([7178,7434,7690],77),Self::T3485=>([7946,8202,8458],68),
-        Self::Catalog(_)=>self.row().filter(|e|e.shells.len()==3).map_or(([0;3],0),|e|([0,1,2].map(|i|e.shells[i].native_compact_id as i32),u32::from(e.ammo_capacity)))}}
+        // SPG-02: a test_lab SPG lists one or two shells; the absent cells are 0.
+        Self::Catalog(_)=>self.row().filter(|e|(1..=3).contains(&e.shells.len())).map_or(([0;3],0),|e|([0,1,2].map(|i|e.shells.get(i).map_or(0,|s|s.native_compact_id as i32)),u32::from(e.ammo_capacity)))}}
     fn new(self)->bool{!matches!(self,Self::Ms1|Self::Is7)}
     fn generated(self)->bool{matches!(self,Self::Catalog(_))}
 }

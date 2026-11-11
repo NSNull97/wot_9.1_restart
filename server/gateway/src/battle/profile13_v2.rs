@@ -113,7 +113,7 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
     pub fn validate_owned(&self,account:&str)->io::Result<()>{let v=serde_json::json!({"kind":self.kind.label(),
         "descriptor_hex":self.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),"native_inventory_id":self.native_inventory_id,
         "vehicle_inventory_id":self.vehicle_inventory_id,"max_hp":self.max_hp,"crew_ids":self.crew_ids,"capacity":self.capacity,
-        "initial_shell_compact_id":self.initial_shell_compact_id,"ammunition":self.ammunition.iter().map(|r|serde_json::json!({
+        "initial_shell_compact_id":self.initial_shell_compact_id,"ammunition":self.ammunition.iter().filter(|r|r.shell_compact_id!=0).map(|r|serde_json::json!({
             "shell_definition_id":r.shell_definition_id,"shell_compact_id":r.shell_compact_id,"family":r.family.source_name(),"count":r.count})).collect::<Vec<_>>()});
         if parse_frozen(&v,account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
 
@@ -166,15 +166,19 @@ pub(crate) fn catalog_identity_in(table:&[catalog::Vehicle],label:&str,native:u6
         .ok_or_else(||bad("catalog kind without battle profile"))?;
     let mount=kind.mount();let p=source::profile(mount);
     let crew=device_profile(kind).ok_or_else(||bad("device profile"))?.crew().len();
-    let shells:[catalog::Shell;3]=entry.shells.try_into().map_err(|_|bad("catalog three stacks"))?;
-    if entry.descriptor!=kind.descriptor()||i32::from(entry.max_hp)!=i32::from(kind.max_health())||entry.ammo_capacity!=p.capacity
+    // SPG-02: the catalog lists the gun's real shells (one to three); the battle profile marks the rest absent.
+    let shells=entry.shells;
+    if shells.len()!=real_shots(&p)||entry.descriptor!=kind.descriptor()||i32::from(entry.max_hp)!=i32::from(kind.max_health())||entry.ammo_capacity!=p.capacity
         ||entry.seats!=crew||entry.native_compact_id!=kind.vehicle_compact_id()
         ||shells.iter().zip(p.shots.iter()).any(|(s,shot)|s.native_compact_id!=u32::from(shot.compact_descr)||s.family!=shot.family.source_name()){
         return Err(bad("catalog disagrees with battle profile"));}
     let suffix=match entry.legacy_inventory{Some((n,s)) if native==u64::from(n)=>s.to_string(),
         None if (3..=i32::MAX as u64).contains(&native)=>format!("p09e-vehicle:{native}"),_=>return Err(bad("stock/source/ownership"))};
-    Ok((kind,mount,suffix,shells.map(|s|s.suffix)))
+    Ok((kind,mount,suffix,std::array::from_fn(|i|shells.get(i).map_or("",|s|s.suffix))))
 }
+/// SPG-02: the number of the gun's real (not absent) shell cells; real cells come first.
+pub(crate) fn real_shots(p:&source::GunProfile)->usize{p.shots.iter().take_while(|s|!s.is_absent()).count()}
+fn absent_stack(s:&source::Shell)->Stack{Stack{shell_definition_id:String::new(),shell_compact_id:0,family:s.family,count:0}}
 
 pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>{parse_frozen_with(v,account,expected_sha,catalog_v1_enabled())}
 pub(crate) fn legacy_identity_for_tests(label:&str,native:u64)->io::Result<Identity>{legacy_identity(label,native)}
@@ -193,13 +197,14 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     for row in crew{let s=row.as_str().ok_or_else(||bad("crew ID"))?;
         if!id(s)||!s.starts_with(&format!("{account}:"))||s.len()<=account.len()+1||crew_ids.iter().any(|x|x==s){return Err(bad("crew owner/unique"));}crew_ids.push(s.to_owned());}
     if crew_ids.len()!=crew_count{return Err(bad("crew seats"));}
-    let a=v["ammunition"].as_array().ok_or_else(||bad("ammo"))?;if a.len()!=3{return Err(bad("three stacks"));}
+    let a=v["ammunition"].as_array().ok_or_else(||bad("ammo"))?;if a.len()!=real_shots(&p){return Err(bad("stack count"));}
     let mut stacks=Vec::new();
     for(i,row)in a.iter().enumerate(){keys(row,&["shell_definition_id","shell_compact_id","family","count"])?;let s=p.shots[i];
         let count=u16::try_from(number(row,"count")?).map_err(|_|bad("count bound"))?;
         if number(row,"shell_compact_id")?!=u64::from(s.compact_descr)||text(row,"family")?!=s.family.source_name()
             ||text(row,"shell_definition_id")?!=format!("shell:{}-stock-{}",kind.label(),suffixes[i])||count>p.capacity{return Err(bad("source shell/order/count"));}
         stacks.push(Stack{shell_definition_id:text(row,"shell_definition_id")?.into(),shell_compact_id:s.compact_descr,family:s.family,count});}
+    while stacks.len()<3{stacks.push(absent_stack(&p.shots[stacks.len()]));}
     let ammunition:[Stack;3]=stacks.try_into().map_err(|_|bad("stacks"))?;
     let total=ammunition.iter().try_fold(0u16,|n,r|n.checked_add(r.count)).ok_or_else(||bad("total overflow"))?;
     let first=ammunition.iter().find(|r|r.count>0).ok_or_else(||bad("empty loadout"))?.shell_compact_id;
@@ -239,13 +244,16 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{
         if *battle==0||!(1..=i32::MAX as u32).contains(native_inventory_id){return Err(bad("selection"));}
         v["battle_id"]=format!("{}:{}",c.run_id,battle).into();v["native_inventory_id"]=(*native_inventory_id).into();}}
     if let Request::Finish{battle,reservation_id,remaining_ammunition,terminal_hp,terminal_state_json,reason,results_json,..}=r{
-        if!id(reservation_id)||!(0..=2150).contains(terminal_hp)||remaining_ammunition.iter().any(|a|a.shell_compact_id==0||a.count>160)
+        // SPG-02: absent cells (compact 0, count 0) stay in the gateway; the domain sees only the real stacks.
+        let real=remaining_ammunition.iter().take_while(|a|a.shell_compact_id!=0).count();
+        if!id(reservation_id)||!(0..=2150).contains(terminal_hp)||real==0||remaining_ammunition[real..].iter().any(|a|a.shell_compact_id!=0||a.count!=0)
+            ||remaining_ammunition.iter().any(|a|a.count>160)
             ||(*reason==FinishReason::BattleFinished)!=results_json.is_some(){return Err(bad("finish arguments"));}
         v["reservation_id"]=reservation_id.as_str().into();v["terminal_hp"]=(*terminal_hp).into();v["reason"]=reason.name().into();
         let terminal=bounded_json(terminal_state_json.as_bytes(),8192)?;
         keys(&terminal,&["policy_revision","roster_size","crew_active","crew","devices","fire","death"])?;
         v["terminal_state_json"]=terminal_state_json.as_str().into();
-        v["remaining_ammunition"]=remaining_ammunition.iter().map(|a|serde_json::json!({"shell_compact_id":a.shell_compact_id,"count":a.count})).collect::<Vec<_>>().into();
+        v["remaining_ammunition"]=remaining_ammunition[..real].iter().map(|a|serde_json::json!({"shell_compact_id":a.shell_compact_id,"count":a.count})).collect::<Vec<_>>().into();
         if let Some(raw)=results_json{let result=results_v2(raw)?;let own=result.participants.iter().find(|p|p.account_dbid==c.native_database_id).ok_or_else(||bad("result owner"))?;
             if result.arena_id!=*battle||own.health!=*terminal_hp{return Err(bad("result battle/HP"));}v["results_json"]=raw.as_str().into();}}
     let raw=serde_json::to_vec(&v).map_err(|_|bad("encode"))?;bounded_json(&raw,match r{Request::Finish{results_json:Some(_),..}=>RESULT_REQUEST,Request::Finish{..}=>16384,_=>2048})?;Ok(raw)
@@ -256,10 +264,13 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{
 #[derive(Clone,Debug,PartialEq,Eq)]pub struct Terminal{pub reason:String,pub remaining:[Remaining;3],pub consumed:[Remaining;3],pub terminal_hp:Option<i16>,pub destroyed:Option<bool>,pub repaired_hp:i16,pub state:Option<TerminalState>}
 #[derive(Clone,Debug,PartialEq,Eq)]pub struct Reservation{pub reservation_id:String,pub run_id:String,pub battle:u64,pub frozen:Frozen,pub status:ReservationStatus,pub result:Option<Terminal>}
 fn parse_remaining(v:&Value,f:&Frozen)->io::Result<[Remaining;3]>{let rows=v.as_array().ok_or_else(||bad("remaining list"))?;
-    if rows.len()!=3{return Err(bad("remaining3"));}let mut result=Vec::new();
+    let real=f.ammunition.iter().take_while(|s|s.shell_compact_id!=0).count();
+    if rows.len()!=real{return Err(bad("remaining count"));}let mut result=Vec::new();
     for(row,source)in rows.iter().zip(&f.ammunition){keys(row,&["shell_compact_id","count"])?;let n=u16::try_from(number(row,"count")?).map_err(|_|bad("remaining count"))?;
         if number(row,"shell_compact_id")?!=u64::from(source.shell_compact_id)||n>source.count{return Err(bad("remaining source/order/increase"));}
-        result.push(Remaining{shell_compact_id:source.shell_compact_id,count:n});}result.try_into().map_err(|_|bad("remaining3"))}
+        result.push(Remaining{shell_compact_id:source.shell_compact_id,count:n});}
+    while result.len()<3{result.push(Remaining{shell_compact_id:0,count:0});}
+    result.try_into().map_err(|_|bad("remaining3"))}
 fn terminal_state(v:&Value,f:&Frozen,hp:i16)->io::Result<TerminalState>{
     keys(v,&["policy_revision","roster_size","crew_active","crew","devices","fire","death"])?;
     if serde_json::to_vec(v).map_err(|_|bad("terminal JSON"))?.len()>8192||text(v,"policy_revision")?!="test_lab.p06t.devices-proxy-fire.v1"{return Err(bad("terminal pinned policy"));}

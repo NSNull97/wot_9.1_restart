@@ -62,7 +62,8 @@ def enable(hints):
                 or tuple(seat[0] for seat in roles) != tuple(row['primary_roles'])):
             raise ValueError('CAT-01 crew seats/roles differ')
         shells = row['shell_compact_ids']
-        if type(shells) is not tuple or len(shells) != 3 or len(set(shells)) != 3:
+        # SPG-02: a test_lab SPG gun carries one or two shells, every other row three.
+        if type(shells) is not tuple or not 1 <= len(shells) <= 3 or len(set(shells)) != len(shells):
             raise ValueError('CAT-01 three-shell hint required')
         for value in shells + (row['turret_compact_id'], row['gun_compact_id']):
             _int(value, 1, 65535)
