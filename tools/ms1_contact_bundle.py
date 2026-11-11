@@ -65,6 +65,19 @@ FRACTION_FIELDS = ("vehicleDamageFactor", "chanceToHitByProjectile", "chanceToHi
 EFFECTIVE_FIELDS = {"kind", "armor", "extra_is_none", "damageKind", *BOOL_FIELDS, *FRACTION_FIELDS}
 EXPECTED_KINDS = {**{f"armor_{i}": i for i in range(1, 17)},
                   "gun": 25, "surveyingDevice": 28, "gunBreech": 31}
+# CONTENT-0 2.5b: internal device and crew-role kinds of material_kinds.xml (VERIFIED ids) with the
+# `extra` their common vehicle.xml record names. Five #717 collision visuals carry such primitive
+# groups and four descriptors list crew roles in a component <armor>; the MS-1 export keeps
+# EXPECTED_KINDS only. Tracks (23/24, damageKind auto) belong to the chassis and stay out.
+DEVICE_KINDS = {"engine": 21, "ammoBay": 22, "turretRotator": 26, "fuelTank": 29, "radio": 30,
+                "commander": 41, "driver": 42, "radioman_1": 43, "radioman_2": 44,
+                "gunner_1": 45, "gunner_2": 46, "loader_1": 47, "loader_2": 48}
+DEVICE_EXTRAS = {"engine": "engineHealth", "ammoBay": "ammoBayHealth", "turretRotator": "turretRotatorHealth",
+                 "fuelTank": "fuelTankHealth", "radio": "radioHealth", "commander": "commanderHealth",
+                 "driver": "driverHealth", "radioman_1": "radioman1Health", "radioman_2": "radioman2Health",
+                 "gunner_1": "gunner1Health", "gunner_2": "gunner2Health", "loader_1": "loader1Health",
+                 "loader_2": "loader2Health"}
+ALL_KINDS = {**EXPECTED_KINDS, **DEVICE_KINDS}
 
 
 class BundleError(ValueError):
@@ -257,10 +270,14 @@ def _loader_defaults(data: bytes) -> dict[str, Any]:
             "damage_device": damage_device, "chance": chance, "continue": proceed}
 
 
-def _common_materials(node: Any, mapping: dict[str, int], defaults: dict[str, Any]) -> dict[str, Any]:
+def _common_materials(node: Any, mapping: dict[str, int], defaults: dict[str, Any],
+                      kinds: dict[str, int] = EXPECTED_KINDS) -> dict[str, Any]:
+    """Common records of `kinds`; DEVICE_KINDS (CONTENT-0 2.5b) only when a caller asks for ALL_KINDS."""
+    _require(set(EXPECTED_KINDS) <= set(kinds) <= set(ALL_KINDS), "common material kind set differs")
+    _require(all(mapping.get(name) == kind for name, kind in kinds.items()), "device material kind mapping differs")
     definitions = _children(_section(node, ("materials",)), "common materials")
     result = {}
-    for name in EXPECTED_KINDS:
+    for name in kinds:
         _require(name in definitions and name in mapping, "common material definition missing")
         fields = _children(definitions[name], name)
         _require(definitions[name]["value"] == "", "common material scalar must be empty")
@@ -272,7 +289,7 @@ def _common_materials(node: Any, mapping: dict[str, int], defaults: dict[str, An
         _require(set(fields) == required, f"{name} unknown/missing common field")
         if not extra_none:
             expected_extra = {"gun": "gunHealth", "surveyingDevice": "surveyingDeviceHealth",
-                              "gunBreech": "gunHealth"}.get(name)
+                              "gunBreech": "gunHealth", **DEVICE_EXTRAS}.get(name)
             _require(_string(fields["extra"], "extra") == expected_extra, "unknown material extra")
             _require(_string(fields["damageKind"], "damage kind") == "device", "unknown damage kind")
         record = {"kind": mapping[name], "armor": defaults["armor"] if extra_none else defaults["device_armor"],

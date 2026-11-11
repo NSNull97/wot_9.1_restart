@@ -247,10 +247,11 @@ def _component(part, index, prefix, payloads, effective):
                 visual_bounds=visual_bounds, mesh_bounds=mesh["bounds"], excluded_degenerate_triangle_ids=[])
 
 
-def _effective(node, defaults):
-    """Generic bounded local armor overrides, preserving absent != zero."""
+def _effective(node, defaults, kinds=materials.EXPECTED_KINDS):
+    """Generic bounded local armor overrides, preserving absent != zero. CONTENT-0 2.5b (test_lab) passes
+    `materials.ALL_KINDS`: crew/device roles listed in a component <armor> become their own records."""
     fields = materials._children(node, "active armor")
-    require(0 < len(fields) <= materials.MAX_MATERIALS and set(fields) <= set(materials.EXPECTED_KINDS), "active armor kind bound")
+    require(0 < len(fields) <= materials.MAX_MATERIALS and set(fields) <= set(kinds), "active armor kind bound")
     result = {}
     for label, value in fields.items():
         require(label in defaults, "missing common material default")

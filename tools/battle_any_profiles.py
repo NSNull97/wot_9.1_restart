@@ -49,6 +49,9 @@ import test_vehicles  # noqa: E402
 # TESTVEH-01: WOT091_TEST_LAB=1 builds/checks the test_lab variant (config/test_lab,
 # *_test_lab bindings); the main variant never contains a test vehicle.
 TEST_LAB = test_vehicles.enabled()
+# CONTENT-0 2.5b (test_lab): collision primitive groups and component <armor> records may also name the
+# device/crew kinds of material_kinds.xml (ms1_contact_bundle.DEVICE_KINDS); main keeps the MS-1 set.
+KINDS = materials.ALL_KINDS if TEST_LAB else materials.EXPECTED_KINDS
 # SPG-01 (owner 2026-11-09): the SPGs admitted on a test_lab stand, those the runtime can take now.
 # The main variant refuses every SPG; one- and two-shell SPGs need a separate card.
 STAND_SPG = frozenset("vehicle:" + name for name in (
@@ -289,6 +292,51 @@ def zero_area(vertices, a, b, c):
     return cross == (0.0, 0.0, 0.0)
 
 
+def child_section(node, name, label):
+    """CONTENT-0 2.5b (test_lab): the one child `name` of a packed-XML section, like a DataSection
+    lookup. Other children may repeat (IS `_85mm_D-5T` has two `animateEmblemSlots`, True/False); the
+    needed section itself must be unique."""
+    require(isinstance(node, dict) and set(node) == {"value", "children"} and isinstance(node["children"], list)
+            and len(node["children"]) <= 1024, label + " is not a bounded XML section")
+    require(all(isinstance(c, dict) and set(c) == {"name", "data"} and isinstance(c["name"], str)
+                and 0 < len(c["name"]) <= 128 for c in node["children"]), label + " invalid XML child")
+    found = [c["data"] for c in node["children"] if c["name"] == name]
+    require(len(found) == 1, label + " missing/duplicate " + name)
+    return found[0]
+
+
+def active_armor(node, path):
+    """The <armor> section of one active component (hull, turret, gun)."""
+    if not TEST_LAB:
+        return materials._children(materials._section(node, path), "active component")["armor"]
+    for name in path:
+        node = child_section(node, name, "active component")
+    return child_section(node, "armor", "active component")
+
+
+def visual_binding(model, visual, stem):
+    """The collision .model names its visual. Main: `nodelessVisual` equal to the stem. CONTENT-0 2.5b
+    (test_lab): `nodefullVisual` too (all 22 such #717 collision models, VK4502P and GB22_Comet), when its
+    render set is bound to the identity `Scene Root` alone and the mesh lies inside the visual bounding
+    box, i.e. the vertices are in the component frame like a nodeless visual's (INFERRED, the child node
+    transforms are not applied). Returns the visual box a nodefull mesh must lie in, else None."""
+    keys = [k for k in ("/nodelessVisual[1]", "/nodefullVisual[1]") if k in model]
+    allowed = [["/nodelessVisual[1]"]] + ([["/nodefullVisual[1]"]] if TEST_LAB else [])
+    require(keys in allowed and model[keys[0]] == stem, "collision model/visual binding")
+    require(visual.get("/node[1]/identifier[1]") == "Scene Root" and
+            visual.get("/node[1]/transform[1]") == [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], "nonidentity visual root")
+    require(visual.get("/renderSet[1]/treatAsWorldSpaceObject[1]") is False, "world-space collision mesh")
+    if keys[0] != "/nodefullVisual[1]":
+        return None
+    require(visual.get("/renderSet[1]/node[1]") == "Scene Root" and "/renderSet[1]/node[2]" not in visual
+            and "/renderSet[2]" not in visual and "/node[2]" not in visual, "nodefull render set binding")
+    return [vector(visual["/boundingBox[1]/" + edge + "[1]"], 3, "visual bounds") for edge in ("min", "max")]
+
+
+def inside_box(bounds, box, tolerance=1e-3):
+    return all(box[0][j] - tolerance <= bounds["min"][j] and bounds["max"][j] <= box[1][j] + tolerance for j in range(3))
+
+
 def component(src, model_path, index, effective):
     """One collision component; the same bindings P04M `_component` checks."""
     match = re.fullmatch(r"vehicles/([a-z]+)/([A-Za-z0-9_.-]+)/collision/([A-Za-z0-9_.-]+)\.model", model_path or "")
@@ -304,11 +352,9 @@ def component(src, model_path, index, effective):
     try:
         model = flat(raws["model"])
         visual = flat(raws["visual"])
-        require(model.get("/nodelessVisual[1]") == stem, "collision model/visual binding")
-        require(visual.get("/node[1]/identifier[1]") == "Scene Root" and
-                visual.get("/node[1]/transform[1]") == [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], "nonidentity visual root")
-        require(visual.get("/renderSet[1]/treatAsWorldSpaceObject[1]") is False, "world-space collision mesh")
+        nodefull_box = visual_binding(model, visual, stem)
         m = mesh(raws["primitives"])
+        require(nodefull_box is None or inside_box(m["bounds"], nodefull_box), "nodefull mesh outside visual bounds")
         groups = {k for k in visual if re.fullmatch(r"/renderSet\[1\]/geometry\[1\]/primitiveGroup\[[0-9]+\]", k)}
         require(len(groups) == len(m["groups"]), "visual primitive group count")
         require(materials._string(visual.get("/renderSet[1]/geometry[1]/vertices[1]"), "vertex reference") == "vertices"
@@ -317,8 +363,10 @@ def component(src, model_path, index, effective):
         for n, group in enumerate(m["groups"], 1):
             path = "/renderSet[1]/geometry[1]/primitiveGroup[" + str(n) + "]"
             label = visual.get(path + "/material[1]/identifier[1]")
-            require(label in materials.EXPECTED_KINDS, "unmapped material kind " + str(label))
-            require(visual.get(path) == n - 1 and visual.get(path + "/material[1]/materialKind[1]") == materials.EXPECTED_KINDS[label]
+            # Packed XML keeps some strings base64 ("fuelTank" of A18_M41/G73_E50_Ausf_M Hull), as for kind names.
+            label = materials._string(label, "primitive material") if isinstance(label, dict) else label
+            require(label in KINDS, "unmapped material kind " + str(label))
+            require(visual.get(path) == n - 1 and visual.get(path + "/material[1]/materialKind[1]") == KINDS[label]
                     and visual.get(path + "/material[1]/collisionFlags[1]") == 0, "primitive material binding")
             require(group["start_index"] % 3 == 0 and group["triangle_count"] > 0, "primitive group range")
             labels.add(label)
@@ -334,11 +382,11 @@ def component(src, model_path, index, effective):
                 triangles[t] = triangle
         require(all(t is not None for t in triangles), "triangle coverage gap")
         entries = []
-        for label in sorted(set(effective) | labels, key=lambda k: materials.EXPECTED_KINDS[k]):
+        for label in sorted(set(effective) | labels, key=lambda k: KINDS[k]):
             record = effective.get(label)
             if record is not None:
-                materials._validate_effective(record, materials.EXPECTED_KINDS[label])
-            entries.append(dict(name=label, kind=materials.EXPECTED_KINDS[label], effective=record))
+                materials._validate_effective(record, KINDS[label])
+            entries.append(dict(name=label, kind=KINDS[label], effective=record))
         visual_bounds = [vector(visual["/boundingBox[1]/" + edge + "[1]"], 3, "visual bounds") for edge in ("min", "max")]
     except (*SOURCE_ERRORS, materials.BundleError, ValueError, KeyError, TypeError) as error:
         raise Refused("COLLISION_SOURCE_UNSUPPORTED", part + ": " + str(error)) from error
@@ -526,8 +574,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             model = vf.get(label + "/hitTester[1]/collisionModel[1]")
             refuse_if(model is None, "COLLISION_SOURCE_UNRESOLVED", label + " hitTester")
             try:
-                fields = materials._children(materials._section(node, path), "active component")
-                effective = _effective(fields["armor"], defaults)
+                effective = _effective(active_armor(node, path), defaults, KINDS)
             except (*SOURCE_ERRORS, materials.BundleError, KeyError) as error:
                 raise Refused("COLLISION_SOURCE_UNSUPPORTED", label + " armour: " + str(error)) from error
             built, pins = component(src, model, index, effective)
@@ -714,7 +761,7 @@ def build(original):
     require(kinds is not None and pin(kinds) == materials.MEMBER_PINS[materials.KINDS_KEY], "material kinds pin differs")
     loader = materials._loader_defaults(src.file(materials.LOADER_REL))
     mapping = materials._kind_mapping(decode(kinds, max_bytes=MAX_MEMBER))
-    defaults = materials._common_materials(decode(src.file(materials.COMMON_REL), max_bytes=MAX_MEMBER), mapping, loader)
+    defaults = materials._common_materials(decode(src.file(materials.COMMON_REL), max_bytes=MAX_MEMBER), mapping, loader, KINDS)
     common = src.xml(materials.COMMON_REL)
     factor = _num(common["/miscParams[1]/projectileSpeedFactor[1]"], "projectile factor", 1)
     require(factor == .8, "projectile speed factor differs")

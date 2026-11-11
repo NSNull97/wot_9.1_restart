@@ -59,19 +59,29 @@ pub(super) fn gun_component(vehicle:VehicleKind)->Component {
     match vehicle {VehicleKind::Ms1|VehicleKind::T26=>Component::Gun02,_=>Component::Gun01}
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SourceClass { ArmorDescriptor, GunVisualMaterial, SurveyingDeviceVisualMaterial, GunBreechVisualMaterial }
+pub enum SourceClass { ArmorDescriptor, GunVisualMaterial, SurveyingDeviceVisualMaterial, GunBreechVisualMaterial,
+    /// CONTENT-0 2.5b: an internal device or crew-role kind (material_kinds.xml 21..48) named by a
+    /// collision primitive group or a component <armor> record. Never an ordinary armour plate.
+    DeviceVisualMaterial }
 // BW-01 wire codec (tools/bw01_wire_gen.py): SourceClass
 impl crate::bw_wire::Wire for SourceClass {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::ArmorDescriptor=>bw_o.tag(0),Self::GunVisualMaterial=>bw_o.tag(1),Self::SurveyingDeviceVisualMaterial=>bw_o.tag(2),Self::GunBreechVisualMaterial=>bw_o.tag(3),}}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::ArmorDescriptor),1=>Ok(Self::GunVisualMaterial),2=>Ok(Self::SurveyingDeviceVisualMaterial),3=>Ok(Self::GunBreechVisualMaterial),t=>crate::bw_wire::variant(t)}}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){match self {Self::ArmorDescriptor=>bw_o.tag(0),Self::GunVisualMaterial=>bw_o.tag(1),Self::SurveyingDeviceVisualMaterial=>bw_o.tag(2),Self::GunBreechVisualMaterial=>bw_o.tag(3),Self::DeviceVisualMaterial=>bw_o.tag(4),}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{match bw_i.tag()? {0=>Ok(Self::ArmorDescriptor),1=>Ok(Self::GunVisualMaterial),2=>Ok(Self::SurveyingDeviceVisualMaterial),3=>Ok(Self::GunBreechVisualMaterial),4=>Ok(Self::DeviceVisualMaterial),t=>crate::bw_wire::variant(t)}}
 }
 // end BW-01 wire codec
 impl SourceClass {
     fn name(self) -> &'static str { match self {
         Self::ArmorDescriptor => "armor_descriptor", Self::GunVisualMaterial => "gun_visual_material",
         Self::SurveyingDeviceVisualMaterial => "surveying_device_visual_material",
-        Self::GunBreechVisualMaterial=>"gun_breech_visual_material" } }
+        Self::GunBreechVisualMaterial=>"gun_breech_visual_material", Self::DeviceVisualMaterial=>"device_visual_material" } }
 }
+/// CONTENT-0 2.5b: the #717 `material_kinds.xml` names of the internal device and crew-role kinds
+/// (tracks 23/24 belong to the chassis armour, `chassis_armor.rs`). Same table as the generator's
+/// `ms1_contact_bundle.DEVICE_KINDS`.
+pub(super) fn device_kind_name(kind:u16)->Option<&'static str> { Some(match kind {
+    21=>"engine",22=>"ammoBay",26=>"turretRotator",29=>"fuelTank",30=>"radio",
+    41=>"commander",42=>"driver",43=>"radioman_1",44=>"radioman_2",45=>"gunner_1",46=>"gunner_2",47=>"loader_1",48=>"loader_2",
+    _=>return None }) }
 #[derive(Clone, Debug, PartialEq)]
 pub struct EffectiveMaterial {
     pub kind: u16, pub armor: Option<f32>, pub extra_is_none: bool,
@@ -224,7 +234,7 @@ impl Catalog {
                     28=>("surveyingDevice".to_owned(),SourceClass::SurveyingDeviceVisualMaterial),
                     31=>("gunBreech".to_owned(),SourceClass::GunBreechVisualMaterial),
                     1..=16=>(format!("armor_{kind}"),SourceClass::ArmorDescriptor),
-                    _=>return Err(bad()),
+                    _=>(device_kind_name(kind).ok_or_else(||bad())?.to_owned(),SourceClass::DeviceVisualMaterial),
                 };
                 if value["kind"].as_u64()!=Some(kind as u64)||value["name"].as_str()!=Some(name.as_str()) {return Err(bad());}
                 let effective=if value["effective"].is_null(){None}else{Some(EffectiveMaterial::from_value(&value["effective"],kind)?)};
@@ -352,6 +362,35 @@ mod tests {
         let mut fabricated = rows.clone(); fabricated[0]["entries"][12]["effective"] = rows[0]["entries"][9]["effective"].clone();
         assert!(Catalog::from_value(rev,&fabricated).is_err());
         assert!(Catalog::from_value(&json!("foreign-profile"),rows).is_err());
+    }
+    #[test] fn content0_device_kinds_are_named_and_never_ordinary_plates() {
+        // material_kinds.xml ids of the device/crew roles; tracks, gun, optics, breech and armour stay out.
+        let names=[(21,"engine"),(22,"ammoBay"),(26,"turretRotator"),(29,"fuelTank"),(30,"radio"),(41,"commander"),(42,"driver"),
+            (43,"radioman_1"),(44,"radioman_2"),(45,"gunner_1"),(46,"gunner_2"),(47,"loader_1"),(48,"loader_2")];
+        for (kind,name) in names { assert_eq!(device_kind_name(kind),Some(name)); }
+        for kind in [0,1,16,17,20,23,24,25,27,28,31,40,49,71,u16::MAX] { assert_eq!(device_kind_name(kind),None,"{kind}"); }
+        assert_eq!(SourceClass::DeviceVisualMaterial.name(),"device_visual_material");
+        let anchor=std::time::Instant::now();
+        let(mut a,mut b)=(crate::bw_wire::Arcs::new(false),crate::bw_wire::Arcs::new(true));
+        for class in [SourceClass::ArmorDescriptor,SourceClass::GunBreechVisualMaterial,SourceClass::DeviceVisualMaterial] {
+            let bytes=crate::bw_wire::encode(&class,anchor,&mut a).unwrap();
+            assert_eq!(crate::bw_wire::decode::<SourceClass>(&bytes,anchor,&mut b).unwrap(),class);
+        }
+        assert!(crate::bw_wire::decode::<SourceClass>(&5u16.to_le_bytes(),anchor,&mut b).is_err());
+        // A crew record of a component <armor> (T40 hull commander: armor 0, vehicleDamageFactor 1) and an
+        // absent device record (A-44 hull turretRotator) are both non-ordinary: AP refuses the material class.
+        let crew=EffectiveMaterial{kind:41,armor:Some(0.),extra_is_none:false,vehicle_damage_factor:1.,use_armor_homogenization:false,
+            use_hit_angle:false,use_antifragmentation_lining:false,may_ricochet:false,collide_once_only:true,damage_kind:1,
+            chance_to_hit_by_projectile:0.33,chance_to_hit_by_explosion:0.15,continue_trace_if_no_hit:true};
+        for (kind,name,effective) in [(41u16,"commander",Some(crew)),(26,"turretRotator",None)] {
+            let facts=MaterialFacts{component:Component::Hull,name:name.into(),kind,source_class:SourceClass::DeviceVisualMaterial,
+                effective,profile_revision:PROFILE_REVISION.into()};
+            let r=super::super::ap::resolve_for_pair(VehicleKind::Ms1,VehicleKind::Ms1,super::super::ap::Input{material:&facts,
+                segment_direction:[0.,0.,1.],winding_normal:[0.,0.,-1.],distance:10.}).unwrap();
+            assert_eq!(r.outcome,super::super::ap::Outcome::Unsupported(super::super::ap::Reason::MaterialClass));
+            assert!(!super::super::impact::plate_for(VehicleKind::Ms1,&facts,[0.,0.,1.],[0.,0.,-1.],10.).unwrap().ordinary);
+            assert!(!super::super::impact::spaced_layer(&facts));
+        }
     }
     #[test] fn diagnostic_json_preserves_source_facts_without_claiming_damage() {
         let b = super::super::geometry::tests::bundle();
