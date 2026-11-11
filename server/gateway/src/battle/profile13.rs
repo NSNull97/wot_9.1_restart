@@ -16,6 +16,9 @@ pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 pub const POLICY_SHA256: &str = "cddd7d8cfabe8a4df5543fdcef14dd5518c36bc8bce431cfb502a5c72903ccda";
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 256;
+/// SPG-02: the stand template manifest has one row of about ten nodes per kind (37 on test_lab -14,
+/// at most 64 rows by the array bound); requests and replies keep MAX_NODES.
+const MAX_MANIFEST_NODES: usize = 1024;
 
 fn bad(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, format!("profile13 battle: {reason}"))
@@ -116,12 +119,12 @@ impl<'de> Deserialize<'de> for Unique {
     }
 }
 
-fn walk(value: &Value, depth: usize, nodes: &mut usize) -> io::Result<()> {
+fn walk(value: &Value, depth: usize, nodes: &mut usize, limit: usize) -> io::Result<()> {
     *nodes += 1;
-    if depth > MAX_DEPTH || *nodes > MAX_NODES { return Err(bad("JSON depth/node bound")); }
+    if depth > MAX_DEPTH || *nodes > limit { return Err(bad("JSON depth/node bound")); }
     match value {
-        Value::Object(rows) => for row in rows.values() { walk(row, depth + 1, nodes)?; },
-        Value::Array(rows) => for row in rows { walk(row, depth + 1, nodes)?; },
+        Value::Object(rows) => for row in rows.values() { walk(row, depth + 1, nodes, limit)?; },
+        Value::Array(rows) => for row in rows { walk(row, depth + 1, nodes, limit)?; },
         _ => {},
     }
     Ok(())
@@ -132,7 +135,7 @@ pub fn bounded_json(raw: &[u8], maximum: usize) -> io::Result<Value> {
         return Err(bad("JSON byte bound"));
     }
     let Unique(value) = serde_json::from_slice(raw).map_err(|_| bad("unique integer JSON"))?;
-    walk(&value, 0, &mut 0)?;
+    walk(&value, 0, &mut 0, if maximum == MAX_MANIFEST_BYTES { MAX_MANIFEST_NODES } else { MAX_NODES })?;
     if !value.is_object() { return Err(bad("JSON root object")); }
     Ok(value)
 }
