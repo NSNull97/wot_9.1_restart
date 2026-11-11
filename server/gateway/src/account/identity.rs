@@ -333,7 +333,8 @@ impl BattleWorker {
 }
 impl Config {
     pub fn load(path:&str)->io::Result<Self> {
-        let bytes=bounded_file(Path::new(path),4096)?;
+        // CONTENT-0 2.1: a stand lists every catalogue bot kind (232 labels, about 8 KB).
+        let bytes=bounded_file(Path::new(path),65536)?;
         // The parser's own message (duplicate/too many fields, syntax) is project text, not input echo.
         let ConfigFields{fields:mut value,network}=serde_json::from_slice(&bytes)
             .map_err(|e|io::Error::new(io::ErrorKind::InvalidData,format!("invalid gateway config: {e}")))?;
