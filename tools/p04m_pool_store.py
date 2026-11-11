@@ -125,11 +125,24 @@ class PoolStore(ResultsStore):
             | {"shells": {key: vars(value) for key, value in sorted(self.shells.items()) if key in legacy_shells}}))
         # CONTENT-0 step 1 (owner 2026-11-11): the account depot keeps one count per shell compact ID, shared by every
         # mount of that shell, as the #717 client (inventory 10). Mounts, loadouts and battles keep their per-mount shell
-        # definitions; only the depot row is shared. The legacy MS-1/IS-7 shells keep their P09C row keys (the P09D
-        # service writes them); any other definition of the same compact ID shares that row.
-        legacy_by_cd = {shell.native_compact_id: key for key, shell in SHELLS.items()}
-        self.depot_key = {key: legacy_by_cd.get(shell.native_compact_id, "shell:native:%d" % shell.native_compact_id)
-                          for key, shell in self.shells.items()}
+        # definitions; only the depot row is shared. The row key of a compact ID is the definition of its first owner:
+        # the legacy MS-1/IS-7 shells (their P09C keys, written by the P09D service), then catalogue order (rows are
+        # appended). A shell of one vehicle keeps its old key, so stores without shared shells read unchanged; a
+        # vehicle added later with an existing shell joins the existing row.
+        import catalog_v1
+        order = {v["kind"]: i for i, v in enumerate(catalog_v1.vehicles())} if catalog_v1.active() else {}
+        rank = {key: (-1, key) for key in SHELLS}
+        for kind, rows in _shell_rows(self.registry).items():
+            assembly = self.registry.profiles[kind].assembly_id
+            for suffix, *_ in rows:
+                key = "shell:" + assembly + "-" + suffix
+                rank.setdefault(key, (order.get(kind, len(order)), key))
+        first = {}
+        for key, shell in self.shells.items():
+            cd = shell.native_compact_id
+            if cd not in first or rank[key] < rank[first[cd]]:
+                first[cd] = key
+        self.depot_key = {key: first[shell.native_compact_id] for key, shell in self.shells.items()}
         self.depot_cd = {self.depot_key[key]: shell.native_compact_id for key, shell in self.shells.items()}
         require(len(self.depot_cd) == len({shell.native_compact_id for shell in self.shells.values()}), "CORRUPT_STORE")
         self.depot_keys = tuple(sorted(self.depot_cd))
@@ -437,7 +450,9 @@ class PoolStore(ResultsStore):
             if set(old) == set(self.depot_keys):
                 c.commit()
                 return {"status": "unchanged", "revision": row["revision"], "moved": []}
-            require(set(old) <= set(self.shells) | set(self.depot_keys), "CORRUPT_STORE")
+            # Sources: per-definition rows (before step 1) or the first step-1 build's shell:native:<cd> rows (stand -15).
+            native = {"shell:native:%d" % cd: key for key, cd in self.depot_cd.items()}
+            require(set(old) <= set(self.shells) | set(self.depot_keys) | set(native), "CORRUPT_STORE")
             vehicles = c.execute("SELECT vehicle_id,state,battle_id FROM game_vehicle WHERE account_id=? ORDER BY vehicle_id LIMIT ?",
                                  (account_id, MAX_OWNED + 1)).fetchall()
             require(all(r["state"] == "available" for r in vehicles), "VEHICLE_RESERVED")
@@ -445,7 +460,7 @@ class PoolStore(ResultsStore):
             require(stored.get("depot") == old, "CORRUPT_STORE")
             merged = {}
             for key, quantity in old.items():
-                target = key if key in self.depot_cd else self.depot_key[key]
+                target = native[key] if key in native else key if key in self.depot_cd else self.depot_key[key]
                 merged[target] = merged.get(target, 0) + quantity
             require(all(n <= 1000000 for n in merged.values()), "DEPOT_OVERFLOW")
             c.execute("DELETE FROM p09c_ammo_depot WHERE account_id=?", (account_id,))
