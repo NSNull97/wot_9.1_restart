@@ -114,6 +114,14 @@ fn playable_bounds(asset: &str) -> Option<[f32; 4]> {
     }
 }
 
+/// TURPHYS-01 turret test racks, in parts of the gun's capacity: one shell, a quarter, a half, full.
+pub const TURRET_TEST_RACK: [(u16, u16); 4] = [(0, 1), (1, 4), (1, 2), (1, 1)];
+fn turret_test_rack(kind: VehicleKind, ordinal: usize) -> u16 {
+    let capacity = crate::p06t_shells091::profile(kind.mount()).capacity;
+    let (num, den) = TURRET_TEST_RACK[ordinal % TURRET_TEST_RACK.len()];
+    (capacity * num / den).clamp(1, capacity)
+}
+
 /// Explicit gateway configuration of the bots of every arena.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Plan { pub human_places: usize, pub seed: u64, pub kinds: Vec<VehicleKind> }
@@ -174,11 +182,13 @@ pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<
     /// Wall time spent in bot decisions (diagnostic only; not in the digest).
     think_ns: u64,
     /// MM-01: the matched group's tiers; facing places get one tier.
-    pairing: Option<(u8, u8)> }
+    pairing: Option<(u8, u8)>,
+    /// TURPHYS-01 test_lab turret test: passive bots with stepped racks (see `enable_bot_turret_test`).
+    turret_test: bool }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Bots
 impl crate::bw_wire::Wire for Bots {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,repositions,stucks,think_ns,pairing}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(repositions,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,repositions:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,repositions,stucks,think_ns,pairing,turret_test}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(repositions,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);W::put(turret_test,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,repositions:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?,turret_test:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -215,10 +225,21 @@ impl World {
             if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
             self.geometry_for(*kind)?;
         }
-        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 5], repositions: 0, stucks: 0, think_ns: 0, pairing: None });
+        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 5], repositions: 0, stucks: 0, think_ns: 0, pairing: None, turret_test: false });
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
+    /// TURPHYS-01 test_lab turret test (owner 2026-11-11): bots stand still and never shoot, bot k
+    /// carries `TURRET_TEST_RACK[k % 4]` of its gun's capacity (at least one shell) and starts with
+    /// a 1 HP ammo bay; a penetrating hit on a bot also hits its ammo bay. One battle shows the rack
+    /// charge scale of the detached turret. Never a battle rule: off unless the stand config asks.
+    pub fn enable_bot_turret_test(&mut self) -> io::Result<()> {
+        let bots = self.bots.as_mut().ok_or_else(bad)?;
+        if self.started.is_some() || !bots.brains.is_empty() || !self.mixed_ammo || self.ammo_detonation.is_none() { return Err(bad()); }
+        bots.turret_test = true;
+        Ok(())
+    }
+    pub fn bot_turret_test(&self) -> bool { self.bots.as_ref().is_some_and(|b| b.turret_test) }
     /// MM-01: this battle's native places (1..=all places) and the bot kinds of
     /// its group of tiers `group`, before the start. The template's plan is
     /// untouched; a reset battle comes back with it.
@@ -273,9 +294,11 @@ impl World {
                 None => plan.kinds[(ordinal + (plan.seed % plan.kinds.len() as u64) as usize) % plan.kinds.len()] };
             let mut database = DATABASE_BASE.checked_add(ordinal as i32).ok_or_else(bad)?;
             while next.actors.iter().any(|a| a.identity.database == database) { database = database.checked_add(1).ok_or_else(bad)?; }
-            let identity = Identity { account: format!("bot01:{ordinal}"), database, name: format!("Bot-{:02}", ordinal + 1) };
+            let rack = bots.turret_test.then(|| turret_test_rack(kind, ordinal));
+            let name = match rack { Some(count) => format!("Bot-{:02}-AMMO{count}", ordinal + 1), None => format!("Bot-{:02}", ordinal + 1) };
+            let identity = Identity { account: format!("bot01:{ordinal}"), database, name };
             let session = SESSION_BASE.checked_add(slot as u32).ok_or_else(bad)?;
-            if next.attach_bot_actor(identity, session, kind)? != slot { return Err(bad()); }
+            if next.attach_bot_actor(identity, session, kind, rack)? != slot { return Err(bad()); }
             next.actors[slot].bot = Some(u8::try_from(ordinal).map_err(|_| bad())?);
         }
         let bounds = playable_bounds(self.map.asset()).ok_or_else(bad)?;
@@ -316,21 +339,24 @@ impl World {
     /// (the same seat as the bots_tests native place); test builds only.
     #[cfg(test)]
     pub(crate) fn attach_native_stand_in(&mut self, identity: Identity, session: u32, kind: VehicleKind) -> io::Result<usize> {
-        self.attach_bot_actor(identity, session, kind)
+        self.attach_bot_actor(identity, session, kind, None)
     }
     /// The player's attach path with a server-chosen stock LAB loadout; no
     /// owned receipt, inventory or reservation is created or implied.
-    fn attach_bot_actor(&mut self, identity: Identity, session: u32, kind: VehicleKind) -> io::Result<usize> {
-        if kind.is_extended() || !self.mixed_profiles || self.extended_lab || kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
+    fn attach_bot_actor(&mut self, identity: Identity, session: u32, kind: VehicleKind, rack: Option<u16>) -> io::Result<usize> {
+        if kind.is_extended() || !self.mixed_profiles || self.extended_lab || kind.is_generated() && !self.mixed_ammo
+            || rack.is_some() && !self.mixed_ammo { return Err(bad()); }
         self.geometry_for(kind)?;
         // Mixed ammo: the full stock rack of the first shell on the typed gun,
         // v1 devices, as `attach_owned_v2_inner` seats a player's kind.
         let typed = if self.mixed_ammo {
             let source = crate::p06t_shells091::profile(kind.mount());
-            Some(fire::State::with_typed(kind.mount(), [source.capacity, 0, 0], source.shots[0].compact_descr)?)
+            Some(fire::State::with_typed(kind.mount(), [rack.unwrap_or(source.capacity), 0, 0], source.shots[0].compact_descr)?)
         } else { None };
         let devices = if self.mixed_ammo {
-            Some(self.classic_devices(crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(bad)?)?)?)
+            let mut state = crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(bad)?)?;
+            if rack.is_some() { state.weaken_ammo_bay_for_turret_test()?; }
+            Some(self.classic_devices(state)?)
         } else { None };
         let (previous, mixed) = (self.vehicle_kind, self.mixed_ammo);
         self.mixed_ammo = false; self.vehicle_kind = kind;
@@ -361,6 +387,8 @@ impl World {
     pub fn drive_bots(&mut self, now: Instant) -> io::Result<usize> {
         let Some(state) = &self.bots else { return Ok(0); };
         if self.started.is_none() || state.brains.is_empty() || state.last_tick == Some(self.tick) { return Ok(0); }
+        // TURPHYS-01 turret test: the bots are targets; they never move, aim or shoot.
+        if state.turret_test { return Ok(0); }
         let mut state = state.clone();
         state.last_tick = Some(self.tick);
         if self.lifecycle.as_ref().is_some_and(|l| !l.allows_actions()) { self.bots = Some(state); return Ok(0); }

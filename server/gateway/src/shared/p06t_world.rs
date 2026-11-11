@@ -223,6 +223,15 @@ impl World {
                     at_ms:u64::from(contact.tick-1000)*100,target:hit.target,shell,
                     ignition_roll:self.ignition_roll(projectile.sequence,slot,ordinal as u8)?});}
                 }
+                // TURPHYS-01 test_lab turret test: a penetrating hit on a test bot also reaches its (1 HP) ammo bay.
+                let bay=crate::p06t_lab_proxy::Target::Device(caps::Device::AmmoBay);
+                if self.bot_turret_test()&&actors[slot].bot.is_some()&&resolution.decision==crate::p06t_damage::Decision::Pierced
+                    &&!inputs.iter().any(|hit|hit.target==bay)&&inputs.len()<if classic{device::MAX_CLASSIC_SHOT_HITS}else{device::MAX_SHOT_HITS}{
+                    let ordinal=if classic{device::CLASSIC_FIRST_ORDINAL}else{0}+inputs.len() as u8;
+                    if classic{amounts.push(rolled_device_damage(shell,trace.shot_rolls(self.id,projectile.sequence)?)?);}
+                    inputs.push(device::ModuleHit{cause:device::Cause{shot:projectile.sequence,attacker_slot:projectile.slot as u8},ordinal,
+                        at_ms:u64::from(contact.tick-1000)*100,target:bay,shell,ignition_roll:self.ignition_roll(projectile.sequence,slot,ordinal)?});
+                }
                 if !inputs.is_empty(){
                     let actor=&mut actors[slot];let health=device::Health{hp:before as u16,max_hp:actor.vehicle_kind().max_health()as u16,terminal:false};
                     let devices=actor.devices.as_mut().ok_or_else(||bad())?;

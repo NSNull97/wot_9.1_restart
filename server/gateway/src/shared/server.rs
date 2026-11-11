@@ -1667,6 +1667,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         // Config already requires profile13, connection capacity, visibility and no hold5/training.
         if !profile13_mode||qualification.is_some()||battle_template.shared.is_none()||!table.arena_split||!config.visibility_v1{return Err(model::bad().into());}
         battle_template.world.enable_bots(plan.clone()).map_err(|_|io::Error::other("BOT-01 bots: kinds not bound by the battle profiles or map unsupported"))?;
+        if config.bots_turret_test{
+            battle_template.world.enable_bot_turret_test().map_err(|_|io::Error::other("TURPHYS-01 turret test needs mixed ammo and ammo detonation"))?;
+            println!("TURPHYS01_TURRET_TEST_BOUND racks={:?} passive_bots=true ammo_bay_hp=1 penetration_reaches_ammo_bay=true scope=test_lab",
+                model::bots::TURRET_TEST_RACK);
+        }
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("BOT01_POLICY_BOUND policy={} human_places={} places={} bots={} kinds={:?} seed={} accounts=none",
             model::bots::POLICY,plan.human_places,config.battle_players,config.battle_players-plan.human_places,
