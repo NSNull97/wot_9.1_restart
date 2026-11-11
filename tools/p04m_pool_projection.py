@@ -20,6 +20,7 @@ class PoolProjectionSource(BattleProjectionSource):
         self._pool_base = source
         self._pool_snapshot, self._pool_profile = store._baseline(store._pool_row())
         self.registry, self.shells, self.mounts = store.registry, store.shells, store.mounts
+        self.depot_cd = store.depot_cd
         self.ammo_catalog_sha256 = store.ammo_catalog_sha256
         self._zero_gold = store.zero_economy(self._pool_profile["account_id"])
 
@@ -29,8 +30,8 @@ class PoolProjectionSource(BattleProjectionSource):
         research, inventory = aggregate["research"], state["inventory"]
         crew_inventory, crews = native_crew(aggregate["crew_inventory"], contract_for_crew(aggregate["crew_inventory"]))
         inventory[8] = crew_inventory
-        inventory[10] = {self.shells[key].native_compact_id: n for key, n in aggregate["depot"].items()}
-        # One native count per compact ID: two pool rows must never collapse into one.
+        inventory[10] = {self.depot_cd[key]: n for key, n in aggregate["depot"].items()}
+        # One native count per compact ID (CONTENT-0 step 1: the depot row is shared per compact ID).
         require(len(inventory[10]) == len(aggregate["depot"]), "CORRUPT_STORE")
         for kind in range(2, 8):
             inventory[kind] = {item_cd(self.catalog, key): n for key, n in research["depot"].items()

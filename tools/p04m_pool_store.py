@@ -123,6 +123,29 @@ class PoolStore(ResultsStore):
         legacy_shells = {key for mount in legacy.values() for key in mount.shell_ids}
         self.ammo_catalog_sha256 = sha(canonical({key: vars(value) for key, value in sorted(legacy.items())}
             | {"shells": {key: vars(value) for key, value in sorted(self.shells.items()) if key in legacy_shells}}))
+        # CONTENT-0 step 1 (owner 2026-11-11): the account depot keeps one count per shell compact ID, shared by every
+        # mount of that shell, as the #717 client (inventory 10). Mounts, loadouts and battles keep their per-mount shell
+        # definitions; only the depot row is shared. The row key of a compact ID is the definition of its first owner:
+        # the legacy MS-1/IS-7 shells (their P09C keys, written by the P09D service), then catalogue order (rows are
+        # appended). A shell of one vehicle keeps its old key, so stores without shared shells read unchanged; a
+        # vehicle added later with an existing shell joins the existing row.
+        import catalog_v1
+        order = {v["kind"]: i for i, v in enumerate(catalog_v1.vehicles())} if catalog_v1.active() else {}
+        rank = {key: (-1, key) for key in SHELLS}
+        for kind, rows in _shell_rows(self.registry).items():
+            assembly = self.registry.profiles[kind].assembly_id
+            for suffix, *_ in rows:
+                key = "shell:" + assembly + "-" + suffix
+                rank.setdefault(key, (order.get(kind, len(order)), key))
+        first = {}
+        for key, shell in self.shells.items():
+            cd = shell.native_compact_id
+            if cd not in first or rank[key] < rank[first[cd]]:
+                first[cd] = key
+        self.depot_key = {key: first[shell.native_compact_id] for key, shell in self.shells.items()}
+        self.depot_cd = {self.depot_key[key]: shell.native_compact_id for key, shell in self.shells.items()}
+        require(len(self.depot_cd) == len({shell.native_compact_id for shell in self.shells.values()}), "CORRUPT_STORE")
+        self.depot_keys = tuple(sorted(self.depot_cd))
 
     def _pool_row(self):
         exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='p04m_schema'").fetchone()
@@ -269,9 +292,9 @@ class PoolStore(ResultsStore):
             result.append({"vehicle_id": row["vehicle_id"], "mount_id": row["mount_id"], "loaded": loaded})
         # Bound by this store's own shell set (+1 detects an extra row); a fixed 16
         # held only the legacy 15 pool shells (BATTLE-ANY catalog rows add more).
-        depot_rows = self.connection.execute("SELECT shell_id,quantity FROM p09c_ammo_depot WHERE account_id=? ORDER BY shell_id LIMIT ?", (account, len(self.shells) + 1)).fetchall()
+        depot_rows = self.connection.execute("SELECT shell_id,quantity FROM p09c_ammo_depot WHERE account_id=? ORDER BY shell_id LIMIT ?", (account, len(self.depot_keys) + 1)).fetchall()
         depot = {row[0]: row[1] for row in depot_rows}
-        require(len(depot_rows) == len(self.shells) and set(depot) == set(self.shells)
+        require(len(depot_rows) == len(self.depot_keys) and set(depot) == set(self.depot_keys)
             and all(type(n) is int and 0 <= n <= 1000000 for n in depot.values()), "CORRUPT_STORE")
         expected = {r["vehicle_inventory_id"]: self.registry.by_vehicle[r["vehicle_id"]].assembly_id for r in self._research(account)["vehicles"] if r["vehicle_id"] in self.registry.by_vehicle}
         require({row["vehicle_id"]: row["mount_id"] for row in result} == expected, "CORRUPT_STORE")
@@ -342,13 +365,13 @@ class PoolStore(ResultsStore):
         if not self.pool_active(): return
         from p09e_research_store import ECONOMY_SHELL_MINIMUM
         self._ensure_pool_rows(account)
-        for key in sorted(self.shells):
+        for key in self.depot_keys:
             require(self.connection.execute("UPDATE p09c_ammo_depot SET quantity=MAX(quantity,?) WHERE account_id=? AND shell_id=?",
                 (ECONOMY_SHELL_MINIMUM, account, key)).rowcount == 1, "CORRUPT_STORE")
 
     def _ensure_pool_rows(self, account):
         require(self.connection.in_transaction, "POOL_TRANSACTION_REQUIRED")
-        for key in self.shells:
+        for key in self.depot_keys:
             self.connection.execute("INSERT OR IGNORE INTO p09c_ammo_depot VALUES (?,?,0)", (account, key))
         for owned in self._research(account)["vehicles"]:
             p = self.registry.by_vehicle.get(owned["vehicle_id"])
@@ -378,15 +401,15 @@ class PoolStore(ResultsStore):
             row = c.execute("SELECT * FROM game_snapshot WHERE account_id=?", (account_id,)).fetchone()
             require(row is not None, "UNKNOWN_ACCOUNT")
             present = {r[0] for r in c.execute("SELECT shell_id FROM p09c_ammo_depot WHERE account_id=? LIMIT ?",
-                                                (account_id, len(self.shells) + 1))}
-            require(present <= set(self.shells), "CORRUPT_STORE")
-            missing = sorted(set(self.shells) - present)
+                                                (account_id, len(self.depot_keys) + 1))}
+            require(present <= set(self.depot_keys), "CORRUPT_STORE")
+            missing = sorted(set(self.depot_keys) - present)
             if not missing:
                 c.commit()
                 return {"status": "unchanged", "revision": row["revision"], "added": []}
             for owned in self._research(account_id)["vehicles"]:
                 p = self.registry.by_vehicle.get(owned["vehicle_id"])
-                require(p is None or not set(self.mounts[p.assembly_id].shell_ids) & set(missing), "CORRUPT_STORE")
+                require(p is None or not {self.depot_key[s] for s in self.mounts[p.assembly_id].shell_ids} & set(missing), "CORRUPT_STORE")
             for key in missing:
                 c.execute("INSERT INTO p09c_ammo_depot VALUES (?,?,0)", (account_id, key))
             vehicles = c.execute("SELECT vehicle_id,state,battle_id FROM game_vehicle WHERE account_id=? ORDER BY vehicle_id LIMIT ?",
@@ -405,6 +428,52 @@ class PoolStore(ResultsStore):
             require(after["revision"] == row["revision"] + 1, "CORRUPT_STORE")
             c.commit()
             return {"status": "extended", "revision": after["revision"], "added": missing}
+        except Exception:
+            c.rollback()
+            raise
+
+    def share_depot(self, *, account_id):
+        """CONTENT-0 step 1 stand migration: per-definition depot rows -> one row per shell compact ID.
+
+        Run on a stopped stand. Each old row moves to its compact-ID row (quantities of definitions that now share a
+        row add up, bounded by 1000000); the stored snapshot must equal this store's projection of the old rows, the
+        profile is re-projected at revision+1 and the full reader must verify it (all or nothing). Idempotent."""
+        self.initialize()
+        require(self.pool_active() and account_id == self.pool_account, "POOL_INACTIVE")
+        c = self.connection
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            row = c.execute("SELECT * FROM game_snapshot WHERE account_id=?", (account_id,)).fetchone()
+            require(row is not None, "UNKNOWN_ACCOUNT")
+            old = {r[0]: r[1] for r in c.execute("SELECT shell_id,quantity FROM p09c_ammo_depot WHERE account_id=? LIMIT ?",
+                                                (account_id, len(self.shells) + 1))}
+            if set(old) == set(self.depot_keys):
+                c.commit()
+                return {"status": "unchanged", "revision": row["revision"], "moved": []}
+            # Sources: per-definition rows (before step 1) or the first step-1 build's shell:native:<cd> rows (stand -15).
+            native = {"shell:native:%d" % cd: key for key, cd in self.depot_cd.items()}
+            require(set(old) <= set(self.shells) | set(self.depot_keys) | set(native), "CORRUPT_STORE")
+            vehicles = c.execute("SELECT vehicle_id,state,battle_id FROM game_vehicle WHERE account_id=? ORDER BY vehicle_id LIMIT ?",
+                                 (account_id, MAX_OWNED + 1)).fetchall()
+            require(all(r["state"] == "available" for r in vehicles), "VEHICLE_RESERVED")
+            stored = _json(row["snapshot_json"])
+            require(stored.get("depot") == old, "CORRUPT_STORE")
+            merged = {}
+            for key, quantity in old.items():
+                target = native[key] if key in native else key if key in self.depot_cd else self.depot_key[key]
+                merged[target] = merged.get(target, 0) + quantity
+            require(all(n <= 1000000 for n in merged.values()), "DEPOT_OVERFLOW")
+            c.execute("DELETE FROM p09c_ammo_depot WHERE account_id=?", (account_id,))
+            for key in self.depot_keys:
+                c.execute("INSERT INTO p09c_ammo_depot VALUES (?,?,?)", (account_id, key, merged.get(key, 0)))
+            before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account_id,)).fetchone()[0]
+            if self.zero_economy(account_id):
+                self._economy_grants(account_id)
+            self._save_crew_projection(account_id, row["revision"] + 1, before)
+            after = self.read_profile(account_id)
+            require(after["revision"] == row["revision"] + 1, "CORRUPT_STORE")
+            c.commit()
+            return {"status": "shared", "revision": after["revision"], "moved": sorted(k for k in old if k not in self.depot_cd)}
         except Exception:
             c.rollback()
             raise
@@ -725,12 +794,12 @@ class PoolStore(ResultsStore):
             stock = dict(self.registry.by_vehicle[owned["vehicle_id"]].modules)
             require(all(owned["modules"][role] == stock[role] for role in ("turret", "gun")), "AMMUNITION_CONFIGURATION_UNSUPPORTED")
             ammo = next(r for r in profile["ammunition"] if r["vehicle_id"] == owned["vehicle_inventory_id"])
-            loaded = ammo["loaded"]; depot = {shell: profile["depot"][shell] for shell in mount.shell_ids}
+            loaded = ammo["loaded"]; depot = {shell: profile["depot"][self.depot_key[shell]] for shell in mount.shell_ids}
             remaining = {shell: depot[shell] + loaded[shell] - desired[shell] for shell in mount.shell_ids}
             require(all(n >= 0 for n in remaining.values()), "INSUFFICIENT_STOCK")
             require(all(n <= 1000000 for n in remaining.values()), "DEPOT_OVERFLOW")
             for shell, n in remaining.items():
-                require(c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (n, account, shell)).rowcount == 1, "CORRUPT_STORE")
+                require(c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (n, account, self.depot_key[shell])).rowcount == 1, "CORRUPT_STORE")
             self._failpoint("after_depot_update")
             require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?", (canonical(desired).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
             c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(request["layout"][3:3 + request["layout"][2]]), account, owned["native_id"]))

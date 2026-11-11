@@ -217,11 +217,11 @@ def build_document(original_root, profiles_path=PROFILES_PATH):
             "battle_admission": p["battle_admission"], "legacy_inventory": p["legacy_inventory"],
             "client_ui": p["client_ui"]})
     require(len({v["native_compact_id"] for v in vehicles}) == len(vehicles), "duplicate vehicle type")
-    # The native client keeps one depot count per shell compact ID, the pool one per
-    # mount; a shell shared by two catalog rows would merge two counts (shared depot
-    # is a separate decision, owner 2026-10-27).
-    shell_ids = [s["native_compact_id"] for v in vehicles for s in v["shells"]]
-    require(len(set(shell_ids)) == len(shell_ids), "shell compact ID shared by two catalog rows")
+    # CONTENT-0 step 1 (owner 2026-11-11): the depot keeps one count per shell compact ID, shared by every mount of
+    # that shell, as the #717 client; two catalog rows may share a shell. Within one vehicle the shells stay distinct.
+    for v in vehicles:
+        own = [s["native_compact_id"] for s in v["shells"]]
+        require(len(set(own)) == len(own), "shell compact ID repeated within one vehicle")
     sources = {"research_catalog_sha256": research.sha256,
                "shell_sources": {USSR_PREFIX + k: v for k, v in shell_sources.items()},
                "device_caps_sha256": p06t_device_source.CAPS_SHA256,

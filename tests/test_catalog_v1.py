@@ -241,16 +241,19 @@ class CatalogFromPinnedClient(unittest.TestCase):
     def test_rebuild_from_pinned_client_equals_committed_catalog(self):
         self.assertEqual(catalog_build.catalog_bytes(catalog_build.build_document(ORIGINAL)), CATALOG.read_bytes())
 
-    def test_builder_refuses_a_shell_shared_by_two_rows(self):
-        # KV-1 fires the T-34/T-34-85 shells (7178/8202/7690): one native depot count each.
+    def test_builder_admits_a_shell_shared_by_two_rows(self):
+        # CONTENT-0 step 1: KV-1 fires the T-34/T-34-85 shells (7178/8202/7690); the depot keeps one shared
+        # count per compact ID, so two catalogue rows may share a shell (within one vehicle the shells stay distinct).
         raw = json.loads((ROOT / "config/catalog/server_profiles.v1.json").read_bytes())
         raw["vehicles"].append({"kind": "ussr-KV1", "vehicle_id": "vehicle:ussr:KV1", "device_profile": "battle-any",
                                 "battle_admission": "always", "legacy_inventory": None, "client_ui": {"crew": False, "ammo": False}})
         path = ROOT / "local/test-runs/cat01-profiles-shared-shell.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(raw))
-        with self.assertRaisesRegex(catalog_build.CatalogBuildError, "shell compact ID shared"):
-            catalog_build.build_document(ORIGINAL, path)
+        document = catalog_build.build_document(ORIGINAL, path)
+        kv1 = next(v for v in document["vehicles"] if v["kind"] == "ussr-KV1")
+        t34 = next(v for v in document["vehicles"] if v["kind"] == "t34")
+        self.assertTrue({s["native_compact_id"] for s in kv1["shells"]} & {s["native_compact_id"] for s in t34["shells"]})
 
     def test_stock_registry_is_identical_in_both_modes(self):
         from p09e_research_catalog import load_catalog
