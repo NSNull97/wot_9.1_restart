@@ -55,15 +55,16 @@ def _mapping(value, maximum=32):
 
 
 def flat(value, signed=False):
-    if type(value) not in (tuple, list) or len(value) != 6:
-        raise ValueError('native ammunition requires exactly three pairs')
+    # SPG-02: a CAT-01 gun has one to three shells, so one to three pairs.
+    if type(value) not in (tuple, list) or len(value) not in (2, 4, 6):
+        raise ValueError('native ammunition requires one to three pairs')
     result = []
-    for index in range(0, 6, 2):
+    for index in range(0, len(value), 2):
         identity = _integer(value[index], -65535 if signed else 1, 65535)
         if identity == 0:
             raise ValueError('zero shell identity')
         result.extend((identity, _integer(value[index + 1], 0, 1000000)))
-    if len(set(abs(result[index]) for index in (0, 2, 4))) != 3:
+    if len(set(abs(result[index]) for index in range(0, len(result), 2))) != len(result) // 2:
         raise ValueError('duplicate shell identity')
     return result
 
@@ -81,7 +82,7 @@ def mounted(item):
             or item.ammoMaxSize != capacity or tuple(item.shellsLayoutIdx) != (turret, gun)):
         return None
     shots = desc.gun['shots']
-    if (type(shots) not in (tuple, list) or len(shots) != 3
+    if (type(shots) not in (tuple, list) or not 1 <= len(shots) <= 3 or len(shells) != len(shots)
             or tuple(shot['shell']['compactDescr'] for shot in shots) != shells):
         return None
     return {'vehicle_type_cd': identity, 'inventory_id': _integer(item.invID, 1),
@@ -114,8 +115,8 @@ def observe():
     layout = None if layout is None else flat(layout, signed=True)
     depot = _mapping(g_itemsCache.items.inventory.getCacheValue(10, {}), crew_vehicles.owned_bound(64))
     shell_items = item.shells
-    if type(shell_items) not in (tuple, list) or len(shell_items) != 3:
-        raise ValueError('native GUI three-shell collection required')
+    if type(shell_items) not in (tuple, list) or len(shell_items) != len(mount['compatible_shells']):
+        raise ValueError('native GUI shell collection differs from the mount')
     gui = []
     for shell in shell_items:
         gui.append({'shell_cd': _integer(shell.intCD, 1, 65535),
@@ -125,7 +126,7 @@ def observe():
     if set(row['shell_cd'] for row in gui) != set(mount['compatible_shells']):
         raise ValueError('native GUI incompatible shell')
     for pairs in (loaded, layout or []):
-        if pairs and set(abs(pairs[index]) for index in (0, 2, 4)) != set(mount['compatible_shells']):
+        if pairs and set(abs(pairs[index]) for index in range(0, len(pairs), 2)) != set(mount['compatible_shells']):
             raise ValueError('native raw incompatible shell')
     before = mount
     if mounted(g_currentVehicle.item) != before or g_currentVehicle.item is not item:
