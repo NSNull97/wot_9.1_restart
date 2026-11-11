@@ -413,6 +413,15 @@ def _supports(chassis_flat, chassis):
             left, right = (next(r for r in rows if r[field] == n) for n in names)
             if left["is_left"] is True and right["is_left"] is False and left["radius"] == right["radius"]:
                 return rule, left["radius"], groups, wheels
+    # CONTENT-0 2.3 (test_lab): many #717 chassis list several W_L/W_R road-wheel groups, or the two sides differ by
+    # the client's float rounding (Tiger II 0.41715100 / 0.41715, M48A1 0.2 mm). Every W_L group on the left and every
+    # W_R group on the right, each side within 1 mm, the two sides within 2 mm: the support radius is their mean.
+    if TEST_LAB:
+        left = [g["radius"] for g in groups if g["template"] == "W_L" and g["is_left"] is True]
+        right = [g["radius"] for g in groups if g["template"] == "W_R" and g["is_left"] is False]
+        if (left and right and max(left) - min(left) <= 0.001 and max(right) - min(right) <= 0.001
+                and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.002):
+            return "groups-W_L-W_R-2mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
     raise Refused("SUPPORT_SOURCE_UNRESOLVED", "no equal W_L/W_R group or W_L0/W_R0 wheel pair")
 
 

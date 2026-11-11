@@ -178,7 +178,8 @@ internal static class GeneratedVehicleProfiles
             ||source.GetProperty("engine_power_hp").GetDouble()*735.5/(2*Math.PI*2500/60)!=p.GetProperty("engine_max_torque_nm").GetDouble()
             ||source.GetProperty("brake_force_source").GetDouble()*9.81*radius/2!=p.GetProperty("track_max_brake_torque").GetDouble())
             throw new InvalidDataException("generated source speed/torque/brake projection");
-        if(source.GetProperty("support_rule").GetString() is not ("group-W_L-W_R" or "named-W_L0-W_R0"))
+        // CONTENT-0 2.3: the test_lab generator also averages several W_L/W_R groups within 2 mm.
+        if(source.GetProperty("support_rule").GetString() is not ("group-W_L-W_R" or "named-W_L0-W_R0" or "groups-W_L-W_R-2mm"))
             throw new InvalidDataException("generated support rule");
         var handling=definition.GetProperty("handling");CheckedInput.Fields(handling,"version","policy","max_yaw_rate_rad_s");
         if(handling.GetProperty("version").GetInt32()!=1||handling.GetProperty("policy").GetString()!="p05b-track-yaw-v1")
