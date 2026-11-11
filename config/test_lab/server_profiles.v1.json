@@ -295,6 +295,12 @@
      {"kind": "ussr-T44_85", "vehicle_id": "vehicle:ussr:T44_85", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
      {"kind": "ussr-T62A", "vehicle_id": "vehicle:ussr:T62A", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
      {"kind": "ussr-Tetrarch_LL", "vehicle_id": "vehicle:ussr:Tetrarch_LL", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
-     {"kind": "ussr-Valentine_LL", "vehicle_id": "vehicle:ussr:Valentine_LL", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
+     {"kind": "ussr-Valentine_LL", "vehicle_id": "vehicle:ussr:Valentine_LL", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "germany-PzIV", "vehicle_id": "vehicle:germany:PzIV", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-M8A1", "vehicle_id": "vehicle:usa:M8A1", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-Ram-II", "vehicle_id": "vehicle:usa:Ram-II", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "usa-T82", "vehicle_id": "vehicle:usa:T82", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-Churchill_LL", "vehicle_id": "vehicle:ussr:Churchill_LL", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}},
+     {"kind": "ussr-KV2", "vehicle_id": "vehicle:ussr:KV2", "device_profile": "battle-any", "battle_admission": "always", "legacy_inventory": null, "client_ui": {"crew": false, "ammo": false}}
 ]
 }

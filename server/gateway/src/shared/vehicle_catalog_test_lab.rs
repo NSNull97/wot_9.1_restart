@@ -2,7 +2,7 @@
 //! Gateway binding. Used only when the gateway config carries
 //! `"catalog":{"version":1,"sha256":CATALOG_SHA256}`; legacy lists stay the default.
 pub const CATALOG_SCHEMA:&str="wot091-server-catalog.v1";
-pub const CATALOG_SHA256:&str="11b9a14cc2479ee51776cef49f1395bfac08e518325c46acdf0a272d379c180f";
+pub const CATALOG_SHA256:&str="f114ad1ea2d1110455ae30a73373a77e7121947b64241c4dc45ca719e9a1148d";
 pub const CATALOG_JSON:&str=include_str!("../../../../config/test_lab/catalog.v1.json");
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Admission{Always,ZeroEconomyPolicy,None}
@@ -814,6 +814,24 @@ pub const VEHICLES:&[Vehicle]=&[
     Vehicle{kind:"ussr-Valentine_LL",vehicle_id:"vehicle:ussr:Valentine_LL",native_compact_id:52481,descriptor:&[0x01,0xcd,0x40,0x00,0x27,0x00,0xcb,0x00,0x0a,0x00,0x34,0x00,0x48,0x00,0x00],
         max_hp:380,ammo_capacity:61,seats:3,primary_roles:&["commander","driver","loader"],gun_compact_id:18436,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:ussr-Valentine_LL-stock-ap",family:"ARMOR_PIERCING",native_compact_id:3338},Shell{suffix:"apcr",shell_definition_id:"shell:ussr-Valentine_LL-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:3594},Shell{suffix:"he",shell_definition_id:"shell:ussr-Valentine_LL-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:3850}],
         devices:&[(100,50),(140,90),(150,60),(200,150),(100,75),(100,75),(68,34),(100,50),(70,35)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"germany-PzIV",vehicle_id:"vehicle:germany:PzIV",native_compact_id:17,descriptor:&[0x11,0x00,0x00,0x00,0xfd,0x00,0xcb,0x00,0xfe,0x00,0x00,0x00,0xff,0x00,0x00],
+        max_hp:420,ammo_capacity:80,seats:5,primary_roles:&["commander","gunner","driver","radioman","loader"],gun_compact_id:65300,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:germany-PzIV-stock-ap",family:"ARMOR_PIERCING",native_compact_id:30490}],
+        devices:&[(82,40),(150,90),(150,50),(100,49),(90,70),(90,70),(100,50),(100,50),(70,35)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"usa-M8A1",vehicle_id:"vehicle:usa:M8A1",native_compact_id:10273,descriptor:&[0x21,0x28,0x54,0x00,0x03,0x00,0xcb,0x00,0x0c,0x00,0x47,0x00,0x3b,0x00,0x00],
+        max_hp:250,ammo_capacity:46,seats:4,primary_roles:&["commander","gunner","driver","radioman"],gun_compact_id:15140,shells:&[Shell{suffix:"he",shell_definition_id:"shell:usa-M8A1-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:4138},Shell{suffix:"heat",shell_definition_id:"shell:usa-M8A1-stock-heat",family:"HOLLOW_CHARGE",native_compact_id:5674}],
+        devices:&[(123,58),(140,90),(150,50),(110,55),(70,55),(70,55),(100,50),(80,40),(60,30)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"usa-Ram-II",vehicle_id:"vehicle:usa:Ram-II",native_compact_id:51745,descriptor:&[0x21,0xca,0x14,0x00,0x22,0x00,0xcb,0x00,0x0a,0x00,0x13,0x00,0x1d,0x00,0x00],
+        max_hp:610,ammo_capacity:92,seats:5,primary_roles:&["commander","gunner","driver","radioman","loader"],gun_compact_id:7460,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:usa-Ram-II-stock-ap",family:"ARMOR_PIERCING",native_compact_id:3114},Shell{suffix:"apcr",shell_definition_id:"shell:usa-Ram-II-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:3370}],
+        devices:&[(234,123),(180,120),(150,50),(160,96),(110,85),(110,85),(94,47),(100,50),(80,40)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"usa-T82",vehicle_id:"vehicle:usa:T82",native_compact_id:6433,descriptor:&[0x21,0x19,0x33,0x00,0x02,0x00,0xc9,0x00,0x04,0x00,0x2f,0x00,0x21,0x00,0x00],
+        max_hp:160,ammo_capacity:45,seats:5,primary_roles:&["commander","driver","gunner","radioman","loader"],gun_compact_id:8484,shells:&[Shell{suffix:"he",shell_definition_id:"shell:usa-T82-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:4138},Shell{suffix:"heat",shell_definition_id:"shell:usa-T82-stock-heat",family:"HOLLOW_CHARGE",native_compact_id:5674}],
+        devices:&[(78,41),(110,70),(100,40),(100,49),(60,45),(60,45),(104,52),(70,35),(50,25)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"ussr-Churchill_LL",vehicle_id:"vehicle:ussr:Churchill_LL",native_compact_id:51713,descriptor:&[0x01,0xca,0x3b,0x00,0x25,0x00,0xcb,0x00,0x0a,0x00,0x30,0x00,0x45,0x00,0x00],
+        max_hp:700,ammo_capacity:140,seats:5,primary_roles:&["commander","gunner","radioman","driver","loader"],gun_compact_id:17668,shells:&[Shell{suffix:"ap",shell_definition_id:"shell:ussr-Churchill_LL-stock-ap",family:"ARMOR_PIERCING",native_compact_id:6410},Shell{suffix:"apcr",shell_definition_id:"shell:ussr-Churchill_LL-stock-apcr",family:"ARMOR_PIERCING_CR",native_compact_id:6666}],
+        devices:&[(75,30),(160,100),(150,60),(200,150),(140,105),(140,105),(94,47),(130,65),(80,40)],battle_admission:Admission::Always,legacy_inventory:None},
+    Vehicle{kind:"ussr-KV2",vehicle_id:"vehicle:ussr:KV2",native_compact_id:10497,descriptor:&[0x01,0x29,0x5c,0x00,0x02,0x00,0xcb,0x00,0x04,0x00,0x4a,0x00,0x1c,0x00,0x00],
+        max_hp:810,ammo_capacity:80,seats:6,primary_roles:&["commander","gunner","radioman","driver","loader","loader"],gun_compact_id:7172,shells:&[Shell{suffix:"he",shell_definition_id:"shell:ussr-KV2-stock-he",family:"HIGH_EXPLOSIVE",native_compact_id:12810},Shell{suffix:"heat",shell_definition_id:"shell:ussr-KV2-stock-heat",family:"HOLLOW_CHARGE",native_compact_id:12554}],
+        devices:&[(90,44),(160,100),(150,60),(140,100),(130,100),(130,100),(140,70),(130,65),(80,40)],battle_admission:Admission::Always,legacy_inventory:None},
 ];
 pub fn by_kind(kind:&str)->Option<&'static Vehicle>{VEHICLES.iter().find(|v|v.kind==kind)}
 

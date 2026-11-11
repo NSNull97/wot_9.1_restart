@@ -258,8 +258,8 @@ def _generated_row(p, v, research, descriptor):
     require(encoded.hex() == identity["descriptor_hex"] and max_hp == identity["max_hp"]
             and v["native_compact_id"] == identity["type_compact_id"] and gun_params.get("maxAmmo") == gun["max_ammo"]
             and [list(r) for r in v["crew_roles"]] == identity["crew_roles"], "generated identity differs: " + p["kind"])
-    # SPG-02: a test_lab SPG may carry one or two shells; every other admitted row exactly three.
-    require(len(g["shell_suffixes"]) == len(g["shots"]) and (len(g["shots"]) == 3 or (TEST_LAB and g["vehicle_class"] == "SPG"
+    # SPG-02 / CONTENT-0 2.2: a test_lab vehicle may carry one or two shells; every main row exactly three.
+    require(len(g["shell_suffixes"]) == len(g["shots"]) and (len(g["shots"]) == 3 or (TEST_LAB
             and 1 <= len(g["shots"]) <= 3)), "admitted profile needs three shell stacks: " + p["kind"])
     shells = [{"suffix": suffix, "shell_definition_id": "shell:" + p["kind"] + "-stock-" + suffix,
                "resource_name": s["resource"], "family": s["family"], "item_id": s["item_id"],
