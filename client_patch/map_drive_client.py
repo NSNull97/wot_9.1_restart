@@ -57,7 +57,10 @@ def catalog_profile13_vehicles(hints):
 
 PROFILE13_REASONS = {
     'unsupported_vehicle': u'У этой машины пока нет проверенного боевого профиля.',
-    'unsupported_configuration': u'Для боя нужна проверенная стандартная сборка МС-1 или ИС-7.',
+    # CONTENT-0 3.1: the descriptor differs from the stock one when non-stock
+    # modules are mounted; the server refuses it too (BATTLE_PROFILE_UNSUPPORTED).
+    'unsupported_configuration': (u'На машине установлены нестоковые модули. Бой пока доступен только '
+                                  u'в стоковой комплектации: верните стоковые модули со Склада.'),
     'unsupported_crew_readiness': u'Нужен полный экипаж и готовая к бою машина.',
     'unsupported_ap_loadout': u'Пока поддерживаются только бронебойные: загрузите от одного снаряда до вместимости БК, остальные выгрузите.',
     'unsupported_mixed_loadout': u'Загрузите хотя бы один штатный снаряд; общий боекомплект не должен превышать вместимость машины.',

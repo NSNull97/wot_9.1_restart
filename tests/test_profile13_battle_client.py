@@ -150,6 +150,8 @@ class Profile13NativeTests(unittest.TestCase):
         self.select(3329)
         self.item.descriptor.makeCompactDescr = lambda: b'changed modules'
         self.assertEqual(self.eligible()['reason'], 'unsupported_configuration')
+        # CONTENT-0 3.1: the hangar names the cause (non-stock modules) and the remedy.
+        self.assertIn(u'нестоковые модули', module.PROFILE13_REASONS['unsupported_configuration'])
 
     def test_full_real_crew_and_readiness_are_required(self):
         self.item.crew[1] = (1, None)
