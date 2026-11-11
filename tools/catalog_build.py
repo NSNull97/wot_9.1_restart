@@ -94,7 +94,7 @@ def _exact(value, keys):
 
 def load_profiles(path=PROFILES_PATH):
     raw = Path(path).read_bytes()
-    require(0 < len(raw) <= 64 * 1024, "server profile file bound")
+    require(0 < len(raw) <= 256 * 1024, "server profile file bound")
     value = json.loads(raw)
     require(_exact(value, ("schema", "vehicles")) and value["schema"] == PROFILES_SCHEMA
             and type(value["vehicles"]) is list and 1 <= len(value["vehicles"]) <= MAX_PROFILES,
