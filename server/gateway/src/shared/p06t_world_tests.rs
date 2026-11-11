@@ -479,3 +479,38 @@ fn battle_any_generated_seats_with_typed_gun_and_v1_devices() {
     // The curated extended profiles still need the explicit v2 policy.
     assert!(Devices::new(Profile::Wt128).is_err()&&Devices::new(Profile::Fv183).is_err());
 }
+
+/// CONTENT-0 2.6: an automatic gun (PzI 0.9.1 shape: clip 10/280, burst 2/280)
+/// staged on the MS-1 lab mount. The command shot announces the burst; the
+/// second shell leaves on a later server step with no cue of its own; a parked
+/// shooter ends a running burst with its shell still loaded.
+#[test]
+fn content0_burst_second_shell_leaves_on_a_server_step_and_parking_ends_the_burst() {
+    arm::test_with_source(arm::test_auto(10,2,280.,4.3,240),||{
+        let now=Instant::now();let mut w=base(now,low_ground());
+        lab_attach(&mut w,VehicleKind::Ms1,0,[20,0,0]);lab_attach(&mut w,VehicleKind::Ms1,1,[5,0,0]);start(&mut w,now);
+        w.actors[1].position=[300.,0.,300.];w.actors[1].origin=w.actors[1].position;
+        let shell=current(&w,0);
+        let result=w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],now).unwrap();
+        assert!(matches!(result.as_slice(),[fire::Outcome::Typed(arm::Outcome::Shot{burst:2,remaining:19,..})]),"{result:?}");
+        assert_eq!((w.shots.len(),w.shots[0].burst),(1,2));
+        // 60/280 s = 214 ms: not on the 100/200 ms steps, then exactly once.
+        for ms in [100,200] {w.advance(now+Duration::from_millis(ms)).unwrap();assert_eq!(w.shots.len(),1,"{ms}");}
+        w.advance(now+Duration::from_millis(300)).unwrap();
+        assert_eq!((w.shots.len(),w.shots[1].sequence,w.shots[1].slot,w.shots[1].burst),(2,2,0,0));
+        assert_eq!((w.projectiles.len(),w.projectiles[1].shell),(2,Some(shell)));
+        let state=w.actors[0].fire.typed().unwrap();
+        assert_eq!((state.counts(),state.clip(),state.accepted(),state.burst_pending()),([18,0,0],8,2,false));
+        w.advance(now+Duration::from_millis(400)).unwrap();assert_eq!(w.shots.len(),2);
+        // Clip interval from the last shell (214 + 214 ms): refused before, a new burst after.
+        assert!(matches!(w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],now+Duration::from_millis(420)).unwrap().as_slice(),
+            [fire::Outcome::Typed(arm::Outcome::Refused(arm::Refusal::Reloading))]));
+        let at=now+Duration::from_millis(500);
+        assert!(matches!(w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap().as_slice(),
+            [fire::Outcome::Typed(arm::Outcome::Shot{burst:2,..})]));
+        w.apply(0,1,&[Command::Leave],at+Duration::from_millis(1)).unwrap();
+        w.advance(at+Duration::from_millis(300)).unwrap();
+        let state=w.actors[0].fire.typed().unwrap();
+        assert_eq!((w.shots.len(),state.counts(),state.clip(),state.burst_pending()),(3,[17,0,0],7,false));
+    })
+}

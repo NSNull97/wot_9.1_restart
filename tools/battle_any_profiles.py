@@ -87,6 +87,12 @@ MAX_BUNDLE = 512 * 1024  # gateway geometry::MAX_BYTES
 # Mounted single-shot/drum limit of the accepted P06T armament state machine
 # (`battle/armament.rs`, clip_count 1..=6, no burst). Not a historical rule.
 MAX_CLIP = 6
+# CONTENT-0 2.6 (test_lab only): server-scheduled bursts and long clips of the
+# automatic guns (`battle/armament.rs` MAX_CLIP/MAX_BURST). The 0.9.1 loader
+# reads `clip` and `burst` as whole sections (vehicle section overrides the
+# shared one; absent = (1, 0.0)); interval = 60/rate when count > 1, else 0.
+MAX_CLIP_TEST_LAB = 64
+MAX_BURST = 10
 PHYSICS_POLICY = "p06t-extended-six-support-v2"
 SUPPORT_RADIUS = "named-equal-main-W_L0-W_R0-or-group-W_L-W_R"
 # Numeric envelope enforced by server/physics StockVehicleProfiles/Extended
@@ -108,7 +114,8 @@ POLICY = {
     "physics": {"envelope": {k: list(v) for k, v in ENVELOPE.items()},
                 "mapping": MAPPING},
     "damage_model": "P06T single-plate test_lab on proxy AABB armour (unchanged by this card)",
-    "armament": {"max_clip": MAX_CLIP, "burst": "unsupported"},
+    "armament": ({"max_clip": MAX_CLIP_TEST_LAB, "max_burst": MAX_BURST, "burst": "server-scheduled-test_lab-v1"}
+                 if TEST_LAB else {"max_clip": MAX_CLIP, "burst": "unsupported"}),
     "spg": "refused: indirect fire/artillery view out of scope",
     "battle_admission": "NONE: a generated row is runtime-ineligible until a runtime layer loads it",
     "wire_readiness_code": "BATTLE_PROFILE_UNSUPPORTED",
@@ -459,8 +466,19 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     decision = None
     try:
         clip, burst = mounted("clip"), mounted("burst")
-        clip_count = _int(mounted_sub("clip[1]/count"), "clip count", 1000) if clip is not None else 1
-        clip_rate = _num(mounted_sub("clip[1]/rate"), "clip rate", 10000) if clip is not None else None
+
+        def section(name):
+            # Client `_readGunLocals`/`_readGun`: a vehicle section replaces the shared one as a whole.
+            if gun + "/" + name + "[1]" in vf:
+                flat, base = vf, gun + "/" + name + "[1]/"
+            elif shared_gun + "/" + name + "[1]" in gf:
+                flat, base = gf, shared_gun + "/" + name + "[1]/"
+            else:
+                return 1, None
+            count = flat.get(base + "count[1]")
+            return (1 if count is None else _int(count, name + " count", 1000)), _num(flat.get(base + "rate[1]"), name + " rate", 10000)
+        clip_count, clip_rate = section("clip")
+        burst_count, burst_rate = section("burst")
         yaw = mounted("turretYawLimits")
         extra = {k[len(gun + "/extraPitchLimits[1]/"):-3]: vf[k] for k in vf
                  if k.startswith(gun + "/extraPitchLimits[1]/") and k.count("/") == 6}
@@ -478,7 +496,9 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             clip_count=clip_count, clip_rate_per_minute=clip_rate,
             clip_interval_seconds=60.0 / clip_rate if clip_count > 1 else 0.0,
             clip_source="MOUNTED_OR_SHARED" if clip is not None else "ORIGINAL_LOADER_DEFAULT",
-            burst=burst is not None, pitch_limits=vector(mounted("pitchLimits"), 2, "pitch limits"),
+            burst=burst is not None, **(dict(burst_count=burst_count, burst_rate_per_minute=burst_rate,
+                burst_interval_seconds=60.0 / burst_rate if burst_count > 1 else 0.0) if TEST_LAB else {}),
+            pitch_limits=vector(mounted("pitchLimits"), 2, "pitch limits"),
             extra_pitch_limits=extra or None, pitch_envelope=envelope,
             dispersion_turret_rotation=_num(mounted_sub("shotDispersionFactors[1]/turretRotation"), "turret dispersion", 10),
             dispersion_vehicle_movement=_num(vf[chassis + "/shotDispersionFactors[1]/vehicleMovement[1]"], "movement dispersion", 10),
@@ -505,8 +525,15 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     try:
         # SPG-02: every SPG on the test_lab stand (was the eight of STAND_SPG).
         refuse_if(kind == "SPG" and not TEST_LAB, "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
-        refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
-                  "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
+        # Main keeps the P06T limit. CONTENT-0 2.6 (test_lab): bursts and long clips; a burst needs a clip
+        # (the client rejects burst > clip > 1; burst on a single-shot gun is not admitted by the runtime).
+        if TEST_LAB:
+            refuse_if(not 1 <= clip_count <= MAX_CLIP_TEST_LAB or not 1 <= burst_count <= MAX_BURST
+                      or burst_count > 1 and (clip_count == 1 or burst_count > clip_count), "AUTOMATIC_GUN_UNSUPPORTED",
+                      "clip %d burst %d" % (clip_count, burst_count))
+        else:
+            refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
+                      "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
         refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
                   "pitch envelope " + json.dumps(envelope, sort_keys=True))
         try:
