@@ -110,7 +110,8 @@ impl Kind{
         Self::T26=>include_bytes!("worker/p04m-t26-qualified-profile.json"),Self::T34=>include_bytes!("worker/p04m-t34-qualified-profile.json"),
         Self::T3485=>include_bytes!("worker/p04m-t3485-qualified-profile.json"),
         Self::WtE100128=>include_bytes!("worker/p06t-wt-e100-128-qualified-profile.json"),Self::Fv215b183=>include_bytes!("worker/p06t-fv215b-183-qualified-profile.json")}}
-    fn binding_bits(self)->(u32,[u32;3]){let b=self.physical_profile().binding();(b.inverse_mass.to_bits(),b.principal.map(f32::to_bits))}
+    // CONTENT-0 2.2: the qualified inertia rotation of the kind (7 generated kinds report identity, the rest the usual axes).
+    fn binding_bits(self)->(u32,[u32;3],[u32;4]){let b=self.physical_profile().binding();(b.inverse_mass.to_bits(),b.principal.map(f32::to_bits),b.inertia_rotation.map(f32::to_bits))}
 }
 #[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32}
 #[derive(Clone,Debug)]pub struct SceneSpec{
@@ -255,12 +256,12 @@ fn actor_frame(row:&Value,spec:&ActorSpec,catalog:&BTreeSet<u32>)->io::Result<Ac
     let contacts=uint(&v["contacts"])?;if contacts>6{return Err(bad("support count"));}
     let masks=array(&v["wheel_contact_masks"],6)?;if masks.len()!=6{return Err(bad("six support samples"));}let mut wheel_contact_masks=[0;6];
     for(i,m)in masks.iter().enumerate(){let m=uint(m)?;if m>63{return Err(bad("support mask"));}wheel_contact_masks[i]=m as u8;}
-    let b=&v["body_binding"];keys(b,&["inverse_mass","principal_inverse_diagonal","inertia_rotation_xyzw"])?;let(mass,principal)=spec.kind.binding_bits();
+    let b=&v["body_binding"];keys(b,&["inverse_mass","principal_inverse_diagonal","inertia_rotation_xyzw"])?;let(mass,principal,rotation)=spec.kind.binding_bits();
     let (got_mass,got_principal,got_rotation)=(number(&b["inverse_mass"],1.)?.to_bits(),vector::<3>(&b["principal_inverse_diagonal"],1.)?.map(f32::to_bits),
         vector::<4>(&b["inertia_rotation_xyzw"],1.)?.map(f32::to_bits));
-    if got_mass!=mass||got_principal!=principal||got_rotation!=[0x3f3504f3,0x3f3504f3,0,0]{
+    if got_mass!=mass||got_principal!=principal||got_rotation!=rotation{
         // CONTENT-0 2.2 diagnostics: name the actor and the bits (all bounded, no input echo beyond numbers).
-        return Err(io::Error::new(io::ErrorKind::InvalidData,format!("shared scene IPC7: actual body source binding slot {} kind {} mass {got_mass:#x}/{mass:#x} principal {got_principal:x?}/{principal:x?} rotation {got_rotation:x?}",
+        return Err(io::Error::new(io::ErrorKind::InvalidData,format!("shared scene IPC7: actual body source binding slot {} kind {} mass {got_mass:#x}/{mass:#x} principal {got_principal:x?}/{principal:x?} rotation {got_rotation:x?}/{rotation:x?}",
             spec.slot,spec.kind.label())));}
     let mut contacts_ids=BTreeSet::new();for c in array(&v["object_contacts"],32)?{keys(c,&["object_id","kind","substep","point","normal","velocity"])?;
         let id=u32::try_from(uint(&c["object_id"])?).map_err(|_|bad("contact ID range"))?;if !catalog.contains(&id)||!contacts_ids.insert(id)||string(c,"kind")?!="hull"||!(1..=6).contains(&uint(&c["substep"])?){return Err(bad("object contact identity"));}

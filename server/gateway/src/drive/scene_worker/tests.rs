@@ -4,10 +4,10 @@ fn spec(n:usize)->SceneSpec{SceneSpec{local_root:PathBuf::new(),manifest_path:Pa
     catalog_sha256:ZERO.into(),catalog_ids:BTreeSet::new(),pins:Vec::new(),column_ids:BTreeSet::new()}}
 fn good(s:&SceneSpec,seq:u32)->Value{json!({"version":7,"event":if seq==0{"ready"}else{"state"},"generation":9,"manifest_sha256":s.manifest_sha256,"catalog_sha256":ZERO,
     "seq":seq,"tick":180+seq*6,"settle_ticks":180,"map":"05_prohorovka","scene_version":0,"scene_sha256":Scene::new(s,&[]).unwrap().sha256,
-    "tank_contacts":[],"fracture_claims":[],"actors":s.actors.iter().map(|a|{let(m,p)=a.kind.binding_bits();json!({"slot":a.slot,"kind":a.kind.label(),"config_sha256":a.config_sha256,
+    "tank_contacts":[],"fracture_claims":[],"actors":s.actors.iter().map(|a|{let(m,p,r)=a.kind.binding_bits();json!({"slot":a.slot,"kind":a.kind.label(),"config_sha256":a.config_sha256,
         "profile_sha256":a.kind.profile_sha(),"state":{"position":[a.slot as f32*20.,0.,0.],"direction":[0.,0.,0.],"speed":0.,"rspeed":0.,"contacts":6,
         "linear_velocity":[0.,0.,0.],"angular_velocity":[0.,0.,0.],"wheel_contact_masks":[63,63,63,63,63,63],"object_contacts":[],"fractures":[],"motion_witnesses":[],
-        "body_binding":{"inverse_mass":f32::from_bits(m),"principal_inverse_diagonal":p.map(f32::from_bits),"inertia_rotation_xyzw":[f32::from_bits(0x3f3504f3),f32::from_bits(0x3f3504f3),0.,0.]}}})}).collect::<Vec<_>>()})}
+        "body_binding":{"inverse_mass":f32::from_bits(m),"principal_inverse_diagonal":p.map(f32::from_bits),"inertia_rotation_xyzw":r.map(f32::from_bits)}}})}).collect::<Vec<_>>()})}
 #[test]fn complete_six_actor_batch_has_one_tick_and_independent_source_profiles(){let s=spec(6);let scene=Scene::new(&s,&[]).unwrap();
     for seq in[0,1,36000]{let f=response(&serde_json::to_vec(&good(&s,seq)).unwrap(),&s,9,&scene,seq).unwrap();assert_eq!(f.actors.len(),6);assert_eq!(f.tick,180+seq*6);
         for a in f.actors{assert_eq!(a.kind,s.actors[a.slot].kind);assert_eq!(a.pose.position[0],a.slot as f32*20.);}}}
