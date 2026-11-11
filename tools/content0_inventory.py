@@ -45,7 +45,7 @@ OPERATIONS = (
     ("shells_load_unload_own_depot", "works", 4, "P09D maintenance window, own depot only"),
     ("shells_buy", "closed", 4, "P09D notice: buying shells unavailable"),
     ("depot_window_shells", "absent", 4, "STATUS tail: Склад shows no shells"),
-    ("shared_account_depot", "absent", 1, "server counts per vehicle mount; catalog refuses shared shell IDs"),
+    ("shared_account_depot", "works", 1, "CONTENT-0 step 1: one depot row per shell compact ID (PoolStore.depot_key)"),
     ("repair", "closed", 7, "maintenance window: repair denied; post-battle repair is free and automatic"),
     ("repair_required_before_battle", "absent", 7, "damaged vehicle is repaired for free at return"),
     ("auto_maintenance", "closed", 7, "P09D: automatic maintenance unavailable"),
