@@ -114,6 +114,49 @@ class TableContract(unittest.TestCase):
         self.assertFalse(any(row["catalog_nation_correction_required"] for row in rows().values()))
 
 
+class SupportRules(unittest.TestCase):
+    """CONTENT-0 2.3/2.3b: the road-wheel support radius rules (test_lab adds two averaged rules)."""
+    CH = "/chassis[1]/C[1]"
+
+    def chassis(self, groups):
+        flat = {}
+        for i, (template, is_left, radius) in enumerate(groups, 1):
+            p = self.CH + "/wheels[1]/group[" + str(i) + "]"
+            flat.update({p: None, p + "/template[1]": template, p + "/isLeft[1]": is_left, p + "/radius[1]": radius})
+        return flat
+
+    def run_rule(self, groups, test_lab):
+        saved = generator.TEST_LAB
+        generator.TEST_LAB = test_lab
+        try:
+            rule, radius, _, _ = generator._supports(self.chassis(groups), self.CH)
+        finally:
+            generator.TEST_LAB = saved
+        return rule, round(radius, 6)
+
+    def test_b1_like_bogies_within_5mm_average(self):
+        groups = [("W_R", False, .1019), ("W_R", False, .0997), ("W_L", True, .1019), ("W_L", True, .0997)]
+        self.assertEqual(self.run_rule(groups, True), ("groups-W_L-W_R-10mm", .1008))
+        with self.assertRaises(generator.Refused):
+            self.run_rule(groups, False)
+
+    def test_tog_like_wd_groups_only_when_no_w_group(self):
+        self.assertEqual(self.run_rule([("WD_L", True, .2139), ("WD_R", False, .2139)], True),
+                         ("groups-WD_L-WD_R-10mm", .2139))
+        # A W_ group present: WD_ groups are not road wheels for the rule.
+        with self.assertRaises(generator.Refused):
+            self.run_rule([("WD_L", True, .2139), ("WD_R", False, .2139), ("W_L", True, .30), ("W_R", False, .25)], True)
+
+    def test_sides_over_10mm_or_side_over_5mm_refused(self):
+        with self.assertRaises(generator.Refused):
+            self.run_rule([("W_L", True, .280), ("W_R", False, .268)], True)
+        with self.assertRaises(generator.Refused):
+            self.run_rule([("W_L", True, .270), ("W_L", True, .264), ("W_R", False, .268)], True)
+
+    def test_exact_pair_keeps_the_original_rule(self):
+        self.assertEqual(self.run_rule([("W_L", True, .3), ("W_R", False, .3)], False), ("group-W_L-W_R", .3))
+
+
 class SpecialCases(unittest.TestCase):
     def test_waffentrager_128_keeps_six_shell_drum(self):
         wt = rows()["vehicle:germany:Waffentrager_E100"]

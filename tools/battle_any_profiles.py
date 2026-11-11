@@ -422,6 +422,17 @@ def _supports(chassis_flat, chassis):
         if (left and right and max(left) - min(left) <= 0.001 and max(right) - min(right) <= 0.001
                 and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.002):
             return "groups-W_L-W_R-2mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
+        # CONTENT-0 2.3b (test_lab): four more #717 chassis. B1 mixes 101.9 and 99.7 mm bogie wheels on one side, FV206
+        # 267.3 and 268.9 mm; ELC AMX lists 272.3 mm left and 263.7 mm right; TOG II names every road wheel group
+        # WD_L/WD_R and has no W_ group. The radius only sets the ride height: road groups W_ (WD_ when no W_ group
+        # exists), each side within 5 mm, the sides within 10 mm, the mean radius.
+        has_w = any(g["template"] in ("W_L", "W_R") for g in groups)
+        prefix = "W" if has_w else "WD"
+        left = [g["radius"] for g in groups if g["template"] == prefix + "_L" and g["is_left"] is True]
+        right = [g["radius"] for g in groups if g["template"] == prefix + "_R" and g["is_left"] is False]
+        if (left and right and max(left) - min(left) <= 0.005 and max(right) - min(right) <= 0.005
+                and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.010):
+            return "groups-" + prefix + "_L-" + prefix + "_R-10mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
     raise Refused("SUPPORT_SOURCE_UNRESOLVED", "no equal W_L/W_R group or W_L0/W_R0 wheel pair")
 
 
