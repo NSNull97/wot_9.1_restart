@@ -504,9 +504,9 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             row["shots"] = shots(src, nation, names["gun"], gun, vf, gf, comp["shells"], factor, effects)
         except (*SOURCE_ERRORS, KeyError, TypeError) as error:
             raise ProfileError(vehicle_id + ": shell fact: " + str(error)) from error
-        # Main: every runtime codec carries exactly three ordered stacks. SPG-02 (test_lab): one to three source
-        # shots; the runtime keeps three cells and marks the missing ones absent (never a padded real shell).
-        refuse_if(not (1 <= len(row["shots"]) <= 3) or (not (TEST_LAB and kind == "SPG") and len(row["shots"]) != 3), "SHELL_SOURCE_UNSUPPORTED",
+        # Main: every runtime codec carries exactly three ordered stacks. SPG-02 / CONTENT-0 2.2 (test_lab): one to
+        # three source shots for every vehicle; the runtime keeps three cells and marks the missing ones absent.
+        refuse_if(not (1 <= len(row["shots"]) <= 3) or (not TEST_LAB and len(row["shots"]) != 3), "SHELL_SOURCE_UNSUPPORTED",
                   "%d source shots, runtime needs 3" % len(row["shots"]))
         rule, radius, groups, wheels = _supports(vf, chassis)
         carrying, speed = movement["carrying_point"], movement["speed_limits_kmh"]
