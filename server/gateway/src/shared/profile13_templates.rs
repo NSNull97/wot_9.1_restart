@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(labels,["ms1","is7","t26","t34","t3485","usa-M4_Sherman","ussr-KV-3"]);
         assert!(m.profiles[5..].iter().all(|p|p.kind.is_generated()));
         for mutation in 0..7{let mut w=v.clone();let rows=w["profiles"].as_array_mut().unwrap();match mutation{
-            0=>{rows.truncate(5);},1=>rows.push(row("ussr-KV-3")),2=>rows.push(row("ussr-Object_261")),3=>rows.push(row("wt-e100-128")),
+            0=>{rows.truncate(5);},1=>rows.push(row("ussr-KV-3")),2=>rows.push(row("ussr-Observer")),3=>rows.push(row("wt-e100-128")),
             4=>{rows.remove(2);},5=>w["version"]=3.into(),6=>rows.push(row("ms1")),_=>unreachable!()}
             assert!(parse(&serde_json::to_vec(&w).unwrap()).is_err(),"mutation={mutation}");}
     }

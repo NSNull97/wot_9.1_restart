@@ -79,7 +79,7 @@ fn wide_pitch_generated_profiles_are_supported_and_quantize_over_absolute(){
     let expected=["france-AMX_13_75","germany-Pz_IV_AusfH","japan-Ke_Ni","japan-Ke_Ni_B",
                   "uk-GB40_Gun_Carrier_Churchill","usa-M4A2E4"].as_slice();
     #[cfg(feature="test_lab")]
-    let expected=["france-AMX_13_75","france-D2","germany-Pz_IV_AusfH","japan-Ke_Ni","japan-Ke_Ni_B",
+    let expected=["china-Ch24_Type64","france-AMX_13_75","france-D2","germany-Pz_IV_AusfH","japan-Ke_Ni","japan-Ke_Ni_B",
                   "uk-GB40_Gun_Carrier_Churchill","usa-M4A2E4","ussr-Object_430"].as_slice();
     assert_eq!(wide,expected);
 }
