@@ -293,7 +293,8 @@ class MixedAmmoStore(PoolStore):
         counts = {r["shell_compact_id"]: r["count"] for r in remaining}
         loaded = {r["shell_definition_id"]: counts[r["shell_compact_id"]] for r in f["ammunition"]}
         require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?", (canonical(loaded).decode("ascii"), account, row["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
-        for i in (0,2,4): layout[i+1] = counts[abs(layout[i])]
+        # SPG-02: one (shell, count) pair per real shell of the gun, one to three.
+        for i in range(0, len(layout), 2): layout[i+1] = counts[abs(layout[i])]
         require(c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(layout), account, row["native_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
         require(c.execute("UPDATE game_vehicle SET state='available',battle_id=NULL WHERE account_id=? AND vehicle_id=? AND state='reserved' AND battle_id=?", (account, row["vehicle_inventory_id"], row["battle_id"])).rowcount == 1, "RESERVATION_MISMATCH")
         raw = canonical(result).decode("ascii")
