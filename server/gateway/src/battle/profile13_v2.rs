@@ -113,7 +113,7 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
     pub fn validate_owned(&self,account:&str)->io::Result<()>{let v=serde_json::json!({"kind":self.kind.label(),
         "descriptor_hex":self.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),"native_inventory_id":self.native_inventory_id,
         "vehicle_inventory_id":self.vehicle_inventory_id,"max_hp":self.max_hp,"crew_ids":self.crew_ids,"capacity":self.capacity,
-        "initial_shell_compact_id":self.initial_shell_compact_id,"ammunition":self.ammunition.iter().map(|r|serde_json::json!({
+        "initial_shell_compact_id":self.initial_shell_compact_id,"ammunition":self.ammunition.iter().filter(|r|r.shell_compact_id!=0).map(|r|serde_json::json!({
             "shell_definition_id":r.shell_definition_id,"shell_compact_id":r.shell_compact_id,"family":r.family.source_name(),"count":r.count})).collect::<Vec<_>>()});
         if parse_frozen(&v,account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
 
