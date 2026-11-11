@@ -504,12 +504,13 @@ class _Native(object):
         if type(inventory) is not dict or len(inventory) > 32:
             raise ValueError('bounded profile13 vehicle inventory required')
         for key in ('compDescr', 'repair', 'crew', 'shells'):
-            if type(inventory.get(key)) is not dict or not 1 <= len(inventory[key]) <= 64:
+            # CONTENT-0 2.1: one column row per owned vehicle, up to the server's MAX_OWNED (256).
+            if type(inventory.get(key)) is not dict or not 1 <= len(inventory[key]) <= 256:
                 raise ValueError('bounded profile13 inventory column required: ' + key)
         if _raw_sha(inventory['compDescr'].get(selected)) != descriptor_sha:
             raise RuntimeError('original selected descriptor and inventory disagree')
         locks = inventory.get('lock', {})
-        if type(locks) is not dict or len(locks) > 64:
+        if type(locks) is not dict or len(locks) > 256:
             raise ValueError('bounded profile13 lock column required')
         if _integer(locks.get(selected, 0), 0, 255, 'vehicle lock') != 0:
             return dict(allowed=False, reason='vehicle_reserved', queued=False)

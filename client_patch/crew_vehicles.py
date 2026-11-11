@@ -49,7 +49,8 @@ def enable(hints):
     if getattr(hints, 'SCHEMA', None) != SCHEMA or len(getattr(hints, 'CATALOG_SHA256', '')) != 64:
         raise ValueError('CAT-01 client hints required')
     rows = hints.VEHICLES
-    if type(rows) is not tuple or not 1 <= len(rows) <= 64:
+    # CONTENT-0 2.1: every catalogue vehicle (267 on test_lab).
+    if type(rows) is not tuple or not 1 <= len(rows) <= 512:
         raise ValueError('bounded CAT-01 client hints required')
     kinds = {}
     for row in rows:
