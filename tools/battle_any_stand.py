@@ -34,7 +34,7 @@ import catalog_v1_data
 from battle_any_profiles import QUALIFICATION
 
 MAX_JSON = 1024 * 1024
-MAX_KINDS = 64
+MAX_KINDS = 512  # CONTENT-0 2.1: every catalogue vehicle on a stand
 
 
 def require(ok, message):
