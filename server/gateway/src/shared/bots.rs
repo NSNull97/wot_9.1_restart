@@ -53,7 +53,8 @@ const STUCK_SPOT_M: f32 = 12.;
 /// Lead: the target's ground velocity (smoothed position delta), bounded.
 const LEAD_MAX_MPS: f32 = 25.;
 /// Distinct bot vehicle kinds in one plan (curated five plus generated ones).
-pub const MAX_KINDS: usize = 16;
+/// CONTENT-0 2.1 (owner 2026-11-11): every catalogue vehicle can be a bot (MM-01 pairs them by tier).
+pub const MAX_KINDS: usize = 512;
 /// The own sight line to the target is re-cast at most every 0.5 s.
 const LINE_RECHECK_TICKS: u32 = 5;
 /// A target the team shows but this bot cannot see for 2 s: keep advancing

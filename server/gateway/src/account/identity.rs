@@ -466,7 +466,7 @@ impl Config {
                     Some(Value::Array(rows)) if !rows.is_empty()&&rows.len()<=crate::gateway091::shared::model::bots::MAX_KINDS=>rows.iter().map(|r|r.as_str()
                         .and_then(crate::gateway091::shared::vehicle_profile::VehicleKind::from_owned_label)
                         .ok_or_else(||invalid("bots kinds must be owned battle vehicle labels"))).collect::<io::Result<Vec<_>>>()?,
-                    _=>return Err(invalid("bots kinds must be 1..16 owned battle vehicle labels")),
+                    _=>return Err(invalid("bots kinds must be 1..512 owned battle vehicle labels")),
                 };
                 let plan=crate::gateway091::shared::model::bots::Plan{human_places,seed,kinds};
                 plan.validate(battle_players).map_err(|_|invalid("bots kinds must be distinct profile13 vehicles"))?;

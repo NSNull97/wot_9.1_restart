@@ -18,7 +18,7 @@ import test_vehicles
 # TESTVEH-01 stand flag: a test_lab worker binds the test_lab catalogue bytes.
 CATALOG_PATH = (test_vehicles.TEST_LAB_DIR / "catalog.v1.json" if test_vehicles.enabled()
                 else Path(__file__).resolve().parents[1] / "config/catalog/catalog.v1.json")
-MAX_BYTES = 256 * 1024
+MAX_BYTES = 2 * 1024 * 1024  # CONTENT-0 2.1: the catalogue of every vehicle
 _active = None
 
 
