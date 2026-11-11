@@ -116,7 +116,7 @@ class PoolStoreTests(unittest.TestCase):
         before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (self.account,)).fetchone()[0]
         c.execute("BEGIN IMMEDIATE")
         for key, quantity in zip(mount.shell_ids, counts):
-            c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (quantity, self.account, key))
+            c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (quantity, self.account, self.store.depot_key[key]))
         self.store._save_crew_projection(self.account, revision, before); c.commit()
 
     def battle_request(self, operation, **changes):
@@ -211,7 +211,7 @@ class PoolStoreTests(unittest.TestCase):
         response = self.store.service(request, authenticated_account_id=self.account)
         self.assertEqual(response["status"], "serviced"); self.assertLessEqual(len(bytes.fromhex(response["update_hex"])), 240)
         mount = self.store.mounts["t26-stock"]
-        self.assertEqual([self.profile()["depot"][key] for key in mount.shell_ids], [0, 2, 3])
+        self.assertEqual([self.profile()["depot"][self.store.depot_key[key]] for key in mount.shell_ids], [0, 2, 3])
         self.assertEqual(self.store.layouts(self.account)[3], [1034, 160, 1290, 0, 1546, 0])
         for seat in range(3): self.crew([3, 3, seat, 0])
         self.export_actual_projection("t26-ap160")
@@ -221,7 +221,7 @@ class PoolStoreTests(unittest.TestCase):
         self.reject("INVALID_QUANTITY", lambda: self.store.service(self.ammo_request(3, [161, 0, 0]), authenticated_account_id=self.account))
         self.reject("CAPACITY_EXCEEDED", lambda: self.store.service(self.ammo_request(3, [160, 1, 0]), authenticated_account_id=self.account))
         self.store.service(self.ammo_request(3, [155, 2, 3]), authenticated_account_id=self.account)
-        self.assertEqual([self.profile()["depot"][key] for key in mount.shell_ids], [5, 0, 0])
+        self.assertEqual([self.profile()["depot"][self.store.depot_key[key]] for key in mount.shell_ids], [5, 0, 0])
         # Garage accepts actual owned non-AP shells; the battle gate stays closed.
         self.store.battle(self.battle_request("run_open"), authenticated_account_id=self.account)
         self.reject("BATTLE_PROFILE_UNSUPPORTED", lambda: self.store.battle(self.battle_request("admit", native_inventory_id=3,
@@ -369,9 +369,9 @@ class PoolStoreTests(unittest.TestCase):
         capability = next(r for r in self.store.registry.capabilities(self.profile()) if r["native_inventory_id"] == 3)
         self.assertEqual((capability["kind"], capability["assembly_id"], capability["admission"]), ("t26", None, False))
         self.store.service(self.ammo_request(3, [0, 0, 0]), authenticated_account_id=self.account)
-        self.assertEqual(self.profile()["depot"]["shell:t26-stock-ap"], 160)
+        self.assertEqual(self.profile()["depot"][self.store.depot_key["shell:t26-stock-ap"]], 160)
         self.store.service(self.ammo_request(3, [160, 0, 0]), authenticated_account_id=self.account)
-        self.assertEqual(self.profile()["depot"]["shell:t26-stock-ap"], 0)
+        self.assertEqual(self.profile()["depot"][self.store.depot_key["shell:t26-stock-ap"]], 0)
         expected = self.profile(); self.store.close(); self.store = PoolStore(self.database, self.catalog, account_id=self.account)
         self.assertEqual(self.profile(), expected)
         published = self.store.publish(source, self.account, Path(self.temp.name) / "upgraded-fixtures")
@@ -387,7 +387,7 @@ class PoolStoreTests(unittest.TestCase):
         self.reject("AMMUNITION_CONFIGURATION_UNSUPPORTED", lambda: self.store.service(self.ammo_request(3, [1, 0, 0]), authenticated_account_id=self.account))
         state = PoolProjectionSource(source, self.store).state(self.profile(), self.store.layouts(self.account))
         self.assertEqual(state["inventory"][1]["shells"][3], [])
-        self.assertEqual(self.profile()["depot"]["shell:t26-stock-ap"], 160)
+        self.assertEqual(self.profile()["depot"][self.store.depot_key["shell:t26-stock-ap"]], 160)
 
 
 if __name__ == "__main__": unittest.main()
