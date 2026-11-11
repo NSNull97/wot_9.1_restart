@@ -57,9 +57,7 @@ class InventoryTests(unittest.TestCase):
     @unittest.skipUnless((CLIENT / "res" / "scripts" / "destructibles.xml").is_file(), "NOT_RUN: original #717 client absent")
     def test_inventory_reproduces_from_the_client(self):
         from tools import content0_inventory as inv
-        self.assertEqual(inv.canonical(inv.build(CLIENT)), INVENTORY.read_bytes().replace(b"
-", b"
-"))
+        self.assertEqual(inv.canonical(inv.build(CLIENT)), INVENTORY.read_bytes().replace(b"\r\n", b"\n"))
 
 
 if __name__ == "__main__":
