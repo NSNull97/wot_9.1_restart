@@ -92,8 +92,8 @@ def shop_tree(catalog, source_shop, *, zero_gold=False):
         for v in catalog.vehicles.values() if v["not_in_shop"] or set(v["tags"]) & {"secret", "observer", "event_battles", "special"})
     # Original VehicleBuyWindow._initData (lines 53-59) unconditionally reads
     # row1 credits and row2 gold, and getTankmanCostWithDefaults reads
-    # isPremium. Zero rows only open the window: the store rejects every crew
-    # tariff. Historical tariff prices and training levels remain UNKNOWN.
+    # isPremium. Zero rows: CONTENT-0 hires the purchase crew free (pool store
+    # only, tariff 0/1/2 = 50/75/100). Historical tariff prices remain UNKNOWN.
     shop["tankmanCost"] = [{"credits": 0, "gold": 0, "isPremium": premium} for premium in (False, False, True)]
     return add_shell_display_references(shop)
 
@@ -168,6 +168,39 @@ class ResearchProjectionSource(BarracksRecruitmentProjectionSource):
 
 def update_delta(catalog, before, after, wire_revision):
     return encode(delta_tree(catalog, before, after, wire_revision), MAX_UPDATE)
+
+
+def _merge(base, part):
+    """Deep merge of two delta trees; ``part`` replaces leaves (a vehicle's crew list)."""
+    value = dict(base)
+    for key, item in part.items():
+        value[key] = _merge(value[key], item) if type(item) is dict and type(value.get(key)) is dict else item
+    return value
+
+
+def chained_updates(first, parts, wire_revision, maximum):
+    """CONTENT-0: one Account.update cannot exceed MAX_UPDATE (240 bytes, VAR1). A purchase
+    with crew/ammunition is a chain of consecutive diffs prevRev w+i -> rev w+i+1 (the same
+    cursor rule as the accepted int-settings chain); each part is merged greedily into the
+    current diff and starts a new one when it would not fit. Every diff is checked here."""
+    require(type(first) is dict and first.get("prevRev") == wire_revision and first.get("rev") == wire_revision + 1)
+    def fits(tree):
+        try: return encode(tree, MAX_UPDATE)
+        except ValueError: return None
+    require(fits(first) is not None)
+    updates, current, cursor = [], first, wire_revision
+    for part in parts:
+        candidate = _merge(current, part)
+        if fits(candidate) is not None:
+            current = candidate
+            continue
+        updates.append(fits(current)); cursor += 1
+        require(cursor < 2**31 - 1)
+        current = _merge({"prevRev": cursor, "rev": cursor + 1}, part)
+        require(fits(current) is not None)
+    updates.append(fits(current))
+    require(1 <= len(updates) <= maximum)
+    return updates
 
 
 def delta_tree(catalog, before, after, wire_revision):

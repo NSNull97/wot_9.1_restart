@@ -53,7 +53,8 @@ const STUCK_SPOT_M: f32 = 12.;
 /// Lead: the target's ground velocity (smoothed position delta), bounded.
 const LEAD_MAX_MPS: f32 = 25.;
 /// Distinct bot vehicle kinds in one plan (curated five plus generated ones).
-pub const MAX_KINDS: usize = 16;
+/// CONTENT-0 2.1 (owner 2026-11-11): every catalogue vehicle can be a bot (MM-01 pairs them by tier).
+pub const MAX_KINDS: usize = 512;
 /// The own sight line to the target is re-cast at most every 0.5 s.
 const LINE_RECHECK_TICKS: u32 = 5;
 /// A target the team shows but this bot cannot see for 2 s: keep advancing
@@ -264,7 +265,10 @@ impl World {
         let teams = (0..self.expected_actors).map(|s| self.place_team(s)).collect::<io::Result<Vec<_>>>()?;
         let natives = self.actors.iter().map(|a| a.vehicle_kind().tier()).collect::<io::Result<Vec<_>>>()?;
         let kinds = plan.kinds.iter().map(|k| Ok((*k, k.tier()?.ok_or_else(bad)?))).collect::<io::Result<Vec<_>>>()?;
-        super::super::matchmaker::paired_kinds(&teams, &natives, group, plan.seed, &kinds).ok_or_else(bad)
+        // Per battle: the stand seed mixed with the battle id (as the behaviour rng below), so the kind order
+        // changes between battles and still replays from BOT01_FILL (battle, seed).
+        let seed = plan.seed ^ self.id.rotate_left(29);
+        super::super::matchmaker::paired_kinds(&teams, &natives, group, seed, &kinds).ok_or_else(bad)
     }
     /// Places taken by native players; the rest of the roster is bots.
     pub fn human_places(&self) -> usize { self.bots.as_ref().map_or(self.expected_actors, |b| b.plan.human_places) }

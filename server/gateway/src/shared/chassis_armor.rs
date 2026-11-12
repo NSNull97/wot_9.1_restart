@@ -232,7 +232,7 @@ impl ChassisArmor {
             let rotated = pose::rotate(v, direction);
             std::array::from_fn(|axis| position[axis] + rotated[axis])
         }).collect();
-        Mesh::new(vertices, self.triangles.clone(), self.geometry_revision(), transform_revision)
+        Mesh::new_posed(vertices, self.triangles.clone(), self.geometry_revision(), transform_revision)
     }
 
     /// SHELL-02 presentation: the chassis-local (vehicle frame) ray of one world track

@@ -169,7 +169,7 @@ impl MapSpec {
         let a=c["bounds_xz"].as_array().ok_or_else(bad)?;if a.len()!=4{return Err(bad());}
         let bounds=[number(&a[0],-1000.,0.)?,number(&a[1],-1000.,0.)?,number(&a[2],0.,1000.)?,number(&a[3],0.,1000.)?];
         let spawn=vector(&c["spawn_origin"],-1000.,1000.)?;let yaw=number(&c["spawn_yaw"],-std::f32::consts::PI,std::f32::consts::PI)?;
-        let mass_kg=number(&c["mass_kg"],1000.,100000.)?;
+        let mass_kg=number(&c["mass_kg"],1000.,200000.)?;
         if bounds[2]-bounds[0]<100. || bounds[3]-bounds[1]<100. || spawn[0]<bounds[0]+5. || spawn[0]>bounds[2]-5.
             || spawn[2]<bounds[1]+5. || spawn[2]>bounds[3]-5. {return Err(bad());}
         Ok(Self {asset:asset.into(),arena_type_id:id as i32,config,config_sha256:hash.into(),bounds,spawn,spawn_yaw:yaw,mass_kg})

@@ -49,6 +49,9 @@ import test_vehicles  # noqa: E402
 # TESTVEH-01: WOT091_TEST_LAB=1 builds/checks the test_lab variant (config/test_lab,
 # *_test_lab bindings); the main variant never contains a test vehicle.
 TEST_LAB = test_vehicles.enabled()
+# CONTENT-0 2.5b (test_lab): collision primitive groups and component <armor> records may also name the
+# device/crew kinds of material_kinds.xml (ms1_contact_bundle.DEVICE_KINDS); main keeps the MS-1 set.
+KINDS = materials.ALL_KINDS  # CONTENT-0 main transfer (owner 12.11): device/crew kinds for main too
 # SPG-01 (owner 2026-11-09): the SPGs admitted on a test_lab stand, those the runtime can take now.
 # The main variant refuses every SPG; one- and two-shell SPGs need a separate card.
 STAND_SPG = frozenset("vehicle:" + name for name in (
@@ -87,13 +90,19 @@ MAX_BUNDLE = 512 * 1024  # gateway geometry::MAX_BYTES
 # Mounted single-shot/drum limit of the accepted P06T armament state machine
 # (`battle/armament.rs`, clip_count 1..=6, no burst). Not a historical rule.
 MAX_CLIP = 6
+# CONTENT-0 2.6 (test_lab only): server-scheduled bursts and long clips of the
+# automatic guns (`battle/armament.rs` MAX_CLIP/MAX_BURST). The 0.9.1 loader
+# reads `clip` and `burst` as whole sections (vehicle section overrides the
+# shared one; absent = (1, 0.0)); interval = 60/rate when count > 1, else 0.
+MAX_CLIP_TEST_LAB = 64
+MAX_BURST = 10
 PHYSICS_POLICY = "p06t-extended-six-support-v2"
 SUPPORT_RADIUS = "named-equal-main-W_L0-W_R0-or-group-W_L-W_R"
 # Numeric envelope enforced by server/physics StockVehicleProfiles/Extended
 # ValidateProjection; a vehicle outside it is refused, never clamped.
-ENVELOPE = {"mass_kg": (1000, 100000), "max_forward_mps": (1, 20), "max_reverse_mps": (.5, 10),
+ENVELOPE = {"mass_kg": (1000, 200000), "max_forward_mps": (1, 25), "max_reverse_mps": (.5, 15),
             "engine_max_torque_nm": (10, 10000), "wheel_radius": (.05, 1),
-            "track_max_brake_torque": (100, 300000), "max_yaw_rate_rad_s": (.1, 1.0)}
+            "track_max_brake_torque": (100, 300000), "max_yaw_rate_rad_s": (.1, 1.5)}
 # Constant per-row projection mapping, identical to extended-definitions.json.
 MAPPING = {"policy": PHYSICS_POLICY, "classification": "INFERRED_TEST_LAB_ONLY", "historical_fidelity": False,
            "support_radius": SUPPORT_RADIUS, "support_count": 6, "support_y_offset": .28,
@@ -108,8 +117,8 @@ POLICY = {
     "physics": {"envelope": {k: list(v) for k, v in ENVELOPE.items()},
                 "mapping": MAPPING},
     "damage_model": "P06T single-plate test_lab on proxy AABB armour (unchanged by this card)",
-    "armament": {"max_clip": MAX_CLIP, "burst": "unsupported"},
-    "spg": "refused: indirect fire/artillery view out of scope",
+    "armament": {"max_clip": MAX_CLIP_TEST_LAB, "max_burst": MAX_BURST, "burst": "server-scheduled-test_lab-v1"},
+    "spg": "admitted: SPG-01/02 rules (one to three shells); bots take no SPG until indirect fire (8a decision B)",
     "battle_admission": "NONE: a generated row is runtime-ineligible until a runtime layer loads it",
     "wire_readiness_code": "BATTLE_PROFILE_UNSUPPORTED",
 }
@@ -289,6 +298,49 @@ def zero_area(vertices, a, b, c):
     return cross == (0.0, 0.0, 0.0)
 
 
+def child_section(node, name, label):
+    """CONTENT-0 2.5b (test_lab): the one child `name` of a packed-XML section, like a DataSection
+    lookup. Other children may repeat (IS `_85mm_D-5T` has two `animateEmblemSlots`, True/False); the
+    needed section itself must be unique."""
+    require(isinstance(node, dict) and set(node) == {"value", "children"} and isinstance(node["children"], list)
+            and len(node["children"]) <= 1024, label + " is not a bounded XML section")
+    require(all(isinstance(c, dict) and set(c) == {"name", "data"} and isinstance(c["name"], str)
+                and 0 < len(c["name"]) <= 128 for c in node["children"]), label + " invalid XML child")
+    found = [c["data"] for c in node["children"] if c["name"] == name]
+    require(len(found) == 1, label + " missing/duplicate " + name)
+    return found[0]
+
+
+def active_armor(node, path):
+    """The <armor> section of one active component (hull, turret, gun)."""
+    for name in path:
+        node = child_section(node, name, "active component")
+    return child_section(node, "armor", "active component")
+
+
+def visual_binding(model, visual, stem):
+    """The collision .model names its visual. Main: `nodelessVisual` equal to the stem. CONTENT-0 2.5b
+    (test_lab): `nodefullVisual` too (all 22 such #717 collision models, VK4502P and GB22_Comet), when its
+    render set is bound to the identity `Scene Root` alone and the mesh lies inside the visual bounding
+    box, i.e. the vertices are in the component frame like a nodeless visual's (INFERRED, the child node
+    transforms are not applied). Returns the visual box a nodefull mesh must lie in, else None."""
+    keys = [k for k in ("/nodelessVisual[1]", "/nodefullVisual[1]") if k in model]
+    allowed = [["/nodelessVisual[1]"], ["/nodefullVisual[1]"]]
+    require(keys in allowed and model[keys[0]] == stem, "collision model/visual binding")
+    require(visual.get("/node[1]/identifier[1]") == "Scene Root" and
+            visual.get("/node[1]/transform[1]") == [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], "nonidentity visual root")
+    require(visual.get("/renderSet[1]/treatAsWorldSpaceObject[1]") is False, "world-space collision mesh")
+    if keys[0] != "/nodefullVisual[1]":
+        return None
+    require(visual.get("/renderSet[1]/node[1]") == "Scene Root" and "/renderSet[1]/node[2]" not in visual
+            and "/renderSet[2]" not in visual and "/node[2]" not in visual, "nodefull render set binding")
+    return [vector(visual["/boundingBox[1]/" + edge + "[1]"], 3, "visual bounds") for edge in ("min", "max")]
+
+
+def inside_box(bounds, box, tolerance=1e-3):
+    return all(box[0][j] - tolerance <= bounds["min"][j] and bounds["max"][j] <= box[1][j] + tolerance for j in range(3))
+
+
 def component(src, model_path, index, effective):
     """One collision component; the same bindings P04M `_component` checks."""
     match = re.fullmatch(r"vehicles/([a-z]+)/([A-Za-z0-9_.-]+)/collision/([A-Za-z0-9_.-]+)\.model", model_path or "")
@@ -304,11 +356,9 @@ def component(src, model_path, index, effective):
     try:
         model = flat(raws["model"])
         visual = flat(raws["visual"])
-        require(model.get("/nodelessVisual[1]") == stem, "collision model/visual binding")
-        require(visual.get("/node[1]/identifier[1]") == "Scene Root" and
-                visual.get("/node[1]/transform[1]") == [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], "nonidentity visual root")
-        require(visual.get("/renderSet[1]/treatAsWorldSpaceObject[1]") is False, "world-space collision mesh")
+        nodefull_box = visual_binding(model, visual, stem)
         m = mesh(raws["primitives"])
+        require(nodefull_box is None or inside_box(m["bounds"], nodefull_box), "nodefull mesh outside visual bounds")
         groups = {k for k in visual if re.fullmatch(r"/renderSet\[1\]/geometry\[1\]/primitiveGroup\[[0-9]+\]", k)}
         require(len(groups) == len(m["groups"]), "visual primitive group count")
         require(materials._string(visual.get("/renderSet[1]/geometry[1]/vertices[1]"), "vertex reference") == "vertices"
@@ -317,8 +367,10 @@ def component(src, model_path, index, effective):
         for n, group in enumerate(m["groups"], 1):
             path = "/renderSet[1]/geometry[1]/primitiveGroup[" + str(n) + "]"
             label = visual.get(path + "/material[1]/identifier[1]")
-            require(label in materials.EXPECTED_KINDS, "unmapped material kind " + str(label))
-            require(visual.get(path) == n - 1 and visual.get(path + "/material[1]/materialKind[1]") == materials.EXPECTED_KINDS[label]
+            # Packed XML keeps some strings base64 ("fuelTank" of A18_M41/G73_E50_Ausf_M Hull), as for kind names.
+            label = materials._string(label, "primitive material") if isinstance(label, dict) else label
+            require(label in KINDS, "unmapped material kind " + str(label))
+            require(visual.get(path) == n - 1 and visual.get(path + "/material[1]/materialKind[1]") == KINDS[label]
                     and visual.get(path + "/material[1]/collisionFlags[1]") == 0, "primitive material binding")
             require(group["start_index"] % 3 == 0 and group["triangle_count"] > 0, "primitive group range")
             labels.add(label)
@@ -334,11 +386,11 @@ def component(src, model_path, index, effective):
                 triangles[t] = triangle
         require(all(t is not None for t in triangles), "triangle coverage gap")
         entries = []
-        for label in sorted(set(effective) | labels, key=lambda k: materials.EXPECTED_KINDS[k]):
+        for label in sorted(set(effective) | labels, key=lambda k: KINDS[k]):
             record = effective.get(label)
             if record is not None:
-                materials._validate_effective(record, materials.EXPECTED_KINDS[label])
-            entries.append(dict(name=label, kind=materials.EXPECTED_KINDS[label], effective=record))
+                materials._validate_effective(record, KINDS[label])
+            entries.append(dict(name=label, kind=KINDS[label], effective=record))
         visual_bounds = [vector(visual["/boundingBox[1]/" + edge + "[1]"], 3, "visual bounds") for edge in ("min", "max")]
     except (*SOURCE_ERRORS, materials.BundleError, ValueError, KeyError, TypeError) as error:
         raise Refused("COLLISION_SOURCE_UNSUPPORTED", part + ": " + str(error)) from error
@@ -413,6 +465,25 @@ def _supports(chassis_flat, chassis):
             left, right = (next(r for r in rows if r[field] == n) for n in names)
             if left["is_left"] is True and right["is_left"] is False and left["radius"] == right["radius"]:
                 return rule, left["radius"], groups, wheels
+    # CONTENT-0 2.3 (main since the 12.11 transfer): many #717 chassis list several W_L/W_R road-wheel groups, or the two sides differ by
+    # the client's float rounding (Tiger II 0.41715100 / 0.41715, M48A1 0.2 mm). Every W_L group on the left and every
+    # W_R group on the right, each side within 1 mm, the two sides within 2 mm: the support radius is their mean.
+    left = [g["radius"] for g in groups if g["template"] == "W_L" and g["is_left"] is True]
+    right = [g["radius"] for g in groups if g["template"] == "W_R" and g["is_left"] is False]
+    if (left and right and max(left) - min(left) <= 0.001 and max(right) - min(right) <= 0.001
+            and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.002):
+        return "groups-W_L-W_R-2mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
+    # CONTENT-0 2.3b: four more #717 chassis. B1 mixes 101.9 and 99.7 mm bogie wheels on one side, FV206
+    # 267.3 and 268.9 mm; ELC AMX lists 272.3 mm left and 263.7 mm right; TOG II names every road wheel group
+    # WD_L/WD_R and has no W_ group. The radius only sets the ride height: road groups W_ (WD_ when no W_ group
+    # exists), each side within 5 mm, the sides within 10 mm, the mean radius.
+    has_w = any(g["template"] in ("W_L", "W_R") for g in groups)
+    prefix = "W" if has_w else "WD"
+    left = [g["radius"] for g in groups if g["template"] == prefix + "_L" and g["is_left"] is True]
+    right = [g["radius"] for g in groups if g["template"] == prefix + "_R" and g["is_left"] is False]
+    if (left and right and max(left) - min(left) <= 0.005 and max(right) - min(right) <= 0.005
+            and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.010):
+        return "groups-" + prefix + "_L-" + prefix + "_R-10mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
     raise Refused("SUPPORT_SOURCE_UNRESOLVED", "no equal W_L/W_R group or W_L0/W_R0 wheel pair")
 
 
@@ -450,8 +521,19 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     decision = None
     try:
         clip, burst = mounted("clip"), mounted("burst")
-        clip_count = _int(mounted_sub("clip[1]/count"), "clip count", 1000) if clip is not None else 1
-        clip_rate = _num(mounted_sub("clip[1]/rate"), "clip rate", 10000) if clip is not None else None
+
+        def section(name):
+            # Client `_readGunLocals`/`_readGun`: a vehicle section replaces the shared one as a whole.
+            if gun + "/" + name + "[1]" in vf:
+                flat, base = vf, gun + "/" + name + "[1]/"
+            elif shared_gun + "/" + name + "[1]" in gf:
+                flat, base = gf, shared_gun + "/" + name + "[1]/"
+            else:
+                return 1, None
+            count = flat.get(base + "count[1]")
+            return (1 if count is None else _int(count, name + " count", 1000)), _num(flat.get(base + "rate[1]"), name + " rate", 10000)
+        clip_count, clip_rate = section("clip")
+        burst_count, burst_rate = section("burst")
         yaw = mounted("turretYawLimits")
         extra = {k[len(gun + "/extraPitchLimits[1]/"):-3]: vf[k] for k in vf
                  if k.startswith(gun + "/extraPitchLimits[1]/") and k.count("/") == 6}
@@ -469,7 +551,9 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             clip_count=clip_count, clip_rate_per_minute=clip_rate,
             clip_interval_seconds=60.0 / clip_rate if clip_count > 1 else 0.0,
             clip_source="MOUNTED_OR_SHARED" if clip is not None else "ORIGINAL_LOADER_DEFAULT",
-            burst=burst is not None, pitch_limits=vector(mounted("pitchLimits"), 2, "pitch limits"),
+            burst=burst is not None, burst_count=burst_count, burst_rate_per_minute=burst_rate,
+            burst_interval_seconds=60.0 / burst_rate if burst_count > 1 else 0.0,
+            pitch_limits=vector(mounted("pitchLimits"), 2, "pitch limits"),
             extra_pitch_limits=extra or None, pitch_envelope=envelope,
             dispersion_turret_rotation=_num(mounted_sub("shotDispersionFactors[1]/turretRotation"), "turret dispersion", 10),
             dispersion_vehicle_movement=_num(vf[chassis + "/shotDispersionFactors[1]/vehicleMovement[1]"], "movement dispersion", 10),
@@ -495,18 +579,21 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
         raise ProfileError(vehicle_id + ": source fact: " + str(error)) from error
     try:
         # SPG-02: every SPG on the test_lab stand (was the eight of STAND_SPG).
-        refuse_if(kind == "SPG" and not TEST_LAB, "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
-        refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
-                  "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
+        # CONTENT-0 main transfer (owner 12.11): SPGs on main too (was test_lab only).
+        # CONTENT-0 2.6 (main since the 12.11 transfer): bursts and long clips; a burst needs a clip
+        # (the client rejects burst > clip > 1; burst on a single-shot gun is not admitted by the runtime).
+        refuse_if(not 1 <= clip_count <= MAX_CLIP_TEST_LAB or not 1 <= burst_count <= MAX_BURST
+                  or burst_count > 1 and (clip_count == 1 or burst_count > clip_count), "AUTOMATIC_GUN_UNSUPPORTED",
+                  "clip %d burst %d" % (clip_count, burst_count))
         refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
                   "pitch envelope " + json.dumps(envelope, sort_keys=True))
         try:
             row["shots"] = shots(src, nation, names["gun"], gun, vf, gf, comp["shells"], factor, effects)
         except (*SOURCE_ERRORS, KeyError, TypeError) as error:
             raise ProfileError(vehicle_id + ": shell fact: " + str(error)) from error
-        # Main: every runtime codec carries exactly three ordered stacks. SPG-02 (test_lab): one to three source
-        # shots; the runtime keeps three cells and marks the missing ones absent (never a padded real shell).
-        refuse_if(not (1 <= len(row["shots"]) <= 3) or (not (TEST_LAB and kind == "SPG") and len(row["shots"]) != 3), "SHELL_SOURCE_UNSUPPORTED",
+        # Main: every runtime codec carries exactly three ordered stacks. SPG-02 / CONTENT-0 2.2 (test_lab): one to
+        # three source shots for every vehicle; the runtime keeps three cells and marks the missing ones absent.
+        refuse_if(not (1 <= len(row["shots"]) <= 3), "SHELL_SOURCE_UNSUPPORTED",
                   "%d source shots, runtime needs 3" % len(row["shots"]))
         rule, radius, groups, wheels = _supports(vf, chassis)
         carrying, speed = movement["carrying_point"], movement["speed_limits_kmh"]
@@ -517,8 +604,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             model = vf.get(label + "/hitTester[1]/collisionModel[1]")
             refuse_if(model is None, "COLLISION_SOURCE_UNRESOLVED", label + " hitTester")
             try:
-                fields = materials._children(materials._section(node, path), "active component")
-                effective = _effective(fields["armor"], defaults)
+                effective = _effective(active_armor(node, path), defaults, KINDS)
             except (*SOURCE_ERRORS, materials.BundleError, KeyError) as error:
                 raise Refused("COLLISION_SOURCE_UNSUPPORTED", label + " armour: " + str(error)) from error
             built, pins = component(src, model, index, effective)
@@ -537,9 +623,13 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
         for field, (low, high) in ENVELOPE.items():
             value = handling[field] if field in handling else physics[field]
             refuse_if(not low <= value <= high, "PHYSICS_ENVELOPE_EXCEEDED", field + "=" + repr(value))
-        refuse_if(not all(.1 <= x <= 5 for x in physics["body_half_extents"]) or
+        refuse_if(not all(.1 <= x <= 6 for x in physics["body_half_extents"]) or
                   not all(-5 <= x <= 5 for x in physics["body_center_offset"]) or
-                  not all(-5 <= x <= 5 for p in physics["wheel_points"] for x in p), "PHYSICS_ENVELOPE_EXCEEDED", "body/support bounds")
+                  not all(-5 <= x <= 5 for p in physics["wheel_points"] for x in p), "PHYSICS_ENVELOPE_EXCEEDED",
+                  "body/support bounds half=%r center=%r supports=%r" % (
+                      [round(x, 3) for x in physics["body_half_extents"]],
+                      [round(x, 3) for x in physics["body_center_offset"]],
+                      [round(x, 3) for x in physics["wheel_points"][0] + physics["wheel_points"][-1]]))
         bundle = dict(schema=BUNDLE_SCHEMA, vehicle_id=vehicle_id, classification="VERIFIED_STATIC_ORIGINAL_717",
             identity=row["identity"], members=dict(sorted(members.items())),
             wheel_source=dict(groups=groups, individual_wheels=wheels),
@@ -701,7 +791,7 @@ def build(original):
     require(kinds is not None and pin(kinds) == materials.MEMBER_PINS[materials.KINDS_KEY], "material kinds pin differs")
     loader = materials._loader_defaults(src.file(materials.LOADER_REL))
     mapping = materials._kind_mapping(decode(kinds, max_bytes=MAX_MEMBER))
-    defaults = materials._common_materials(decode(src.file(materials.COMMON_REL), max_bytes=MAX_MEMBER), mapping, loader)
+    defaults = materials._common_materials(decode(src.file(materials.COMMON_REL), max_bytes=MAX_MEMBER), mapping, loader, KINDS)
     common = src.xml(materials.COMMON_REL)
     factor = _num(common["/miscParams[1]/projectileSpeedFactor[1]"], "projectile factor", 1)
     require(factor == .8, "projectile speed factor differs")

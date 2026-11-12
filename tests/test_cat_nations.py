@@ -105,11 +105,11 @@ class GeneratorReport(unittest.TestCase):
         for row in table()["vehicles"]:
             key = row["status"] if row["refusal"] is None else row["refusal"]
             counts[key] = counts.get(key, 0) + 1
+        # CONTENT-0 main transfer (owner 12.11): SPGs, 1-3 shells, supports, automatic guns, collisions and the
+        # physics envelope on main (was 232 generated).
         self.assertEqual(counts, {
-            "generated": 232, "SPG_INDIRECT_FIRE_OUT_OF_SCOPE": 52, "SUPPORT_SOURCE_UNRESOLVED": 35,
-            "AUTOMATIC_GUN_UNSUPPORTED": 21, "SHELL_SOURCE_UNSUPPORTED": 13, "PHYSICS_ENVELOPE_EXCEEDED": 9,
-            "COLLISION_SOURCE_UNSUPPORTED": 7, "AIM_ENVELOPE_UNSUPPORTED": 3, "COLLISION_SOURCE_UNRESOLVED": 1,
-            "MOUNTED_SHOT_OVERRIDE_UNSUPPORTED": 1})
+            "generated": 367, "AIM_ENVELOPE_UNSUPPORTED": 3, "COLLISION_SOURCE_UNRESOLVED": 2,
+            "SUPPORT_SOURCE_UNRESOLVED": 1, "MOUNTED_SHOT_OVERRIDE_UNSUPPORTED": 1})
 
     def test_no_refusal_is_about_nations(self):
         for row in table()["vehicles"]:

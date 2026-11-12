@@ -175,6 +175,16 @@ class PoolStoreTests(unittest.TestCase):
         self.assertEqual(self.store.share_depot(account_id=self.account)["status"], "unchanged")
         self.assertEqual(state, self.state())
 
+    def test_content0_depot_floor_covers_the_largest_mount_of_each_shell(self):
+        # CONTENT-0 2.6 (owner 12.11): an M2 light carries 1800 rounds; the zero-economy floor of 100 per shell
+        # must not leave such a gun 100 rounds. Every depot shell's floor is the largest capacity carrying it.
+        from p09e_research_store import ECONOMY_SHELL_MINIMUM
+        for key in self.store.depot_keys:
+            carriers = [m.capacity for m in self.store.mounts.values()
+                        if any(self.store.depot_key.get(s) == key for s in m.shell_ids)]
+            self.assertEqual(self.store.depot_mount_capacity[key], max(carriers, default=0))
+        self.assertEqual(ECONOMY_SHELL_MINIMUM, 100, "the stored zero-economy policy itself is unchanged")
+
     def test_activation_failpoints_roll_back_schema_rows_and_crew_table(self):
         request = self.pool_request()
         for point in ("after_pool_crew_schema", "after_pool_owner", "before_pool_activation_commit"):
@@ -241,8 +251,8 @@ class PoolStoreTests(unittest.TestCase):
         self.assertEqual(len(cap), 6); self.assertFalse(cap["admission"])
         state = projected.state(aggregate, self.store.layouts(self.account))
         self.assertEqual(state["inventory"][1]["crew"][3], [4, 5, 6])
-        # One native count per pool shell: 15 legacy shells, more in CAT-01 mode (BATTLE-ANY rows).
-        self.assertEqual(len(state["inventory"][10]), len(self.store.shells))
+        # One native count per shell compact ID (shared depot rows, CONTENT-0 step 1): 15 legacy shells, more in CAT-01 mode.
+        self.assertEqual(len(state["inventory"][10]), len(self.store.depot_cd))
         self.assertTrue(len(self.store.shells) >= 15)
         self.assertEqual(state["inventory"][1]["lock"], {})
         self.store.battle(self.battle_request("run_open"), authenticated_account_id=self.account)

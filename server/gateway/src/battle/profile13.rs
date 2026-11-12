@@ -12,13 +12,16 @@ pub const MAX_REQUEST_BYTES: usize = 4096;
 pub const MAX_REPLY_BYTES: usize = 8192;
 /// Template resource manifest (profile13 rows with pool/geometry/chassis references);
 /// a local operator file, not a writer reply. Same depth/node/array bounds.
-pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
+/// CONTENT-0 2.1: the stand manifest carries a row per catalogue kind (273 on test_lab, about 0.6 KB each).
+pub const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 pub const POLICY_SHA256: &str = "cddd7d8cfabe8a4df5543fdcef14dd5518c36bc8bce431cfb502a5c72903ccda";
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 256;
-/// SPG-02: the stand template manifest has one row of about ten nodes per kind (37 on test_lab -14,
-/// at most 64 rows by the array bound); requests and replies keep MAX_NODES.
-const MAX_MANIFEST_NODES: usize = 1024;
+/// SPG-02 / CONTENT-0 2.1: the stand template manifest has one row of about ten nodes per kind (273 on test_lab,
+/// at most MAX_MANIFEST_ROWS rows); requests and replies keep MAX_NODES and 64-element arrays.
+const MAX_MANIFEST_NODES: usize = 16384;
+const MAX_ROWS: usize = 64;
+const MAX_MANIFEST_ROWS: usize = 1024;
 
 fn bad(reason: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, format!("profile13 battle: {reason}"))
@@ -78,35 +81,35 @@ pub fn enqueue_failure(code: &str) -> io::Result<Vec<u8>> {
 
 /// serde_json::Value accepts duplicate keys. This visitor deliberately rejects
 /// them at every level, and rejects floating point throughout this integer DTO.
-struct Unique(Value);
-impl<'de> Deserialize<'de> for Unique {
+struct Unique<const ROWS: usize = MAX_ROWS>(Value);
+impl<'de, const ROWS: usize> Deserialize<'de> for Unique<ROWS> {
     fn deserialize<D: Deserializer<'de>>(input: D) -> Result<Self, D::Error> {
-        struct Fields;
-        impl<'de> Visitor<'de> for Fields {
-            type Value = Unique;
+        struct Fields<const ROWS: usize>;
+        impl<'de, const ROWS: usize> Visitor<'de> for Fields<ROWS> {
+            type Value = Unique<ROWS>;
             fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
                 f.write_str("bounded unique-key primitive JSON")
             }
-            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Unique, E> { Ok(Unique(v.into())) }
-            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Unique, E> { Ok(Unique(v.into())) }
-            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Unique, E> { Ok(Unique(v.into())) }
-            fn visit_unit<E: de::Error>(self) -> Result<Unique, E> { Ok(Unique(Value::Null)) }
-            fn visit_str<E: de::Error>(self, v: &str) -> Result<Unique, E> {
+            fn visit_bool<E: de::Error>(self, v: bool) -> Result<Unique<ROWS>, E> { Ok(Unique(v.into())) }
+            fn visit_i64<E: de::Error>(self, v: i64) -> Result<Unique<ROWS>, E> { Ok(Unique(v.into())) }
+            fn visit_u64<E: de::Error>(self, v: u64) -> Result<Unique<ROWS>, E> { Ok(Unique(v.into())) }
+            fn visit_unit<E: de::Error>(self) -> Result<Unique<ROWS>, E> { Ok(Unique(Value::Null)) }
+            fn visit_str<E: de::Error>(self, v: &str) -> Result<Unique<ROWS>, E> {
                 if v.len() > MAX_REQUEST_BYTES { return Err(E::custom("string bound")); }
                 Ok(Unique(v.into()))
             }
-            fn visit_string<E: de::Error>(self, v: String) -> Result<Unique, E> { self.visit_str(&v) }
-            fn visit_seq<S: SeqAccess<'de>>(self, mut input: S) -> Result<Unique, S::Error> {
+            fn visit_string<E: de::Error>(self, v: String) -> Result<Unique<ROWS>, E> { self.visit_str(&v) }
+            fn visit_seq<S: SeqAccess<'de>>(self, mut input: S) -> Result<Unique<ROWS>, S::Error> {
                 let mut rows = Vec::new();
-                while let Some(Unique(value)) = input.next_element()? {
-                    if rows.len() >= 64 { return Err(de::Error::custom("array bound")); }
+                while let Some(Unique(value)) = input.next_element::<Unique<ROWS>>()? {
+                    if rows.len() >= ROWS { return Err(de::Error::custom("array bound")); }
                     rows.push(value);
                 }
                 Ok(Unique(Value::Array(rows)))
             }
-            fn visit_map<M: MapAccess<'de>>(self, mut input: M) -> Result<Unique, M::Error> {
+            fn visit_map<M: MapAccess<'de>>(self, mut input: M) -> Result<Unique<ROWS>, M::Error> {
                 let mut rows = BTreeMap::new();
-                while let Some((key, Unique(value))) = input.next_entry::<String, Unique>()? {
+                while let Some((key, Unique(value))) = input.next_entry::<String, Unique<ROWS>>()? {
                     if key.is_empty() || key.len() > 64 || rows.len() >= 32
                         || rows.insert(key, value).is_some() {
                         return Err(de::Error::custom("duplicate/key/object bound"));
@@ -115,7 +118,7 @@ impl<'de> Deserialize<'de> for Unique {
                 Ok(Unique(Value::Object(rows.into_iter().collect())))
             }
         }
-        input.deserialize_any(Fields)
+        input.deserialize_any(Fields::<ROWS>)
     }
 }
 
@@ -134,7 +137,11 @@ pub fn bounded_json(raw: &[u8], maximum: usize) -> io::Result<Value> {
     if ![MAX_REQUEST_BYTES, MAX_REPLY_BYTES, MAX_MANIFEST_BYTES].contains(&maximum) || raw.is_empty() || raw.len() > maximum {
         return Err(bad("JSON byte bound"));
     }
-    let Unique(value) = serde_json::from_slice(raw).map_err(|_| bad("unique integer JSON"))?;
+    let value = if maximum == MAX_MANIFEST_BYTES {
+        serde_json::from_slice::<Unique<MAX_MANIFEST_ROWS>>(raw).map(|u| u.0)
+    } else {
+        serde_json::from_slice::<Unique>(raw).map(|u| u.0)
+    }.map_err(|_| bad("unique integer JSON"))?;
     walk(&value, 0, &mut 0, if maximum == MAX_MANIFEST_BYTES { MAX_MANIFEST_NODES } else { MAX_NODES })?;
     if !value.is_object() { return Err(bad("JSON root object")); }
     Ok(value)

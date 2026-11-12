@@ -20,8 +20,8 @@ internal static class GeneratedVehicleProfiles
     public sealed record Profile(string Kind,string Hash,string DefinitionHash,JsonElement Definition,JsonElement Document)
     {
         public JsonElement Physics=>Definition.GetProperty("physics");
-        public float Mass=>CheckedInput.Number(Physics.GetProperty("mass_kg"),1000,100000);
-        public Vector3 Half=>CheckedInput.Vector(Physics.GetProperty("body_half_extents"),.1f,5);
+        public float Mass=>CheckedInput.Number(Physics.GetProperty("mass_kg"),1000,200000);
+        public Vector3 Half=>CheckedInput.Vector(Physics.GetProperty("body_half_extents"),.1f,6);
         public Vector3 Center=>CheckedInput.Vector(Physics.GetProperty("body_center_offset"),-5,5);
         public AngularBodyBinding Binding()
         {
@@ -143,11 +143,11 @@ internal static class GeneratedVehicleProfiles
         double mass=0;
         foreach(var w in weights.EnumerateObject().OrderBy(w=>w.Name,StringComparer.Ordinal))
         {
-            CheckedInput.Number(w.Value,0,100000);mass+=w.Value.GetDouble();
+            CheckedInput.Number(w.Value,0,200000);mass+=w.Value.GetDouble();
         }
         if(mass!=p.GetProperty("mass_kg").GetDouble())throw new InvalidDataException("generated recomputed assembly mass");
-        CheckedInput.Number(p.GetProperty("mass_kg"),1000,100000);
-        CheckedInput.Vector(p.GetProperty("body_half_extents"),.1f,5);
+        CheckedInput.Number(p.GetProperty("mass_kg"),1000,200000);
+        CheckedInput.Vector(p.GetProperty("body_half_extents"),.1f,6);
         CheckedInput.Vector(p.GetProperty("body_center_offset"),-5,5);
         var aabb=source.GetProperty("hull_aabb");CheckedInput.Fields(aabb,"min","max");
         var lo=aabb.GetProperty("min");var hi=aabb.GetProperty("max");var h=source.GetProperty("hull_position");
@@ -157,7 +157,7 @@ internal static class GeneratedVehicleProfiles
                 ||(hi[i].GetDouble()+lo[i].GetDouble())/2+h[i].GetDouble()!=p.GetProperty("body_center_offset")[i].GetDouble())
                 throw new InvalidDataException("generated recomputed Hull bounds/center");
         float N(string name,float min,float max)=>CheckedInput.Number(p.GetProperty(name),min,max);
-        N("max_forward_mps",1,20);N("max_reverse_mps",.5f,10);N("engine_max_torque_nm",10,10000);
+        N("max_forward_mps",1,25);N("max_reverse_mps",.5f,15);N("engine_max_torque_nm",10,10000);
         N("wheel_radius",.05f,1);N("track_max_brake_torque",100,300000);
         float min=N("suspension_min",0,1),max=N("suspension_max",.05f,1);
         if(min>=max)throw new InvalidDataException("generated suspension order");
@@ -178,12 +178,14 @@ internal static class GeneratedVehicleProfiles
             ||source.GetProperty("engine_power_hp").GetDouble()*735.5/(2*Math.PI*2500/60)!=p.GetProperty("engine_max_torque_nm").GetDouble()
             ||source.GetProperty("brake_force_source").GetDouble()*9.81*radius/2!=p.GetProperty("track_max_brake_torque").GetDouble())
             throw new InvalidDataException("generated source speed/torque/brake projection");
-        if(source.GetProperty("support_rule").GetString() is not ("group-W_L-W_R" or "named-W_L0-W_R0"))
+        // CONTENT-0 2.3/2.3b: the test_lab generator also averages several W_L/W_R groups within 2 mm, or W_ (WD_ when no
+        // W_ group exists) groups within 5 mm per side and 10 mm between the sides.
+        if(source.GetProperty("support_rule").GetString() is not ("group-W_L-W_R" or "named-W_L0-W_R0" or "groups-W_L-W_R-2mm" or "groups-W_L-W_R-10mm" or "groups-WD_L-WD_R-10mm"))
             throw new InvalidDataException("generated support rule");
         var handling=definition.GetProperty("handling");CheckedInput.Fields(handling,"version","policy","max_yaw_rate_rad_s");
         if(handling.GetProperty("version").GetInt32()!=1||handling.GetProperty("policy").GetString()!="p05b-track-yaw-v1")
             throw new InvalidDataException("generated handling policy");
-        CheckedInput.Number(handling.GetProperty("max_yaw_rate_rad_s"),.1f,1f);
+        CheckedInput.Number(handling.GetProperty("max_yaw_rate_rad_s"),.1f,1.5f);
         double expectedYaw=source.GetProperty("yaw_rate_degrees_s").GetDouble()*(Math.PI/180);
         if(Math.Abs(expectedYaw-handling.GetProperty("max_yaw_rate_rad_s").GetDouble())>1e-15)
             throw new InvalidDataException("generated source yaw projection");

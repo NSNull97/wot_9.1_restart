@@ -152,8 +152,8 @@ class Roster30LossAndLateTests(unittest.TestCase):
     def test_roster30_loss_event_slots_shots_and_device_journal(self):
         good = dict(shot=MAX_BATTLE_SHOTS, attacker_slot=29, target_slot=0, tick=1200, device_sequence=MAX_DEVICE_SEQUENCE)
         _event(good); _event(dict(good, attacker_slot=6, target_slot=7, shot=961, device_sequence=15361))
-        self.assertEqual((MAX_BATTLE_SHOTS, MAX_DEVICE_SEQUENCE), (4800, 76800))
-        for change in (dict(attacker_slot=30), dict(target_slot=30), dict(target_slot=29), dict(shot=4801), dict(device_sequence=76801)):
+        self.assertEqual((MAX_BATTLE_SHOTS, MAX_DEVICE_SEQUENCE), (16384, 262144))  # gateway values since CONTENT-0 2.6
+        for change in (dict(attacker_slot=30), dict(target_slot=30), dict(target_slot=29), dict(shot=MAX_BATTLE_SHOTS + 1), dict(device_sequence=MAX_DEVICE_SEQUENCE + 1)):
             with self.assertRaises(TransactionError): _event(dict(good, **change))
 
     def test_roster30_late_seal_identity_and_budget(self):

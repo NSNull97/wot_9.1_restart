@@ -21,7 +21,7 @@ pub fn policy_for(kind:VehicleKind)->&'static str { match kind {
 /// contact below this kinetic-energy floor remains a contact candidate but
 /// does not remove the object, so a light tap cannot fell every tree.
 pub const RAMMING_MIN_MASS_KG:f32=1000.;
-pub const RAMMING_MAX_MASS_KG:f32=100000.;
+pub const RAMMING_MAX_MASS_KG:f32=200000.;
 pub const RAMMING_MIN_ENERGY_J:f32=8_000.;
 pub const FENCE_RAM_POLICY:&str="test_lab-fence-energy-v1";
 pub const WHOLE_RAM_POLICY:&str="test_lab-whole-object-energy-v1";
@@ -334,7 +334,8 @@ impl State {
             self.ammo_capacity=capacity;
         }Ok(())
     }
-    fn shot_limit(&self,vehicle:VehicleKind)->usize{self.roster.map_or(vehicle.battle_shot_limit(),|n|n*self.ammo_capacity as usize)}
+    // CONTENT-0 2.6: same MAX_BATTLE_SHOTS ceiling as World::shot_limit (an M2 light alone carries 1800).
+    fn shot_limit(&self,vehicle:VehicleKind)->usize{self.roster.map_or(vehicle.battle_shot_limit(),|n|(n*self.ammo_capacity as usize).min(super::model::MAX_BATTLE_SHOTS))}
     fn latest_tick(&self)->Option<u32>{self.events.last().map(|event|event.tick).into_iter()
         .chain(self.vehicle_events.last().map(|event|event.tick)).max()}
     pub fn scene_version(&self)->u32{self.health.iter().zip(&self.fallen).filter(|(h,f)|**h==0||f.is_some()).count() as u32}

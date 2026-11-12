@@ -2453,7 +2453,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // Keep the existing native muzzle/sound cue and then send
                     // the original fixed showTracer callback in one reliable
                     // order. The start flag is committed with this clone.
-                    c.queue_private(&mut next.outbox,wire::shooting(shot.slot)?,&[shot.slot])?;
+                    // CONTENT-0 2.6: a later burst shell has no cue of its own (burst 0).
+                    if shot.burst>0 {c.queue_private(&mut next.outbox,wire::shooting_burst(shot.slot,shot.burst)?,&[shot.slot])?;}
                     c.queue_private(&mut next.outbox,wire::tracer_start(projectile)?,&[shot.slot])?;
                     c.tracer_started[index] = true;
                     tracer_starts.push((shot.sequence, shot.slot));
@@ -2564,7 +2565,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                 }
                 // AV-01: the owner's hit indicator (any shooter visibility; the
                 // yaw comes from the shell flight) and the shooter's result
-                // voice (vehicle ID and flags only, also for blind fire).
+                // voice (vehicle ID and flags only). Owner 12.11: no voice for
+                // blind fire — a hidden target gives the shooter no indication.
                 // SHELL-02: one indicator/voice per shot and target; the body row speaks when the shell got that far.
                 let superseded=event.is_track()&&next_world.impacts.iter().any(|o|o.shot==event.shot&&o.target==event.target&&!o.is_track());
                 if c.spotting_enabled && !superseded && event.health_before > 0 && (event.target == c.slot || event.attacker == c.slot) {
@@ -2572,7 +2574,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     if event.target == c.slot && c.visible()[c.slot] {
                         next.outbox.push_back(super::av01_feedback::hit_direction(projectile.velocity,event.health_after<event.health_before)?);
                     }
-                    if event.attacker == c.slot {
+                    if event.attacker == c.slot && c.visible()[event.target] {
                         let he=projectile.shell.is_some_and(|shell|shell.family==crate::p06t_shells091::Family::HighExplosive);
                         // No native visual category (e.g. a LAB decision the FX
                         // path refuses) falls back to the HP change alone.

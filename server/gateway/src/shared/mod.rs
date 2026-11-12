@@ -191,8 +191,10 @@ pub(super) struct Client {
     devices_snapshot_sent:bool,
     health_sent: [Option<i16>; model::MAX_ACTORS],
     owner_health_sent: Option<i16>,
-    tracer_started: [bool; model::MAX_BATTLE_SHOTS],
-    tracer_stopped: [bool; model::MAX_BATTLE_SHOTS],
+    // Heap, not inline: since CONTENT-0 2.6 a battle journal holds 16384 shots, and two inline 16 KB arrays in
+    // every Client overflowed a debug test thread's stack when a Client moved (gate 12.11, hold5 dispatch).
+    tracer_started: Box<[bool]>,
+    tracer_stopped: Box<[bool]>,
     /// AV-01: last engineMode / damageStickers queued per created vehicle
     /// (None: unknown to the client, publish the current value), and the
     /// scout-event cursor.
@@ -224,6 +226,9 @@ pub(super) struct Client {
     result_leave_requested: bool,
     result_delivery_at: Option<Instant>,
 }
+/// One flag per shot of a battle journal, on the heap (see `Client::tracer_started`).
+fn tracer_flags()->Box<[bool]>{vec![false;model::MAX_BATTLE_SHOTS].into_boxed_slice()}
+
 impl Client {
     pub(super) fn account_incarnation(&self)->u64{u64::from(self.return_generation)+1}
     fn new(slot: usize) -> Self {
@@ -232,8 +237,8 @@ impl Client {
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
-            hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:std::array::from_fn(|_|None),armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: [false; model::MAX_BATTLE_SHOTS],
-            tracer_stopped: [false; model::MAX_BATTLE_SHOTS], engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:std::array::from_fn(|_|None),armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: tracer_flags(),
+            tracer_stopped: tracer_flags(), engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -496,8 +501,8 @@ impl Session {
         c.impact_cursor = world.impacts.len();
         c.sixth_sense_sent = world.sixth_sense_generation(c.slot)?;
         c.damage_cursor=world.damage_events.len();c.ram_cursor=world.ram_damage_events.len();c.device_cursor=world.device_events.len();
-        c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
-        c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
+        c.tracer_started = tracer_flags();
+        c.tracer_stopped = tracer_flags();
         *self = next;
         println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment={} inventory_reserved={}",
             world.id,self.id,wire::avatar_id(slot)?,wire::vehicle_id(slot)?,
@@ -861,8 +866,8 @@ impl Session {
                 c.impact_cursor = world.impacts.len();
                 c.sixth_sense_sent = world.sixth_sense_generation(c.slot)?;
                 c.damage_cursor=world.damage_events.len();c.ram_cursor=world.ram_damage_events.len();c.device_cursor=world.device_events.len();
-                c.tracer_started = [false; model::MAX_BATTLE_SHOTS];
-                c.tracer_stopped = [false; model::MAX_BATTLE_SHOTS];
+                c.tracer_started = tracer_flags();
+                c.tracer_stopped = tracer_flags();
                 // UI-03: a scene load is a new channel. The client says hello
                 // again, nothing of the time it was away is replayed.
                 c.battle_events = None;

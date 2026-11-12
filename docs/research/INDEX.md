@@ -229,3 +229,7 @@
 - [CONTENT0_INVENTORY.md](CONTENT0_INVENTORY.md) — опись контента 0.9.1 «клиент ↔ сервер» (шаг 0): машины, модули,
   снаряды, оборудование, расходники, экипаж, достижения, карты и режимы, разрушаемое и правило простреливания клиента;
   данные — `content0_inventory.v1.json`.
+- [CONTENT0_AUTO_GUNS.md](CONTENT0_AUTO_GUNS.md) — автоматические пушки (2.6): clip/burst 21 машины из 0.9.1,
+  загрузчик (раздел машины целиком заменяет общий), `showShooting(burstCount)` и счётчик клиента, решения test_lab и UNKNOWN.
+- [CONTENT0_COLLISION_MATERIALS.md](CONTENT0_COLLISION_MATERIALS.md) — 2.5b: группы-устройства и роли экипажа (виды 21–48)
+  в коллизии 13 машин, `nodefullVisual`, дубликат XML IS; Type 59 Gold и T-50-2 — дефекты данных клиента

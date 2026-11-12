@@ -62,10 +62,11 @@ fn hit_events(c:&Client,world:&World)->io::Result<Vec<(u32,Event)>> {
         let damage=u16::try_from((event.health_before-event.health_after).max(0)).map_err(|_|model::bad())?;
         let verdict=verdict(event);
         let source=source(c,event.attacker);
-        // "Удар сдержан": the nominal damage of the shell, a catalog fact of a
-        // shooter the recipient sees. A hidden shooter's shell would tell its
-        // gun, and the old MS-1 laboratory shots have no catalog shell: absent.
-        let blocked=(damage==0&&matches!(verdict,Verdict::NotPierced|Verdict::Ricochet)&&source!=Source::Hidden)
+        // "Удар сдержан": the nominal damage of the shell. Owner 12.11: shown for a
+        // hidden shooter too (the battle's blocked total counts it anyway); the
+        // shooter's name and vehicle stay hidden. Old MS-1 laboratory shots have no
+        // catalog shell: absent.
+        let blocked=(damage==0&&matches!(verdict,Verdict::NotPierced|Verdict::Ricochet))
             .then(||battle_ledger::nominal(world,event.shot)).flatten();
         rows.push((event.tick,Event::HitReceived(HitReceived{shot:event.shot,yaw,damage,blocked,verdict,
             friendly:friendly(world,c.slot,event.attacker)?,fatal:event.health_after<=0,source,criticals:criticals(c,world,event.shot)})));
@@ -93,12 +94,12 @@ impl Feed<'_> {
         self.rows.push((tick,Event::Feed(FeedEvent{kind,value,vehicle})));
     }
     fn enemy(&self,slot:usize)->io::Result<bool> {Ok(slot!=self.c.slot&&!friendly(self.world,self.c.slot,slot)?)}
-    /// Dealt damage: a hidden target has no name and no amount, the amount
-    /// would be a fact about its HP. The event itself stays: the shot-result
-    /// voice already tells the shooter that the shell hurt something.
+    /// Dealt damage of a visible target only. Owner 12.11: blind fire gives no
+    /// indication at all (no row, no voice, no live sum); the damage stays in the
+    /// end-of-battle totals and results.
     fn dealt(&mut self,tick:u32,kind:FeedKind,target:usize,damage:u16)->io::Result<()> {
-        if damage==0||!self.enemy(target)? {return Ok(());}
-        if self.c.visible()[target] {self.push(tick,kind,Some(damage),Some(target));} else {self.push(tick,kind,None,None);}
+        if damage==0||!self.enemy(target)?||!self.c.visible()[target] {return Ok(());}
+        self.push(tick,kind,Some(damage),Some(target));
         Ok(())
     }
     /// Damage the recipient took outside a shell: its own HP, the source by the
@@ -147,8 +148,8 @@ impl Feed<'_> {
         }
         Ok(())
     }
-    /// An ally's damage this recipient helped with: a hidden target gives the
-    /// event only, the sum stays in the end-of-battle totals.
+    /// An ally's damage this recipient helped with, on a visible target only (as
+    /// dealt damage); the sum stays in the end-of-battle totals.
     fn assists(&mut self,cursors:&FeedCursors)->io::Result<()> {
         let(c,world)=(self.c,self.world);
         for harm in battle_ledger::harms(world,cursors.damage,cursors.impacts)? {

@@ -107,7 +107,7 @@ class CatalogRosterTests(CatalogMode):
                        lambda v: v['vehicles'][5].__setitem__(0, 7169),        # forged type on inventory 5
                        lambda v: v['vehicles'][6][3].reverse(),                # roles not the catalog seats
                        lambda v: v['tankmen'][-1].update(inventory_id=193),    # beyond lifetime 192
-                       lambda v: v['tankmen'][-1].update(vehicle_type_id=29),  # not a catalog type
+                       lambda v: v['tankmen'][-1].update(vehicle_type_id=250), # not a catalog type (29 is one since CONTENT-0 2.1)
                        lambda v: v['crews'].pop(6),                            # crew without vehicle
                        lambda v: v.__setitem__('ms1_crew', [None, 2])):        # legacy field mixed in
             bad = catalog_snapshot(); change(bad)

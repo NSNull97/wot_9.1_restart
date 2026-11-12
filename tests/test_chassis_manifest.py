@@ -75,7 +75,10 @@ class CollisionDeviceCensusTests(unittest.TestCase):
         import collision_device_census as census
         result = census.census(ORIGINAL)
         self.assertEqual(result["collision_visuals"], 2522)
-        self.assertEqual(result["battle_registry_vehicles_with_device_groups"], [])
+        # CONTENT-0 2.5b on main since the 12.11 transfer: these four carry device groups as device materials
+        # (DeviceVisualMaterial, never an ordinary plate); before, no battle vehicle carried any.
+        self.assertEqual(sorted(result["battle_registry_vehicles_with_device_groups"]),
+                         ["vehicle:france:Bat_Chatillon155_55", "vehicle:germany:E50_Ausf_M", "vehicle:usa:M41", "vehicle:ussr:A44"])
         self.assertEqual(sorted(v["battle_profiles"][0]["vehicle_id"] for v in result["visuals_with_device_groups"]),
                          ["vehicle:france:Bat_Chatillon155_55", "vehicle:germany:E50_Ausf_M", "vehicle:germany:E50_Ausf_M",
                           "vehicle:usa:M41", "vehicle:ussr:A44"])

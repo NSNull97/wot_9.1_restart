@@ -85,19 +85,23 @@ class TableContract(unittest.TestCase):
         finally:
             bad.unlink()
 
-    def test_spg_refused_explicitly(self):
+    def test_spgs_are_generated_since_the_main_transfer(self):
+        # CONTENT-0 main transfer (owner 12.11): main takes the SPG-01/02 rules (was: every SPG refused).
         spg = [row for row in rows().values() if row["vehicle_class"] == "SPG"]
         self.assertEqual(len(spg), 52)
-        for row in spg:
-            self.assertEqual((row["status"], row["refusal"]), ("refused", "SPG_INDIRECT_FIRE_OUT_OF_SCOPE"))
-        self.assertEqual(rows()["vehicle:ussr:Object_261"]["refusal"], "SPG_INDIRECT_FIRE_OUT_OF_SCOPE")
+        self.assertFalse([row for row in spg if row["refusal"] == "SPG_INDIRECT_FIRE_OUT_OF_SCOPE"])
+        self.assertEqual(rows()["vehicle:ussr:Object_261"]["status"], "generated")
 
-    def test_automatic_guns_refused_not_truncated(self):
+    def test_automatic_guns_carry_bursts_not_truncated(self):
+        # CONTENT-0 2.6 on main since the 12.11 transfer: a burst/clip row is generated with its source counts.
         for row in rows().values():
-            if row["vehicle_class"] != "SPG" and (row["gun"]["burst"] or row["gun"]["clip_count"] > generator.MAX_CLIP):
-                self.assertEqual(row["refusal"], "AUTOMATIC_GUN_UNSUPPORTED", row["vehicle_id"])
-            if row["status"] == "generated":
-                self.assertTrue(1 <= row["gun"]["clip_count"] <= generator.MAX_CLIP and not row["gun"]["burst"])
+            if row["status"] != "generated":
+                continue
+            gun = row["gun"]
+            self.assertTrue(1 <= gun["clip_count"] <= generator.MAX_CLIP_TEST_LAB, row["vehicle_id"])
+            self.assertTrue(1 <= gun["burst_count"] <= generator.MAX_BURST, row["vehicle_id"])  # T1 E6: burst 1
+            self.assertTrue(gun["burst_count"] == 1 or gun["clip_count"] >= gun["burst_count"], row["vehicle_id"])
+        self.assertEqual(rows()["vehicle:usa:M2_lt"]["gun"]["burst_count"] > 1, True)
 
     def test_generated_rows_inside_physics_envelope(self):
         for row in rows().values():
@@ -112,6 +116,49 @@ class TableContract(unittest.TestCase):
         fv = rows()["vehicle:uk:GB48_FV215b_183"]
         self.assertEqual((fv["native_nation_id"], fv["research_catalog_nation_id"]), (5, 5))
         self.assertFalse(any(row["catalog_nation_correction_required"] for row in rows().values()))
+
+
+class SupportRules(unittest.TestCase):
+    """CONTENT-0 2.3/2.3b: the road-wheel support radius rules (test_lab adds two averaged rules)."""
+    CH = "/chassis[1]/C[1]"
+
+    def chassis(self, groups):
+        flat = {}
+        for i, (template, is_left, radius) in enumerate(groups, 1):
+            p = self.CH + "/wheels[1]/group[" + str(i) + "]"
+            flat.update({p: None, p + "/template[1]": template, p + "/isLeft[1]": is_left, p + "/radius[1]": radius})
+        return flat
+
+    def run_rule(self, groups, test_lab):
+        saved = generator.TEST_LAB
+        generator.TEST_LAB = test_lab
+        try:
+            rule, radius, _, _ = generator._supports(self.chassis(groups), self.CH)
+        finally:
+            generator.TEST_LAB = saved
+        return rule, round(radius, 6)
+
+    def test_b1_like_bogies_within_5mm_average(self):
+        groups = [("W_R", False, .1019), ("W_R", False, .0997), ("W_L", True, .1019), ("W_L", True, .0997)]
+        self.assertEqual(self.run_rule(groups, True), ("groups-W_L-W_R-10mm", .1008))
+        # main uses the same rule since the CONTENT-0 main transfer (owner 12.11).
+        self.assertEqual(self.run_rule(groups, False), ("groups-W_L-W_R-10mm", .1008))
+
+    def test_tog_like_wd_groups_only_when_no_w_group(self):
+        self.assertEqual(self.run_rule([("WD_L", True, .2139), ("WD_R", False, .2139)], True),
+                         ("groups-WD_L-WD_R-10mm", .2139))
+        # A W_ group present: WD_ groups are not road wheels for the rule.
+        with self.assertRaises(generator.Refused):
+            self.run_rule([("WD_L", True, .2139), ("WD_R", False, .2139), ("W_L", True, .30), ("W_R", False, .25)], True)
+
+    def test_sides_over_10mm_or_side_over_5mm_refused(self):
+        with self.assertRaises(generator.Refused):
+            self.run_rule([("W_L", True, .280), ("W_R", False, .268)], True)
+        with self.assertRaises(generator.Refused):
+            self.run_rule([("W_L", True, .270), ("W_L", True, .264), ("W_R", False, .268)], True)
+
+    def test_exact_pair_keeps_the_original_rule(self):
+        self.assertEqual(self.run_rule([("W_L", True, .3), ("W_R", False, .3)], False), ("group-W_L-W_R", .3))
 
 
 class SpecialCases(unittest.TestCase):

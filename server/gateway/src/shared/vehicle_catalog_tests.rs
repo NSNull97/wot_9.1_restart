@@ -45,7 +45,8 @@ fn legacy_rows()->impl Iterator<Item=&'static Vehicle>{VEHICLES.iter().filter(|v
 
 #[test] fn catalog_equals_retained_closed_rust_lists() {
     let labels:Vec<&str>=VEHICLES.iter().map(|v|v.kind).collect();
-    assert_eq!(labels,LEGACY.iter().chain(PILOT.iter()).copied().collect::<Vec<_>>());
+    // CONTENT-0 2.1: every ready vehicle follows the legacy five and the pilot rows (append-only).
+    assert_eq!(&labels[..LEGACY.len()+PILOT.len()],&LEGACY.iter().chain(PILOT.iter()).copied().collect::<Vec<_>>()[..]);
     for v in legacy_rows(){
         let kind=VehicleKind::from_label(v.kind).unwrap();
         assert_eq!(kind.descriptor(),v.descriptor,"{}",v.kind);
@@ -115,7 +116,8 @@ fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
         assert_eq!((f.kind,f.kind.is_generated()),(VehicleKind::from_owned_label(v.kind).unwrap(),true));
         assert!(v2::catalog_generated_kind_in(true,v.kind)&&!v2::catalog_generated_kind_in(false,v.kind));
     }
-    for label in LEGACY.into_iter().chain(["wt-e100-128","fv215b-183","ussr-KV1","china-Ch04_T34_1",""]){
+    // CONTENT-0 2.1: every ready vehicle is in the catalogue; the owner-excluded ones stay out (training, event-only).
+    for label in LEGACY.into_iter().chain(["wt-e100-128","fv215b-183","germany-PzIII_training","ussr-T62A_sport",""]){
         assert!(!v2::catalog_generated_kind_in(true,label),"{label}");}
 }
 

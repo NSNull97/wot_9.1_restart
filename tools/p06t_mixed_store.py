@@ -17,6 +17,9 @@ from p04m_stock_registry import mixed_admission
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST
 from p08c_battle_results import results_value
 from destructible_catalog import json_value, no_links
+
+# CONTENT-0 2.6: one stack of a vehicle's load (gateway model.rs MAX_AMMO_PER_ACTOR); M2 light carries 1800.
+MAX_STACK = 2048
 from p06t_terminal import TerminalPolicy, MANIFEST_SHA256
 
 SCHEMA = "p06t-owned-mixed-ammunition.v2"
@@ -64,7 +67,7 @@ def validate_request(value, account):
         require(type(remaining) is list and 1 <= len(remaining) <= 3, "INVALID_INPUT")
         for row in remaining:
             require(type(row) is dict and set(row) == {"shell_compact_id", "count"}, "INVALID_INPUT")
-            _integer(row["shell_compact_id"], 1); _integer(row["count"], 0, 160)
+            _integer(row["shell_compact_id"], 1); _integer(row["count"], 0, MAX_STACK)
     if natural:
         require(type(value["results_json"]) is str and len(value["results_json"].encode("utf8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
         value = dict(value, results_json=canonical(results_value(value["results_json"])).decode("ascii"))
@@ -138,7 +141,9 @@ class MixedAmmoStore(PoolStore):
             row = battle_any.profile(p.vehicle_id)
             require(row is not None and row["status"] == "generated" and row["kind"] == kind, "P06T_SOURCE_MISMATCH")
             mount = self.mounts[p.assembly_id]
-            require(row["gun"]["max_ammo"] == mount.capacity and not row["gun"]["burst"]
+            # CONTENT-0 2.6: automatic guns (main since the 12.11 transfer); the gateway schedules the burst, the
+            # store keeps one ammo count per shell as for any gun.
+            require(row["gun"]["max_ammo"] == mount.capacity
                 and row["identity"]["type_compact_id"] == mount.vehicle_native_compact_id
                 and row["identity"]["module_compact_ids"]["gun"] == mount.gun_native_compact_id
                 and [s["compact_descr"] for s in row["shots"]] == [self.shells[s].native_compact_id for s in mount.shell_ids]

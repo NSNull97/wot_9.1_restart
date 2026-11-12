@@ -75,17 +75,17 @@ fn publish(s:&mut Session,w:&World,now:Instant)->Vec<Row> {
     assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::ShotDamage as u8,value:Some(hp),vehicle:id(1)}]);
 }
 
-#[test] fn ui03_dealt_shot_to_a_hidden_enemy_has_no_name_no_amount_no_hp() {
+/// Owner 12.11: blind fire gives no indication — no feed row at all (before: a
+/// row without name or amount) and no shot-result voice.
+#[test] fn ui03_dealt_shot_to_a_hidden_enemy_gives_no_row_and_no_voice() {
     let (mut w,now)=hit_world(Instant::now(),0,1);
     w.actors[1].position[0]=500.;let mut s=spotted(now,&w,0);open(&mut s);
     assert!(!s.shared.as_ref().unwrap().visible()[1]);
     poll(&mut s,&mut w,now).unwrap();
-    let frames=channel_frames(&all_bodies(&mut s,now));
-    assert_eq!(rows_of(&frames),vec![Row{kind:FeedKind::ShotDamage as u8,value:None,vehicle:0}]);
-    assert_eq!(frames[0].len(),6+9,"the frame has room for nothing else");
-    assert!(!contains(&frames[0],&id(1).to_le_bytes()));
-    assert!(!contains(&frames[0],&w.actors[1].health.to_le_bytes()));
-    for axis in w.actors[1].position.into_iter().filter(|axis|*axis!=0.) {assert!(!contains(&frames[0],&axis.to_le_bytes()));}
+    let bodies=all_bodies(&mut s,now);
+    assert_eq!(rows_of(&channel_frames(&bodies)),vec![]);
+    let voice=crate::gateway091::shared::av01_feedback::shot_results(&[(1,0)]).unwrap();
+    assert!(!bodies.iter().any(|body|body.len()>=2&&voice.len()>=2&&body[..2]==voice[..2]),"no Avatar.showShotResults for a hidden target");
 }
 
 #[test] fn ui03_a_lethal_shot_gives_damage_then_kill_and_the_kill_keeps_its_public_id() {
@@ -135,9 +135,9 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
     let (mut w,now)=hit_world(now,1,0);
     w.actors[1].position[0]=500.;let mut s=spotted(now,&w,0);open(&mut s);
     w.ram_damage_events.push(ram(1,0,200,170));w.ram_damage_events.push(ram(0,1,300,290));
+    // Owner 12.11: ramming a hidden enemy gives no row (blind damage has no indication).
     assert_eq!(feed(&mut s,&mut w,now),vec![
-        Row{kind:FeedKind::RamReceived as u8,value:Some(30),vehicle:0},
-        Row{kind:FeedKind::RamDamage as u8,value:None,vehicle:0}]);
+        Row{kind:FeedKind::RamReceived as u8,value:Some(30),vehicle:0}]);
 }
 
 #[test] fn ui03_modules_of_a_visible_enemy_are_named_a_hidden_ones_are_silent() {
@@ -410,7 +410,8 @@ fn ally_shot(tick:u32,before:i16,after:i16)->model::DamageRecord {let mut row=da
     let mut s=spotted(now,&terrain,0);open(&mut s);
     let mut w=assist_world(now);w.push_test_spot(0,1,1000);w.damage_events.push(ally_shot(1001,500,400));
     let rows=publish(&mut s,&w,now);
-    assert_eq!(rows[rows.len()-1],Row{kind:FeedKind::AssistSpot as u8,value:None,vehicle:0});
+    // Owner 12.11: no assist row for a hidden target (as dealt damage); the totals keep the sum.
+    assert!(!rows.iter().any(|row|row.kind==FeedKind::AssistSpot as u8),"{rows:?}");
     assert_eq!(battle_ledger::totals(&w,0).unwrap().assist_spot,100);
 }
 #[test] fn ui03_burned_hp_belongs_to_the_author_of_the_fire() {
@@ -429,7 +430,8 @@ fn stopped_world(now:Instant,outcome:ap::Outcome)->(World,Instant) {
     if let model::ImpactOutcome::Ap(resolution)=&mut w.impacts[0].outcome {resolution.outcome=outcome;}
     (w,now)
 }
-#[test] fn ui03_blocked_counts_the_nominal_of_stopped_shells_and_a_hidden_shooter_only_in_the_totals() {
+/// Owner 12.11: the blocked number travels for a hidden shooter too (before: only the totals).
+#[test] fn ui03_blocked_counts_the_nominal_of_stopped_shells_for_any_shooter() {
     let (mut w,now)=stopped_world(Instant::now(),ap::Outcome::NotPierced);
     let hp=u32::from(battle_ledger::nominal(&w,w.impacts[0].shot).unwrap());
     let totals=battle_ledger::totals(&w,0).unwrap();
@@ -443,7 +445,7 @@ fn stopped_world(now:Instant,outcome:ap::Outcome)->(World,Instant) {
     assert_eq!(battle_ledger::totals(&w,0).unwrap().blocked,hp);
     poll(&mut s,&mut w,now).unwrap();
     let frames=channel_frames(&all_bodies(&mut s,now));
-    assert_eq!(&frames[0][8+10..8+12],&[0xff,0xff],"a hidden shooter: the sum waits for the end of the battle");
+    assert_eq!(&frames[0][8+10..8+12],&(hp as u16).to_le_bytes(),"a hidden shooter: the number travels, no name");
 }
 #[test] fn ui03_a_pierced_shell_is_potential_not_blocked() {
     let (mut w,_)=hit_world(Instant::now(),1,0);

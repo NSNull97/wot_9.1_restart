@@ -48,7 +48,9 @@ class NativeResearchCommandsTests(unittest.TestCase):
         malformed = (
             (0x8e, struct.pack("<hhqii", 1, 201, 3329, -1, 0)),
             (0x8e, struct.pack("<hhqii", 1, 201, 3329, 0, 1)),
-            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 17, 0)),
+            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 17, -1)),  # CONTENT-0: crew needs a tariff
+            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 17, 3)),
+            (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 2, -1)),
             (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, 0)),
             (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, 1)),
             (0x90, struct.pack("<hhqiii", 1, 301, 3, 7169, 0, 2)),

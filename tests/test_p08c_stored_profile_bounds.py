@@ -24,7 +24,8 @@ class OwnProfileStore:
     def _crew_contract(self):
         return self.contract
     def _stored_json(self, raw):
-        return _json(raw) if self.contract is CrewContractV2 and len(raw) > 16384 else _object(raw)
+        # The pool store's rule (CONTENT-0 main transfer): any contract's row past 16 KB goes to the 256 KB reader.
+        return _json(raw) if len(raw) > 16384 else _object(raw)
 
 
 def profile(store):
@@ -80,7 +81,8 @@ class StoredProfileBounds(unittest.TestCase):
         duplicate = raw(profile(store)).replace('"profile_version":13', '"profile_version":13,"profile_version":13')
         values = [duplicate, '{"x":' * 14 + '0' + '}' * 14,
                   raw(profile(store))[:-1] + ',"bad":1.5}',
-                  raw(profile(store))[:-1] + ',"bad":"' + 'x' * (16 * 1024) + '"}']
+                  # Oversized: past the v1 profile bound (256 KB since the CONTENT-0 main transfer).
+                  raw(profile(store))[:-1] + ',"bad":"' + 'x' * CrewContract.PROFILE_BOUND + '"}']
         for value in values:
             with self.subTest(length=len(value)), self.assertRaises(TransactionError):
                 decode_stored_profile(value, store)

@@ -38,7 +38,7 @@ impl VehicleProfile {
             let handling=&definition["handling"];
             fields(handling,&["version","policy","max_yaw_rate_rad_s"])?;
             if uint(&handling["version"])?!=1||text(handling,"policy")?!="p05b-track-yaw-v1" {return Err(bad());}
-            number(&handling["max_yaw_rate_rad_s"],0.1,1.)?;
+            number(&handling["max_yaw_rate_rad_s"],0.1,1.5)?;
             let binding=ram_proof::Profile::for_vehicle(kind).binding();let native=&v["native_binding"];
             if uint(&native["inverse_mass_bits"])?!=binding.inverse_mass.to_bits() as u64 {return Err(bad());}
             for (field,want) in [("principal_inverse_bits",binding.principal.to_vec()),("inertia_rotation_bits_xyzw",binding.inertia_rotation.to_vec())] {
@@ -69,7 +69,7 @@ impl VehicleProfile {
         let handling=if pool_version==3 {
             fields(&v["handling"],&["version","policy","max_yaw_rate_rad_s"])?;
             if uint(&v["handling"]["version"])?!=1 || text(&v["handling"],"policy")?!="p05b-track-yaw-v1" {return Err(bad());}
-            number(&v["handling"]["max_yaw_rate_rad_s"],0.1,1.)?;
+            number(&v["handling"]["max_yaw_rate_rad_s"],0.1,1.5)?;
             Some(v["handling"].clone())
         }else{None};
         Ok(Self{path,sha256:hash.into(),kind,config_version:pool_version,physics:v["physics"].clone(),handling})
@@ -91,7 +91,7 @@ impl VehicleProfile {
         let handling=&definition["handling"];
         fields(handling,&["version","policy","max_yaw_rate_rad_s"])?;
         if uint(&handling["version"])?!=1||text(handling,"policy")?!="p05b-track-yaw-v1" {return Err(bad());}
-        number(&handling["max_yaw_rate_rad_s"],0.1,1.)?;
+        number(&handling["max_yaw_rate_rad_s"],0.1,1.5)?;
         let native=&v["native_binding"];
         if uint(&native["inverse_mass_bits"])?!=u64::from(entry.inverse_mass_bits) {return Err(bad());}
         for (field,want) in [("principal_inverse_bits",entry.principal_inverse_bits.to_vec()),("inertia_rotation_bits_xyzw",entry.inertia_rotation_bits.to_vec())] {
@@ -123,7 +123,7 @@ impl VehicleProfile {
             if uint(&actual["version"])?!=uint(&expected["version"])? || text(actual,"policy")?!=text(expected,"policy")?
                 || !same_numeric(&actual["max_yaw_rate_rad_s"],&expected["max_yaw_rate_rad_s"]) {return Err(bad());}
         }
-        if map.mass_kg!=number(&self.physics["mass_kg"],1000.,100000.)? {return Err(bad());}
+        if map.mass_kg!=number(&self.physics["mass_kg"],1000.,200000.)? {return Err(bad());}
         Ok(())
     }
 }

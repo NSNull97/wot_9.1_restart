@@ -247,7 +247,7 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{
         // SPG-02: absent cells (compact 0, count 0) stay in the gateway; the domain sees only the real stacks.
         let real=remaining_ammunition.iter().take_while(|a|a.shell_compact_id!=0).count();
         if!id(reservation_id)||!(0..=2150).contains(terminal_hp)||real==0||remaining_ammunition[real..].iter().any(|a|a.shell_compact_id!=0||a.count!=0)
-            ||remaining_ammunition.iter().any(|a|a.count>160)
+            ||remaining_ammunition.iter().any(|a|usize::from(a.count)>crate::gateway091::shared::model::MAX_AMMO_PER_ACTOR)
             ||(*reason==FinishReason::BattleFinished)!=results_json.is_some(){return Err(bad("finish arguments"));}
         v["reservation_id"]=reservation_id.as_str().into();v["terminal_hp"]=(*terminal_hp).into();v["reason"]=reason.name().into();
         let terminal=bounded_json(terminal_state_json.as_bytes(),8192)?;

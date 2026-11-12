@@ -29,7 +29,7 @@ fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad
     if !(1..=3).contains(&a.len()){return Err(bad("ammunition stack count"));}let mut out=Vec::new();
     for r in a{keys(r,&["shell_compact_id","count"])?;let compact=u16::try_from(number(r,"shell_compact_id")?).map_err(|_|bad("shell width"))?;
         let count=u16::try_from(number(r,"count")?).map_err(|_|bad("count width"))?;
-        if compact==0||count>160||out.iter().any(|old:&Remaining|old.shell_compact_id==compact){return Err(bad("source stack bounds/unique"));}
+        if compact==0||usize::from(count)>crate::gateway091::shared::model::MAX_AMMO_PER_ACTOR||out.iter().any(|old:&Remaining|old.shell_compact_id==compact){return Err(bad("source stack bounds/unique"));}
         out.push(Remaining{shell_compact_id:compact,count});}
     while out.len()<3{out.push(Remaining{shell_compact_id:0,count:0});}
     out.try_into().map_err(|_|bad("stacks"))}
