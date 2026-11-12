@@ -56,9 +56,9 @@ class KindTables(unittest.TestCase):
         for name, kind in materials.DEVICE_KINDS.items():
             self.assertIn('%d=>"%s"' % (kind, name), body)
 
-    def test_main_kinds_unchanged(self):
-        if not generator.TEST_LAB:
-            self.assertIs(generator.KINDS, materials.EXPECTED_KINDS)
+    def test_main_takes_the_device_kinds_since_the_transfer(self):
+        # CONTENT-0 main transfer (owner 12.11): main and test_lab share the device/crew kinds.
+        self.assertIs(generator.KINDS, materials.ALL_KINDS)
 
 
 class ActiveArmor(unittest.TestCase):
@@ -88,11 +88,11 @@ class ActiveArmor(unittest.TestCase):
         gun = section(("maxAmmo", 68), ("armor", armor), ("animateEmblemSlots", True), ("animateEmblemSlots", False))
         node = section(("turrets0", section(("IS-85", section(("guns", section(("_85mm_D-5T", gun))))))))
         path = ("turrets0", "IS-85", "guns", "_85mm_D-5T")
-        with mock.patch.object(generator, "TEST_LAB", False):
-            with self.assertRaisesRegex(materials.BundleError, "duplicate"):
-                generator.active_armor(node, path)
-        with mock.patch.object(generator, "TEST_LAB", True):
+        # One rule for main and test_lab since the CONTENT-0 main transfer (owner 12.11).
+        for flag in (False, True):
+          with mock.patch.object(generator, "TEST_LAB", flag):
             self.assertIs(generator.active_armor(node, path), armor)
+        with mock.patch.object(generator, "TEST_LAB", True):
             twice = copy.deepcopy(node)
             twice["children"][0]["data"]["children"][0]["data"]["children"][0]["data"]["children"][0]["data"]["children"].append(
                 {"name": "armor", "data": armor})
@@ -118,9 +118,9 @@ class VisualBinding(unittest.TestCase):
     def test_nodefull_only_test_lab_scene_root_render_set(self):
         model = {"/nodefullVisual[1]": self.STEM}
         bound = visual(**{"/renderSet[1]/node[1]": "Scene Root", "/node[1]/node[1]/identifier[1]": "collision"})
+        # nodefullVisual on main too since the CONTENT-0 main transfer (owner 12.11).
         with mock.patch.object(generator, "TEST_LAB", False):
-            with self.assertRaisesRegex(ProfileError, "collision model/visual binding"):
-                generator.visual_binding(model, bound, self.STEM)
+            self.assertEqual(generator.visual_binding(model, bound, self.STEM), [[-1., -.5, -3.], [1., .8, 3.]])
         with mock.patch.object(generator, "TEST_LAB", True):
             box = generator.visual_binding(model, bound, self.STEM)
             self.assertEqual(box, [[-1., -.5, -3.], [1., .8, 3.]])

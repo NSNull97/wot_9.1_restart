@@ -38,9 +38,11 @@ def literal(path, name, names=None):
 
 
 LEGACY_KINDS = ["ms1", "is7", "t26", "t34", "t3485"]
-# BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows, admission "always".
-PILOT_KINDS = ["ussr-KV-3", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri",
-               "uk-GB48_FV215b_183", "china-Ch22_113", "france-Bat_Chatillon25t"]
+# BATTLE-ANY stage 3 pilot (owner 2026-10-27): generated rows, admission "always". Since the CONTENT-0 main
+# transfer (owner 12.11) every non-legacy row of the main catalogue is such a generated row (355 vehicles).
+PILOT_KINDS = [v["kind"] for v in catalog_v1_data.VEHICLES if v["kind"] not in LEGACY_KINDS]
+assert {"ussr-KV-3", "usa-M4_Sherman", "germany-Waffentrager_E100", "japan-Chi_Ri", "uk-GB48_FV215b_183",
+        "china-Ch22_113", "france-Bat_Chatillon25t"} <= set(PILOT_KINDS)
 
 
 def document():
@@ -245,8 +247,10 @@ class CatalogFromPinnedClient(unittest.TestCase):
         # CONTENT-0 step 1: KV-1 fires the T-34/T-34-85 shells (7178/8202/7690); the depot keeps one shared
         # count per compact ID, so two catalogue rows may share a shell (within one vehicle the shells stay distinct).
         raw = json.loads((ROOT / "config/catalog/server_profiles.v1.json").read_bytes())
-        raw["vehicles"].append({"kind": "ussr-KV1", "vehicle_id": "vehicle:ussr:KV1", "device_profile": "battle-any",
-                                "battle_admission": "always", "legacy_inventory": None, "client_ui": {"crew": False, "ammo": False}})
+        # Since the CONTENT-0 main transfer KV-1 is already a main row.
+        if not any(v["kind"] == "ussr-KV1" for v in raw["vehicles"]):
+            raw["vehicles"].append({"kind": "ussr-KV1", "vehicle_id": "vehicle:ussr:KV1", "device_profile": "battle-any",
+                                    "battle_admission": "always", "legacy_inventory": None, "client_ui": {"crew": False, "ammo": False}})
         path = ROOT / "local/test-runs/cat01-profiles-shared-shell.json"
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(raw))

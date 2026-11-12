@@ -226,11 +226,13 @@ def delta(before, after, revision, operation, contract=None):
 
 
 class CrewContract:
-    SCHEMA, POLICY_SHA256, COMMAND_RESULT_BOUND = SCHEMA, POLICY_SHA256, 32768
+    # CONTENT-0 main transfer (12.11): the main catalogue's depot (one row per shell of 360 vehicles) outgrew the
+    # 16/32 KB v1 bounds; v1 takes the v2 bounds (not part of the stored policy, no migration).
+    SCHEMA, POLICY_SHA256, COMMAND_RESULT_BOUND = SCHEMA, POLICY_SHA256, 262144
     SOURCE = BarracksRecruitmentProjectionSource
     COMMAND, RECRUIT_COMMAND = "p04m.crew_transfer.v1", "p04m.recruit_assign.v1"
     LEARN_COMMAND, DISMISS_COMMAND, BARRACKS_COMMAND = "p04m.learn_skill.v1", "p04m.dismiss.v1", "p04m.recruit_barracks.v1"
-    CAPACITY, BERTHS, PROFILE_BOUND = CAPACITY, BERTHS, 16384
+    CAPACITY, BERTHS, PROFILE_BOUND = CAPACITY, BERTHS, 262144
     # Passport training levels a stored identity may carry. v1 only ever hired 50.
     PASSPORT_LEVELS = (50,)
 
