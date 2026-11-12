@@ -72,7 +72,8 @@ fn wide_pitch_generated_profiles_are_supported_and_quantize_over_absolute(){
         let absolute=kind.source_aim().unwrap().envelope.absolute();let basic=kind.aim();
         assert_eq!(wire_pitch_range(kind).unwrap(),(absolute.min,absolute.max),"{}",entry.label);
         assert!(absolute.min<=basic.min_pitch&&basic.max_pitch<=absolute.max,"{}",entry.label);
-        if (absolute.min,absolute.max)!=(basic.min_pitch,basic.max_pitch){wide.push(entry.label.as_str());}
+        // CONTENT-0 3.3: every build is checked above; the pinned list names the stock builds.
+        if entry.stock&&(absolute.min,absolute.max)!=(basic.min_pitch,basic.max_pitch){wide.push(entry.label.as_str());}
     }
     wide.sort_unstable();
     // main and test_lab share the generated rows since the CONTENT-0 main transfer (owner 12.11).

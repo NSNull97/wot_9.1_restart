@@ -124,7 +124,11 @@ class BuildTable(unittest.TestCase):
     def test_rebuild_equals_committed_table(self):
         self.assertEqual(self.raw, generator.BUILDS.read_bytes())
         self.assertEqual(self.table["profile_table_sha256"], generator.sha(generator.TABLE.read_bytes()))
-        self.assertEqual(self.table["builds"], COUNTS["generated"])
+        # 12 520 generated builds less the 319 non-stock builds of the five legacy kinds (stock-only until they move
+        # to the generated path) = 12 201; 12 196 runtime entries (the 5 legacy stock builds keep their closed arms).
+        self.assertEqual(self.table["builds"], 12201)
+        refused = [e for v in self.table["vehicles"].values() for e in v["builds"] if e["refusal"] == "LEGACY_KIND_BUILD_UNSUPPORTED"]
+        self.assertEqual(len(refused), 319)
 
     def test_every_generated_build_is_copied_from_the_table(self):
         by_label = {e["label"]: (v, e) for v in self.table["vehicles"].values() for e in v["builds"] if "label" in e}
