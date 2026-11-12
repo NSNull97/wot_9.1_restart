@@ -1025,14 +1025,16 @@ def build_table(original, profile_raw=None):
     return raw, parts, rows
 
 
-def physics_definitions(table):
-    """Embedded C# definitions of every generated non-legacy kind (exact canonical rows)."""
+def physics_definitions(table, builds=()):
+    """Embedded C# definitions of every generated non-legacy kind (exact canonical rows), then (CONTENT-0 3.3) every
+    generated non-stock build `(label, row)` in label order; a build's definition kind is its label."""
     rows = []
-    for r in table["vehicles"]:
-        if r["status"] != "generated" or r["kind"] in LEGACY_SUFFIXES:
+    stock = [(r.get("kind"), r) for r in table["vehicles"]]
+    for kind, r in stock + sorted(builds, key=lambda b: b[0]):
+        if r["status"] != "generated" or kind in LEGACY_SUFFIXES:
             continue
         m = r["movement"]
-        rows.append(dict(kind=r["kind"], vehicle=r["vehicle_id"], physics=r["physics"], handling=r["handling"], mapping=MAPPING,
+        rows.append(dict(kind=kind, vehicle=r["vehicle_id"], physics=r["physics"], handling=r["handling"], mapping=MAPPING,
             source=dict(weights_kg=r["weights_kg"], speed_limits_kmh=m["speed_limits_kmh"], engine_power_hp=m["engine_power_hp"],
                         brake_force_source=m["brake_force_source"], yaw_rate_degrees_s=m["chassis_rotation_deg_s"],
                         carrying_point=m["carrying_point"], hull_aabb=r["hull_aabb"],
@@ -1140,7 +1142,7 @@ def export(original, out, update=False):
     raw, bundles = build(original)
     committed = TABLE.read_bytes() if TABLE.is_file() else None
     require(update or committed is None or committed == raw, "generated table differs from committed; use --update")
-    builds_raw, parts, _ = build_table(original, raw)
+    builds_raw, parts, build_rows = build_table(original, raw)
     out.mkdir()
     (out / "bundles").mkdir()
     for name, data in sorted(bundles.items()):
@@ -1161,7 +1163,8 @@ def export(original, out, update=False):
         BINDING.write_bytes(binding(raw))
         if QUALIFICATION.is_file():  # a first test_lab build: `qualify` writes the pins
             RUST_PINS.write_bytes(rust_pins())
-        PHYSICS_DEFINITIONS.write_bytes(canonical(physics_definitions(json.loads(raw))) + b"\n")
+        extra = [(label, row) for label, row in build_rows if label != row["kind"]]
+        PHYSICS_DEFINITIONS.write_bytes(canonical(physics_definitions(json.loads(raw), extra)) + b"\n")
     table = json.loads(raw)
     counts = {}
     for row in table["vehicles"]:
@@ -1187,8 +1190,10 @@ def binding(raw):
 def qualification_record(out_dir, table_raw):
     """Closed record of a worker `--qualify-generated-profiles` run: every embedded
     definition qualified once, file bytes/SHA and native getter bits."""
-    table = json.loads(table_raw)
-    definitions = physics_definitions(table)
+    # CONTENT-0 3.3: the committed definitions file (stock kinds, then every non-stock build) is the expectation.
+    definitions = json.loads(PHYSICS_DEFINITIONS.read_bytes())
+    stock = physics_definitions(json.loads(table_raw))["profiles"]
+    require(definitions["profiles"][:len(stock)] == stock, "definitions do not start with the stock table")
     expected = {row["kind"]: definition_sha256(row) for row in definitions["profiles"]}
     manifest = json.loads((out_dir / "qualified-manifest.json").read_bytes())
     require(manifest["version"] == 1 and manifest["policy"] == GENERATED_POLICY and manifest["battle_admission"] is False,
@@ -1257,11 +1262,18 @@ def check(path=TABLE):
     require([r["vehicle_id"] for r in table["vehicles"]] == sorted(seen), "vehicle order")
     require(path != TABLE or BINDING.read_bytes() == binding(raw), "generated binding differs from table")
     if path == TABLE:
-        definitions = canonical(physics_definitions(table)) + b"\n"
-        require(PHYSICS_DEFINITIONS.read_bytes() == definitions, "generated physics definitions differ from table")
+        # CONTENT-0 3.3: stock definitions first, then one per non-stock build of the build table, in label order.
+        definitions = PHYSICS_DEFINITIONS.read_bytes()
+        loaded = json.loads(definitions)
+        stock = physics_definitions(table)["profiles"]
+        builds = json.loads(BUILDS.read_bytes())
+        extra = sorted(e["label"] for v in builds["vehicles"].values() for e in v["builds"] if "label" in e and not e["stock"])
+        require(canonical(loaded) + b"\n" == definitions and loaded["profiles"][:len(stock)] == stock
+                and [r["kind"] for r in loaded["profiles"][len(stock):]] == extra
+                and builds["profile_table_sha256"] == sha(raw), "generated physics definitions differ from table/builds")
         record = json.loads(QUALIFICATION.read_bytes())
         require(record["schema"] == QUALIFICATION_SCHEMA and record["definitions_sha256"] == sha(definitions)
-                and [r["kind"] for r in record["profiles"]] == sorted(r["kind"] for r in physics_definitions(table)["profiles"]),
+                and [r["kind"] for r in record["profiles"]] == sorted(r["kind"] for r in loaded["profiles"]),
                 "qualification record does not cover the current physics definitions; run qualify")
         require(RUST_PINS.read_bytes() == rust_pins(), "gateway pins differ from table/qualification")
     return dict(status="PASS", table_sha256=sha(raw), vehicles=len(seen),
