@@ -871,9 +871,10 @@ impl Config {
                     wire_revision:i64,request:&crate::research_service091::Request)->io::Result<AmmoReply> {
         if !self.research_service || !self.ammo_service {return Err(invalid("research service is not enabled"));}
         let body=crate::research_service091::service_request(&profile.account_id,profile.database_id,command_key,expected_revision,wire_revision,request)?;
-        let (status,bytes)=self.post("/internal/native/research",&body,Duration::from_secs(20))?;
+        // CONTENT-0: a purchase with crew/base ammunition answers with a chain of diffs.
+        let (status,bytes)=self.post_with_budget("/internal/native/research",&body,Duration::from_secs(20),MAX_RESEARCH_REPLY,MAX_RESEARCH_REPLY+4096)?;
         if status!=200 {return Err(invalid("research service HTTP failure; recover outcome by fresh login"));}
-        service_reply(&bytes,profile,command_key,expected_revision,wire_revision,"researched")
+        research_reply(&bytes,profile,command_key,expected_revision,wire_revision)
     }
 
     pub fn transfer_crew(&self,profile:&Profile,command_key:&str,expected_revision:u64,
@@ -888,7 +889,11 @@ impl Config {
 }
 
 pub struct AmmoReply {pub serviced:bool,pub revision:u64,pub wire_revision:i64,
-    pub update:Vec<u8>,pub recruitment:Option<crate::crew_barracks091::Recruitment>,pub replayed:bool,pub result_code:i32,
+    pub update:Vec<u8>,
+    /// CONTENT-0 research purchase only: further Account.update diffs after `update`, each
+    /// advancing the native cursor by one (wire_revision = source + 1 + len). Empty elsewhere.
+    pub extra_updates:Vec<Vec<u8>>,
+    pub recruitment:Option<crate::crew_barracks091::Recruitment>,pub replayed:bool,pub result_code:i32,
     pub(crate) pool:Option<std::sync::Arc<crate::p04m_companion091::Binding>>,
     pub(crate) settings:Option<crate::int_settings091::Map>}
 
@@ -954,7 +959,45 @@ fn service_reply_value(value:BTreeMap<String,Value>,profile:&Profile,key:&str,ex
     }
     if serviced {crate::ammo_service091::response(1,&update)?;}
     else if !update.is_empty() || replayed {return Err(invalid("rejected ammo reply changed state"));}
-    Ok(AmmoReply{settings:None,serviced,revision,wire_revision,update,recruitment:None,replayed,result_code:result_code as i32,pool:None})
+    Ok(AmmoReply{settings:None,serviced,revision,wire_revision,update,extra_updates:Vec::new(),recruitment:None,replayed,result_code:result_code as i32,pool:None})
+}
+
+/// Research replies keep every older field; a CONTENT-0 equipped purchase may add
+/// `extra_update_hex`, 1..=MAX_CHAINED_UPDATES further diffs, each within the measured
+/// 240-byte Account.update bound and the same pickle validator. The chain is only
+/// admitted on success and moves the native cursor once per diff.
+pub const MAX_RESEARCH_REPLY:usize=16384;
+pub const MAX_CHAINED_UPDATES:usize=11;
+fn delta_hex(hex:&str)->io::Result<Vec<u8>> {
+    if hex.is_empty() || hex.len()>crate::ammo_service091::MAX_DELTA_BYTES*2 || hex.len()%2!=0
+        || !hex.bytes().all(|b|b.is_ascii_digit() || (b'a'..=b'f').contains(&b)) {
+        return Err(invalid("research chained delta encoding"));
+    }
+    let delta=(0..hex.len()).step_by(2).map(|i|u8::from_str_radix(&hex[i..i+2],16).map_err(|_|invalid("research chained delta hex"))).collect::<io::Result<Vec<u8>>>()?;
+    crate::ammo_service091::update_body(&delta)?;Ok(delta)
+}
+fn research_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::Result<AmmoReply> {
+    if bytes.len()>MAX_RESEARCH_REPLY {return Err(invalid("research reply size"));}
+    let Bounded::<REQUEST_FIELDS>(mut value)=serde_json::from_slice(bytes).map_err(|_|invalid("invalid bounded JSON object"))?;
+    let extra=match value.remove("extra_update_hex") {
+        None=>Vec::new(),
+        Some(Value::Array(rows)) if (1..=MAX_CHAINED_UPDATES).contains(&rows.len())=>
+            rows.iter().map(|row|row.as_str().ok_or_else(||invalid("research chained delta type")).and_then(delta_hex)).collect::<io::Result<Vec<_>>>()?,
+        Some(_)=>return Err(invalid("research chained delta list")),
+    };
+    let keys=["status","account_id","native_database_id","command_key","revision","wire_revision","update_hex","replayed","result_code"];
+    if value.len()!=keys.len() || keys.iter().any(|k|!value.contains_key(*k)) {return Err(invalid("JSON field contract"));}
+    let chained=extra.len() as i64;
+    if chained>0 {
+        // Only a success may chain; the shared check below then sees the first diff's cursor.
+        let last=wire.checked_add(1+chained).ok_or_else(||invalid("research chain cursor"))?;
+        if text(&value,"status")?!="researched" || value["wire_revision"].as_i64()!=Some(last) || last>=i64::from(i32::MAX) {
+            return Err(invalid("research chain cursor/status"));
+        }
+        value.insert("wire_revision".to_owned(),Value::from(wire+1));
+    }
+    let mut reply=service_reply_value(value,profile,key,expected,wire,"researched")?;
+    reply.wire_revision+=chained;reply.extra_updates=extra;Ok(reply)
 }
 
 /// Native ConnectionManager.connect115, checked RU basic branch only. Other
@@ -1190,6 +1233,34 @@ mod tests {
         assert!(battle_projection_bytes(bytes.as_bytes(),&owner,14,&sha).is_err());
     }
     fn username()->Vec<u8> {br#"{"login":"registered@example.test","auth_method":"basic","session":"0123456789abcdef0123456789abcdef","auth_realm":"RU","game":"wot","temporary":"1"}"#.to_vec()}
+    #[test] fn content0_research_reply_chains_bounded_diffs_on_success_only() {
+        let profile=Profile{account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:17,name:"own_user".into(),fixture_dir:PathBuf::new()};
+        let hex=|w:u8|[b"\x80\x02}(U\x07prevRevK".as_slice(),&[w],b"U\x03revK",&[w+1],b"u."].concat().iter().map(|b|format!("{b:02x}")).collect::<String>();
+        let good=serde_json::json!({"status":"researched","account_id":profile.account_id,"native_database_id":17,
+            "command_key":"p09e:k:1","revision":10,"wire_revision":4,"update_hex":hex(1),"replayed":false,"result_code":0,
+            "extra_update_hex":[hex(2),hex(3)]});
+        let encode=|value:&Value|serde_json::to_vec(value).unwrap();
+        let reply=research_reply(&encode(&good),&profile,"p09e:k:1",9,1).unwrap();
+        assert!(reply.serviced);assert_eq!((reply.revision,reply.wire_revision,reply.extra_updates.len()),(10,4,2));
+        // Without the chain the old single-diff contract is unchanged.
+        let mut plain=good.clone();plain.as_object_mut().unwrap().remove("extra_update_hex");plain["wire_revision"]=2.into();
+        let reply=research_reply(&encode(&plain),&profile,"p09e:k:1",9,1).unwrap();
+        assert_eq!((reply.wire_revision,reply.extra_updates.len()),(2,0));
+        for (field,bad) in [("wire_revision",serde_json::json!(2)),("wire_revision",serde_json::json!(5)),
+            ("extra_update_hex",serde_json::json!([])),("extra_update_hex",serde_json::json!("ab")),
+            ("extra_update_hex",serde_json::json!([1])),("extra_update_hex",serde_json::json!(["8002636f732e"])),
+            ("extra_update_hex",serde_json::json!(["00".repeat(241)])),
+            ("extra_update_hex",serde_json::json!(vec![hex(2);12]))] {
+            let mut wrong=good.clone();wrong[field]=bad;
+            assert!(research_reply(&encode(&wrong),&profile,"p09e:k:1",9,1).is_err(),"{field}");
+        }
+        let mut rejected=good.clone();rejected["status"]="rejected".into();rejected["revision"]=9.into();rejected["wire_revision"]=1.into();
+        rejected["update_hex"]="".into();rejected["result_code"]=(-10).into();
+        assert!(research_reply(&encode(&rejected),&profile,"p09e:k:1",9,1).is_err(),"a refusal never chains");
+        rejected.as_object_mut().unwrap().remove("extra_update_hex");
+        assert!(!research_reply(&encode(&rejected),&profile,"p09e:k:1",9,1).unwrap().serviced);
+        assert!(research_reply(&vec![b' ';MAX_RESEARCH_REPLY+1],&profile,"p09e:k:1",9,1).is_err());
+    }
     #[test] fn ammunition_reply_is_bound_to_identity_command_and_both_revisions() {
         let profile=Profile{account_id:"12345678-1234-4234-8234-123456789abc".into(),database_id:17,name:"own_user".into(),fixture_dir:PathBuf::new()};
         let delta=b"\x80\x02}(U\x07prevRevK\x01U\x03revK\x02u.";

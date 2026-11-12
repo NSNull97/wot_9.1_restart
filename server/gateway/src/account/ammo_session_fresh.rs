@@ -16,10 +16,12 @@ impl std::fmt::Display for Containment{
 impl std::error::Error for Containment{}
 
 fn known_reply(revision:u64,wire:i64,r:&identity091::AmmoReply)->io::Result<()>{
+    // CONTENT-0: a research purchase may chain further diffs, one cursor step each.
+    let chained=r.extra_updates.len();
     let next_revision=if r.serviced{revision.checked_add(1).ok_or_else(invalid)?}else{revision};
-    let next_wire=if r.serviced{wire.checked_add(1).ok_or_else(invalid)?}else{wire};
-    if r.revision!=next_revision||r.wire_revision!=next_wire||r.pool.is_some()
-        ||!r.serviced&&(!r.update.is_empty()||r.recruitment.is_some()){return Err(invalid());}
+    let next_wire=if r.serviced{wire.checked_add(1+chained as i64).ok_or_else(invalid)?}else{wire};
+    if r.revision!=next_revision||r.wire_revision!=next_wire||r.pool.is_some()||chained>identity091::MAX_CHAINED_UPDATES
+        ||!r.serviced&&(!r.update.is_empty()||r.recruitment.is_some()||chained>0){return Err(invalid());}
     Ok(())
 }
 
@@ -182,7 +184,7 @@ impl Flow {
     fn publish(&self,s:&mut Session,request:i16)->io::Result<bool>{
         if !self.anchor.current(s){return Err(invalid());}
         let reply=self.known.as_ref().ok_or_else(invalid)?;
-        let count=if reply.serviced{2}else{1};
+        let count=if reply.serviced{2+reply.extra_updates.len()}else{1};
         if s.outbox.len()+count>128{return Ok(false);}
         let mut next=s.clone();
         let pool=if reply.serviced{
@@ -196,7 +198,7 @@ impl Flow {
             fresh.pool.clone()
         }else{self.anchor.pool.clone()};
         let copy=identity091::AmmoReply{settings:None,serviced:reply.serviced,revision:reply.revision,wire_revision:reply.wire_revision,
-            update:reply.update.clone(),recruitment:reply.recruitment.clone(),replayed:reply.replayed,
+            update:reply.update.clone(),extra_updates:reply.extra_updates.clone(),recruitment:reply.recruitment.clone(),replayed:reply.replayed,
             result_code:reply.result_code,pool:Some(pool)};
         // apply validates delta/recruitment against OLD pool, stages0x57 before
         // callback, drains on its own clone, preserves prefix/seen/native wire.
@@ -273,8 +275,14 @@ mod tests{
     // Scalar boundary tests only. These do not manufacture ownership/Fresh
     // and are deliberately separate from the required actual HTTP producer.
     fn reply(serviced:bool,revision:u64,wire_revision:i64)->identity091::AmmoReply{
-        identity091::AmmoReply{settings:None,serviced,revision,wire_revision,update:Vec::new(),recruitment:None,
+        identity091::AmmoReply{settings:None,serviced,revision,wire_revision,update:Vec::new(),extra_updates:Vec::new(),recruitment:None,
             replayed:false,result_code:if serviced{0}else{-10},pool:None}
+    }
+    #[test]fn content0_chained_research_diffs_move_the_cursor_once_each(){
+        let mut r=reply(true,14,10);r.extra_updates=vec![vec![0x80];2];known_reply(13,7,&r).unwrap();
+        r.wire_revision=8;assert!(known_reply(13,7,&r).is_err());
+        let mut rejected=reply(false,13,7);rejected.extra_updates=vec![vec![0x80]];assert!(known_reply(13,7,&rejected).is_err());
+        let mut long=reply(true,14,7+1+12);long.extra_updates=vec![vec![0x80];12];assert!(known_reply(13,7,&long).is_err());
     }
     #[test]fn garage_fresh32_known_success_and_replay_preserve_both_exact_cursors(){
         let mut r=reply(true,14,8);known_reply(13,7,&r).unwrap();

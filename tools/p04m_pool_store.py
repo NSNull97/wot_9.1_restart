@@ -748,6 +748,118 @@ class PoolStore(ResultsStore):
         value["ammunition"].sort(key=lambda row: row["vehicle_id"])
         return value
 
+    # CONTENT-0: Shop.buyVehicle with BUY_VEHICLE_FLAG.CREW and/or SHELLS (see
+    # docs/research/CONTENT0_BUY_WITH_CREW.md). Free like the rest of P09E: the crew
+    # comes from the account's lifetime allocator at the tariff level, the base
+    # ammunition (0.9.1 getDefaultAmmoForGun) is bought free and loaded; the shared
+    # depot is not touched. All of it inside the research purchase transaction.
+    def _equipment_plan(self, before, research, payload):
+        """Pure: new crew rows and loaded counts of one equipped purchase."""
+        require(self.pool_active() and "pool" in before, "AUTOBUY_CREW_SHELLS_UNSUPPORTED")
+        account = before["account_id"]
+        require(account == self.pool_account, "FOREIGN_ACCOUNT")
+        old = {r["vehicle_inventory_id"] for r in before["research"]["vehicles"]}
+        new = [r for r in research["vehicles"] if r["vehicle_inventory_id"] not in old]
+        require(len(new) == 1 and new[0]["vehicle_id"] == payload["vehicle_id"], "CORRUPT_STORE")
+        owned = new[0]
+        p = self.registry.by_vehicle.get(owned["vehicle_id"])
+        require(p is not None, "UNSUPPORTED_MOUNT")
+        members, loaded = [], {}
+        if payload["crew_role_level"]:
+            contract = self._crew_contract(account)
+            crew = dict(before["crew_inventory"], vehicles=self._vehicle_map(account, research))
+            after = contract.plan_purchase(crew, owned["native_id"], payload["crew_role_level"], account_id=account)
+            members = [r for r in after["members"] if r["native_id"] >= crew["next_native_id"]]
+        if payload["load_shells"]:
+            from content0_default_ammo import default_ammo
+            mount = self.mounts[p.assembly_id]
+            source = default_ammo(p.kind)
+            require(source is not None, "AMMUNITION_CONFIGURATION_UNSUPPORTED")
+            capacity, counts = source
+            by_cd = {self.shells[key].native_compact_id: key for key in mount.shell_ids}
+            require(capacity == mount.capacity and set(counts) == set(by_cd) and sum(counts.values()) <= capacity,
+                    "AMMUNITION_CONFIGURATION_UNSUPPORTED")
+            loaded = {by_cd[cd]: count for cd, count in counts.items()}
+        return {"vehicle_native_id": owned["native_id"], "crew_role_level": payload["crew_role_level"],
+                "members": members, "loaded": loaded}
+
+    def _apply_purchase_crew(self, crew, equipment, contract):
+        value = deepcopy(crew)
+        rows = equipment["members"]
+        require(type(rows) is list and [r["native_id"] for r in rows]
+                == list(range(value["next_native_id"], value["next_native_id"] + len(rows))), "CORRUPT_STORE")
+        value["members"] = sorted(value["members"] + deepcopy(rows), key=lambda r: r["native_id"])
+        value["next_native_id"] += len(rows)
+        value.update(free_recruitment_left=contract.CAPACITY + 1 - value["next_native_id"],
+                     configuration_revision=value["configuration_revision"] + 1)
+        native_crew(value, contract)
+        return value
+
+    def _expected_aggregate(self, before, research, revision, equipment):
+        value = self._next_aggregate(before, research, revision)
+        if equipment is None: return value
+        require("pool" in before and type(equipment) is dict
+                and set(equipment) == {"vehicle_native_id", "crew_role_level", "members", "loaded"}, "CORRUPT_STORE")
+        if equipment["members"]:
+            value["crew_inventory"] = self._apply_purchase_crew(value["crew_inventory"], equipment, self._crew_contract(before["account_id"]))
+        if equipment["loaded"]:
+            owned = next(r for r in research["vehicles"] if r["native_id"] == equipment["vehicle_native_id"])
+            row = next(r for r in value["ammunition"] if r["vehicle_id"] == owned["vehicle_inventory_id"])
+            require(set(row["loaded"]) == set(equipment["loaded"]), "CORRUPT_STORE")
+            row["loaded"] = dict(equipment["loaded"])
+        return value
+
+    def _equip_purchase(self, account, before, research, payload):
+        equipment = self._equipment_plan(before, research, payload)
+        c = self.connection
+        require(c.in_transaction, "POOL_TRANSACTION_REQUIRED")
+        if equipment["members"]:
+            contract = self._crew_contract(account)
+            crew = dict(before["crew_inventory"], vehicles=self._vehicle_map(account, research))
+            after = self._apply_purchase_crew(crew, equipment, contract)
+            self._persist_crew_members(account, crew, after, None, before["revision"] + 1)
+            require(c.execute("UPDATE p04d_crew_meta SET next_native_id=?,free_left=?,configuration_revision=? WHERE account_id=? AND configuration_revision=?",
+                (after["next_native_id"], after["free_recruitment_left"], after["configuration_revision"], account, crew["configuration_revision"])).rowcount == 1, "STALE_CREW")
+            self._failpoint("after_purchase_crew")
+        if equipment["loaded"]:
+            self._ensure_pool_rows(account)
+            owned = next(r for r in research["vehicles"] if r["native_id"] == equipment["vehicle_native_id"])
+            mount = self.mounts[self.registry.by_vehicle[owned["vehicle_id"]].assembly_id]
+            layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, equipment["loaded"][key])]
+            require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?",
+                (canonical(equipment["loaded"]).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
+            require(c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?",
+                (json.dumps(layout), account, owned["native_id"])).rowcount == 1, "CORRUPT_STORE")
+        return equipment
+
+    def purchase_updates(self, before, final, response, wire_revision):
+        """Native Account.update chain of one equipped purchase: the vehicle record, one
+        tankman (inventory 8 + the vehicle's crew list + freeTMenLeft) per part, then the
+        loaded shells/shellsLayout, packed greedily into <=240-byte diffs."""
+        from p09e_research_projection import delta_tree, chained_updates
+        from p09e_research_store import EQUIPPED_UPDATES
+        equipment = response["details"]["equipment"]
+        native = equipment["vehicle_native_id"]
+        parts = []
+        if equipment["members"]:
+            _, seats = native_crew(final["crew_inventory"], self._crew_contract(before["account_id"]))
+            slots, left = [None] * len(seats[native]), before["crew_inventory"]["free_recruitment_left"]
+            for row in sorted(equipment["members"], key=lambda r: r["seat"]):
+                slots[row["seat"]] = row["native_id"]; left -= 1
+                parts.append({"inventory": {8: {"vehicle": {row["native_id"]: native},
+                                                "compDescr": {row["native_id"]: bytes.fromhex(row["descriptor_hex"])}},
+                                            1: {"crew": {native: list(slots)}}},
+                              "stats": {"freeTMenLeft": left}})
+            require(slots == seats[native] and left == final["crew_inventory"]["free_recruitment_left"], "INVALID_NATIVE_PROJECTION")
+        if equipment["loaded"]:
+            owned = next(r for r in final["research"]["vehicles"] if r["native_id"] == native)
+            mount = self.mounts[self.registry.by_vehicle[owned["vehicle_id"]].assembly_id]
+            layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, equipment["loaded"][key])]
+            parts.append({"inventory": {1: {"shells": {native: list(layout)}, "shellsLayout": {native: {
+                (mount.turret_native_compact_id, mount.gun_native_compact_id): list(layout)}}}}})
+        first = delta_tree(self.catalog, before["research"], final["research"], wire_revision)
+        return chained_updates(first, parts, wire_revision, EQUIPPED_UPDATES)
+
     def _pool_ammo_response(self, request, revision, depot):
         mount, desired = self._validate_layout(request["layout"])
         native, layout = request["layout"][1], request["layout"][3:3 + request["layout"][2]]

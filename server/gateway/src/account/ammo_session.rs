@@ -267,7 +267,7 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
         if let Command::Settings(request)=&dispatched {
             // A store failure is the client's refusal, not a broken session.
             let stored=config.int_settings(&profile,&request.change).map_err(|error|println!("INT_SETTINGS_FAILED error={error}")).ok();
-            let _=sender.send(Ok(identity091::AmmoReply{serviced:stored.is_some(),revision,wire_revision,update:Vec::new(),recruitment:None,replayed:false,
+            let _=sender.send(Ok(identity091::AmmoReply{serviced:stored.is_some(),revision,wire_revision,update:Vec::new(),extra_updates:Vec::new(),recruitment:None,replayed:false,
                 result_code:0,pool:None,settings:stored}));
             return;
         }
@@ -311,10 +311,20 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
     let state=next.ammo_service.as_mut().ok_or_else(invalid)?;
     if state.inflight.as_ref().map(Command::id)!=Some(request_id) {return Err(invalid());}
     let kind=state.inflight.as_ref().ok_or_else(invalid)?.kind();
+    // CONTENT-0: only a research purchase may chain further diffs (one cursor step each).
+    let chained=reply.extra_updates.len();
+    if chained>0 && (!reply.serviced || chained>identity091::MAX_CHAINED_UPDATES
+        || !matches!(state.inflight,Some(Command::Research(_))) || reply.recruitment.is_some()) {return Err(invalid());}
     let bodies=if reply.serviced {
         if reply.revision!=state.revision.checked_add(1).ok_or_else(invalid)?
-            || reply.wire_revision!=state.wire_revision.checked_add(1).ok_or_else(invalid)? {return Err(invalid());}
+            || reply.wire_revision!=state.wire_revision.checked_add(1+chained as i64).ok_or_else(invalid)? {return Err(invalid());}
         let mut bodies=codec::response(request_id,&reply.update)?;
+        if chained>0 {
+            // Every diff before the one success callback, in cursor order.
+            let success=bodies.pop().ok_or_else(invalid)?;
+            for delta in &reply.extra_updates {bodies.push(codec::update_body(delta)?);}
+            bodies.push(success);
+        }
         match (state.inflight.as_ref(),reply.recruitment.as_ref()) {
             (Some(Command::Barracks(request)),Some(member))=>{
                 if let Some(pool)=state.pool.as_deref(){pool.validate_recruitment(member,*request,state.wire_revision,&reply.update)?;}
@@ -420,7 +430,7 @@ mod tests {
     fn crew_reply(revision:u64,wire:i64)->identity091::AmmoReply {
         let mut delta=b"\x80\x02}(U\x07prevRevJ".to_vec();delta.extend((wire as i32-1).to_le_bytes());
         delta.extend(b"U\x03revJ");delta.extend((wire as i32).to_le_bytes());delta.extend(b"u.");
-        identity091::AmmoReply{settings:None,serviced:true,revision,wire_revision:wire,update:delta,recruitment:None,pool:None,replayed:false,result_code:0}
+        identity091::AmmoReply{settings:None,serviced:true,revision,wire_revision:wire,update:delta,extra_updates:Vec::new(),recruitment:None,pool:None,replayed:false,result_code:0}
     }
     fn ready_transfer(now:Instant)->Session {
         let mut s=ready_crew(now);s.ammo_service=Some(State::new(codec::Metadata{revision:8,wire_revision:1},true).with_transfer(true));s
@@ -455,7 +465,7 @@ mod tests {
     fn settings_session(now:Instant)->Session {let mut s=ready_research(now);s.int_settings=Some(Default::default());s}
     fn stored(session:&mut Session,id:i16,map:Option<crate::int_settings091::Map>)->io::Result<()> {
         let state=session.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
-        apply(session,id,identity091::AmmoReply{settings:map,serviced:true,revision:13,wire_revision:1,update:vec![],recruitment:None,pool:None,replayed:false,result_code:0})
+        apply(session,id,identity091::AmmoReply{settings:map,serviced:true,revision:13,wire_revision:1,update:vec![],extra_updates:vec![],recruitment:None,pool:None,replayed:false,result_code:0})
     }
     fn sent(session:&mut Session,now:Instant)->Vec<u8> {transport091::parse_interactive(&session.tx.due(now,session.rx).unwrap().unwrap().2).unwrap().body}
     #[test]fn ui01_without_the_key_settings_stay_refused(){
@@ -533,7 +543,7 @@ mod tests {
     }
     fn reply(serviced:bool)->identity091::AmmoReply {
         identity091::AmmoReply{settings:None,serviced,revision:if serviced{6}else{5},wire_revision:if serviced{2}else{1},
-            recruitment:None,
+            extra_updates:vec![],recruitment:None,
             update:if serviced {b"\x80\x02}(U\x07prevRevK\x01U\x03revK\x02u.".to_vec()}else{vec![]},
             pool:None,replayed:false,result_code:if serviced{0}else{-10}}
     }
@@ -613,6 +623,25 @@ mod tests {
         let state=s.ammo_service.as_ref().unwrap();assert_eq!(state.revision,14);assert_eq!(state.wire_revision,2);
         assert!(state.inflight.is_none());assert_eq!(state.pending.len(),1);
         assert_eq!(s.tx.len(),2); // Account update then success, existing reliable ordering.
+    }
+
+    #[test] fn content0_equipped_purchase_sends_each_chained_diff_before_one_success() {
+        let now=Instant::now();let mut s=ready_research(now);
+        let buy=research_codec::Request{id:226,command:301,arguments:vec![research_codec::SHOP_REVISION,3329,17,2]};
+        enqueue_research(&mut s,buy,&mut vec![]).unwrap();
+        let state=s.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+        let diff=|w:i32|{let mut d=b"\x80\x02}(U\x07prevRevJ".to_vec();d.extend(w.to_le_bytes());d.extend(b"U\x03revJ");d.extend((w+1).to_le_bytes());d.extend(b"u.");d};
+        // A cursor that skips a chained diff is refused without any queued body.
+        let mut wrong=crew_reply(14,3);wrong.update=diff(1);wrong.extra_updates=vec![diff(2),diff(3)];
+        assert!(apply(&mut s,226,wrong).is_err());assert_eq!(s.tx.len(),0);
+        let mut reply=crew_reply(14,4);reply.update=diff(1);reply.extra_updates=vec![diff(2),diff(3)];
+        apply(&mut s,226,reply).unwrap();
+        let state=s.ammo_service.as_ref().unwrap();assert_eq!((state.revision,state.wire_revision),(14,4));
+        assert_eq!(s.tx.len(),4); // three Account.update diffs, then the one success callback
+        // A chain is never accepted for a non-research command.
+        let mut t=ready_transfer(now);enqueue_transfer(&mut t,transfer_request(226),&mut vec![]).unwrap();
+        let state=t.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
+        let mut chained=crew_reply(9,3);chained.extra_updates=vec![diff(2)];assert!(apply(&mut t,226,chained).is_err());
     }
 
     #[test] fn research_invalid_options_return_unavailable_without_writer() {
@@ -732,7 +761,7 @@ mod tests {
         }
         let mut s=ready_transfer(now);enqueue_transfer(&mut s,transfer_request(226),&mut vec![]).unwrap();
         let state=s.ammo_service.as_mut().unwrap();state.inflight=state.pending.pop_front();
-        apply(&mut s,226,identity091::AmmoReply{settings:None,serviced:false,revision:8,wire_revision:1,update:vec![],recruitment:None,pool:None,replayed:false,result_code:-10}).unwrap();
+        apply(&mut s,226,identity091::AmmoReply{settings:None,serviced:false,revision:8,wire_revision:1,update:vec![],extra_updates:vec![],recruitment:None,pool:None,replayed:false,result_code:-10}).unwrap();
         assert_eq!(s.ammo_service.as_ref().unwrap().revision,8);
     }
 
@@ -957,7 +986,7 @@ mod tests {
         let mut next=ready_crew(now);next.id=2;let clean=next.ammo_service.clone();
         sender.send(Ok(crew_reply(7,2))).unwrap();complete(Some(&mut next),&mut slot).unwrap();
         assert_eq!(next.ammo_service,clean);assert_eq!(next.tx.len(),0);
-        apply(&mut session,226,identity091::AmmoReply{settings:None,serviced:false,revision:6,wire_revision:1,update:vec![],recruitment:None,pool:None,replayed:false,result_code:-10}).unwrap();
+        apply(&mut session,226,identity091::AmmoReply{settings:None,serviced:false,revision:6,wire_revision:1,update:vec![],extra_updates:vec![],recruitment:None,pool:None,replayed:false,result_code:-10}).unwrap();
         assert_eq!(session.ammo_service.as_ref().unwrap().revision,6);
         let clear=session.tx.due(now,session.rx).unwrap().unwrap().2;
         assert_eq!(transport091::parse_interactive(&clear).unwrap().body,crate::hangar091::unavailable_response(226).unwrap());
@@ -1099,10 +1128,10 @@ mod tests {
         member.validate_delta(request,1,&delta).unwrap();
         let before=session.ammo_service.clone();
         for wrong in [None,Some(barracks_codec::Recruitment{tankman_id:13,..member.clone()})] {
-            let reply=identity091::AmmoReply{settings:None,serviced:true,revision:57,wire_revision:2,update:delta.clone(),recruitment:wrong,pool:None,replayed:false,result_code:0};
+            let reply=identity091::AmmoReply{settings:None,serviced:true,revision:57,wire_revision:2,update:delta.clone(),extra_updates:vec![],recruitment:wrong,pool:None,replayed:false,result_code:0};
             assert!(apply(&mut session,226,reply).is_err());assert_eq!(session.ammo_service,before);assert_eq!(session.tx.len(),0);
         }
-        let reply=identity091::AmmoReply{settings:None,serviced:true,revision:57,wire_revision:2,update:delta,recruitment:Some(member.clone()),pool:None,replayed:false,result_code:0};
+        let reply=identity091::AmmoReply{settings:None,serviced:true,revision:57,wire_revision:2,update:delta,extra_updates:vec![],recruitment:Some(member.clone()),pool:None,replayed:false,result_code:0};
         apply(&mut session,226,reply).unwrap();
         let first=session.tx.due(now,session.rx).unwrap().unwrap().2;let second=session.tx.due(now,session.rx).unwrap().unwrap().2;
         assert_eq!(transport091::parse_interactive(&first).unwrap().body[1],0x57);
