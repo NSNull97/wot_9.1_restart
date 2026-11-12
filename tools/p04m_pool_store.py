@@ -146,6 +146,14 @@ class PoolStore(ResultsStore):
         self.depot_cd = {self.depot_key[key]: shell.native_compact_id for key, shell in self.shells.items()}
         require(len(self.depot_cd) == len({shell.native_compact_id for shell in self.shells.values()}), "CORRUPT_STORE")
         self.depot_keys = tuple(sorted(self.depot_cd))
+        # CONTENT-0 2.6: the largest mounted capacity that can carry each depot shell, so the zero-economy floor
+        # covers a full load (M2 light: 1800 rounds) and not only the policy's 100.
+        self.depot_mount_capacity = {key: 0 for key in self.depot_keys}
+        for mount in self.mounts.values():
+            for shell_id in mount.shell_ids:
+                if shell_id in self.depot_key:
+                    key = self.depot_key[shell_id]
+                    self.depot_mount_capacity[key] = max(self.depot_mount_capacity[key], mount.capacity)
 
     def _pool_row(self):
         exists = self.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='p04m_schema'").fetchone()
@@ -365,9 +373,12 @@ class PoolStore(ResultsStore):
         if not self.pool_active(): return
         from p09e_research_store import ECONOMY_SHELL_MINIMUM
         self._ensure_pool_rows(account)
+        # The policy's shell_depot_minimum (100) stays the floor; a shell of a larger magazine/belt is topped up
+        # to that vehicle's full load (CONTENT-0 2.6, owner 12.11: the M2 light got 100 of 1800 rounds).
         for key in self.depot_keys:
+            floor = max(ECONOMY_SHELL_MINIMUM, self.depot_mount_capacity[key])
             require(self.connection.execute("UPDATE p09c_ammo_depot SET quantity=MAX(quantity,?) WHERE account_id=? AND shell_id=?",
-                (ECONOMY_SHELL_MINIMUM, account, key)).rowcount == 1, "CORRUPT_STORE")
+                (floor, account, key)).rowcount == 1, "CORRUPT_STORE")
 
     def _ensure_pool_rows(self, account):
         require(self.connection.in_transaction, "POOL_TRANSACTION_REQUIRED")

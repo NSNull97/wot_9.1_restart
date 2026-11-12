@@ -14,8 +14,11 @@ pub const STEP: Duration = Duration::from_millis(100);
 pub const MAX_COMMANDS: usize = 32;
 /// Storage ceiling; each immutable profile enforces its own admission limit.
 pub const MAX_SHOTS: usize = CAPACITY * 96;
-pub const MAX_AMMO_PER_ACTOR: usize = 160;
-pub const MAX_BATTLE_SHOTS: usize = MAX_ACTORS * MAX_AMMO_PER_ACTOR;
+/// CONTENT-0 2.6: the largest #717 gun load is 1800 rounds (M2 light, T23); was 160 before automatic guns.
+pub const MAX_AMMO_PER_ACTOR: usize = 2048;
+/// Shot journal ceiling of one battle (was 30 x 160 = 4800). Automatic-gun bots can spend far more than 160
+/// rounds each, so the ceiling is its own bound; a burst stops at it (World::shot_limit callers).
+pub const MAX_BATTLE_SHOTS: usize = 16384;
 /// Explicit laboratory policy: retained stock geometry blocks AP at a wreck.
 /// No penetration, material thickness or additional damage is inferred.
 pub const WRECK_POLICY_REVISION: &str = "test_lab-ms1-wreck-block-v1";
