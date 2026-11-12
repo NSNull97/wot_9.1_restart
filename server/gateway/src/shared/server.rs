@@ -2453,7 +2453,8 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
                     // Keep the existing native muzzle/sound cue and then send
                     // the original fixed showTracer callback in one reliable
                     // order. The start flag is committed with this clone.
-                    c.queue_private(&mut next.outbox,wire::shooting(shot.slot)?,&[shot.slot])?;
+                    // CONTENT-0 2.6: a later burst shell has no cue of its own (burst 0).
+                    if shot.burst>0 {c.queue_private(&mut next.outbox,wire::shooting_burst(shot.slot,shot.burst)?,&[shot.slot])?;}
                     c.queue_private(&mut next.outbox,wire::tracer_start(projectile)?,&[shot.slot])?;
                     c.tracer_started[index] = true;
                     tracer_starts.push((shot.sequence, shot.slot));

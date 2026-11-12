@@ -182,6 +182,20 @@ fn envelope(gun:&Value)->io::Result<SourceEnvelope> {
     SourceEnvelope::from_source(basic,extra("front")?,extra("back")?,transition,yaw).map_err(|_|bad("pitch/yaw envelope"))
 }
 
+/// Burst (count, interval) of a gun row. Rows without the test_lab fields
+/// (main) must have no burst; a burst row needs the test_lab feature.
+fn burst(g:&Value)->io::Result<(u8,f64)> {
+    if g["burst_count"].is_null() {
+        if g["burst"].as_bool()!=Some(false){return Err(bad("burst without count"));}
+        return Ok((1,0.));
+    }
+    let count=u8::try_from(u(&g["burst_count"])?).map_err(|_|bad("burst count"))?;
+    let interval=f(&g["burst_interval_seconds"])?;
+    if count==0||count>crate::p06t_armament091::MAX_BURST||count>1&&!cfg!(feature="test_lab")
+        ||count==1&&interval!=0.||count>1&&!(0.01..=2.).contains(&interval){return Err(bad("burst bounds"));}
+    Ok((count,interval))
+}
+
 fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
     if digest(table)!=TABLE_SHA256||digest(qualification)!=QUALIFICATION_SHA256 {return Err(bad("embedded table/qualification SHA"));}
     let table:Value=serde_json::from_slice(table).map_err(|_|bad("table JSON"))?;
@@ -209,13 +223,16 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
         let nation=u8::try_from(u(&row["native_nation_id"])?).map_err(|_|bad("nation"))?;
         let type_cd=u32::try_from(u(&identity["type_compact_id"])?).map_err(|_|bad("type"))?;
         let gun_cd=u32::try_from(u(&identity["module_compact_ids"]["gun"])?).map_err(|_|bad("gun"))?;
-        let clip=u8::try_from(u(&g["clip_count"])?).ok().filter(|c|(1..=6).contains(c)).ok_or_else(||bad("clip"))?;
+        // CONTENT-0 2.6: long clips and bursts of the automatic guns are test_lab rows only.
+        let max_clip=if cfg!(feature="test_lab"){crate::p06t_armament091::MAX_CLIP}else{6};
+        let clip=u8::try_from(u(&g["clip_count"])?).ok().filter(|c|(1..=max_clip).contains(c)).ok_or_else(||bad("clip"))?;
+        let (burst_count,burst_interval)=burst(g)?;
         let gun=GunProfile{mount:Mount::Generated(id),native_nation_id:nation,
             vehicle_type_compact_descr:u16::try_from(type_cd).map_err(|_|bad("type u16"))?,
             gun_compact_descr:u16::try_from(gun_cd).map_err(|_|bad("gun u16"))?,
             capacity:u16::try_from(u(&g["max_ammo"])?).map_err(|_|bad("capacity"))?,reload_seconds:f(&g["reload_seconds"])?,
             clip_count:clip,clip_interval_seconds:f(&g["clip_interval_seconds"])?,clip_from_mounted_source:g["clip_source"]=="MOUNTED_OR_SHARED",
-            burst_count:1,burst_interval_seconds:0.,additional_vehicle_qualification_required:false,shots:parsed.map(|(s,_)|s)};
+            burst_count,burst_interval_seconds:burst_interval,additional_vehicle_qualification_required:false,shots:parsed.map(|(s,_)|s)};
         let pivots_v=&row["pivots"];
         let pivots=[v3(&pivots_v["hull_position"])?,v3(&pivots_v["turret_position"])?,v3(&pivots_v["gun_position"])?];
         let env=envelope(g)?;
@@ -318,7 +335,10 @@ mod tests {
         for (i,e) in r.entries().iter().enumerate() {
             assert_eq!(e.id.get(),i);assert_eq!(r.by_label(&e.label),Some(e.id));
             assert!(VehicleKind::from_label(&e.label).is_none(),"{} shadows a legacy label",e.label);
-            assert!((1..=6).contains(&e.gun.clip_count)&&e.gun.burst_count==1,"{}",e.label);
+            if cfg!(feature="test_lab") {
+                assert!((1..=crate::p06t_armament091::MAX_CLIP).contains(&e.gun.clip_count)&&(1..=crate::p06t_armament091::MAX_BURST).contains(&e.gun.burst_count),"{}",e.label);
+                assert!(e.gun.burst_count==1||e.gun.clip_count>=e.gun.burst_count&&e.gun.burst_interval_seconds>0.,"{}",e.label);
+            } else {assert!((1..=6).contains(&e.gun.clip_count)&&e.gun.burst_count==1,"{}",e.label);}
             assert!(!e.crew.is_empty()&&e.max_hp>0&&e.gun.capacity>0,"{}",e.label);
         }
     }

@@ -163,11 +163,14 @@ pub struct DeathCause { pub attacker:usize,pub reason:u8,pub tick:u32 }
 /// One accepted server action, independent of native entity/method IDs. The
 /// laboratory never replenishes ammo, so its complete event history is bounded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct Shot { pub sequence: u32, pub slot: usize, pub tick: u32 }
+/// `burst`: the native showShooting count this shot announces (1 for a
+/// single shot, N for the first shell of an N-shell burst, 0 for a later
+/// burst shell whose muzzle effect the client already plays).
+pub struct Shot { pub sequence: u32, pub slot: usize, pub tick: u32, pub burst: u8 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Shot
 impl crate::bw_wire::Wire for Shot {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,slot,tick}=self;W::put(sequence,bw_o);W::put(slot,bw_o);W::put(tick,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,slot:W::get(bw_i)?,tick:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,slot,tick,burst}=self;W::put(sequence,bw_o);W::put(slot,bw_o);W::put(tick,bw_o);W::put(burst,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,slot:W::get(bw_i)?,tick:W::get(bw_i)?,burst:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -616,7 +619,9 @@ impl World {
         if self.mixed_profiles {
             // Preserve the accepted two-kind v1 ceiling; a curated roster may
             // raise it only to an actual mounted capacity of a bound actor.
-            self.expected_actors*self.actors.iter().map(|a|a.vehicle_kind().ammo_limit() as usize).max().unwrap_or(96).max(96)
+            // CONTENT-0 2.6: automatic guns carry up to 1800 shells; the journal
+            // ceiling stays MAX_BATTLE_SHOTS (a burst stops there, never wraps).
+            (self.expected_actors*self.actors.iter().map(|a|a.vehicle_kind().ammo_limit() as usize).max().unwrap_or(96).max(96)).min(MAX_BATTLE_SHOTS)
         } else { self.vehicle_kind.battle_shot_limit() }
     }
     pub fn new_for_roster(id:u64,now:Instant,map:crate::map_profile091::MapId,expected_actors:usize)->io::Result<Self> {
@@ -1255,34 +1260,13 @@ impl World {
                     };
                     for outcome in &result {
                         let accepted=match *outcome{
-                            fire::Outcome::AcceptedShot{ammo_remaining}=>Some((ammo_remaining,None)),
-                            fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{shell,remaining,..})=>Some((remaining,Some(shell))),
+                            fire::Outcome::AcceptedShot{ammo_remaining}=>Some((ammo_remaining,None,1)),
+                            fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{shell,remaining,burst,..})=>Some((remaining,Some(shell),burst)),
                             _=>None,
                         };
-                        if let Some((ammo_remaining,shell))=accepted {
+                        if let Some((ammo_remaining,shell,burst))=accepted {
                             if shots.len() >= self.shot_limit() || projectiles.len() >= self.shot_limit() { return Err(bad()); }
-                            let sequence = shots.len() as u32 + 1;
-                            // DISP-01: under the layered law the shot leaves the barrel line inside the aiming circle.
-                            let deviation=self.shot_deviation(&next,sequence)?;
-                            let projectile = if let Some(shell)=shell{Projectile::launch_deviated(sequence,slot,&next,now,self.shot_limit(),shell,deviation.map(|d|(d.r,d.theta)))?}
-                                else if self.mixed_profiles {Projectile::launch_for_limit(sequence,slot,&next,now,self.shot_limit())?}
-                                else {Projectile::launch(sequence, slot, &next, now)?};
-                            let elapsed_ticks = now.duration_since(self.started.ok_or_else(|| bad())?).as_millis() / 100;
-                            let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
-                                .ok_or_else(|| bad())?;
-                            if let Some(shell)=shell{
-                                let index=crate::p06t_shells091::profile(next.vehicle_kind().mount()).shots.iter().position(|source|*source==shell).ok_or_else(||bad())?;
-                                impact_trace.admission_shell(self.id,sequence,launch_tick,slot,counts_before.ok_or_else(||bad())?[index],ammo_remaining,shell)?;
-                            }else{impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;}
-                            impact_trace.launch(self.id, &projectile, launch_tick)?;
-                            if let Some(d)=deviation {
-                                if super::shot_trace::enabled(){super::shot_trace::shot(self.id,sequence,launch_tick,slot,next.vehicle_kind(),&projectile.shell.ok_or_else(||bad())?,d.angle,d.gun,d.seed,d.r,d.theta);}
-                                let spec=next.vehicle_kind().aim();let mult=next.devices.as_ref().map_or(1.,|c|f64::from(c.capabilities().dispersion_scale));let speed=next.speed;
-                                let (hull_yaw,turret_yaw)=(next.direction[0],next.aim.yaw);
-                                next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,mult);
-                            }
-                            shots.push(Shot { sequence, slot, tick: launch_tick });
-                            projectiles.push(projectile);
+                            self.admit_shot(slot,&mut next,now,(ammo_before,counts_before,ammo_remaining),shell,burst,&mut shots,&mut projectiles,&mut impact_trace)?;
                         }
                     }
                     outcomes.extend(result);
@@ -1295,6 +1279,61 @@ impl World {
         }
         self.actors[slot] = next; self.shots = shots; self.projectiles = projectiles;
         self.impact = impact_trace; Ok(outcomes)
+    }
+    /// Launch one admitted shell (a command shot or a due burst shell) into the
+    /// staged shot journal, projectile list and impact trace.
+    #[allow(clippy::too_many_arguments)]
+    fn admit_shot(&self,slot:usize,next:&mut Actor,now:Instant,(ammo_before,counts_before,ammo_remaining):(u16,Option<[u16;3]>,u16),
+        shell:Option<crate::p06t_shells091::Shell>,burst:u8,shots:&mut super::journal::Journal<Shot>,projectiles:&mut Vec<Projectile>,
+        impact_trace:&mut impact::Trace)->io::Result<()>{
+        let sequence = shots.len() as u32 + 1;
+        // DISP-01: under the layered law the shot leaves the barrel line inside the aiming circle.
+        let deviation=self.shot_deviation(next,sequence)?;
+        let projectile = if let Some(shell)=shell{Projectile::launch_deviated(sequence,slot,next,now,self.shot_limit(),shell,deviation.map(|d|(d.r,d.theta)))?}
+            else if self.mixed_profiles {Projectile::launch_for_limit(sequence,slot,next,now,self.shot_limit())?}
+            else {Projectile::launch(sequence, slot, next, now)?};
+        let elapsed_ticks = now.duration_since(self.started.ok_or_else(|| bad())?).as_millis() / 100;
+        let launch_tick = 1000u32.checked_add(u32::try_from(elapsed_ticks).map_err(|_| bad())?)
+            .ok_or_else(|| bad())?;
+        if let Some(shell)=shell{
+            let index=crate::p06t_shells091::profile(next.vehicle_kind().mount()).shots.iter().position(|source|*source==shell).ok_or_else(||bad())?;
+            impact_trace.admission_shell(self.id,sequence,launch_tick,slot,counts_before.ok_or_else(||bad())?[index],ammo_remaining,shell)?;
+        }else{impact_trace.admission(self.id, sequence, launch_tick, slot, ammo_before, ammo_remaining)?;}
+        impact_trace.launch(self.id, &projectile, launch_tick)?;
+        if let Some(d)=deviation {
+            if super::shot_trace::enabled(){super::shot_trace::shot(self.id,sequence,launch_tick,slot,next.vehicle_kind(),&projectile.shell.ok_or_else(||bad())?,d.angle,d.gun,d.seed,d.r,d.theta);}
+            let spec=next.vehicle_kind().aim();let mult=next.devices.as_ref().map_or(1.,|c|f64::from(c.capabilities().dispersion_scale));let speed=next.speed;
+            let (hull_yaw,turret_yaw)=(next.direction[0],next.aim.yaw);
+            next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,mult);
+        }
+        shots.push(Shot { sequence, slot, tick: launch_tick, burst });
+        projectiles.push(projectile);
+        Ok(())
+    }
+    /// CONTENT-0 2.6: launch the due shells of running bursts on the server
+    /// clock, after this step's flight integration (like command shots, they
+    /// fly from the next step). A gun that may no longer fire, a parked or
+    /// dead actor, a closed battle period or a full shot journal ends the
+    /// burst; its unfired shells stay loaded.
+    fn launch_due_bursts(&self,actors:&mut [Actor],now:Instant,shots:&mut super::journal::Journal<Shot>,projectiles:&mut Vec<Projectile>,
+        impact_trace:&mut impact::Trace)->io::Result<()>{
+        for slot in 0..actors.len() {
+            if !actors[slot].fire.typed().is_some_and(|state|state.burst_pending()){continue;}
+            let mut actor=actors[slot].clone();
+            let open=self.lifecycle.as_ref().is_none_or(|state|state.allows_actions());
+            if !open||!actor.ready||actor.session.is_none()||!actor.alive()||actor.devices.as_ref().is_some_and(|state|!state.capabilities().can_fire){
+                actor.fire.abort_burst()?;actors[slot]=actor;continue;
+            }
+            for _ in 0..crate::p06t_armament091::MAX_BURST {
+                if shots.len()>=self.shot_limit()||projectiles.len()>=self.shot_limit(){actor.fire.abort_burst()?;break;}
+                let (ammo_before,counts_before)=(actor.fire.ammo(),actor.fire.typed().map(|state|state.counts()));
+                let Some(outcome)=actor.fire.next_burst_shot(now)? else {break};
+                let fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{shell,remaining,burst,..})=outcome else {return Err(bad())};
+                self.admit_shot(slot,&mut actor,now,(ammo_before,counts_before,remaining),Some(shell),burst,shots,projectiles,impact_trace)?;
+            }
+            actors[slot]=actor;
+        }
+        Ok(())
     }
     /// One shared monotonic clock; bounded integration, no burst catch-up. The
     /// small flat boxes exist only to make remote-state publication observable.
@@ -1705,9 +1744,14 @@ impl World {
                 expired = true;
             }
         }
+        let mut next_shots=self.shots.clone();
+        if tick_changed{
+            self.launch_due_bursts(&mut next_actors,now,&mut next_shots,&mut next_projectiles,&mut impact_trace)?;
+        }
         if self.mixed_ammo{for actor in &mut next_actors{if let Some(state)=actor.devices.as_ref(){
             actor.fire.adjust_reload_scale(state.capabilities().reload_scale,now)?;
         }}}
+        self.shots = next_shots;
         self.actors = next_actors;
         self.last = next_last;
         self.tick = next_tick;
@@ -2436,7 +2480,7 @@ pub(super) mod tests {
         w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap();
         assert_eq!(w.apply(0, 1, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::RejectedReload]);
         assert_eq!(w.apply(1, 2, &[Command::Fire(fire::Command::Shoot)], now).unwrap(), vec![fire::Outcome::AcceptedShot { ammo_remaining: 19 }]);
-        assert_eq!(w.shots, vec![Shot { sequence:1,slot:0,tick:1000 }, Shot { sequence:2,slot:1,tick:1000 }].into());
+        assert_eq!(w.shots, vec![Shot { sequence:1,slot:0,tick:1000,burst:1 }, Shot { sequence:2,slot:1,tick:1000,burst:1 }].into());
     }
     #[test] fn same_tick_and_staggered_two_actor_launches_keep_trace_order() {
         let now = Instant::now(); let mut w = world(now);

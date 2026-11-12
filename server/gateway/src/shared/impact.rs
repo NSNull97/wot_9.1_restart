@@ -498,8 +498,9 @@ impl Trace {
         self.actor_kinds[slot]=Some(kind);Ok(())
     }
     fn actor_limit(&self)->usize {self.roster.unwrap_or(super::model::CAPACITY)}
+    // CONTENT-0 2.6: same MAX_BATTLE_SHOTS ceiling as World::shot_limit.
     fn shot_limit(&self)->usize {self.roster.map_or(self.vehicle.battle_shot_limit(),|n|
-        n*self.actor_kinds.iter().flatten().map(|kind|kind.ammo_limit() as usize).max().unwrap_or(96).max(96))}
+        (n*self.actor_kinds.iter().flatten().map(|kind|kind.ammo_limit() as usize).max().unwrap_or(96).max(96)).min(super::model::MAX_BATTLE_SHOTS))}
     fn kind_for_slot(&self,slot:usize)->io::Result<VehicleKind> {
         if slot>=self.actor_limit() {return Err(invalid("trace actor slot"));}
         if self.roster.is_some() {self.actor_kinds[slot].ok_or_else(||invalid("unbound trace actor profile"))}else{Ok(self.vehicle)}

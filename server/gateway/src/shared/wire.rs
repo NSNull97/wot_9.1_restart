@@ -366,9 +366,14 @@ fn profile13_owned_ammunition_publication_accepts_source_capacity_without_granti
 /// Pinned #717: selectEntity FIXED4, Vehicle.showShooting(UINT8), then restore
 /// Avatar selection. One MS-1 shot has burstCount=1. Native prediction handles
 /// the shooter's already-played effect; neighbours use their original extras.
-pub fn shooting(slot: usize) -> io::Result<Vec<u8>> {
+pub fn shooting(slot: usize) -> io::Result<Vec<u8>> { shooting_burst(slot, 1) }
+/// CONTENT-0 2.6: one call per burst. #717 `Vehicle.showShooting(burstCount)`
+/// plays `burstCount` muzzle effects at the client's own gun `burst` interval
+/// (`vehicle_extras.ShowShooting.__doShot`); later shells send no cue.
+pub fn shooting_burst(slot: usize, burst: u8) -> io::Result<Vec<u8>> {
+    if !(1..=crate::p06t_armament091::MAX_BURST).contains(&burst) { return Err(model::bad()); }
     let mut b = vec![0x12]; b.extend(vehicle_id(slot)?.to_le_bytes());
-    b.extend([0x3b, 1, 0x13]); Ok(b)
+    b.extend([0x3b, burst, 0x13]); Ok(b)
 }
 
 /// Original Avatar.showTracer fixed method: selected Avatar, shooter vehicle

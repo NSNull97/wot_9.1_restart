@@ -156,6 +156,13 @@ impl State {
         Ok(Self{typed:Some(crate::p06t_armament091::State::new(mount,counts,initial)?),..Self::new()})
     }
     pub fn typed(&self)->Option<&crate::p06t_armament091::State>{self.typed.as_ref()}
+    /// CONTENT-0 2.6: the next due shell of a running typed burst (world step only).
+    pub fn next_burst_shot(&mut self,now:Instant)->io::Result<Option<Outcome>>{
+        Ok(self.typed.as_mut().ok_or_else(||invalid("burst on legacy armament"))?.next_burst_shot(now)?.map(Outcome::Typed))
+    }
+    pub fn abort_burst(&mut self)->io::Result<()>{
+        self.typed.as_mut().ok_or_else(||invalid("burst on legacy armament"))?.abort_burst();Ok(())
+    }
     pub fn lose_loaded_for_detonation(&mut self)->io::Result<[u16;3]>{
         self.typed.as_mut().ok_or_else(||invalid("detonation on legacy armament"))?.lose_loaded_for_detonation()
     }
