@@ -147,7 +147,7 @@ impl State {
     /// Curated mounted capacity comes from a server-pinned assembly, never
     /// from a client command. Legacy callers retain the 96-shell contract.
     pub fn with_mounted_loadout(ammo:u16,reload_seconds:f32,capacity:u16)->io::Result<Self> {
-        if capacity==0 || capacity>160 || ammo==0 || ammo>capacity || !reload_seconds.is_finite() || !(0.1..=120.).contains(&reload_seconds) {
+        if capacity==0 || usize::from(capacity)>crate::gateway091::shared::model::MAX_AMMO_PER_ACTOR || ammo==0 || ammo>capacity || !reload_seconds.is_finite() || !(0.1..=120.).contains(&reload_seconds) {
             return Err(invalid("laboratory fire profile"));
         }
         Ok(Self { ammo, reload_duration: Duration::from_secs_f32(reload_seconds), ..Self::new() })

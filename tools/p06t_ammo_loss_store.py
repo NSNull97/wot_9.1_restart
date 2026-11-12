@@ -13,10 +13,12 @@ from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_PARTICIPANTS, MAX_RESULT_REQUEST
 # RES-30: shots/device journal of a 30-actor battle (gateway MAX_BATTLE_SHOTS, MAX_DAMAGE_EVENTS).
-MAX_BATTLE_SHOTS = MAX_PARTICIPANTS * 160
+# CONTENT-0 2.6: same values as the gateway (model.rs MAX_AMMO_PER_ACTOR, MAX_BATTLE_SHOTS); automatic guns
+# carry up to 1800 rounds, so a stack and a battle journal outgrow the old 160 per actor.
+MAX_BATTLE_SHOTS = 16384
 MAX_DEVICE_SEQUENCE = MAX_BATTLE_SHOTS * 16
 from p08c_battle_results import results_value
-from p06t_mixed_store import MixedAmmoStore, POLICY_SHA256 as BASE_POLICY_SHA256, SOURCE_SHA256
+from p06t_mixed_store import MixedAmmoStore, POLICY_SHA256 as BASE_POLICY_SHA256, SOURCE_SHA256, MAX_STACK
 from p06t_terminal import MANIFEST_SHA256
 
 VERSION = 4
@@ -77,7 +79,7 @@ def _rows(value):
     require(type(value) is list and 1 <= len(value) <= 3, "INVALID_INPUT")
     for row in value:
         require(type(row) is dict and set(row) == {"shell_compact_id", "count"}, "INVALID_INPUT")
-        _integer(row["shell_compact_id"], 1, 65535); _integer(row["count"], 0, 160)
+        _integer(row["shell_compact_id"], 1, 65535); _integer(row["count"], 0, MAX_STACK)
 
 
 def _event(value):

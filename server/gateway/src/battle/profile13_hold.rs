@@ -94,7 +94,7 @@ fn rows_value(rows:&[Remaining;3])->Value{serde_json::json!(rows.iter().filter(|
 fn rows(v:&Value)->io::Result<[Remaining;3]>{let a=v.as_array().ok_or_else(||bad("stacks"))?;if !(1..=3).contains(&a.len()){return Err(bad("stack count"));}
     let mut out=Vec::new();for row in a{keys(row,&["shell_compact_id","count"])?;let id=u16::try_from(num(row,"shell_compact_id")?).map_err(|_|bad("shell width"))?;
         let count=u16::try_from(num(row,"count")?).map_err(|_|bad("count width"))?;
-        if id==0||count>160||out.iter().any(|r:&Remaining|r.shell_compact_id==id){return Err(bad("stack/source bounds"));}out.push(Remaining{shell_compact_id:id,count});}
+        if id==0||usize::from(count)>crate::gateway091::shared::model::MAX_AMMO_PER_ACTOR||out.iter().any(|r:&Remaining|r.shell_compact_id==id){return Err(bad("stack/source bounds"));}out.push(Remaining{shell_compact_id:id,count});}
     while out.len()<3{out.push(Remaining{shell_compact_id:0,count:0});}
     out.try_into().map_err(|_|bad("three stacks"))}
 fn event_value(e:Option<loss::LossEvent>)->Value{e.map_or(Value::Null,|e|serde_json::json!({"shot":e.shot,"attacker_slot":e.attacker_slot,"target_slot":e.target_slot,"tick":e.tick,"device_sequence":e.device_sequence}))}
@@ -313,7 +313,7 @@ mod tests {
         assert!(parse_frozen(&wrong, &owner, &sha(&wrong).unwrap()).is_err());
         assert!(parse_frozen(frozen.value(), "ffffffff-ffff-4fff-8fff-ffffffffffff", frozen.sha256()).is_err());
         let mut wrong = frozen.value().clone();
-        wrong["loss_frozen"]["loadout"]["ammunition"][0]["count"] = 161.into();
+        wrong["loss_frozen"]["loadout"]["ammunition"][0]["count"] = (crate::gateway091::shared::model::MAX_AMMO_PER_ACTOR as u64 + 1).into(); // one over the per-actor load
         wrong["loss_frozen"]["loadout_sha256"] = sha(&wrong["loss_frozen"]["loadout"]).unwrap().into();
         wrong["loss_frozen_sha256"] = sha(&wrong["loss_frozen"]).unwrap().into();
         assert!(parse_frozen(&wrong, &owner, &sha(&wrong).unwrap()).is_err());

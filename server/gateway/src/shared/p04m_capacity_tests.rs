@@ -29,7 +29,7 @@ use super::*;
 
 #[test] fn p04m_mounted_fire_capacity_does_not_expand_legacy_loadout_contract() {
     assert!(fire::State::with_loadout(97,2.5).is_err());
-    for (ammo,capacity)in [(0,160),(161,160),(160,159),(1,161)] {
+    for (ammo,capacity)in [(0,160),(161,160),(160,159),(1,MAX_AMMO_PER_ACTOR as u16+1)] {
         assert!(fire::State::with_mounted_loadout(ammo,2.5,capacity).is_err());
     }
     assert_eq!(fire::State::with_mounted_loadout(160,2.5,160).unwrap().ammo(),160);
