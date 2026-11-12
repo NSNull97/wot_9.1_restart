@@ -487,51 +487,131 @@ def _supports(chassis_flat, chassis):
     raise Refused("SUPPORT_SOURCE_UNRESOLVED", "no equal W_L/W_R group or W_L0/W_R0 wheel pair")
 
 
-def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
-    v = catalog.vehicles[vehicle_id]
-    nation, resource = v["nation"], v["resource_name"]
-    kind = next(t for t in v["tags"] if t in CLASSES)
-    d = v["defaults"]
-    names = {k: d[k].split(":")[-1] for k in MODULE_KINDS}
-    base = PREFIX + nation + "/"
-    vf = src.xml(v["source"])
-    comp = {k: src.xml(base + "components/" + k + ".xml") for k in COMPONENT_FILES}
-    chassis, turret = "/chassis[1]/" + names["chassis"] + "[1]", "/turrets0[1]/" + names["turret"] + "[1]"
-    gun = turret + "/guns[1]/" + names["gun"] + "[1]"
-    shared_gun = "/shared[1]/" + names["gun"] + "[1]"
-    gf = comp["guns"]
+# ---- CONTENT-0 3.2: per-module source tables and the pure build assembly ---------------------------------------------
+#
+# Every profile field comes from exactly one module table (hull, chassis, engine, fuel tank, radio, turret, the
+# turret x gun mount) or is computed from them (identity, mass, physics, devices, bundle). `vehicle_row` of any
+# mountable build is `assemble` of the tables of its modules; the stock table stays byte-identical.
+
+class VehicleSource:
+    """Parsed client sources of one catalogue vehicle (read-only, bounded by `Sources`)."""
+
+    def __init__(self, src, catalog, vehicle_id):
+        self.src, self.catalog, self.vehicle_id = src, catalog, vehicle_id
+        self.v = v = catalog.vehicles[vehicle_id]
+        self.nation = v["nation"]
+        base = PREFIX + self.nation + "/"
+        self.vf = src.xml(v["source"])
+        self.comp = {k: src.xml(base + "components/" + k + ".xml") for k in COMPONENT_FILES}
+        self.nid, self.cid = NATIONS.index(self.nation), v["nation_id"]
+        require(self.nid == self.cid, vehicle_id + ": research catalogue nation differs from the client")
+        self._node = None
+
+    def node(self):
+        if self._node is None:
+            self._node = decode(self.src.file(self.v["source"]), max_bytes=MAX_SOURCE, max_depth=32, max_nodes=60000)
+        return self._node
+
+    def fact(self, read, what="source fact"):
+        try:
+            return read()
+        except (*SOURCE_ERRORS, KeyError, TypeError) as error:
+            raise ProfileError(self.vehicle_id + ": " + what + ": " + str(error)) from error
+
+
+def _cap(tree, prefix):
+    return dict(max_health=_int(tree[prefix + "/maxHealth[1]"], "device max", 100000),
+                max_regen_health=_regen(tree[prefix + "/maxRegenHealth[1]"]))
+
+
+def _part(vs, defaults, path, label, index):
+    """One collision part (hull 0, turret 1, gun 2): the component and its member pins, or a refusal."""
+    try:
+        model = vs.vf.get(label + "/hitTester[1]/collisionModel[1]")
+        refuse_if(model is None, "COLLISION_SOURCE_UNRESOLVED", label + " hitTester")
+        try:
+            effective = _effective(active_armor(vs.node(), path), defaults, KINDS)
+        except (*SOURCE_ERRORS, materials.BundleError, KeyError) as error:
+            raise Refused("COLLISION_SOURCE_UNSUPPORTED", label + " armour: " + str(error)) from error
+        built, pins = component(vs.src, model, index, effective)
+        return dict(component=built, members=pins, refusal=None)
+    except Refused as refusal:
+        return dict(component=None, members=None, refusal=[refusal.code, refusal.detail])
+
+
+def hull_table(vs, defaults):
+    vf = vs.vf
+    facts = vs.fact(lambda: dict(
+        speed_limits_kmh=[_num(vf["/speedLimits[1]/" + n + "[1]"], "speed", 200) for n in ("forward", "backward")],
+        turret_position=vector(vf["/hull[1]/turretPositions[1]/turret[1]"], 3, "turret position"),
+        ammo_bay=_cap(vf, "/hull[1]/ammoBayHealth[1]")))
+    return dict(facts, part=_part(vs, defaults, ("hull",), "/hull[1]", 0))
+
+
+def chassis_table(vs, name):
+    vf, chassis = vs.vf, "/chassis[1]/" + name + "[1]"
+    facts = vs.fact(lambda: dict(
+        dispersion_vehicle_movement=_num(vf[chassis + "/shotDispersionFactors[1]/vehicleMovement[1]"], "movement dispersion", 10),
+        dispersion_vehicle_rotation=_num(vf[chassis + "/shotDispersionFactors[1]/vehicleRotation[1]"], "rotation dispersion", 10),
+        chassis_rotation_deg_s=_num(vf[chassis + "/rotationSpeed[1]"], "chassis yaw"),
+        brake_force_source=_num(vf[chassis + "/brakeForce[1]"], "brake force", 10_000_000),
+        carrying_point=vector(vf[chassis + "/topRightCarryingPoint[1]"], 2, "carrying point"),
+        terrain_resistance=vector(vf[chassis + "/terrainResistance[1]"], 3, "terrain resistance"),
+        rotation_is_around_center=vf[chassis + "/rotationIsAroundCenter[1]"],
+        hull_position=vector(vf[chassis + "/hullPosition[1]"], 3, "hull position"),
+        track=_cap(vf, chassis)))
+    try:
+        rule, radius, groups, wheels = _supports(vf, chassis)
+        supports = dict(rule=rule, radius=radius, groups=groups, wheels=wheels, refusal=None)
+    except Refused as refusal:
+        supports = dict(rule=None, radius=None, groups=None, wheels=None, refusal=[refusal.code, refusal.detail])
+    return dict(facts, supports=supports)
+
+
+def engine_table(vs, name):
+    engines, engine = vs.comp["engines"], "/shared[1]/" + name + "[1]"
+    return vs.fact(lambda: dict(engine_power_hp=_num(engines[engine + "/power[1]"], "power", 10000),
+                                fire_starting_chance=_num(engines[engine + "/fireStartingChance[1]"], "fire chance", 1),
+                                device=_cap(engines, engine)))
+
+
+def device_table(vs, component_file, name):
+    return dict(device=vs.fact(lambda: _cap(vs.comp[component_file], "/shared[1]/" + name + "[1]")))
+
+
+def turret_table(vs, defaults, name):
+    vf, turret = vs.vf, "/turrets0[1]/" + name + "[1]"
+    facts = vs.fact(lambda: dict(
+        turret_rotation_deg_s=_num(vf[turret + "/rotationSpeed[1]"], "turret yaw"),
+        view_range_m=_num(vf[turret + "/circularVisionRadius[1]"], "vision radius", 2000),
+        gun_position=vector(vf[turret + "/gunPosition[1]"], 3, "gun position"),
+        rotator=_cap(vf, turret + "/turretRotatorHealth[1]"),
+        surveying=_cap(vf, turret + "/surveyingDeviceHealth[1]")))
+    return dict(facts, part=_part(vs, defaults, ("turrets0", name), turret, 1))
+
+
+def mount_table(vs, defaults, factor, effects, turret_name, gun_name):
+    """The turret x gun mount: every `gun` field but the chassis/turret ones, shots, refusal, gun part, gun device."""
+    vf, gf, v = vs.vf, vs.comp["guns"], vs.v
+    turret = "/turrets0[1]/" + turret_name + "[1]"
+    gun = turret + "/guns[1]/" + gun_name + "[1]"
+    shared_gun = "/shared[1]/" + gun_name + "[1]"
     mounted = lambda field: vf.get(gun + "/" + field + "[1]", gf.get(shared_gun + "/" + field + "[1]"))
     mounted_sub = lambda path: vf.get(gun + "/" + path + "[1]", gf.get(shared_gun + "/" + path + "[1]"))
-    nid, cid = NATIONS.index(nation), v["nation_id"]
-    require(nid == cid, vehicle_id + ": research catalogue nation differs from the client")
-    fix = lambda compact: (compact >> 8 << 8) | (nid << 4) | (compact & 15)
-    require(all(catalog.modules[d[k]]["native_compact_id"] >> 4 & 15 == cid for k in MODULE_KINDS)
-            and v["native_compact_id"] >> 4 & 15 == cid, vehicle_id + ": catalogue nation nibble")
-    raw_cd = descriptor(catalog, dict(vehicle_id=vehicle_id, modules=d))
-    require(raw_cd[0] == (cid << 4) | 1, vehicle_id + ": descriptor header")
-    cd = (bytes([(nid << 4) | 1]) + raw_cd[1:]).hex()
-    mass_kg = (v["hull_mass_grams"] + sum(v["module_mass_grams"][d[k]] for k in MODULE_KINDS)) / 1000
-    row = dict(vehicle_id=vehicle_id, nation=nation, native_nation_id=nid, resource=resource, tier=v["tier"],
-               vehicle_class=kind, existing_kind=EXISTING.get(vehicle_id),
-               research_catalog_nation_id=cid, catalog_nation_correction_required=nid != cid,
-               identity=dict(type_compact_id=fix(v["native_compact_id"]), descriptor_hex=cd, modules=d,
-                             module_compact_ids={k: fix(catalog.modules[d[k]]["native_compact_id"]) for k in MODULE_KINDS},
-                             crew_roles=v["crew_roles"], max_hp=v["hull_max_hp"] + v["turret_max_hp"][d["turret"]],
-                             mass_kg=mass_kg, source=v["source"]))
-    decision = None
-    try:
+
+    def read():
         clip, burst = mounted("clip"), mounted("burst")
 
         def section(name):
             # Client `_readGunLocals`/`_readGun`: a vehicle section replaces the shared one as a whole.
             if gun + "/" + name + "[1]" in vf:
-                flat, base = vf, gun + "/" + name + "[1]/"
+                tree, base = vf, gun + "/" + name + "[1]/"
             elif shared_gun + "/" + name + "[1]" in gf:
-                flat, base = gf, shared_gun + "/" + name + "[1]/"
+                tree, base = gf, shared_gun + "/" + name + "[1]/"
             else:
                 return 1, None
-            count = flat.get(base + "count[1]")
-            return (1 if count is None else _int(count, name + " count", 1000)), _num(flat.get(base + "rate[1]"), name + " rate", 10000)
+            count = tree.get(base + "count[1]")
+            return (1 if count is None else _int(count, name + " count", 1000)), _num(tree.get(base + "rate[1]"), name + " rate", 10000)
         clip_count, clip_rate = section("clip")
         burst_count, burst_rate = section("burst")
         yaw = mounted("turretYawLimits")
@@ -545,7 +625,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             front=None if "front" not in extra else vector(extra["front"], 3, "front pitch"),
             back=None if "back" not in extra else vector(extra["back"], 3, "back pitch"),
             transition_degrees=None if "transition" not in extra else _num(extra["transition"], "pitch transition", 180))
-        row["gun"] = dict(resource=names["gun"], max_ammo=_int(mounted("maxAmmo"), "maxAmmo", 2000),
+        return dict(resource=gun_name, max_ammo=_int(mounted("maxAmmo"), "maxAmmo", 2000),
             reload_seconds=_num(mounted("reloadTime"), "reload", 600), aiming_seconds=_num(mounted("aimingTime"), "aiming", 60),
             shot_dispersion_radius=_num(mounted("shotDispersionRadius"), "dispersion", 10),
             clip_count=clip_count, clip_rate_per_minute=clip_rate,
@@ -556,62 +636,105 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             pitch_limits=vector(mounted("pitchLimits"), 2, "pitch limits"),
             extra_pitch_limits=extra or None, pitch_envelope=envelope,
             dispersion_turret_rotation=_num(mounted_sub("shotDispersionFactors[1]/turretRotation"), "turret dispersion", 10),
-            dispersion_vehicle_movement=_num(vf[chassis + "/shotDispersionFactors[1]/vehicleMovement[1]"], "movement dispersion", 10),
-            dispersion_vehicle_rotation=_num(vf[chassis + "/shotDispersionFactors[1]/vehicleRotation[1]"], "rotation dispersion", 10),
             turret_yaw_limits=None if yaw is None else vector(yaw, 2, "yaw limits"),
             gun_rotation_deg_s=_num(gf[shared_gun + "/rotationSpeed[1]"], "gun yaw"),
-            turret_rotation_deg_s=_num(vf[turret + "/rotationSpeed[1]"], "turret yaw"),
             mount_source_path=v["source"] + ":" + gun)
-        row["view_range_m"] = _num(vf[turret + "/circularVisionRadius[1]"], "vision radius", 2000)
-        movement = dict(engine_power_hp=_num(comp["engines"]["/shared[1]/" + names["engine"] + "[1]/power[1]"], "power", 10000),
-            speed_limits_kmh=[_num(vf["/speedLimits[1]/" + n + "[1]"], "speed", 200) for n in ("forward", "backward")],
-            chassis_rotation_deg_s=_num(vf[chassis + "/rotationSpeed[1]"], "chassis yaw"),
-            brake_force_source=_num(vf[chassis + "/brakeForce[1]"], "brake force", 10_000_000),
-            carrying_point=vector(vf[chassis + "/topRightCarryingPoint[1]"], 2, "carrying point"),
-            terrain_resistance=vector(vf[chassis + "/terrainResistance[1]"], 3, "terrain resistance"),
-            rotation_is_around_center=vf[chassis + "/rotationIsAroundCenter[1]"])
-        row["movement"] = movement
-        pivots = dict(hull_position=vector(vf[chassis + "/hullPosition[1]"], 3, "hull position"),
-                      turret_position=vector(vf["/hull[1]/turretPositions[1]/turret[1]"], 3, "turret position"),
-                      gun_position=vector(vf[turret + "/gunPosition[1]"], 3, "gun position"))
-        row["pivots"] = pivots
-    except (*SOURCE_ERRORS, KeyError, TypeError) as error:
-        raise ProfileError(vehicle_id + ": source fact: " + str(error)) from error
+    facts = vs.fact(read)
+    shot_rows, refusal = None, None
     try:
-        # SPG-02: every SPG on the test_lab stand (was the eight of STAND_SPG).
-        # CONTENT-0 main transfer (owner 12.11): SPGs on main too (was test_lab only).
-        # CONTENT-0 2.6 (main since the 12.11 transfer): bursts and long clips; a burst needs a clip
+        # SPG-02 / CONTENT-0 2.6 (main since the 12.11 transfer): bursts and long clips; a burst needs a clip
         # (the client rejects burst > clip > 1; burst on a single-shot gun is not admitted by the runtime).
+        clip_count, burst_count = facts["clip_count"], facts["burst_count"]
         refuse_if(not 1 <= clip_count <= MAX_CLIP_TEST_LAB or not 1 <= burst_count <= MAX_BURST
                   or burst_count > 1 and (clip_count == 1 or burst_count > clip_count), "AUTOMATIC_GUN_UNSUPPORTED",
                   "clip %d burst %d" % (clip_count, burst_count))
-        refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
-                  "pitch envelope " + json.dumps(envelope, sort_keys=True))
-        try:
-            row["shots"] = shots(src, nation, names["gun"], gun, vf, gf, comp["shells"], factor, effects)
-        except (*SOURCE_ERRORS, KeyError, TypeError) as error:
-            raise ProfileError(vehicle_id + ": shell fact: " + str(error)) from error
-        # Main: every runtime codec carries exactly three ordered stacks. SPG-02 / CONTENT-0 2.2 (test_lab): one to
-        # three source shots for every vehicle; the runtime keeps three cells and marks the missing ones absent.
-        refuse_if(not (1 <= len(row["shots"]) <= 3), "SHELL_SOURCE_UNSUPPORTED",
-                  "%d source shots, runtime needs 3" % len(row["shots"]))
-        rule, radius, groups, wheels = _supports(vf, chassis)
-        carrying, speed = movement["carrying_point"], movement["speed_limits_kmh"]
-        node = decode(src.file(v["source"]), max_bytes=MAX_SOURCE, max_depth=32, max_nodes=60000)
-        bundle_components, members = [], {}
-        for index, (path, label) in enumerate(((("hull",), "/hull[1]"), (("turrets0", names["turret"]), turret),
-                                              (("turrets0", names["turret"], "guns", names["gun"]), gun))):
-            model = vf.get(label + "/hitTester[1]/collisionModel[1]")
-            refuse_if(model is None, "COLLISION_SOURCE_UNRESOLVED", label + " hitTester")
-            try:
-                effective = _effective(active_armor(node, path), defaults, KINDS)
-            except (*SOURCE_ERRORS, materials.BundleError, KeyError) as error:
-                raise Refused("COLLISION_SOURCE_UNSUPPORTED", label + " armour: " + str(error)) from error
-            built, pins = component(src, model, index, effective)
-            bundle_components.append(built)
-            members.update(pins)
-        hull = bundle_components[0]["mesh_bounds"]
-        lo, hi, hp = hull["min"], hull["max"], pivots["hull_position"]
+        refuse_if(not aim_envelope_supported(facts["pitch_envelope"], facts["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
+                  "pitch envelope " + json.dumps(facts["pitch_envelope"], sort_keys=True))
+        shot_rows = vs.fact(lambda: shots(vs.src, vs.nation, gun_name, gun, vf, gf, vs.comp["shells"], factor, effects),
+                            "shell fact")
+        # One to three source shots; the runtime keeps three cells and marks the missing ones absent.
+        refuse_if(not (1 <= len(shot_rows) <= 3), "SHELL_SOURCE_UNSUPPORTED", "%d source shots, runtime needs 3" % len(shot_rows))
+    except Refused as error:
+        refusal = [error.code, error.detail]
+    device = vs.fact(lambda: _cap(gf, shared_gun))
+    part = _part(vs, defaults, ("turrets0", turret_name, "guns", gun_name), gun, 2)
+    return dict(gun=facts, shots=shot_rows, refusal=refusal, device=device, part=part)
+
+
+def module_tables(src, catalog, vehicle_id, defaults, factor, effects, builds=None):
+    """Tables of every module used by `builds` (default: every mountable build of the vehicle)."""
+    vs = VehicleSource(src, catalog, vehicle_id)
+    builds = configurations(vs.v) if builds is None else builds
+    used = {k: sorted({b[k] for b in builds}) for k in MODULE_KINDS}
+    name = lambda module: module.split(":")[-1]
+    mounts = sorted({(b["turret"], b["gun"]) for b in builds})
+    return dict(vehicle_id=vehicle_id, hull=hull_table(vs, defaults),
+                chassis={m: chassis_table(vs, name(m)) for m in used["chassis"]},
+                engine={m: engine_table(vs, name(m)) for m in used["engine"]},
+                fuelTank={m: device_table(vs, "fueltanks", name(m)) for m in used["fuelTank"]},
+                radio={m: device_table(vs, "radios", name(m)) for m in used["radio"]},
+                turret={m: turret_table(vs, defaults, name(m)) for m in used["turret"]},
+                mount={t + "/" + g: mount_table(vs, defaults, factor, effects, name(t), name(g)) for t, g in mounts})
+
+
+def assemble(catalog, tables, modules):
+    """The battle profile row and source bundle of one build: a pure function of the module tables.
+
+    Refusal order is the module order of the original stock generator: the turret x gun mount (automatic gun, aim
+    envelope, shells), the chassis supports, the hull/turret/gun collision parts, then the physics envelope.
+    """
+    vehicle_id = tables["vehicle_id"]
+    v = catalog.vehicles[vehicle_id]
+    d = {k: modules[k] for k in MODULE_KINDS}
+    nation, resource = v["nation"], v["resource_name"]
+    kind = next(t for t in v["tags"] if t in CLASSES)
+    nid, cid = NATIONS.index(nation), v["nation_id"]
+    fix = lambda compact: (compact >> 8 << 8) | (nid << 4) | (compact & 15)
+    require(all(catalog.modules[d[k]]["native_compact_id"] >> 4 & 15 == cid for k in MODULE_KINDS)
+            and v["native_compact_id"] >> 4 & 15 == cid, vehicle_id + ": catalogue nation nibble")
+    raw_cd = descriptor(catalog, dict(vehicle_id=vehicle_id, modules=d))
+    require(raw_cd[0] == (cid << 4) | 1, vehicle_id + ": descriptor header")
+    cd = (bytes([(nid << 4) | 1]) + raw_cd[1:]).hex()
+    mass_kg = (v["hull_mass_grams"] + sum(v["module_mass_grams"][d[k]] for k in MODULE_KINDS)) / 1000
+    hull, chassis, engine = tables["hull"], tables["chassis"][d["chassis"]], tables["engine"][d["engine"]]
+    turret, mount = tables["turret"][d["turret"]], tables["mount"][d["turret"] + "/" + d["gun"]]
+    row = dict(vehicle_id=vehicle_id, nation=nation, native_nation_id=nid, resource=resource, tier=v["tier"],
+               vehicle_class=kind, existing_kind=EXISTING.get(vehicle_id),
+               research_catalog_nation_id=cid, catalog_nation_correction_required=nid != cid,
+               identity=dict(type_compact_id=fix(v["native_compact_id"]), descriptor_hex=cd, modules=d,
+                             module_compact_ids={k: fix(catalog.modules[d[k]]["native_compact_id"]) for k in MODULE_KINDS},
+                             crew_roles=v["crew_roles"], max_hp=v["hull_max_hp"] + v["turret_max_hp"][d["turret"]],
+                             mass_kg=mass_kg, source=v["source"]))
+    row["gun"] = dict(mount["gun"], dispersion_vehicle_movement=chassis["dispersion_vehicle_movement"],
+                      dispersion_vehicle_rotation=chassis["dispersion_vehicle_rotation"],
+                      turret_rotation_deg_s=turret["turret_rotation_deg_s"])
+    row["view_range_m"] = turret["view_range_m"]
+    movement = dict(engine_power_hp=engine["engine_power_hp"], speed_limits_kmh=hull["speed_limits_kmh"],
+                    **{k: chassis[k] for k in ("chassis_rotation_deg_s", "brake_force_source", "carrying_point",
+                                               "terrain_resistance", "rotation_is_around_center")})
+    row["movement"] = movement
+    pivots = dict(hull_position=chassis["hull_position"], turret_position=hull["turret_position"],
+                  gun_position=turret["gun_position"])
+    row["pivots"] = pivots
+    raw = None
+    try:
+        if mount["refusal"] is not None:
+            raise Refused(*mount["refusal"])
+        row["shots"] = mount["shots"]
+        s = chassis["supports"]
+        if s["refusal"] is not None:
+            raise Refused(*s["refusal"])
+        parts = (hull["part"], turret["part"], mount["part"])
+        for part in parts:
+            if part["refusal"] is not None:
+                raise Refused(*part["refusal"])
+        bundle_components = [p["component"] for p in parts]
+        members = {}
+        for p in parts:
+            members.update(p["members"])
+        radius, carrying, speed = s["radius"], movement["carrying_point"], movement["speed_limits_kmh"]
+        hull_bounds = bundle_components[0]["mesh_bounds"]
+        lo, hi, hp = hull_bounds["min"], hull_bounds["max"], pivots["hull_position"]
         physics = dict(body_half_extents=[(hi[j] - lo[j]) / 2 for j in range(3)],
             body_center_offset=[(hi[j] + lo[j]) / 2 + hp[j] for j in range(3)],
             wheel_points=[[x, radius + .28, z] for x in (-carrying[0], carrying[0]) for z in (-carrying[1], 0, carrying[1])],
@@ -632,14 +755,14 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
                       [round(x, 3) for x in physics["wheel_points"][0] + physics["wheel_points"][-1]]))
         bundle = dict(schema=BUNDLE_SCHEMA, vehicle_id=vehicle_id, classification="VERIFIED_STATIC_ORIGINAL_717",
             identity=row["identity"], members=dict(sorted(members.items())),
-            wheel_source=dict(groups=groups, individual_wheels=wheels),
+            wheel_source=dict(groups=s["groups"], individual_wheels=s["wheels"]),
             geometry=dict(**pivots, components=bundle_components), battle_admission=False)
         raw = canonical(bundle) + b"\n"
         require(len(raw) <= MAX_BUNDLE, vehicle_id + ": bundle size bound")
         row["physics"] = physics
         row["handling"] = handling
-        row["support_rule"] = rule
-        row["hull_aabb"] = hull
+        row["support_rule"] = s["rule"]
+        row["hull_aabb"] = hull_bounds
         row["geometry"] = dict(bundle=bundle_name(row), bytes=len(raw), sha256=sha(raw),
                                components=[dict(name=c["name"], vertex_format=c["vertex_format"],
                                                 vertices=len(c["vertices"]), triangles=len(c["triangles"]),
@@ -647,10 +770,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
                                                 armor_ids=[m["kind"] for m in c["materials"] if m["kind"] <= 16],
                                                 material_kinds=[m["kind"] for m in c["materials"]])
                                            for c in bundle_components])
-        try:
-            row.update(runtime_facts(v, vf, comp, names, chassis, turret, row))
-        except (*SOURCE_ERRORS, KeyError, TypeError) as error:
-            raise ProfileError(vehicle_id + ": runtime fact: " + str(error)) from error
+        row.update(runtime_facts(v, tables, d, row))
         decision = dict(status="generated", refusal=None, detail=None)
     except Refused as refusal:
         raw = None
@@ -659,6 +779,13 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
     row["battle_admission"] = False
     row["readiness_code"] = "BATTLE_PROFILE_UNSUPPORTED"
     return row, raw
+
+
+def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects, modules=None):
+    """The profile row and bundle of one build (stock when `modules` is None)."""
+    d = catalog.vehicles[vehicle_id]["defaults"] if modules is None else modules
+    build = {k: d[k] for k in MODULE_KINDS}
+    return assemble(catalog, module_tables(src, catalog, vehicle_id, defaults, factor, effects, [build]), build)
 
 
 # Rust/Python device order and extras of common/vehicle.xml (index + 1), as P06T.
@@ -670,25 +797,44 @@ LEGACY_SUFFIXES = {"ms1": ("ap", "heat", "he"), "is7": ("ap", "apcr", "he"), "t2
                    "t34": ("ap", "heat", "he"), "t3485": ("ap", "apcr", "he")}
 
 
+def configurations(v):
+    """CONTENT-0 3.2: every mountable build of a catalogue vehicle, stock first, then sorted.
+
+    The 0.9.1 client (`VehicleDescr.__computeWeight`, `mayInstallComponent`) and the P09E store (3.1): chassis x engine
+    x radio x (turret, gun of that turret); the fuel tank stays stock; total mass must not exceed the chassis maxLoad.
+    """
+    c, d = v["compatible"], v["defaults"]
+    grams = v["module_mass_grams"]
+    builds = []
+    for chassis in sorted(c["chassis"]):
+        for engine in sorted(c["engine"]):
+            for radio in sorted(c["radio"]):
+                for turret in sorted(c["turret"]):
+                    for gun in sorted(v["turret_guns"][turret]):
+                        m = dict(chassis=chassis, engine=engine, fuelTank=d["fuelTank"], radio=radio, turret=turret, gun=gun)
+                        if v["hull_mass_grams"] + sum(grams[m[k]] for k in MODULE_KINDS) <= v["module_max_load_grams"][chassis]:
+                            builds.append(m)
+    stock = {k: d[k] for k in MODULE_KINDS}
+    require(stock in builds, v["vehicle_id"] + ": stock build is not mountable")
+    builds.remove(stock)
+    return [stock] + builds
+
+
 def kind_label(row):
     """The five legacy kinds keep their labels; any other row is `<nation>-<resource>`."""
     legacy = row["existing_kind"]
     return legacy if legacy in LEGACY_SUFFIXES else row["nation"] + "-" + row["resource"]
 
 
-def runtime_facts(v, vf, comp, names, chassis, turret, row):
+def runtime_facts(v, tables, modules, row):
     """Device caps, crew seats, stack suffixes and labels the battle runtime binds (P06T rules)."""
-    def cap(tree, prefix):
-        return dict(max_health=_int(tree[prefix + "/maxHealth[1]"], "device max", 100000),
-                    max_regen_health=_regen(tree[prefix + "/maxRegenHealth[1]"]))
-    engine = "/shared[1]/" + names["engine"] + "[1]"
-    sources = (("engines", engine), (None, "/hull[1]/ammoBayHealth[1]"),
-               ("fueltanks", "/shared[1]/" + names["fuelTank"] + "[1]"), ("radios", "/shared[1]/" + names["radio"] + "[1]"),
-               (None, chassis), (None, chassis), ("guns", "/shared[1]/" + names["gun"] + "[1]"),
-               (None, turret + "/turretRotatorHealth[1]"), (None, turret + "/surveyingDeviceHealth[1]"))
-    devices = [dict(device=d, extra_index=26 + i, **cap(vf if f is None else comp[f], prefix))
-               for i, (d, (f, prefix)) in enumerate(zip(DEVICES, sources))]
-    chance = _num(comp["engines"][engine + "/fireStartingChance[1]"], "fire chance", 1)
+    chassis, turret = tables["chassis"][modules["chassis"]], tables["turret"][modules["turret"]]
+    engine = tables["engine"][modules["engine"]]
+    caps = (engine["device"], tables["hull"]["ammo_bay"], tables["fuelTank"][modules["fuelTank"]]["device"],
+            tables["radio"][modules["radio"]]["device"], chassis["track"], chassis["track"],
+            tables["mount"][modules["turret"] + "/" + modules["gun"]]["device"], turret["rotator"], turret["surveying"])
+    devices = [dict(device=d, extra_index=26 + i, **cap) for i, (d, cap) in enumerate(zip(DEVICES, caps))]
+    chance = engine["fire_starting_chance"]
     seats, used = [], {}
     for index, roles in enumerate(v["crew_roles"]):
         require(roles and all(r in ROLE_BITS for r in roles) and len(set(roles)) == len(roles), "crew roles")
@@ -705,7 +851,7 @@ def runtime_facts(v, vf, comp, names, chassis, turret, row):
         for shot in row["shots"]:
             base = FAMILY_SUFFIX[shot["family"]]
             suffixes.append(base if base not in suffixes else base + str(1 + sum(x.startswith(base) for x in suffixes)))
-    weights = dict(hull=v["hull_mass_grams"] / 1000, **{k: v["module_mass_grams"][v["defaults"][m]] / 1000 for k, m in
+    weights = dict(hull=v["hull_mass_grams"] / 1000, **{k: v["module_mass_grams"][modules[m]] / 1000 for k, m in
                    (("chassis", "chassis"), ("turret", "turret"), ("gun", "gun"), ("engines", "engine"),
                     ("fueltanks", "fuelTank"), ("radios", "radio"))})
     total = 0.0
@@ -773,7 +919,8 @@ def derived_test_row(base, base_bundle, spec, catalog):
     return row, raw
 
 
-def build(original):
+def context(original):
+    """Pinned sources, research catalogue, material defaults, projectile factor and shot effects order."""
     src = Sources(original)
     catalog = load_catalog(src.root)
     require(catalog.sha256 == CATALOG_SHA256, "research catalogue differs")
@@ -798,6 +945,11 @@ def build(original):
     # Native shot effectsIndex = order of shot_effects.xml (P06T wire audit rule).
     effects = [k[1:].split("[", 1)[0] for k in src.xml(PREFIX + "common/shot_effects.xml") if k.count("/") == 1 and k != "/"]
     require(len(effects) == len(set(effects)) and 0 < len(effects) <= 255, "shot effects order")
+    return src, catalog, defaults, factor, effects
+
+
+def build(original):
+    src, catalog, defaults, factor, effects = context(original)
     rows, bundles = [], {}
     tests = {v["vehicle_id"]: v for v in test_vehicles.load()[0]["vehicles"]} if TEST_LAB else {}
     for vehicle_id in sorted(catalog.vehicles):
