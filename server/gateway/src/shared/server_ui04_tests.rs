@@ -130,7 +130,7 @@ fn publish(s:&mut Session,w:&World,now:Instant,lines:&mut Vec<String>)->Vec<Vec<
     poll(&mut s,&mut w,now).unwrap();
     let bodies=all_bodies(&mut s,now);let frames=channel_frames(&bodies);
     let dealt=frames.iter().flat_map(|f|f[6..].windows(3)).filter(|v|v[0]==FeedKind::ShotDamage as u8&&v[1]==0xff&&v[2]==0xff).count();
-    assert_eq!(dealt,1,"the event, no amount");
+    assert_eq!(dealt,0,"owner 12.11: blind damage gives no row at all");
     let id=wire::vehicle_id(1).unwrap().to_le_bytes();let sum=(hp as u16).to_le_bytes();
     for f in &frames {assert!(!contains(&f[6..],&id),"no ID of the hidden target");assert!(!contains(&f[6..],&sum),"no amount");}
     assert!(totals_of(&frames).is_empty());
