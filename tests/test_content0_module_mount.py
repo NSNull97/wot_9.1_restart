@@ -132,21 +132,23 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertNotIn("stats", delta)
         self.assertEqual(self.public()["resources"], money)  # research, purchase and mount cost nothing
 
-        # Battle stays stock-only (sub-step 3.3): an explicit refusal, never the stock profile.
-        self.assertEqual(self.battle_code(native), "BATTLE_PROFILE_UNSUPPORTED")
-        reply = self.admit_reply(native)
-        self.assertEqual((reply["status"], reply.get("code")), ("rejected", "BATTLE_PROFILE_UNSUPPORTED"))
+        # CONTENT-0 3.3 stage 1: an engine build keeps the stock turret and gun, so it is its own battle kind
+        # (label <kind>--<descriptor digest>) on the stock mount, shells and capacity: the stock readiness.
+        self.assertEqual(self.battle_code(native), stock_code)
         aggregate = self.store.read_profile(self.account)
         entry = next(e for e in self.store.registry.capabilities(aggregate) if e["native_inventory_id"] == native)
-        self.assertEqual((entry["kind"], entry["admission"], entry["readiness_code"]), ("ussr-KV-3", False, "BATTLE_PROFILE_UNSUPPORTED"))
+        self.assertTrue(entry["kind"].startswith("ussr-KV-3--"), entry)
+        self.assertEqual(entry["assembly_id"], "ussr-KV-3-stock")
+        build = self.store.registry.profiles[entry["kind"]]
+        self.assertEqual(build.descriptor_hex, descriptor(self.catalog, mounted).hex())
         self.assertTrue(all(r["state"] == "available" for r in aggregate["vehicles"]))
 
-        # Login fixture still publishes; the client sees the mounted descriptor and the refusal.
+        # Login fixture still publishes; the client sees the mounted descriptor and no profile refusal.
         source = BattleProjectionSource(self.source.bundle.root, self.catalog)
         value = self.store.publish(source, self.account, Path(self.temp.name) / "mount-fixtures")
         directory = Path(value["fixture_dir"])
         caps = json.loads((directory / "p06t-ammunition.json").read_text())["capabilities"]
-        self.assertEqual(next(c for c in caps if c["native_inventory_id"] == native)["code"], "BATTLE_PROFILE_UNSUPPORTED")
+        self.assertNotEqual(next(c for c in caps if c["native_inventory_id"] == native)["code"], "BATTLE_PROFILE_UNSUPPORTED")
         state = PoolProjectionSource(source, self.store).state(self.profile(), self.store.layouts(self.account))
         self.assertEqual(state["inventory"][1]["compDescr"][native], descriptor(self.catalog, mounted))
         self.assertEqual(state["inventory"][5][self.cd(V5)], 1)
@@ -176,6 +178,8 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(delta["repair"], {native: (0, definition["hull_max_hp"] + definition["turret_max_hp"][KV3_TURRET])})
         self.assertEqual((delta["shells"], delta["shellsLayout"]), ({native: []}, {native: {}}))
         self.assertEqual(after["depot"].get(KV220), 1)
+        # CONTENT-0 3.3 stage 1: another turret waits for step 4 (its mount and shells): an explicit refusal.
+        self.assertEqual(self.battle_code(native), "BATTLE_PROFILE_UNSUPPORTED")
 
         # equipTurret(turret, gun) with the turret already mounted swaps the gun.
         before, after, _ = self.accepted(101, (native, self.cd(KV3_TURRET), self.cd(D10T)))
