@@ -364,7 +364,9 @@ class CrewContractV2(CrewContract):
     SCHEMA, POLICY_SHA256, COMMAND_RESULT_BOUND = V2_SCHEMA, V2_POLICY_SHA256, 262144
     COMMAND, RECRUIT_COMMAND = "p04m.crew_transfer.v2", "p04m.recruit_assign.v2"
     LEARN_COMMAND, DISMISS_COMMAND, BARRACKS_COMMAND = "p04m.learn_skill.v2", "p04m.dismiss.v2", "p04m.recruit_barracks.v2"
-    CAPACITY, PROFILE_BOUND = V2_CAPACITY, 65536
+    # CONTENT-0 (owner 12.11): a 100-slot garage (about 1.1 KB per vehicle with crew and ammunition) does not
+    # fit 64 KB; the bound is the store snapshot bound (game_profile_tx.MAX_SNAPSHOT_BYTES).
+    CAPACITY, PROFILE_BOUND = V2_CAPACITY, 262144
     # CONTENT-0 (owner 12.11): the original VehicleBuyWindow tariffs courses/school/academy
     # (0/1/2) hire the whole crew at 50/75/100. Only plan_purchase creates 75/100 passports;
     # recruitment keeps 50. The stored V2 policy hash is unchanged (no migration): a reader
