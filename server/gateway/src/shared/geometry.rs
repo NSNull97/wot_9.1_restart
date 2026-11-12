@@ -1136,7 +1136,7 @@ impl Bundle {
         let (vertices, triangles) = self.parts_for_pose(position, direction, aim);
         // Hash the precise authoritative transform facts, including aim, so
         // the identity stays unambiguous even within one server tick.
-        Mesh::new(vertices, triangles, self.geometry_revision(),
+        Mesh::new_posed(vertices, triangles, self.geometry_revision(),
             transform_revision(position, direction, aim, slot, tick))
     }
     /// SHELL-01: world-space Hull/Turret/Gun vertices and triangles of the

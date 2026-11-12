@@ -105,6 +105,26 @@ impl Mesh {
         Ok(Self { vertices, triangles, geometry_revision, transform_revision })
     }
 
+    /// A world copy of a mesh already checked by `new` in its local frame. Owner 12.11 (stand -21): a few
+    /// sub-millimetre chassis triangles of a vehicle ~300 m from the map origin collapse to a line once
+    /// rotated and translated in f32 (one f32 step there is ~0.03 mm), and the strict check failed the whole
+    /// battle. Only triangles that are degenerate after the transform are left out — a ray cannot hit a
+    /// zero-area triangle, its neighbours cover the surface — every other check stays as in `new`, and a
+    /// mesh that loses all its triangles is still refused.
+    pub fn new_posed(vertices: Vec<[f32; 3]>, triangles: Vec<Triangle>,
+        geometry_revision: impl Into<String>, transform_revision: impl Into<String>) -> io::Result<Self> {
+        if vertices.len() > MAX_VERTICES || triangles.len() > MAX_TRIANGLES { return Err(invalid("collision mesh bound")); }
+        let kept = triangles.into_iter().filter(|t| {
+            let (Some(a), Some(b), Some(c)) = (vertices.get(t.a as usize), vertices.get(t.b as usize), vertices.get(t.c as usize))
+                else { return true };   // index facts are refused by `new`
+            let a = wide(*a);
+            let (edge1, edge2) = (sub(wide(*b), a), sub(wide(*c), a));
+            let edge_scale = length(edge1) * length(edge2);
+            !(edge_scale == 0.0 || length(cross(edge1, edge2)) <= ANGULAR_TOLERANCE * edge_scale)
+        }).collect::<Vec<_>>();
+        Self::new(vertices, kept, geometry_revision, transform_revision)
+    }
+
     pub fn geometry_revision(&self) -> &str { &self.geometry_revision }
     pub fn transform_revision(&self) -> &str { &self.transform_revision }
 }
@@ -181,6 +201,25 @@ mod tests {
 
     fn triangle(id: u32, a: u32, b: u32, c: u32, group: &str, material: &str) -> Triangle {
         Triangle { triangle_id: id, a, b, c, mesh: "Hull.model".into(), group: group.into(), material: material.into() }
+    }
+
+    /// Owner 12.11 (stand -21, "degenerate collision triangle" in world_step): a sliver that is valid in the
+    /// local frame collapses after an f32 move ~300 m out; the posed mesh drops only that triangle.
+    #[test]
+    fn posed_mesh_drops_only_triangles_collapsed_by_the_world_transform() {
+        let at = |v: [f32; 3]| [v[0] + 300.0, v[1] + 11.0, v[2] - 300.0];
+        let sliver = [[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [0.25, 1e-7, 0.0]];
+        let local = [[0., 0., 0.], [0., 1., 0.], [0., 0., 1.]].into_iter().chain(sliver).collect::<Vec<[f32; 3]>>();
+        let triangles = vec![triangle(0, 0, 1, 2, "armor_1", "armor_1"), triangle(1, 3, 4, 5, "armor_2", "armor_2")];
+        Mesh::new(local.clone(), triangles.clone(), "geometry", "local").unwrap();
+        let world = local.iter().map(|v| at(*v)).collect::<Vec<_>>();
+        assert!(Mesh::new(world.clone(), triangles.clone(), "geometry", "world").is_err(), "the strict check refuses it");
+        let posed = Mesh::new_posed(world.clone(), triangles.clone(), "geometry", "world").unwrap();
+        assert_eq!(posed.triangles.iter().map(|t| t.triangle_id).collect::<Vec<_>>(), [0]);
+        assert_eq!(query(&posed, at([-1.0, 0.25, 0.25]), at([1.0, 0.25, 0.25])).unwrap()[0].triangle_id, 0);
+        // Nothing left, or broken index facts: still refused.
+        assert!(Mesh::new_posed(world.clone(), vec![triangles[1].clone()], "geometry", "world").is_err());
+        assert!(Mesh::new_posed(world, vec![triangle(0, 0, 1, 9, "armor_1", "armor_1")], "geometry", "world").is_err());
     }
 
     #[test]
