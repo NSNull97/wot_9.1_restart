@@ -9,6 +9,10 @@ use sha2::{Digest, Sha256};
 
 const MAX_FIXTURE: usize = 16 * 1024;
 const MAX_NODES: usize = 4096;
+/// Fixture metadata (manifest.json, compatibility.json). Owner 12.11 on stand -21: an account with 57
+/// vehicles grew compatibility.json past 64 KB and login stopped ("server not ready"). Interim bound, as the
+/// crew-v2 profile (256 KB), until the press-account measurement sets the chain's bounds.
+pub(crate) const MAX_FIXTURE_METADATA: usize = 256 * 1024;
 const MAX_DEPTH: usize = 16;
 const CHUNK_SIZE: usize = 400;
 const EMPTY_DICT: &[u8] = b"\x80\x02}.";
@@ -602,9 +606,9 @@ fn metadata<T:serde::de::DeserializeOwned>(directory:&Path,name:&str)->io::Resul
     let canonical=file.canonicalize()?;
     if !canonical.starts_with(directory.canonicalize()?) {return Err(invalid("dossier metadata escapes fixture"));}
     let input=File::open(canonical)?;
-    if !input.metadata()?.is_file() || input.metadata()?.len()>65536 {return Err(invalid("dossier metadata size/type"));}
-    let mut bytes=Vec::new();input.take(65537).read_to_end(&mut bytes)?;
-    if bytes.len()>65536 {return Err(invalid("dossier metadata grew beyond bound"));}
+    if !input.metadata()?.is_file() || input.metadata()?.len()>MAX_FIXTURE_METADATA as u64 {return Err(invalid("dossier metadata size/type"));}
+    let mut bytes=Vec::new();input.take(MAX_FIXTURE_METADATA as u64+1).read_to_end(&mut bytes)?;
+    if bytes.len()>MAX_FIXTURE_METADATA {return Err(invalid("dossier metadata grew beyond bound"));}
     serde_json::from_slice(&bytes).map(Some).map_err(|_|invalid("invalid dossier metadata schema"))
 }
 

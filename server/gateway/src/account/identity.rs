@@ -1086,7 +1086,7 @@ fn verify_fixture_identity(profile:&Profile)->io::Result<()> {
     for name in ["manifest.json","compatibility.json"] {
         let path=profile.fixture_dir.join(name).canonicalize()?;
         if !path.starts_with(&profile.fixture_dir) {return Err(invalid("identity metadata escapes fixture"));}
-        let bytes=bounded_file(&path,65536)?;
+        let bytes=bounded_file(&path,crate::hangar091::MAX_FIXTURE_METADATA as u64)?;
         let Bounded::<FIXTURE_METADATA_FIELDS>(data)=serde_json::from_slice(&bytes).map_err(|_|invalid("invalid identity fixture metadata"))?;
         if text(&data,"account_id")?!=profile.account_id || data.get("native_database_id").and_then(Value::as_i64)!=Some(profile.database_id as i64)
             || (name=="compatibility.json" && text(&data,"client_name")?!=profile.name) {
