@@ -69,8 +69,12 @@ def gold_icon(clip):
     """Statements: an attached icon of a gold row takes the gold filter, a green
     borrowed icon of a red row the red one."""
     red = [('if', ('==', var('icon'), name), [('set', clip, 'filters', gold_icon_filter(RED))]) for name in RED_ICONS]
+    # Owner 12.11: a spot/track assist row is purple; its borrowed Lesta icon is green, so it takes the
+    # assist colour like a gold row takes gold.
     return [('if', ('==', var('colour'), EFFECT_GOLD),
              [('if', not_empty(var('icon')), [('set', clip, 'filters', gold_icon_filter())])]),
+            ('if', ('==', var('colour'), ASSIST),
+             [('if', not_empty(var('icon')), [('set', clip, 'filters', gold_icon_filter(ASSIST))])]),
             ('if', ('==', var('colour'), RED), red)]
 # Halo: four soft dark copies around a field instead of one hard shadow.
 HALO = ((-1, -1), (1, -1), (-1, 1), (1, 1))

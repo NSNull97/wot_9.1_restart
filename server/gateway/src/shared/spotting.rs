@@ -109,9 +109,10 @@ impl Rules {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-/// `wreck`: destroyed target. A wreck cannot move or hide, so once published to
-/// a recipient it stays published (no retention expiry); a never-seen wreck is
-/// still revealed only by ordinary direct LOS. Project policy, owner run 2026-10-19.
+/// `wreck`: destroyed target. A wreck cannot move or hide, so it is published to
+/// every recipient and stays published (owner 12.11: an enemy killed while
+/// unspotted must appear on the map; before, a never-seen wreck needed direct
+/// LOS, owner run 2026-10-19). Project policy.
 pub struct Actor { pub slot: usize, pub team: u8, pub position: Point, pub points: Points, pub view_range: f32, pub observer_active: bool, pub commander_active: bool, pub wreck: bool }
 
 fn validate_actors(actors: &[Actor]) -> io::Result<()> {
@@ -166,6 +167,8 @@ impl State {
     pub fn new(rules: Rules) -> io::Result<Self> { rules.validate()?; Ok(Self { rules, last_ms: None, last_scan_ms: None, direct: [[false; MAX_ACTORS]; MAX_ACTORS], last_seen: [[None; MAX_ACTORS]; MAX_ACTORS], desired: [[false; MAX_ACTORS]; MAX_ACTORS], observed: [false; MAX_ACTORS], pending: [None; MAX_ACTORS], sixth_generation: [0; MAX_ACTORS] }) }
     pub fn initialized(&self) -> bool { self.last_ms.is_some() }
     pub fn desired(&self, slot: usize) -> io::Result<[bool; MAX_ACTORS]> { self.desired.get(slot).copied().ok_or_else(|| bad("spotting recipient slot")) }
+    /// What `slot` itself sees in the last scan (no team sharing, no retention).
+    pub fn direct(&self, slot: usize) -> io::Result<[bool; MAX_ACTORS]> { self.direct.get(slot).copied().ok_or_else(|| bad("spotting observer slot")) }
     pub fn sixth_generation(&self, slot: usize) -> io::Result<u32> { self.sixth_generation.get(slot).copied().ok_or_else(|| bad("spotting sixth slot")) }
     pub fn refresh<F>(&mut self, ms: u64, actors: &[Actor], mut clear: F) -> io::Result<()>
     where F: FnMut(usize, usize, Point, Point) -> io::Result<bool> {
@@ -222,7 +225,7 @@ impl State {
         next.desired = [[false; MAX_ACTORS]; MAX_ACTORS];
         for recipient in actors { for target in actors {
             let visible = recipient.slot == target.slot || recipient.team == target.team
-                || target.wreck && self.desired[recipient.slot][target.slot] || actors.iter().any(|observer| {
+                || target.wreck || actors.iter().any(|observer| {
                 let share = observer.slot == recipient.slot || (next.rules.share_with_team && observer.team == recipient.team);
                 share && next.last_seen[observer.slot][target.slot].is_some_and(|at| next.direct[observer.slot][target.slot] || ms.saturating_sub(at) < next.rules.retention_ms)
             });
@@ -269,7 +272,7 @@ mod tests {
     #[test] fn sixth_sense_is_delayed_and_requires_functioning_commander() {
         let mut actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap(); state.refresh(0,&actors,|_,_,_,_|Ok(true)).unwrap(); state.refresh(2999,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),0); state.refresh(3000,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),1); actors[0].commander_active=false; state.refresh(3100,&actors,|_,_,_,_|Ok(true)).unwrap(); state.refresh(6200,&actors,|_,_,_,_|Ok(true)).unwrap(); assert_eq!(state.sixth_generation(0).unwrap(),1);
     }
-    #[test] fn a_published_wreck_stays_published_but_an_unseen_wreck_needs_direct_los() {
+    #[test] fn every_wreck_is_published_to_every_recipient() {
         // Owner run 2026-10-19: the attacker lost the wreck (and its detached
         // turret) five seconds after the kill once direct LOS was gone.
         let mut actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap();
@@ -277,7 +280,8 @@ mod tests {
         actors[1].wreck=true; actors[1].observer_active=false; actors[1].commander_active=false;
         for ms in [100,5100,60_000] { state.refresh(ms,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(state.desired(0).unwrap()[1],"ms={ms}"); }
         let mut fresh=State::new(Rules::selected().unwrap()).unwrap();
-        fresh.refresh(0,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(!fresh.desired(0).unwrap()[1]);
+        // Owner 12.11: a never-seen wreck is published too (a kill of an unspotted enemy shows on the map).
+        fresh.refresh(0,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(fresh.desired(0).unwrap()[1]);
         fresh.refresh(100,&actors,|_,_,_,_|Ok(true)).unwrap(); assert!(fresh.desired(0).unwrap()[1]);
         fresh.refresh(10_000,&actors,|_,_,_,_|Ok(false)).unwrap(); assert!(fresh.desired(0).unwrap()[1]);
         actors[1].wreck=false; let mut alive=State::new(Rules::selected().unwrap()).unwrap();

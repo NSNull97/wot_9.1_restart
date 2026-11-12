@@ -91,3 +91,17 @@ class GoldIconTests(unittest.TestCase):
         body = (185, feed.ICON_GOLD_REFERENCE, 160)
         self.assertEqual(tuple(round(sum(rows[r * 5 + c] * body[c] for c in range(3))) for r in range(3)), gold)
         self.assertEqual(rows[15:], [0, 0, 0, 1, 0])
+
+
+class AssistIconTests(unittest.TestCase):
+    def test_a_borrowed_assist_icon_takes_the_assist_purple(self):
+        # Owner 12.11: the spot/track assist plaque was purple and its Lesta icon green.
+        import battle_ui_feed_flash as feed
+        statements = feed.gold_icon(('get', 'mc', 'glyphMC'))
+        assist = [s for s in statements if s[0] == 'if' and s[1] == ('==', feed.var('colour'), feed.ASSIST)]
+        self.assertEqual(len(assist), 1)
+        values = feed.gold_icon_filter(feed.ASSIST)[2][0][3][0][2]
+        rows = [v[1] / v[2] if isinstance(v, tuple) else v for v in values]
+        body = (185, feed.ICON_GOLD_REFERENCE, 160)
+        purple = (feed.ASSIST >> 16 & 255, feed.ASSIST >> 8 & 255, feed.ASSIST & 255)
+        self.assertEqual(tuple(round(sum(rows[r * 5 + c] * body[c] for c in range(3))) for r in range(3)), purple)

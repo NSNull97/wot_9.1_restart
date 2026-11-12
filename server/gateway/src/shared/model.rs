@@ -809,6 +809,16 @@ impl World {
     /// Source stock range, centre-distance and one sight line are the explicit
     /// v1 test_lab policy;0.5m world-up from the rotated stock turret pivot is
     /// not historical camouflage/spotting reconstruction. Parked/dead geometry remains eligible.
+    /// First-spot credit (owner 12.11): what `own` itself sees, not what its team
+    /// shows it; else the lowest slot (often the player) got every team spot.
+    /// Without the original spotting state it falls back to the published row.
+    pub(super) fn own_sightings(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
+        if own>=self.actors.len(){return Err(bad());}
+        if let Some(state)=self.original_spotting.as_ref().filter(|state|state.initialized()) {
+            let mut row=state.direct(own)?;row[own]=true;return Ok(row);
+        }
+        self.desired_visibility(own)
+    }
     pub(super) fn desired_visibility(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
         if own>=self.actors.len()||self.actors.len()>MAX_ACTORS{return Err(bad());}
         if let Some(state)=&self.original_spotting {
@@ -864,7 +874,7 @@ impl World {
                 let observers=members.iter().map(|member|result_spots::Member{
                     team:member.team,present:member.present,ready:member.ready,alive:member.alive}).collect::<Vec<_>>();
                 Some(result_spots::refresh(old,self.result_spot_tick,self.tick,&observers,
-                    |slot|self.desired_visibility(slot))?)
+                    |slot|self.own_sightings(slot))?)
             }else{None};
             self.lifecycle=Some(life);
             if let Some(next)=next{self.result_spots=Some(next);self.result_spot_tick=Some(self.tick);}

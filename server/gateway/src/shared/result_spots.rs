@@ -5,6 +5,8 @@
 //! coordinates or cached publication sets enter this domain component.
 use std::io;
 
+// Owner 12.11: "visible" is the observer's own direct sighting (Model::own_sightings), not the
+// team-shared published row. The name stays: results carry it to the domain verbatim.
 pub(crate) const POLICY: &str = "test_lab.p08c.first-visible-enemy-lowest-slot.v1";
 const MAX_ACTORS:usize=super::MAX_ACTORS;
 
