@@ -265,7 +265,10 @@ impl World {
         let teams = (0..self.expected_actors).map(|s| self.place_team(s)).collect::<io::Result<Vec<_>>>()?;
         let natives = self.actors.iter().map(|a| a.vehicle_kind().tier()).collect::<io::Result<Vec<_>>>()?;
         let kinds = plan.kinds.iter().map(|k| Ok((*k, k.tier()?.ok_or_else(bad)?))).collect::<io::Result<Vec<_>>>()?;
-        super::super::matchmaker::paired_kinds(&teams, &natives, group, plan.seed, &kinds).ok_or_else(bad)
+        // Per battle: the stand seed mixed with the battle id (as the behaviour rng below), so the kind order
+        // changes between battles and still replays from BOT01_FILL (battle, seed).
+        let seed = plan.seed ^ self.id.rotate_left(29);
+        super::super::matchmaker::paired_kinds(&teams, &natives, group, seed, &kinds).ok_or_else(bad)
     }
     /// Places taken by native players; the rest of the roster is bots.
     pub fn human_places(&self) -> usize { self.bots.as_ref().map_or(self.expected_actors, |b| b.plan.human_places) }

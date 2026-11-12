@@ -168,11 +168,26 @@ pub fn paired_kinds<K:Copy>(teams:&[u8],natives:&[Option<u8>],group:(u8,u8),seed
             Some((false,Some(bot)))=>bot,
             _=>nearest(middle),
         };
-        let of_tier=kinds.iter().filter(|(_,t)|*t==tier).map(|(k,_)|*k).collect::<Vec<_>>();
-        placed.push(of_tier[(seed.wrapping_add(order as u64)%of_tier.len() as u64) as usize]);
+        // CONTENT-0 (owner 12.11): the kinds of a tier are shuffled by the seed, then taken in turn. The old
+        // `seed + order` took the same alphabetical block every battle (china, france, germany...), so the
+        // later nations' vehicles (IS, Comet) never appeared. Facing places still share the kind.
+        let mut of_tier=kinds.iter().filter(|(_,t)|*t==tier).map(|(k,_)|*k).collect::<Vec<_>>();
+        shuffle(&mut of_tier,seed^u64::from(tier).wrapping_mul(0xA24B_AED4_963E_E407));
+        placed.push(of_tier[order%of_tier.len()]);
         tiers.push(Some(tier));
     }
     Some(placed)
+}
+
+/// SplitMix64 step: a fixed, platform-independent sequence for one seed.
+fn splitmix(state:&mut u64)->u64{
+    *state=state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+    let mut z=*state;z=(z^(z>>30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);z=(z^(z>>27)).wrapping_mul(0x94D0_49BB_1331_11EB);z^(z>>31)
+}
+/// Fisher-Yates over `items` with a SplitMix64 stream of `seed` (replayable from the logged seed).
+fn shuffle<K>(items:&mut [K],seed:u64){
+    let mut state=seed;
+    for i in (1..items.len()).rev(){let j=(splitmix(&mut state)%(i as u64+1)) as usize;items.swap(i,j);}
 }
 
 #[cfg(test)]

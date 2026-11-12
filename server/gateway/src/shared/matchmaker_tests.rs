@@ -155,12 +155,32 @@ fn mm01_facing_bot_places_share_one_tier(){
     // Within a tier the kind rotates; facing places may differ in kind, not tier.
     let same=[('x',5),('y',5)];
     let bots=paired_kinds(&alternate(4),&[],(5,5),0,&same).unwrap();
-    assert_eq!(bots,['x','x','y','y']);
+    assert_eq!((bots[0],bots[2]),(bots[1],bots[3]),"facing places share the kind");assert_ne!(bots[0],bots[2]);
     // An explicit team plan (1,1,2,2): place 0 faces 2, place 1 faces 3.
     let bots=paired_kinds(&[1,1,2,2],&[Some(4)],(4,8),0,&wide).unwrap();
     assert_eq!(bots,['b','a','b'],"place 2 faces the native (4), 3 faces the bot at 1");
     assert_eq!(paired_kinds::<char>(&alternate(4),&[],(5,5),0,&[]),None);
     assert_eq!(paired_kinds(&alternate(2),&[None;3],(5,5),0,&wide),None);
+}
+
+/// Owner 12.11 (stand -21): every battle took the same alphabetical block of a tier, so IS and Comet bots never
+/// appeared. Over different seeds every kind of a 40-kind tier is used; within one battle a team repeats no kind
+/// while the tier has enough, facing places share the kind, and one seed always gives the same roster.
+#[test]
+fn content0_bot_kinds_cover_the_whole_tier_across_battles(){
+    let kinds=(0..40u8).map(|k|(k,7u8)).collect::<Vec<_>>();
+    let teams=(0..30).map(|s|(s%2) as u8+1).collect::<Vec<_>>();
+    let mut seen=std::collections::BTreeSet::new();
+    for battle in 0..64u64 {
+        let seed=1^battle.wrapping_mul(0x1234_5678_9ABC_DEF1).rotate_left(29);
+        let bots=paired_kinds(&teams,&[Some(7)],(7,7),seed,&kinds).unwrap();
+        assert_eq!(bots,paired_kinds(&teams,&[Some(7)],(7,7),seed,&kinds).unwrap(),"replayable");
+        let team1=bots.iter().enumerate().filter(|(i,_)|(i+1)%2==0).map(|(_,k)|*k).collect::<Vec<_>>();
+        let unique=team1.iter().collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(unique.len(),team1.len(),"battle {battle}: a team repeats a kind");
+        seen.extend(bots);
+    }
+    assert_eq!(seen.len(),40,"every kind of the tier appears over 64 battles");
 }
 
 #[test]
