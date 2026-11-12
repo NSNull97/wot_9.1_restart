@@ -4,7 +4,7 @@ Server-side Python 3 binding. The legacy closed lists stay the default;
 this data is used only when the worker receives ``--catalog-sha256``.
 """
 SCHEMA = 'wot091-server-catalog.v1'
-CATALOG_SHA256 = '6e80953c626a5c35f8b1a2925ad6bbaaa512da6ead14d2a8e1086d7dff837049'
+CATALOG_SHA256 = '400fc72ac3ff50d2bd1f56a6402856a1d0f7652ee7930442a0e5a11eb960e91d'
 VEHICLES = (
     {
         'ammo_capacity': 96,
@@ -31373,6 +31373,18448 @@ VEHICLES = (
         'type_id': 205,
         'vehicle_class': 'lightTank',
         'vehicle_id': 'vehicle:ussr:Valentine_LL',
+    },
+    {
+        'ammo_capacity': 34,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '310000000000cc0000000000000000',
+        'descriptor_sha256': '822be2bb4e9f75b43a93183a133d20e6d5c3f4ef362e87e4c47622d450fe42df',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 190,
+                'max_regen_health': 95,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 170,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 160,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 210,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 210,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+        ),
+        'kind': 'china-Ch01_Type59',
+        'legacy_inventory': None,
+        'max_hp': 1300,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:china:chassis:Chassis_Ch01_Type59_2',
+                'native_compact_id': 50,
+            },
+            'engine': {
+                'module_id': 'module:china:engine:NORINCO_12150L7',
+                'native_compact_id': 53,
+            },
+            'fuelTank': {
+                'module_id': 'module:china:fuelTank:Heavy',
+                'native_compact_id': 52278,
+            },
+            'gun': {
+                'module_id': 'module:china:gun:_100mm_59',
+                'native_compact_id': 52,
+            },
+            'radio': {
+                'module_id': 'module:china:radio:_9RM',
+                'native_compact_id': 55,
+            },
+            'turret': {
+                'module_id': 'module:china:turret:Turret_1_Ch01_Type59_2',
+                'native_compact_id': 51,
+            },
+        },
+        'nation': 'china',
+        'nation_id': 3,
+        'native_compact_id': 49,
+        'resource_name': 'Ch01_Type59',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 58,
+                'resource_name': '_100mm_UBR-412',
+                'shell_definition_id': 'shell:china-Ch01_Type59-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 314,
+                'resource_name': '_100mm_UBR-412P',
+                'shell_definition_id': 'shell:china-Ch01_Type59-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 2,
+                'native_compact_id': 570,
+                'resource_name': '_100mm_UOF-412',
+                'shell_definition_id': 'shell:china-Ch01_Type59-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 0,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:china:Ch01_Type59',
+    },
+    {
+        'ammo_capacity': 40,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '31fa25000000cc0000002400020000',
+        'descriptor_sha256': '2f0c2a968849c22f4f6b9b67b260e87e2edff8c96618b82d6bbf8329f879598b',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 190,
+                'max_regen_health': 95,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 160,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'gun',
+                'max_health': 192,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 140,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'china-Ch14_T34_3',
+        'legacy_inventory': None,
+        'max_hp': 1300,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:china:chassis:Chassis_Ch14_T34_3',
+                'native_compact_id': 9522,
+            },
+            'engine': {
+                'module_id': 'module:china:engine:NORINCO_12150L7',
+                'native_compact_id': 53,
+            },
+            'fuelTank': {
+                'module_id': 'module:china:fuelTank:Heavy',
+                'native_compact_id': 52278,
+            },
+            'gun': {
+                'module_id': 'module:china:gun:_122-mm_D25-TA',
+                'native_compact_id': 564,
+            },
+            'radio': {
+                'module_id': 'module:china:radio:_9RM',
+                'native_compact_id': 55,
+            },
+            'turret': {
+                'module_id': 'module:china:turret:Turret_1_Ch14_T34_3',
+                'native_compact_id': 9267,
+            },
+        },
+        'nation': 'china',
+        'nation_id': 3,
+        'native_compact_id': 64049,
+        'resource_name': 'Ch14_T34_3',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 6,
+                'native_compact_id': 1594,
+                'resource_name': '_122mm_Type_57',
+                'shell_definition_id': 'shell:china-Ch14_T34_3-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 7,
+                'native_compact_id': 1850,
+                'resource_name': '_122mm_Type_64',
+                'shell_definition_id': 'shell:china-Ch14_T34_3-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 8,
+                'native_compact_id': 2106,
+                'resource_name': '_122mm_Type_68',
+                'shell_definition_id': 'shell:china-Ch14_T34_3-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 250,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:china:Ch14_T34_3',
+    },
+    {
+        'ammo_capacity': 45,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '31fd29001c00cb0010002800220000',
+        'descriptor_sha256': 'c6df5d3e49b69fda2a0cc066132b5aff8f1f32209adade5abae2216cb106bcf2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'china-Ch24_Type64',
+        'legacy_inventory': None,
+        'max_hp': 580,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:china:chassis:Chassis_Ch24_Type64',
+                'native_compact_id': 10546,
+            },
+            'engine': {
+                'module_id': 'module:china:engine:Continental_AOSI_895_5_Prem',
+                'native_compact_id': 7221,
+            },
+            'fuelTank': {
+                'module_id': 'module:china:fuelTank:Average',
+                'native_compact_id': 52022,
+            },
+            'gun': {
+                'module_id': 'module:china:gun:_76mm_Gun_Type64',
+                'native_compact_id': 8756,
+            },
+            'radio': {
+                'module_id': 'module:china:radio:AN_GRR_5_Prem',
+                'native_compact_id': 4151,
+            },
+            'turret': {
+                'module_id': 'module:china:turret:Turret_1_Ch24_Type64',
+                'native_compact_id': 10291,
+            },
+        },
+        'nation': 'china',
+        'nation_id': 3,
+        'native_compact_id': 64817,
+        'resource_name': 'Ch24_Type64',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 72,
+                'native_compact_id': 18490,
+                'resource_name': '_76mm_AP_M79',
+                'shell_definition_id': 'shell:china-Ch24_Type64-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 73,
+                'native_compact_id': 18746,
+                'resource_name': '_76mm_HVAP_M93',
+                'shell_definition_id': 'shell:china-Ch24_Type64-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 74,
+                'native_compact_id': 19002,
+                'resource_name': '_76mm_HE_M42A1',
+                'shell_definition_id': 'shell:china-Ch24_Type64-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 253,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:china:Ch24_Type64',
+    },
+    {
+        'ammo_capacity': 34,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '41101d000100ca0008001700150000',
+        'descriptor_sha256': 'a06fb716ede300d526b1f3d43fa4ffccb3c4d3b8e29f570d2b737c3c010451a2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'gun',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'france-AMX_105AM',
+        'legacy_inventory': None,
+        'max_hp': 220,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_AMX_105AM',
+                'native_compact_id': 7490,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:SOFAM_8Gxb',
+                'native_compact_id': 325,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Medium',
+                'native_compact_id': 51782,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Canon_de_105_court_mle_1934S',
+                'native_compact_id': 5444,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_AMX_105AM',
+                'native_compact_id': 5955,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 4161,
+        'resource_name': 'AMX_105AM',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 45,
+                'native_compact_id': 11594,
+                'resource_name': '_105mm_OE_mle_1920',
+                'shell_definition_id': 'shell:france-AMX_105AM-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 46,
+                'native_compact_id': 11850,
+                'resource_name': '_105mm_OCO_mle._1936',
+                'shell_definition_id': 'shell:france-AMX_105AM-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 5,
+        'type_id': 16,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:AMX_105AM',
+    },
+    {
+        'ammo_capacity': 25,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '411222000100ca0008001c001a0000',
+        'descriptor_sha256': 'aa83f542dc99c33074c999ffe18400b5b22019697112538404198ef839d830da',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'gun',
+                'max_health': 168,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'france-AMX_13F3AM',
+        'legacy_inventory': None,
+        'max_hp': 270,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_AMX_13F3AM',
+                'native_compact_id': 8770,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:SOFAM_8Gxb',
+                'native_compact_id': 325,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Medium',
+                'native_compact_id': 51782,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Obusier_de_155mm_C_mle.1917',
+                'native_compact_id': 6724,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_2_AMX_13F3AM',
+                'native_compact_id': 7235,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 4673,
+        'resource_name': 'AMX_13F3AM',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 53,
+                'native_compact_id': 13642,
+                'resource_name': '_155mm_OE_mle_1917',
+                'shell_definition_id': 'shell:france-AMX_13F3AM-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 54,
+                'native_compact_id': 13898,
+                'resource_name': '_155mm_OCO_mle_1944',
+                'shell_definition_id': 'shell:france-AMX_13F3AM-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 6,
+        'type_id': 18,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:AMX_13F3AM',
+    },
+    {
+        'ammo_capacity': 42,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '411400000100cc0008001e00000000',
+        'descriptor_sha256': '3ae712b0bf7baec3f19367db7a1d14d9db2a0a44618678163807761807c1b5bb',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 200,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'france-AMX_13_75',
+        'legacy_inventory': None,
+        'max_hp': 900,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_AMX_13_75_2',
+                'native_compact_id': 66,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:SOFAM_8Gxb',
+                'native_compact_id': 325,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Heavy',
+                'native_compact_id': 52294,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_75mm_SA49_L48',
+                'native_compact_id': 68,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_AMX_13_75',
+                'native_compact_id': 7747,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 5185,
+        'resource_name': 'AMX_13_75',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 74,
+                'resource_name': '_75mm_Prf1926',
+                'shell_definition_id': 'shell:france-AMX_13_75-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 330,
+                'resource_name': '_75mm_FrtPrf1940',
+                'shell_definition_id': 'shell:france-AMX_13_75-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 2,
+                'native_compact_id': 586,
+                'resource_name': '_75mm_OE_mle_1915',
+                'shell_definition_id': 'shell:france-AMX_13_75-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 20,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:france:AMX_13_75',
+    },
+    {
+        'ammo_capacity': 72,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman', 'loader'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '410f1b001800cd0008001600120000',
+        'descriptor_sha256': '6f5023414003d37728a274e59f348c82fcd9910148057811940b65f467b57c32',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 260,
+                'max_regen_health': 129,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 260,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 240,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 240,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'gun',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+        ),
+        'kind': 'france-AMX_50_120',
+        'legacy_inventory': None,
+        'max_hp': 1750,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_AMX_50_120',
+                'native_compact_id': 6978,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Maybach_HL_295',
+                'native_compact_id': 6213,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Large',
+                'native_compact_id': 52550,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_90mm_canon_DCA_45',
+                'native_compact_id': 4676,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_AMX_50_120',
+                'native_compact_id': 5699,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 3905,
+        'resource_name': 'AMX_50_120',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 34,
+                'native_compact_id': 8778,
+                'resource_name': '_90mm_Prf1941',
+                'shell_definition_id': 'shell:france-AMX_50_120-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 35,
+                'native_compact_id': 9034,
+                'resource_name': '_90mm_FrtPrf1944',
+                'shell_definition_id': 'shell:france-AMX_50_120-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 36,
+                'native_compact_id': 9290,
+                'resource_name': '_90mm_OE_mle_1924',
+                'shell_definition_id': 'shell:france-AMX_50_120-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 9,
+        'type_id': 15,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:france:AMX_50_120',
+    },
+    {
+        'ammo_capacity': 40,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '413962002000c90008004c003d0000',
+        'descriptor_sha256': 'a661d9d186cdd3e7bbe276555749812a0919670294e0e35aa418a9b200d5280a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 30,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'france-AMX_Ob_Am105',
+        'legacy_inventory': None,
+        'max_hp': 170,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_AMX_Ob_Am105',
+                'native_compact_id': 25154,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:AMX_B_270',
+                'native_compact_id': 8261,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Small',
+                'native_compact_id': 51526,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Canon_de_105_DEFA_4767_mod',
+                'native_compact_id': 15684,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_AMX_Ob_Am105',
+                'native_compact_id': 19523,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 14657,
+        'resource_name': 'AMX_Ob_Am105',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 45,
+                'native_compact_id': 11594,
+                'resource_name': '_105mm_OE_mle_1920',
+                'shell_definition_id': 'shell:france-AMX_Ob_Am105-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 46,
+                'native_compact_id': 11850,
+                'resource_name': '_105mm_OCO_mle._1936',
+                'shell_definition_id': 'shell:france-AMX_Ob_Am105-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 57,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:AMX_Ob_Am105',
+    },
+    {
+        'ammo_capacity': 70,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '410a11001100cb0008000f000d0000',
+        'descriptor_sha256': '88b090ee22a2fb978d8461d834508819cabd68884c0425126d21c364e2205a16',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 200,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'france-ARL_44',
+        'legacy_inventory': None,
+        'max_hp': 780,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_ARL_44',
+                'native_compact_id': 4418,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Maybach_HL_230',
+                'native_compact_id': 4421,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Average',
+                'native_compact_id': 52038,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_76mm_Gun_M1A1',
+                'native_compact_id': 3396,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_ARL_44',
+                'native_compact_id': 3907,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 2625,
+        'resource_name': 'ARL_44',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 31,
+                'native_compact_id': 8010,
+                'resource_name': '_76mm_AP_M79',
+                'shell_definition_id': 'shell:france-ARL_44-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 32,
+                'native_compact_id': 8266,
+                'resource_name': '_76mm_HVAP_M93',
+                'shell_definition_id': 'shell:france-ARL_44-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 33,
+                'native_compact_id': 8522,
+                'resource_name': '_76mm_HE_M42A1',
+                'shell_definition_id': 'shell:france-ARL_44-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 10,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:france:ARL_44',
+    },
+    {
+        'ammo_capacity': 200,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '412d4c001b00cc0004003c00280000',
+        'descriptor_sha256': 'd5133f00e14479e0ea8f5d6cc6bbcc73bea159859eafb6ba181342cd42b2f5af',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 95,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 200,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 94,
+                'max_regen_health': 47,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'france-ARL_V39',
+        'legacy_inventory': None,
+        'max_hp': 610,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_ARL_V39',
+                'native_compact_id': 19522,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault_T12',
+                'native_compact_id': 6981,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Heavy',
+                'native_compact_id': 52294,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_75mm_APX',
+                'native_compact_id': 10308,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_51',
+                'native_compact_id': 1095,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_ARL_V39',
+                'native_compact_id': 15427,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 11585,
+        'resource_name': 'ARL_V39',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 40,
+                'native_compact_id': 10314,
+                'resource_name': '_75mm_Odr_mle.1910',
+                'shell_definition_id': 'shell:france-ARL_V39-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 41,
+                'native_compact_id': 10570,
+                'resource_name': '_75mm_OCO_mle._1926',
+                'shell_definition_id': 'shell:france-ARL_V39-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 2,
+                'native_compact_id': 586,
+                'resource_name': '_75mm_OE_mle_1915',
+                'shell_definition_id': 'shell:france-ARL_V39-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 45,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:france:ARL_V39',
+    },
+    {
+        'ammo_capacity': 112,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver', 'loader'),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '410408000400ca0004000600020000',
+        'descriptor_sha256': 'cc92b91f63d1434d08ecbff1fd6dcf0fed12e9e46753b2b5290e93229ad9c4ee',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 140,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'france-B1',
+        'legacy_inventory': None,
+        'max_hp': 380,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_B1',
+                'native_compact_id': 2114,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault_S6Bis',
+                'native_compact_id': 1093,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Medium',
+                'native_compact_id': 51782,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_47mm_SA34',
+                'native_compact_id': 580,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_51',
+                'native_compact_id': 1095,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_B1',
+                'native_compact_id': 1603,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 1089,
+        'resource_name': 'B1',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 6,
+                'native_compact_id': 1610,
+                'resource_name': '_47mm_Odr_mle._1892',
+                'shell_definition_id': 'shell:france-B1-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 65,
+                'native_compact_id': 16714,
+                'resource_name': '_47mm_Odr_mle_1935_b',
+                'shell_definition_id': 'shell:france-B1-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 66,
+                'native_compact_id': 16970,
+                'resource_name': '_47mm_Oe_type_D',
+                'shell_definition_id': 'shell:france-B1-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 4,
+        'type_id': 4,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:france:B1',
+    },
+    {
+        'ammo_capacity': 36,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '413860003e00cb0008004b00200000',
+        'descriptor_sha256': '6ef8cec335f9f315048946c67075cb0074966d3a4928ab78c79e4fe324ac631e',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 260,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 134,
+                'max_regen_health': 67,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'gun',
+                'max_health': 230,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'france-Bat_Chatillon155_55',
+        'legacy_inventory': None,
+        'max_hp': 440,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_Bat_Chatillon155_55',
+                'native_compact_id': 24642,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Ford_GAC_R',
+                'native_compact_id': 15941,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Average',
+                'native_compact_id': 52038,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Canon_de_155mm_L_GPF',
+                'native_compact_id': 8260,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_Bat_Chatillon155_55',
+                'native_compact_id': 19267,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 14401,
+        'resource_name': 'Bat_Chatillon155_55',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 67,
+                'native_compact_id': 17226,
+                'resource_name': '_155mm_OE_M101M4',
+                'shell_definition_id': 'shell:france-Bat_Chatillon155_55-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 68,
+                'native_compact_id': 17482,
+                'resource_name': '_155mm_OE_M101M6',
+                'shell_definition_id': 'shell:france-Bat_Chatillon155_55-stock-he2',
+                'suffix': 'he2',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 54,
+                'native_compact_id': 13898,
+                'resource_name': '_155mm_OCO_mle_1944',
+                'shell_definition_id': 'shell:france-Bat_Chatillon155_55-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 9,
+        'type_id': 56,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:Bat_Chatillon155_55',
+    },
+    {
+        'ammo_capacity': 36,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '412e4e002d00cc0000003d00310000',
+        'descriptor_sha256': '5dd3cdca2b302161cc9e1df33133a778252ac2bd19b79e623c5258fcde9130eb',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 170,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'gun',
+                'max_health': 250,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'france-Bat_Chatillon155_58',
+        'legacy_inventory': None,
+        'max_hp': 490,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_Bat_Chatillon155',
+                'native_compact_id': 20034,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Hispano-Suiza_HS110',
+                'native_compact_id': 11589,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Heavy',
+                'native_compact_id': 52294,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Canon_de_155mm',
+                'native_compact_id': 12612,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_528',
+                'native_compact_id': 71,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_Bat_Chatillon155',
+                'native_compact_id': 15683,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 11841,
+        'resource_name': 'Bat_Chatillon155_58',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 67,
+                'native_compact_id': 17226,
+                'resource_name': '_155mm_OE_M101M4',
+                'shell_definition_id': 'shell:france-Bat_Chatillon155_58-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 68,
+                'native_compact_id': 17482,
+                'resource_name': '_155mm_OE_M101M6',
+                'shell_definition_id': 'shell:france-Bat_Chatillon155_58-stock-he2',
+                'suffix': 'he2',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 54,
+                'native_compact_id': 13898,
+                'resource_name': '_155mm_OCO_mle_1944',
+                'shell_definition_id': 'shell:france-Bat_Chatillon155_58-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 10,
+        'type_id': 46,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:Bat_Chatillon155_58',
+    },
+    {
+        'ammo_capacity': 124,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '41060c000c00c90001000a00060000',
+        'descriptor_sha256': 'a7b69bf07e158759f84160883053e49437d71997f523005d86d02ac3d2fc3995',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 17,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 54,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'france-D1',
+        'legacy_inventory': None,
+        'max_hp': 155,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_D1_2',
+                'native_compact_id': 3138,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault_S4',
+                'native_compact_id': 3141,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Small',
+                'native_compact_id': 51526,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_37mm_APX_SA18',
+                'native_compact_id': 1604,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_52',
+                'native_compact_id': 327,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_D1_2',
+                'native_compact_id': 2627,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 1601,
+        'resource_name': 'D1',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 12,
+                'native_compact_id': 3146,
+                'resource_name': '_37mm_Odr_mle._1935',
+                'shell_definition_id': 'shell:france-D1-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 13,
+                'native_compact_id': 3402,
+                'resource_name': '_37mm_FrtPrf1935',
+                'shell_definition_id': 'shell:france-D1-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 14,
+                'native_compact_id': 3658,
+                'resource_name': '_37mm_OE_mle._1916',
+                'shell_definition_id': 'shell:france-D1-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 2,
+        'type_id': 6,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:france:D1',
+    },
+    {
+        'ammo_capacity': 120,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '410102000300ca0001000100020000',
+        'descriptor_sha256': '987e35effaf020cda874d85c4a2c01a1b83afc55223be533ba0128272a2873a8',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'france-D2',
+        'legacy_inventory': None,
+        'max_hp': 210,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_D2',
+                'native_compact_id': 578,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault_S6',
+                'native_compact_id': 837,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Medium',
+                'native_compact_id': 51782,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_47mm_SA34',
+                'native_compact_id': 580,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_52',
+                'native_compact_id': 327,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_D2',
+                'native_compact_id': 323,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 321,
+        'resource_name': 'D2',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 6,
+                'native_compact_id': 1610,
+                'resource_name': '_47mm_Odr_mle._1892',
+                'shell_definition_id': 'shell:france-D2-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 65,
+                'native_compact_id': 16714,
+                'resource_name': '_47mm_Odr_mle_1935_b',
+                'shell_definition_id': 'shell:france-D2-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 66,
+                'native_compact_id': 16970,
+                'resource_name': '_47mm_Oe_type_D',
+                'shell_definition_id': 'shell:france-D2-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 1,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:france:D2',
+    },
+    {
+        'ammo_capacity': 60,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+        ),
+        'descriptor_hex': '41375d003900cb0001004900110000',
+        'descriptor_sha256': 'dac847af14e2449da47b27a98e3e3182e330f12980c0d23b784a1a016b81b593',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 82,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 125,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'france-ELC_AMX',
+        'legacy_inventory': None,
+        'max_hp': 400,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_ELC_AMX',
+                'native_compact_id': 23874,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Sovam_de_150cv',
+                'native_compact_id': 14661,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Average',
+                'native_compact_id': 52038,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_75mm_SA32',
+                'native_compact_id': 4420,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_52',
+                'native_compact_id': 327,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_ELC_AMX',
+                'native_compact_id': 18755,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 14145,
+        'resource_name': 'ELC_AMX',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 40,
+                'native_compact_id': 10314,
+                'resource_name': '_75mm_Odr_mle.1910',
+                'shell_definition_id': 'shell:france-ELC_AMX-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 41,
+                'native_compact_id': 10570,
+                'resource_name': '_75mm_OCO_mle._1926',
+                'shell_definition_id': 'shell:france-ELC_AMX-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 2,
+                'native_compact_id': 586,
+                'resource_name': '_75mm_OE_mle_1915',
+                'shell_definition_id': 'shell:france-ELC_AMX-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 5,
+        'type_id': 55,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:france:ELC_AMX',
+    },
+    {
+        'ammo_capacity': 56,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman', 'loader'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '41182c002200cd000b002400160000',
+        'descriptor_sha256': '269e4bccdafd983878a2489d3bdc5d390ecd478521c9252f8b39658e9e07357c',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 170,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 260,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'gun',
+                'max_health': 210,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 160,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'france-F10_AMX_50B',
+        'legacy_inventory': None,
+        'max_hp': 2100,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_AMX_50_68t',
+                'native_compact_id': 11330,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Maybach_HL_295_F',
+                'native_compact_id': 8773,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Large',
+                'native_compact_id': 52550,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_120mm_SA_46',
+                'native_compact_id': 5700,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_619',
+                'native_compact_id': 2887,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_AMX_50_68t',
+                'native_compact_id': 9283,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 6209,
+        'resource_name': 'F10_AMX_50B',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 47,
+                'native_compact_id': 12106,
+                'resource_name': '_120mm_Prf1943',
+                'shell_definition_id': 'shell:france-F10_AMX_50B-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 48,
+                'native_compact_id': 12362,
+                'resource_name': '_120mm_FrtPrf1945',
+                'shell_definition_id': 'shell:france-F10_AMX_50B-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 49,
+                'native_compact_id': 12618,
+                'resource_name': '_120mm_OE_mle_1930',
+                'shell_definition_id': 'shell:france-F10_AMX_50B-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 24,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:france:F10_AMX_50B',
+    },
+    {
+        'ammo_capacity': 28,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '411c32003b00cb0008002a001b0000',
+        'descriptor_sha256': '38e76192d55d32f67e86d2ce9b2a8eeaec12378765eeea40686196cba07a3c96',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'gun',
+                'max_health': 188,
+                'max_regen_health': 94,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'france-Lorraine155_50',
+        'legacy_inventory': None,
+        'max_hp': 340,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_Lorraine155_50',
+                'native_compact_id': 12866,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Maybach_HL_210_TRM_P30',
+                'native_compact_id': 15173,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Average',
+                'native_compact_id': 52038,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Canon_de_155mm_de_33_calibres',
+                'native_compact_id': 6980,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_Lorraine155_50',
+                'native_compact_id': 10819,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 7233,
+        'resource_name': 'Lorraine155_50',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 76,
+                'native_compact_id': 19530,
+                'resource_name': '_155_OE_mle_1956',
+                'shell_definition_id': 'shell:france-Lorraine155_50-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 54,
+                'native_compact_id': 13898,
+                'resource_name': '_155mm_OCO_mle_1944',
+                'shell_definition_id': 'shell:france-Lorraine155_50-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 7,
+        'type_id': 28,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:Lorraine155_50',
+    },
+    {
+        'ammo_capacity': 28,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '411d34003c00cb0008002c001f0000',
+        'descriptor_sha256': 'c3c0d26a473a7c65505c848501fd48b5f7f873f244d705c8beac8d7519e82f26',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 260,
+                'max_regen_health': 129,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 188,
+                'max_regen_health': 94,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'france-Lorraine155_51',
+        'legacy_inventory': None,
+        'max_hp': 390,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_Lorraine155_51',
+                'native_compact_id': 13378,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Maybach_HL_230_TRM_P30',
+                'native_compact_id': 15429,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Average',
+                'native_compact_id': 52038,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Obusier_de_155mm_mle.1950',
+                'native_compact_id': 8004,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:SCR_508',
+                'native_compact_id': 2119,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_2_Lorraine155_51',
+                'native_compact_id': 11331,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 7489,
+        'resource_name': 'Lorraine155_51',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 76,
+                'native_compact_id': 19530,
+                'resource_name': '_155_OE_mle_1956',
+                'shell_definition_id': 'shell:france-Lorraine155_51-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 77,
+                'native_compact_id': 19786,
+                'resource_name': '_M_107',
+                'shell_definition_id': 'shell:france-Lorraine155_51-stock-he2',
+                'suffix': 'he2',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 54,
+                'native_compact_id': 13898,
+                'resource_name': '_155mm_OCO_mle_1944',
+                'shell_definition_id': 'shell:france-Lorraine155_51-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 8,
+        'type_id': 29,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:Lorraine155_51',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '410d17001600c90001001400140000',
+        'descriptor_sha256': '0430361b1d9c3c108dc5c148ce7e88ff0d9ece4e709dbd20277d5752aa435902',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 17,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'france-Lorraine39_L_AM',
+        'legacy_inventory': None,
+        'max_hp': 120,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_Lorraine39_L_AM',
+                'native_compact_id': 5954,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Delahaye_103TT',
+                'native_compact_id': 5701,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Small',
+                'native_compact_id': 51526,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:Canon_de_105_court_mle_1935B',
+                'native_compact_id': 5188,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_52',
+                'native_compact_id': 327,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_Lorraine39_L_AM',
+                'native_compact_id': 5187,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 3393,
+        'resource_name': 'Lorraine39_L_AM',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 45,
+                'native_compact_id': 11594,
+                'resource_name': '_105mm_OE_mle_1920',
+                'shell_definition_id': 'shell:france-Lorraine39_L_AM-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 46,
+                'native_compact_id': 11850,
+                'resource_name': '_105mm_OCO_mle._1936',
+                'shell_definition_id': 'shell:france-Lorraine39_L_AM-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 3,
+        'type_id': 13,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:Lorraine39_L_AM',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+        ),
+        'descriptor_hex': '410306000500c90001000500080000',
+        'descriptor_sha256': '0c499daf681340514887f44626a30fd1569d07d10e38044826f3d5ee5beb0738',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 17,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'france-RenaultBS',
+        'legacy_inventory': None,
+        'max_hp': 80,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_RenaultBS',
+                'native_compact_id': 1602,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault',
+                'native_compact_id': 1349,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Small',
+                'native_compact_id': 51526,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_76mm_Schneider',
+                'native_compact_id': 2116,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:ER_52',
+                'native_compact_id': 327,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_RenaultBS',
+                'native_compact_id': 1347,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 833,
+        'resource_name': 'RenaultBS',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 17,
+                'native_compact_id': 4426,
+                'resource_name': '_76mm_OEO_mle._1917',
+                'shell_definition_id': 'shell:france-RenaultBS-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 18,
+                'native_compact_id': 4682,
+                'resource_name': '_76mm_OCO_mle._1941',
+                'shell_definition_id': 'shell:france-RenaultBS-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 2,
+        'type_id': 3,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:RenaultBS',
+    },
+    {
+        'ammo_capacity': 400,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '411e36000500c90003002d00210000',
+        'descriptor_sha256': 'db05c206b9a37bd1e17f6604f6a9503ec556e07563f72d24bdc8311b060e1581',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 17,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 90,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'france-RenaultFT_AC',
+        'legacy_inventory': None,
+        'max_hp': 120,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_RenaultFT_AC',
+                'native_compact_id': 13890,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault',
+                'native_compact_id': 1349,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Small',
+                'native_compact_id': 51526,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_25mm_antichar_SA-L_mle_1934',
+                'native_compact_id': 8516,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:Fanions_de_signaux',
+                'native_compact_id': 839,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_RenaultFT_AC',
+                'native_compact_id': 11587,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 7745,
+        'resource_name': 'RenaultFT_AC',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 60,
+                'native_compact_id': 15434,
+                'resource_name': '_25mm_Balle_T.P._mle._1934',
+                'shell_definition_id': 'shell:france-RenaultFT_AC-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 61,
+                'native_compact_id': 15690,
+                'resource_name': '_25mm_Balle_T.P._mle._1939P',
+                'shell_definition_id': 'shell:france-RenaultFT_AC-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 2,
+        'type_id': 30,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:france:RenaultFT_AC',
+    },
+    {
+        'ammo_capacity': 42,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '41080f000f00ca0007000d000b0000',
+        'descriptor_sha256': '9121a60236734582fb526e7cd8f93c31a33aeecc627c260332209fe8e27d53c0',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 82,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'france-_105_leFH18B2',
+        'legacy_inventory': None,
+        'max_hp': 260,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:france:chassis:Chassis_105_leFH18B2',
+                'native_compact_id': 3906,
+            },
+            'engine': {
+                'module_id': 'module:france:engine:Renault_A',
+                'native_compact_id': 3909,
+            },
+            'fuelTank': {
+                'module_id': 'module:france:fuelTank:Medium',
+                'native_compact_id': 51782,
+            },
+            'gun': {
+                'module_id': 'module:france:gun:_105mm_leFH18_L28',
+                'native_compact_id': 2884,
+            },
+            'radio': {
+                'module_id': 'module:france:radio:FuG8f',
+                'native_compact_id': 1863,
+            },
+            'turret': {
+                'module_id': 'module:france:turret:Turret_1_105_leFH18B2',
+                'native_compact_id': 3395,
+            },
+        },
+        'nation': 'france',
+        'nation_id': 4,
+        'native_compact_id': 2113,
+        'resource_name': '_105_leFH18B2',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 25,
+                'native_compact_id': 6474,
+                'resource_name': '_105mm_Sprg_K',
+                'shell_definition_id': 'shell:france-_105_leFH18B2-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 26,
+                'native_compact_id': 6730,
+                'resource_name': '_105mmGr39H1A',
+                'shell_definition_id': 'shell:france-_105_leFH18B2-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 27,
+                'native_compact_id': 6986,
+                'resource_name': '_105mm_PzGr39K',
+                'shell_definition_id': 'shell:france-_105_leFH18B2-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 5,
+        'type_id': 8,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:france:_105_leFH18B2',
+    },
+    {
+        'ammo_capacity': 12,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '110b16001000c90001001200180000',
+        'descriptor_sha256': 'b42e7a413c301733577383c4bf81548e0fdecd1f28e699a77b388081f0f15468',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 12,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'germany-Bison_I',
+        'legacy_inventory': None,
+        'max_hp': 130,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Sturmpanzerketten_I',
+                'native_compact_id': 5650,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Krupp_M305',
+                'native_compact_id': 4117,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_150mm_sIG33L11',
+                'native_compact_id': 6164,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG2',
+                'native_compact_id': 279,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:T_Bison',
+                'native_compact_id': 4627,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 2833,
+        'resource_name': 'Bison_I',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 53,
+                'native_compact_id': 13594,
+                'resource_name': '_150mm_Sprg_L.erz.',
+                'shell_definition_id': 'shell:germany-Bison_I-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 49,
+                'native_compact_id': 12570,
+                'resource_name': '_150mm_Sprg_L',
+                'shell_definition_id': 'shell:germany-Bison_I-stock-he2',
+                'suffix': 'he2',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 50,
+                'native_compact_id': 12826,
+                'resource_name': '_150mmGr_39H1A_L',
+                'shell_definition_id': 'shell:germany-Bison_I-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 3,
+        'type_id': 11,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:Bison_I',
+    },
+    {
+        'ammo_capacity': 26,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '11df76003b00cc0011006000450000',
+        'descriptor_sha256': 'd85c0f5c5302ba875f1cb1399a4c7dbfe075c0a51aeea9997c0b87c44af46fb6',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 84,
+                'max_regen_health': 41,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 160,
+                'max_regen_health': 110,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'germany-DickerMax',
+        'legacy_inventory': None,
+        'max_hp': 550,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_DickerMax',
+                'native_compact_id': 30226,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_120_TR_A',
+                'native_compact_id': 15125,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Heavy',
+                'native_compact_id': 52246,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_105mm_K18_L52A',
+                'native_compact_id': 17684,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5A',
+                'native_compact_id': 4375,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_DickerMax',
+                'native_compact_id': 24595,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 57105,
+        'resource_name': 'DickerMax',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 87,
+                'native_compact_id': 22298,
+                'resource_name': '_105mm_PzGrRot',
+                'shell_definition_id': 'shell:germany-DickerMax-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 88,
+                'native_compact_id': 22554,
+                'resource_name': '_105mm_PzGr.40Rot',
+                'shell_definition_id': 'shell:germany-DickerMax-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 89,
+                'native_compact_id': 22810,
+                'resource_name': '_105mm_Gr19',
+                'shell_definition_id': 'shell:germany-DickerMax-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 223,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:germany:DickerMax',
+    },
+    {
+        'ammo_capacity': 72,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '11255a002c00cd000d004800250000',
+        'descriptor_sha256': '78eeb2502cd3448c5d5f99e06fa09094ddef31037166992683066cadff1a216a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 170,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 280,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'gun',
+                'max_health': 220,
+                'max_regen_health': 110,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'germany-E-100',
+        'legacy_inventory': None,
+        'max_hp': 2700,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_E-100',
+                'native_compact_id': 23058,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_234P60',
+                'native_compact_id': 11285,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_128mm_KwK44_L55',
+                'native_compact_id': 9492,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:_10WSc',
+                'native_compact_id': 3351,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_2_E-100',
+                'native_compact_id': 18451,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 9489,
+        'resource_name': 'E-100',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 44,
+                'native_compact_id': 11290,
+                'resource_name': '_128mm_PzGr39',
+                'shell_definition_id': 'shell:germany-E-100-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 45,
+                'native_compact_id': 11546,
+                'resource_name': '_128mm_PzGr40',
+                'shell_definition_id': 'shell:germany-E-100-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 46,
+                'native_compact_id': 11802,
+                'resource_name': '_128mm_SprG18',
+                'shell_definition_id': 'shell:germany-E-100-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 37,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:germany:E-100',
+    },
+    {
+        'ammo_capacity': 48,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '113078003d00cd000d006200480000',
+        'descriptor_sha256': 'd6e5b5b5549ad913264c0792cfe69b20d942736271b98690b9a63bfa0c466ab0',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 170,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 280,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'gun',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'germany-E50_Ausf_M',
+        'legacy_inventory': None,
+        'max_hp': 2050,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_E50_Ausf_M',
+                'native_compact_id': 30738,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_235',
+                'native_compact_id': 15637,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_105mm_KwK45_L52_ausf_K',
+                'native_compact_id': 18452,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:_10WSc',
+                'native_compact_id': 3351,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_E50_Ausf_M',
+                'native_compact_id': 25107,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 12305,
+        'resource_name': 'E50_Ausf_M',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 93,
+                'native_compact_id': 23834,
+                'resource_name': '_105mm_Pzgr.40K',
+                'shell_definition_id': 'shell:germany-E50_Ausf_M-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 95,
+                'native_compact_id': 24346,
+                'resource_name': '_105mmGr_39H1A_K',
+                'shell_definition_id': 'shell:germany-E50_Ausf_M-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 94,
+                'native_compact_id': 24090,
+                'resource_name': '_105mm_Sprg.18K',
+                'shell_definition_id': 'shell:germany-E50_Ausf_M-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 48,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:germany:E50_Ausf_M',
+    },
+    {
+        'ammo_capacity': 102,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '11e9a8005800ca0003008d00530000',
+        'descriptor_sha256': '9074dee8e211ad414f9a95151164e11a7c0b019686ed5018af76125ce20e71b2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 82,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'germany-G100_Gtraktor_Krupp',
+        'legacy_inventory': None,
+        'max_hp': 320,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_G100_Gtraktor_Krupp',
+                'native_compact_id': 43026,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:BMW',
+                'native_compact_id': 22549,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_75mm_KwK_37_L24A',
+                'native_compact_id': 21268,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG6',
+                'native_compact_id': 791,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_G100_Gtraktor_Krupp',
+                'native_compact_id': 36115,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 59665,
+        'resource_name': 'G100_Gtraktor_Krupp',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 18,
+                'native_compact_id': 4634,
+                'resource_name': '_75mm_APCBC',
+                'shell_definition_id': 'shell:germany-G100_Gtraktor_Krupp-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 19,
+                'native_compact_id': 4890,
+                'resource_name': '_Gr_38_HL_A',
+                'shell_definition_id': 'shell:germany-G100_Gtraktor_Krupp-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 23,
+                'native_compact_id': 5914,
+                'resource_name': '_75mm_Sprg.18',
+                'shell_definition_id': 'shell:germany-G100_Gtraktor_Krupp-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 233,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:germany:G100_Gtraktor_Krupp',
+    },
+    {
+        'ammo_capacity': 15,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '113b92005a00c90001007b00210000',
+        'descriptor_sha256': 'c006fcdd2d6ade7400577495afd466f78a04d4fa91c3203d956f6c3427f8db6d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 12,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'germany-GW_Mk_VIe',
+        'legacy_inventory': None,
+        'max_hp': 90,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_GW_Mk_IVe',
+                'native_compact_id': 37394,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Rolls_Royce_I6',
+                'native_compact_id': 23061,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_105mm_leFH16_L22',
+                'native_compact_id': 8468,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG2',
+                'native_compact_id': 279,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_GW_Mk_IVe',
+                'native_compact_id': 31507,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 15121,
+        'resource_name': 'GW_Mk_VIe',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 40,
+                'native_compact_id': 10266,
+                'resource_name': '_105mm_Sprg_K',
+                'shell_definition_id': 'shell:germany-GW_Mk_VIe-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 39,
+                'native_compact_id': 10010,
+                'resource_name': '_105mmGr39H1A',
+                'shell_definition_id': 'shell:germany-GW_Mk_VIe-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 2,
+        'type_id': 59,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:GW_Mk_VIe',
+    },
+    {
+        'ammo_capacity': 21,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '113c94005c00cb0002007c00300000',
+        'descriptor_sha256': 'cf5e537af3dd5b41511bdc79e1a38c47fa93eea6d1d145851f28ab8ee80c381a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 150,
+                'max_regen_health': 110,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 150,
+                'max_regen_health': 110,
+            },
+            {
+                'device': 'gun',
+                'max_health': 230,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'germany-GW_Tiger_P',
+        'legacy_inventory': None,
+        'max_hp': 440,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_GW_Elefant',
+                'native_compact_id': 37906,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_120_TRM_x2',
+                'native_compact_id': 23573,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Average',
+                'native_compact_id': 51990,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_170mm_K72_Sf_',
+                'native_compact_id': 12308,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_GW_Elefant',
+                'native_compact_id': 31763,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 15377,
+        'resource_name': 'GW_Tiger_P',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 60,
+                'native_compact_id': 15386,
+                'resource_name': '_170mm_Sprg18',
+                'shell_definition_id': 'shell:germany-GW_Tiger_P-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 61,
+                'native_compact_id': 15642,
+                'resource_name': '_170mm_Sprg18_Ausf_G',
+                'shell_definition_id': 'shell:germany-GW_Tiger_P-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 8,
+        'type_id': 60,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:GW_Tiger_P',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '112456005100cc000d004400340000',
+        'descriptor_sha256': '172f33c584e8a6c3fe34a94369dac77242c5fd6ff4197fc0976e31a128c9795e',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 320,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'gun',
+                'max_health': 300,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'germany-G_E',
+        'legacy_inventory': None,
+        'max_hp': 550,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_G_E',
+                'native_compact_id': 22034,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_234_TRM_P45_1',
+                'native_compact_id': 20757,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Heavy',
+                'native_compact_id': 52246,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_210mm_Morser_18',
+                'native_compact_id': 13332,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:_10WSc',
+                'native_compact_id': 3351,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_G_E',
+                'native_compact_id': 17427,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 9233,
+        'resource_name': 'G_E',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 62,
+                'native_compact_id': 15898,
+                'resource_name': '_210mm_Sprg18',
+                'shell_definition_id': 'shell:germany-G_E-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 70,
+                'native_compact_id': 17946,
+                'resource_name': '_210mm_Gr.18Be',
+                'shell_definition_id': 'shell:germany-G_E-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 63,
+                'native_compact_id': 16154,
+                'resource_name': '_210mm_Sprg18_Ausf_G',
+                'shell_definition_id': 'shell:germany-G_E-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 10,
+        'type_id': 36,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:G_E',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '112353002600cb0002004200070000',
+        'descriptor_sha256': '3653868e8fdb37170cf51dc1a1682ea209d6c7a949ac3fb864e7636e9e3f1eb4',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 120,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'germany-G_Panther',
+        'legacy_inventory': None,
+        'max_hp': 360,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_G_Panther_1',
+                'native_compact_id': 21266,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_210P30_05',
+                'native_compact_id': 9749,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Average',
+                'native_compact_id': 51990,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_150mm_sFH18_L30',
+                'native_compact_id': 1812,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_G_Panther',
+                'native_compact_id': 16915,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 8977,
+        'resource_name': 'G_Panther',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 51,
+                'native_compact_id': 13082,
+                'resource_name': '_150mm_SprgG',
+                'shell_definition_id': 'shell:germany-G_Panther-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 52,
+                'native_compact_id': 13338,
+                'resource_name': '_150mmGr_39H1A_G',
+                'shell_definition_id': 'shell:germany-G_Panther-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 7,
+        'type_id': 35,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:G_Panther',
+    },
+    {
+        'ammo_capacity': 21,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '112251004f00cb0002004100300000',
+        'descriptor_sha256': 'e64f9afd00f54d22470c70f3d8300fc63a67be40c61125c296e11e912616d277',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 134,
+                'max_regen_health': 67,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 170,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 170,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'gun',
+                'max_health': 230,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'germany-G_Tiger',
+        'legacy_inventory': None,
+        'max_hp': 500,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_G_Tiger',
+                'native_compact_id': 20754,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_210_TRM_P45',
+                'native_compact_id': 20245,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Average',
+                'native_compact_id': 51990,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_170mm_K72_Sf_',
+                'native_compact_id': 12308,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_G_Tiger',
+                'native_compact_id': 16659,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 8721,
+        'resource_name': 'G_Tiger',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 60,
+                'native_compact_id': 15386,
+                'resource_name': '_170mm_Sprg18',
+                'shell_definition_id': 'shell:germany-G_Tiger-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 61,
+                'native_compact_id': 15642,
+                'resource_name': '_170mm_Sprg18_Ausf_G',
+                'shell_definition_id': 'shell:germany-G_Tiger-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 9,
+        'type_id': 34,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:G_Tiger',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '11162c003400ca000b002300180000',
+        'descriptor_sha256': 'baf4791a523b2b5dd4699fab8b16c3dc3c9953bba0e87c07fe609158113c848e',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 40,
+                'max_regen_health': 19,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'germany-Grille',
+        'legacy_inventory': None,
+        'max_hp': 240,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Grilleketten_ausf_A',
+                'native_compact_id': 11282,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Praga_EPA',
+                'native_compact_id': 13333,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_150mm_sIG33L11',
+                'native_compact_id': 6164,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG37',
+                'native_compact_id': 2839,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Grille_mod_1',
+                'native_compact_id': 8979,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 5649,
+        'resource_name': 'Grille',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 53,
+                'native_compact_id': 13594,
+                'resource_name': '_150mm_Sprg_L.erz.',
+                'shell_definition_id': 'shell:germany-Grille-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 49,
+                'native_compact_id': 12570,
+                'resource_name': '_150mm_Sprg_L',
+                'shell_definition_id': 'shell:germany-Grille-stock-he2',
+                'suffix': 'he2',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 50,
+                'native_compact_id': 12826,
+                'resource_name': '_150mmGr_39H1A_L',
+                'shell_definition_id': 'shell:germany-Grille-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 5,
+        'type_id': 22,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:Grille',
+    },
+    {
+        'ammo_capacity': 22,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '110102005200ca0002000200060000',
+        'descriptor_sha256': '3fa2dcd8ac4a6eb50a46c4818754b3b77c8f08ebd021f1cb233e849880ad9f86',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 82,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'gun',
+                'max_health': 160,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'germany-Hummel',
+        'legacy_inventory': None,
+        'max_hp': 300,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Hummel_Ausf_1943',
+                'native_compact_id': 530,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_108_TR_R',
+                'native_compact_id': 21013,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_150mm_sFH13_L17',
+                'native_compact_id': 1556,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Hummel_0',
+                'native_compact_id': 531,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 273,
+        'resource_name': 'Hummel',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 47,
+                'native_compact_id': 12058,
+                'resource_name': '_150mm_Sprg',
+                'shell_definition_id': 'shell:germany-Hummel-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 48,
+                'native_compact_id': 12314,
+                'resource_name': '_150mmGr_39H1A',
+                'shell_definition_id': 'shell:germany-Hummel-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 6,
+        'type_id': 1,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:Hummel',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '112f6f002c00cd000d005900470000',
+        'descriptor_sha256': '484092b8f0c0697b0c299d61ad1849aae313002bbcc975ebb70be9825e8dc875',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 170,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 280,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'gun',
+                'max_health': 250,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'germany-JagdPz_E100',
+        'legacy_inventory': None,
+        'max_hp': 2200,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_JagdPz_E100',
+                'native_compact_id': 28434,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_234P60',
+                'native_compact_id': 11285,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_170mm_PaK_K72',
+                'native_compact_id': 18196,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:_10WSc',
+                'native_compact_id': 3351,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_JagdPz_E100',
+                'native_compact_id': 22803,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 12049,
+        'resource_name': 'JagdPz_E100',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 90,
+                'native_compact_id': 23066,
+                'resource_name': '_170mm_PaK_K72_PzGr43',
+                'shell_definition_id': 'shell:germany-JagdPz_E100-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 91,
+                'native_compact_id': 23322,
+                'resource_name': '_170mm_PaK_K72_PzGr45',
+                'shell_definition_id': 'shell:germany-JagdPz_E100-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 92,
+                'native_compact_id': 23578,
+                'resource_name': '_170mm_PaK_K72_SprgG_ausf_46',
+                'shell_definition_id': 'shell:germany-JagdPz_E100-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 47,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:germany:JagdPz_E100',
+    },
+    {
+        'ammo_capacity': 68,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '111b39001900cd000d002d00250000',
+        'descriptor_sha256': '9415d68803cdbec5973b9275b4376166d2e7970c3138e87563da84b82a6852cd',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 280,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'gun',
+                'max_health': 220,
+                'max_regen_health': 110,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'germany-Maus',
+        'legacy_inventory': None,
+        'max_hp': 3000,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Mausketten',
+                'native_compact_id': 14610,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:MB507',
+                'native_compact_id': 6421,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_128mm_KwK44_L55',
+                'native_compact_id': 9492,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:_10WSc',
+                'native_compact_id': 3351,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Mausturm',
+                'native_compact_id': 11539,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 6929,
+        'resource_name': 'Maus',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 44,
+                'native_compact_id': 11290,
+                'resource_name': '_128mm_PzGr39',
+                'shell_definition_id': 'shell:germany-Maus-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 45,
+                'native_compact_id': 11546,
+                'resource_name': '_128mm_PzGr40',
+                'shell_definition_id': 'shell:germany-Maus-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 46,
+                'native_compact_id': 11802,
+                'resource_name': '_128mm_SprG18',
+                'shell_definition_id': 'shell:germany-Maus-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 27,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:germany:Maus',
+    },
+    {
+        'ammo_capacity': 240,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+        ),
+        'descriptor_hex': '11327f001000c900010069000a0000',
+        'descriptor_sha256': '5af13122d17ff6c6fa72eaf9cf700827a1b4ce476c8c6d565979b9d9eb0c6102',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 12,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'germany-PzI',
+        'legacy_inventory': None,
+        'max_hp': 145,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_PzI',
+                'native_compact_id': 32530,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Krupp_M305',
+                'native_compact_id': 4117,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_KwK_30',
+                'native_compact_id': 2580,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG2',
+                'native_compact_id': 279,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_PzI',
+                'native_compact_id': 26899,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 12817,
+        'resource_name': 'PzI',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-PzI-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-PzI-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 2,
+        'type_id': 50,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:PzI',
+    },
+    {
+        'ammo_capacity': 260,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '110810000c00c90001000c000a0000',
+        'descriptor_sha256': '9ae43e12e02f5f28ac25a55b99c3a1e6a4015daeaa4aebfbcc00edc1cf5fca94',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'germany-PzII',
+        'legacy_inventory': None,
+        'max_hp': 145,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:PzII_ketten_Ausf_A',
+                'native_compact_id': 4114,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL57TR',
+                'native_compact_id': 3093,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_KwK_30',
+                'native_compact_id': 2580,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG2',
+                'native_compact_id': 279,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:PzII_Standartturm',
+                'native_compact_id': 3091,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 2065,
+        'resource_name': 'PzII',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-PzII-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-PzII-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 2,
+        'type_id': 8,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:PzII',
+    },
+    {
+        'ammo_capacity': 400,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '11ca34001600ca00030029002c0000',
+        'descriptor_sha256': '76ba5b0b5af278927278bb58ccbd169f10f7f900c2f954bd0fd69f16b4b31685',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 70,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'gun',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'germany-PzII_J',
+        'legacy_inventory': None,
+        'max_hp': 260,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:PzII_ausf_J',
+                'native_compact_id': 13330,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL45P',
+                'native_compact_id': 5653,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_KwK_38_L55A',
+                'native_compact_id': 11284,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG6',
+                'native_compact_id': 791,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:PzIIturm_ausf_J',
+                'native_compact_id': 10515,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 51729,
+        'resource_name': 'PzII_J',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-PzII_J-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-PzII_J-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 3,
+        'type_id': 202,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:PzII_J',
+    },
+    {
+        'ammo_capacity': 330,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner'),
+                'seat': 0,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '111831000d00ca0002002600150000',
+        'descriptor_sha256': '7136f6637e176566c3e6c25f4defee1172625875207911d2ab4dafe0f7fbb278',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 125,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'germany-PzII_Luchs',
+        'legacy_inventory': None,
+        'max_hp': 310,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Luchsketten_Ausf_A',
+                'native_compact_id': 12562,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL62TR',
+                'native_compact_id': 3349,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_KwK_38_L55',
+                'native_compact_id': 5396,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:PzIIL_Luchsturm',
+                'native_compact_id': 9747,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 6161,
+        'resource_name': 'PzII_Luchs',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-PzII_Luchs-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-PzII_Luchs-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 4,
+        'type_id': 24,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:PzII_Luchs',
+    },
+    {
+        'ammo_capacity': 80,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '11000000fd00cb00fe000000ff0000',
+        'descriptor_sha256': '1c08bf9e8b381e7d02ffb28382db15aa2bf557a270062892532f9af584f0f810',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 82,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'germany-PzIV',
+        'legacy_inventory': None,
+        'max_hp': 420,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:PzIV_Ausf_1940',
+                'native_compact_id': 18,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Engine_PzIV',
+                'native_compact_id': 64789,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Average',
+                'native_compact_id': 51990,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:Gun_PzIV',
+                'native_compact_id': 65300,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:Radio_PzIV',
+                'native_compact_id': 65047,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:PzIV_Standart',
+                'native_compact_id': 19,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 17,
+        'resource_name': 'PzIV',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 119,
+                'native_compact_id': 30490,
+                'resource_name': 'Shell_PzIV',
+                'shell_definition_id': 'shell:germany-PzIV-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 5,
+        'type_id': 0,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:germany:PzIV',
+    },
+    {
+        'ammo_capacity': 260,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+        ),
+        'descriptor_hex': '11317d004100ca0002006700150000',
+        'descriptor_sha256': 'e944424fd2990e39e38e31954ffabf7d81254dda643bdd29dc99d1d61bd6a032',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'germany-PzI_ausf_C',
+        'legacy_inventory': None,
+        'max_hp': 210,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_PzI_ausf_C',
+                'native_compact_id': 32018,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_45P',
+                'native_compact_id': 16661,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_KwK_38_L55',
+                'native_compact_id': 5396,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_PzI_ausf_C',
+                'native_compact_id': 26387,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 12561,
+        'resource_name': 'PzI_ausf_C',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-PzI_ausf_C-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-PzI_ausf_C-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 3,
+        'type_id': 49,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:PzI_ausf_C',
+    },
+    {
+        'ammo_capacity': 72,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '111428004f00cd0002002000090000',
+        'descriptor_sha256': '0f43b1cef7e422ab2a1a623b27ddf3568ca540ae8405668243defa36b545ff84',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 220,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'gun',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'germany-PzVIB_Tiger_II',
+        'legacy_inventory': None,
+        'max_hp': 1500,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:PzVIB_Standardketten',
+                'native_compact_id': 10258,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_210_TRM_P45',
+                'native_compact_id': 20245,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_88mm_KwK_43_L71',
+                'native_compact_id': 2324,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:PzVIB_Porsche_Turm',
+                'native_compact_id': 8211,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 5137,
+        'resource_name': 'PzVIB_Tiger_II',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 71,
+                'native_compact_id': 18202,
+                'resource_name': '_88mm_Pzgr39_43',
+                'shell_definition_id': 'shell:germany-PzVIB_Tiger_II-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 72,
+                'native_compact_id': 18458,
+                'resource_name': '_88mm_Pzgr.40_43',
+                'shell_definition_id': 'shell:germany-PzVIB_Tiger_II-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 73,
+                'native_compact_id': 18714,
+                'resource_name': '_88mm_Sprg.43',
+                'shell_definition_id': 'shell:germany-PzVIB_Tiger_II-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 20,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:germany:PzVIB_Tiger_II',
+    },
+    {
+        'ammo_capacity': 320,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '113382004100ca0002006b00150000',
+        'descriptor_sha256': '67da9abd41a6b44e7b127ef4af7968f0be3afab86d6395ba8678cc9a6bd594c6',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'germany-Pz_II_AusfG',
+        'legacy_inventory': None,
+        'max_hp': 220,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_Pz_II_AusfG',
+                'native_compact_id': 33298,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_45P',
+                'native_compact_id': 16661,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Medium',
+                'native_compact_id': 51734,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_KwK_38_L55',
+                'native_compact_id': 5396,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_Pz_II_AusfG',
+                'native_compact_id': 27411,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 13073,
+        'resource_name': 'Pz_II_AusfG',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-Pz_II_AusfG-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-Pz_II_AusfG-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 3,
+        'type_id': 51,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:Pz_II_AusfG',
+    },
+    {
+        'ammo_capacity': 87,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '1147ae000100cb0002009200020000',
+        'descriptor_sha256': '2beecc97c326ab7d7ac24adc9b2dd147e6972c13c1b6dbac6ff142d859832573',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 84,
+                'max_regen_health': 41,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'gun',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'germany-Pz_IV_AusfH',
+        'legacy_inventory': None,
+        'max_hp': 440,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_Pz_IV_AusfH',
+                'native_compact_id': 44562,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_120_TR',
+                'native_compact_id': 277,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Average',
+                'native_compact_id': 51990,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_75mm_KwK_40_L43',
+                'native_compact_id': 532,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_Pz_IV_AusfH',
+                'native_compact_id': 37395,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 18193,
+        'resource_name': 'Pz_IV_AusfH',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 21,
+                'native_compact_id': 5402,
+                'resource_name': '_75mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-Pz_IV_AusfH-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 22,
+                'native_compact_id': 5658,
+                'resource_name': '_75mm_Pzgr.40',
+                'shell_definition_id': 'shell:germany-Pz_IV_AusfH-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 23,
+                'native_compact_id': 5914,
+                'resource_name': '_75mm_Sprg.18',
+                'shell_definition_id': 'shell:germany-Pz_IV_AusfH-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 5,
+        'type_id': 71,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:germany:Pz_IV_AusfH',
+    },
+    {
+        'ammo_capacity': 60,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '113d96000d00c90002007d00210000',
+        'descriptor_sha256': 'a1ebb6fb4c08ece88017739ee796c787c37773d122827465ba834959b790d7e1',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'germany-Pz_Sfl_IVb',
+        'legacy_inventory': None,
+        'max_hp': 200,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_Pz_Sfl_IVb',
+                'native_compact_id': 38418,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL62TR',
+                'native_compact_id': 3349,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_105mm_leFH16_L22',
+                'native_compact_id': 8468,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_Pz_Sfl_IVb',
+                'native_compact_id': 32019,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 15633,
+        'resource_name': 'Pz_Sfl_IVb',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 40,
+                'native_compact_id': 10266,
+                'resource_name': '_105mm_Sprg_K',
+                'shell_definition_id': 'shell:germany-Pz_Sfl_IVb-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 39,
+                'native_compact_id': 10010,
+                'resource_name': '_105mmGr39H1A',
+                'shell_definition_id': 'shell:germany-Pz_Sfl_IVb-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 61,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:Pz_Sfl_IVb',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '111224005600c90002001d00180000',
+        'descriptor_sha256': 'c5ce0ec9cb0639fc6588aa5c10d49d3e582c5642a7a19b4376cb7fd9d397c908',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'germany-Sturmpanzer_II',
+        'legacy_inventory': None,
+        'max_hp': 190,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Sturmpanzerketten_ausf_A',
+                'native_compact_id': 9234,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:BNAG_L8V_GS36',
+                'native_compact_id': 22037,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_150mm_sIG33L11',
+                'native_compact_id': 6164,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:SturmpanzerII',
+                'native_compact_id': 7443,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 4625,
+        'resource_name': 'Sturmpanzer_II',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 53,
+                'native_compact_id': 13594,
+                'resource_name': '_150mm_Sprg_L.erz.',
+                'shell_definition_id': 'shell:germany-Sturmpanzer_II-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 49,
+                'native_compact_id': 12570,
+                'resource_name': '_150mm_Sprg_L',
+                'shell_definition_id': 'shell:germany-Sturmpanzer_II-stock-he2',
+                'suffix': 'he2',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 50,
+                'native_compact_id': 12826,
+                'resource_name': '_150mmGr_39H1A_L',
+                'shell_definition_id': 'shell:germany-Sturmpanzer_II-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 18,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:Sturmpanzer_II',
+    },
+    {
+        'ammo_capacity': 420,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner'),
+                'seat': 0,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '11152a000100cb00020022000e0000',
+        'descriptor_sha256': '1ee7dc21e70fecae131be3ee9f4670b812247ee33c7609e0e1adf0147a240457',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 84,
+                'max_regen_health': 41,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'germany-VK1602',
+        'legacy_inventory': None,
+        'max_hp': 440,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Leopardketten_Ausf_A',
+                'native_compact_id': 10770,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL_120_TR',
+                'native_compact_id': 277,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Average',
+                'native_compact_id': 51990,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_20mm_Flak_38_L112',
+                'native_compact_id': 3604,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Leopardturm',
+                'native_compact_id': 8723,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 5393,
+        'resource_name': 'VK1602',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 26,
+                'resource_name': '_20mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-VK1602-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 1,
+                'native_compact_id': 282,
+                'resource_name': '_20cm_Pzgr40',
+                'shell_definition_id': 'shell:germany-VK1602-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 5,
+        'type_id': 21,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:VK1602',
+    },
+    {
+        'ammo_capacity': 120,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '11275d006000cc0002004b00010000',
+        'descriptor_sha256': '2120c8f3b7611c7592306f7f350b685ca39787700eb70019ab7ad415d8a9beb4',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'germany-VK2801',
+        'legacy_inventory': None,
+        'max_hp': 550,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_VK2801',
+                'native_compact_id': 23826,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Argus_12LD330H',
+                'native_compact_id': 24597,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Heavy',
+                'native_compact_id': 52246,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_50mm_KwK_39_L60',
+                'native_compact_id': 276,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_VK2801',
+                'native_compact_id': 19219,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 10001,
+        'resource_name': 'VK2801',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 15,
+                'native_compact_id': 3866,
+                'resource_name': '_50mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-VK2801-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 16,
+                'native_compact_id': 4122,
+                'resource_name': '_50mm_Pzgr40',
+                'shell_definition_id': 'shell:germany-VK2801-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 17,
+                'native_compact_id': 4378,
+                'resource_name': '_50mm_Sprg.18',
+                'shell_definition_id': 'shell:germany-VK2801-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 39,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:germany:VK2801',
+    },
+    {
+        'ammo_capacity': 92,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '112961001e00cd0004004f00080000',
+        'descriptor_sha256': '0a4ec793902e5fc9bbcec8e21d885e2de667f4862b8f54469386c8c3a90f514a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 220,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'gun',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'germany-VK4502A',
+        'legacy_inventory': None,
+        'max_hp': 1470,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_VK4502A',
+                'native_compact_id': 24850,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Porsche_Typ_100_1',
+                'native_compact_id': 7701,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_88mm_KwK_36_L56',
+                'native_compact_id': 2068,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG7',
+                'native_compact_id': 1047,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_1_VK4502A',
+                'native_compact_id': 20243,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 10513,
+        'resource_name': 'VK4502A',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 32,
+                'native_compact_id': 8218,
+                'resource_name': '_88mm_Pzgr39',
+                'shell_definition_id': 'shell:germany-VK4502A-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 33,
+                'native_compact_id': 8474,
+                'resource_name': '_88mm_Pzgr.40',
+                'shell_definition_id': 'shell:germany-VK4502A-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 34,
+                'native_compact_id': 8730,
+                'resource_name': '_88mm_Sprg.18',
+                'shell_definition_id': 'shell:germany-VK4502A-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 41,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:germany:VK4502A',
+    },
+    {
+        'ammo_capacity': 92,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '111d3e001e00cd0004003200090000',
+        'descriptor_sha256': '46dd95353e4236c4d9c3c321b7cef3cfdbcb3c2c8808b7320573d2cdb4152c0e',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 240,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 240,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 240,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'gun',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+        ),
+        'kind': 'germany-VK4502P',
+        'legacy_inventory': None,
+        'max_hp': 1850,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:VK4502P_Standardketten',
+                'native_compact_id': 15890,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Porsche_Typ_100_1',
+                'native_compact_id': 7701,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_88mm_KwK_43_L71',
+                'native_compact_id': 2324,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG7',
+                'native_compact_id': 1047,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:VK4502P_Standardturm',
+                'native_compact_id': 12819,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 7441,
+        'resource_name': 'VK4502P',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 71,
+                'native_compact_id': 18202,
+                'resource_name': '_88mm_Pzgr39_43',
+                'shell_definition_id': 'shell:germany-VK4502P-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 72,
+                'native_compact_id': 18458,
+                'resource_name': '_88mm_Pzgr.40_43',
+                'shell_definition_id': 'shell:germany-VK4502P-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 73,
+                'native_compact_id': 18714,
+                'resource_name': '_88mm_Sprg.43',
+                'shell_definition_id': 'shell:germany-VK4502P-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 9,
+        'type_id': 29,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:germany:VK4502P',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '11e588004300cd000d007100520000',
+        'descriptor_sha256': 'a9fb4371a6363e14fbac57917e3114575aefec088e3fa4bf6e65abcac47d0e3a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 280,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 300,
+                'max_regen_health': 225,
+            },
+            {
+                'device': 'gun',
+                'max_health': 230,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'germany-VK7201',
+        'legacy_inventory': None,
+        'max_hp': 2500,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Chassis_VK7201',
+                'native_compact_id': 34834,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:MB517',
+                'native_compact_id': 17173,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Large',
+                'native_compact_id': 52502,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_150mm_KwK44_L38_A',
+                'native_compact_id': 21012,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:_10WSc',
+                'native_compact_id': 3351,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Turret_VK7201',
+                'native_compact_id': 28947,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 58641,
+        'resource_name': 'VK7201',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 76,
+                'native_compact_id': 19482,
+                'resource_name': '_150mm_PzGr42',
+                'shell_definition_id': 'shell:germany-VK7201-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 75,
+                'native_compact_id': 19226,
+                'resource_name': '_150mmGr_39H3A_G',
+                'shell_definition_id': 'shell:germany-VK7201-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 74,
+                'native_compact_id': 18970,
+                'resource_name': '_150mm_SprgG_ausf_45',
+                'shell_definition_id': 'shell:germany-VK7201-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 229,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:germany:VK7201',
+    },
+    {
+        'ammo_capacity': 32,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '11172f000c00c90002002500210000',
+        'descriptor_sha256': '2bd5f5363ab70eca0da1640c82e143d4b684f5f260b89bcc2be73a1f54c38f6f',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'germany-Wespe',
+        'legacy_inventory': None,
+        'max_hp': 130,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:germany:chassis:Wespeketten_ausf_A',
+                'native_compact_id': 12050,
+            },
+            'engine': {
+                'module_id': 'module:germany:engine:Maybach_HL57TR',
+                'native_compact_id': 3093,
+            },
+            'fuelTank': {
+                'module_id': 'module:germany:fuelTank:Small',
+                'native_compact_id': 51478,
+            },
+            'gun': {
+                'module_id': 'module:germany:gun:_105mm_leFH16_L22',
+                'native_compact_id': 8468,
+            },
+            'radio': {
+                'module_id': 'module:germany:radio:FuG5',
+                'native_compact_id': 535,
+            },
+            'turret': {
+                'module_id': 'module:germany:turret:Wespeturm',
+                'native_compact_id': 9491,
+            },
+        },
+        'nation': 'germany',
+        'nation_id': 1,
+        'native_compact_id': 5905,
+        'resource_name': 'Wespe',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 40,
+                'native_compact_id': 10266,
+                'resource_name': '_105mm_Sprg_K',
+                'shell_definition_id': 'shell:germany-Wespe-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 39,
+                'native_compact_id': 10010,
+                'resource_name': '_105mmGr39H1A',
+                'shell_definition_id': 'shell:germany-Wespe-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 3,
+        'type_id': 23,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:germany:Wespe',
+    },
+    {
+        'ammo_capacity': 114,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '610810000600ca0003000f00040000',
+        'descriptor_sha256': 'e77a84df2881d2aec93a65bc83bd3ce2b6dda423156904e9292f048fa12c1d85',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 65,
+                'max_regen_health': 32,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 70,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'japan-Chi_Ha',
+        'legacy_inventory': None,
+        'max_hp': 220,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:japan:chassis:Chassis_Chi_Ha',
+                'native_compact_id': 4194,
+            },
+            'engine': {
+                'module_id': 'module:japan:engine:_Type97',
+                'native_compact_id': 1637,
+            },
+            'fuelTank': {
+                'module_id': 'module:japan:fuelTank:Medium',
+                'native_compact_id': 51814,
+            },
+            'gun': {
+                'module_id': 'module:japan:gun:_57mm_Gun_Type97',
+                'native_compact_id': 1124,
+            },
+            'radio': {
+                'module_id': 'module:japan:radio:_Type94_Hei',
+                'native_compact_id': 871,
+            },
+            'turret': {
+                'module_id': 'module:japan:turret:Turret_1_Chi_Ha',
+                'native_compact_id': 3939,
+            },
+        },
+        'nation': 'japan',
+        'nation_id': 6,
+        'native_compact_id': 2145,
+        'resource_name': 'Chi_Ha',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 11,
+                'native_compact_id': 2922,
+                'resource_name': '_57mm_AP_Type97',
+                'shell_definition_id': 'shell:japan-Chi_Ha-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 12,
+                'native_compact_id': 3178,
+                'resource_name': '_57mm_HEAT_Type97',
+                'shell_definition_id': 'shell:japan-Chi_Ha-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 13,
+                'native_compact_id': 3434,
+                'resource_name': '_57mm_HE_Type97',
+                'shell_definition_id': 'shell:japan-Chi_Ha-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 8,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:japan:Chi_Ha',
+    },
+    {
+        'ammo_capacity': 900,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '610102000400c90002000200010000',
+        'descriptor_sha256': 'ba4d7543378c05c647f9e4016a52e2fc7e621cf1f07f2e976a6cd4ffef01c96e',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 66,
+                'max_regen_health': 33,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 85,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 60,
+                'max_regen_health': 36,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 34,
+                'max_regen_health': 17,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'japan-Chi_Ni',
+        'legacy_inventory': None,
+        'max_hp': 190,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:japan:chassis:Chassis_Chi_Ni',
+                'native_compact_id': 610,
+            },
+            'engine': {
+                'module_id': 'module:japan:engine:_A6120VDe',
+                'native_compact_id': 1125,
+            },
+            'fuelTank': {
+                'module_id': 'module:japan:fuelTank:Small',
+                'native_compact_id': 51558,
+            },
+            'gun': {
+                'module_id': 'module:japan:gun:_13.2mm_Type93',
+                'native_compact_id': 356,
+            },
+            'radio': {
+                'module_id': 'module:japan:radio:_Type94_Otsu',
+                'native_compact_id': 615,
+            },
+            'turret': {
+                'module_id': 'module:japan:turret:Turret_1_Chi_Ni',
+                'native_compact_id': 611,
+            },
+        },
+        'nation': 'japan',
+        'nation_id': 6,
+        'native_compact_id': 353,
+        'resource_name': 'Chi_Ni',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 4,
+                'native_compact_id': 1130,
+                'resource_name': '_13.2mm_AP',
+                'shell_definition_id': 'shell:japan-Chi_Ni-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 45,
+                'native_compact_id': 11626,
+                'resource_name': '_13.2mm_Balle_T.P.',
+                'shell_definition_id': 'shell:japan-Chi_Ni-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 2,
+        'type_id': 1,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:japan:Chi_Ni',
+    },
+    {
+        'ammo_capacity': 106,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '610912000900ca00030011000b0000',
+        'descriptor_sha256': '1b8134be4e60cfb9cfa57deaff981835aed790edd406abd18c019452495249b9',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 66,
+                'max_regen_health': 33,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 70,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 66,
+                'max_regen_health': 33,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'japan-Ke_Ni',
+        'legacy_inventory': None,
+        'max_hp': 220,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:japan:chassis:Chassis_Ke_Ni',
+                'native_compact_id': 4706,
+            },
+            'engine': {
+                'module_id': 'module:japan:engine:_Type100_V6_Kuurei',
+                'native_compact_id': 2405,
+            },
+            'fuelTank': {
+                'module_id': 'module:japan:fuelTank:Medium',
+                'native_compact_id': 51814,
+            },
+            'gun': {
+                'module_id': 'module:japan:gun:_37mm_Type_100',
+                'native_compact_id': 2916,
+            },
+            'radio': {
+                'module_id': 'module:japan:radio:_Type94_Hei',
+                'native_compact_id': 871,
+            },
+            'turret': {
+                'module_id': 'module:japan:turret:Turret_1_Ke_Ni',
+                'native_compact_id': 4451,
+            },
+        },
+        'nation': 'japan',
+        'nation_id': 6,
+        'native_compact_id': 2401,
+        'resource_name': 'Ke_Ni',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 14,
+                'native_compact_id': 3690,
+                'resource_name': '_37mm_APHE_Type94',
+                'shell_definition_id': 'shell:japan-Ke_Ni-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 15,
+                'native_compact_id': 3946,
+                'resource_name': '_37mm_APHE_Type1',
+                'shell_definition_id': 'shell:japan-Ke_Ni-stock-ap2',
+                'suffix': 'ap2',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4202,
+                'resource_name': '_37mm_HE_Type4',
+                'shell_definition_id': 'shell:japan-Ke_Ni-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 9,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:japan:Ke_Ni',
+    },
+    {
+        'ammo_capacity': 106,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '61ca01000300ca0000000100050000',
+        'descriptor_sha256': 'f0263b5ff52f3e3d1234388277d528d617f8029944ad650c089bb246c9060b51',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 66,
+                'max_regen_health': 33,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 66,
+                'max_regen_health': 33,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'japan-Ke_Ni_B',
+        'legacy_inventory': None,
+        'max_hp': 260,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:japan:chassis:Chassis_Ke_Ni_B',
+                'native_compact_id': 354,
+            },
+            'engine': {
+                'module_id': 'module:japan:engine:_Type100_V6_A_1',
+                'native_compact_id': 869,
+            },
+            'fuelTank': {
+                'module_id': 'module:japan:fuelTank:Medium',
+                'native_compact_id': 51814,
+            },
+            'gun': {
+                'module_id': 'module:japan:gun:_37mm_Type_100_1',
+                'native_compact_id': 1380,
+            },
+            'radio': {
+                'module_id': 'module:japan:radio:_Type94_Hei_1',
+                'native_compact_id': 103,
+            },
+            'turret': {
+                'module_id': 'module:japan:turret:Turret_1_Ke_Ni_B',
+                'native_compact_id': 355,
+            },
+        },
+        'nation': 'japan',
+        'nation_id': 6,
+        'native_compact_id': 51809,
+        'resource_name': 'Ke_Ni_B',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 14,
+                'native_compact_id': 3690,
+                'resource_name': '_37mm_APHE_Type94',
+                'shell_definition_id': 'shell:japan-Ke_Ni_B-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 15,
+                'native_compact_id': 3946,
+                'resource_name': '_37mm_APHE_Type1',
+                'shell_definition_id': 'shell:japan-Ke_Ni_B-stock-ap2',
+                'suffix': 'ap2',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4202,
+                'resource_name': '_37mm_HE_Type4',
+                'shell_definition_id': 'shell:japan-Ke_Ni_B-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 202,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:japan:Ke_Ni_B',
+    },
+    {
+        'ammo_capacity': 90,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '510004000400c90003000400040000',
+        'descriptor_sha256': 'f76076b460f170ca2dbe354e307a32cf894c4599c3aedd7542b739a17047bc0d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 32,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 48,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 40,
+                'max_regen_health': 24,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'gun',
+                'max_health': 64,
+                'max_regen_health': 32,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 30,
+                'max_regen_health': 15,
+            },
+        ),
+        'kind': 'uk-GB01_Medium_Mark_I',
+        'legacy_inventory': None,
+        'max_hp': 130,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB01_Medium_Mark_I',
+                'native_compact_id': 1106,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Vickers-Armstrong',
+                'native_compact_id': 1109,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_3pdr_gun_Hotchkiss',
+                'native_compact_id': 1108,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:Alarm_flags',
+                'native_compact_id': 855,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB01_Medium_Mark_I',
+                'native_compact_id': 1107,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 81,
+        'resource_name': 'GB01_Medium_Mark_I',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 21,
+                'native_compact_id': 5466,
+                'resource_name': '_47mm_3pdrAP',
+                'shell_definition_id': 'shell:uk-GB01_Medium_Mark_I-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 22,
+                'native_compact_id': 5722,
+                'resource_name': '_47mm_3pdrAPCR',
+                'shell_definition_id': 'shell:uk-GB01_Medium_Mark_I-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 23,
+                'native_compact_id': 5978,
+                'resource_name': '_47mm_3pdrHE',
+                'shell_definition_id': 'shell:uk-GB01_Medium_Mark_I-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 1,
+        'type_id': 0,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:uk:GB01_Medium_Mark_I',
+    },
+    {
+        'ammo_capacity': 111,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '510106000400c90004000600040000',
+        'descriptor_sha256': 'd23be403404ecaa9a595309a92b296220ff154df497153e8c078a05b89b6e5f3',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 32,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 85,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 50,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 64,
+                'max_regen_health': 32,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'uk-GB05_Vickers_Medium_Mk_II',
+        'legacy_inventory': None,
+        'max_hp': 170,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB05_Vickers_Medium_Mk_II',
+                'native_compact_id': 1618,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Vickers-Armstrong',
+                'native_compact_id': 1109,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_3pdr_gun_Hotchkiss',
+                'native_compact_id': 1108,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N14',
+                'native_compact_id': 1111,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB05_Vickers_Medium_Mk_II',
+                'native_compact_id': 1619,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 337,
+        'resource_name': 'GB05_Vickers_Medium_Mk_II',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 21,
+                'native_compact_id': 5466,
+                'resource_name': '_47mm_3pdrAP',
+                'shell_definition_id': 'shell:uk-GB05_Vickers_Medium_Mk_II-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 22,
+                'native_compact_id': 5722,
+                'resource_name': '_47mm_3pdrAPCR',
+                'shell_definition_id': 'shell:uk-GB05_Vickers_Medium_Mk_II-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 23,
+                'native_compact_id': 5978,
+                'resource_name': '_47mm_3pdrHE',
+                'shell_definition_id': 'shell:uk-GB05_Vickers_Medium_Mk_II-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 2,
+        'type_id': 1,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:uk:GB05_Vickers_Medium_Mk_II',
+    },
+    {
+        'ammo_capacity': 111,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '510916001900ca00040015000a0000',
+        'descriptor_sha256': 'a62ce1f191b0c8e3b2b89cea7da0a03039c6a64ef147f76a5ec0dae7d183b0be',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 65,
+                'max_regen_health': 32,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 50,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'uk-GB06_Vickers_Medium_Mk_III',
+        'legacy_inventory': None,
+        'max_hp': 250,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB06_Vickers_Medium_Mk_III',
+                'native_compact_id': 5714,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Armstrong-Siddeley',
+                'native_compact_id': 6485,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Medium',
+                'native_compact_id': 51798,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:OQF_3pdr_Gun',
+                'native_compact_id': 2644,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N14',
+                'native_compact_id': 1111,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB06_Vickers_Medium_Mk_III',
+                'native_compact_id': 5459,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 2385,
+        'resource_name': 'GB06_Vickers_Medium_Mk_III',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 21,
+                'native_compact_id': 5466,
+                'resource_name': '_47mm_3pdrAP',
+                'shell_definition_id': 'shell:uk-GB06_Vickers_Medium_Mk_III-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 22,
+                'native_compact_id': 5722,
+                'resource_name': '_47mm_3pdrAPCR',
+                'shell_definition_id': 'shell:uk-GB06_Vickers_Medium_Mk_III-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 23,
+                'native_compact_id': 5978,
+                'resource_name': '_47mm_3pdrHE',
+                'shell_definition_id': 'shell:uk-GB06_Vickers_Medium_Mk_III-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 9,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:uk:GB06_Vickers_Medium_Mk_III',
+    },
+    {
+        'ammo_capacity': 75,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '51040c001800cb0009000c000e0000',
+        'descriptor_sha256': '3b7bbc765577e80c5abfb283315b9cec7d962cb91765b6b072576c1337694b7d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 136,
+                'max_regen_health': 67,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 94,
+                'max_regen_health': 47,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'uk-GB21_Cromwell',
+        'legacy_inventory': None,
+        'max_hp': 700,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB21_Cromwell',
+                'native_compact_id': 3154,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Nuffield_liberty_MKV',
+                'native_compact_id': 6229,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Average',
+                'native_compact_id': 52054,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:QF_6_pounder_Mk_III',
+                'native_compact_id': 3668,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk1',
+                'native_compact_id': 2391,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB21_Cromwell',
+                'native_compact_id': 3155,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 1105,
+        'resource_name': 'GB21_Cromwell',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 7,
+                'native_compact_id': 1882,
+                'resource_name': '_6pdr_AP_MK_1T',
+                'shell_definition_id': 'shell:uk-GB21_Cromwell-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 8,
+                'native_compact_id': 2138,
+                'resource_name': '_6pdr_APCR_MK_1T',
+                'shell_definition_id': 'shell:uk-GB21_Cromwell-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 14,
+                'native_compact_id': 3674,
+                'resource_name': '_6pdr_HE_MK_10T',
+                'shell_definition_id': 'shell:uk-GB21_Cromwell-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 4,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:uk:GB21_Cromwell',
+    },
+    {
+        'ammo_capacity': 61,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '511530000c00cc0008002e00120000',
+        'descriptor_sha256': '79080190c8f7d3d9f66b2cdcae49efc3e296bbd0915f2fd215197d4084661454',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 200,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'uk-GB22_Comet',
+        'legacy_inventory': None,
+        'max_hp': 1050,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB22_Comet',
+                'native_compact_id': 12370,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royse_Meteor',
+                'native_compact_id': 3157,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Heavy',
+                'native_compact_id': 52310,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_75mm_Gun_Mk_V',
+                'native_compact_id': 4692,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk2',
+                'native_compact_id': 2135,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB22_Comet',
+                'native_compact_id': 11859,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 5457,
+        'resource_name': 'GB22_Comet',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 31,
+                'native_compact_id': 8026,
+                'resource_name': '_75mm_AP_Mk1',
+                'shell_definition_id': 'shell:uk-GB22_Comet-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 32,
+                'native_compact_id': 8282,
+                'resource_name': '_75mm_APCR_Mk3',
+                'shell_definition_id': 'shell:uk-GB22_Comet-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 33,
+                'native_compact_id': 8538,
+                'resource_name': '_75mm_HE_Mk2',
+                'shell_definition_id': 'shell:uk-GB22_Comet-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 21,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:uk:GB22_Comet',
+    },
+    {
+        'ammo_capacity': 96,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '511734000c00cd00110032001e0000',
+        'descriptor_sha256': '558951f3d18523f18e1c6aee3d8f66965e45fabbce50c9e05cbbafb410cd1071',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 220,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'gun',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 140,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'uk-GB23_Centurion',
+        'legacy_inventory': None,
+        'max_hp': 1350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB23_Centurion',
+                'native_compact_id': 13394,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royse_Meteor',
+                'native_compact_id': 3157,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Large',
+                'native_compact_id': 52566,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:OQF_77mm_Gun_MkII',
+                'native_compact_id': 7764,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk3',
+                'native_compact_id': 4439,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB23_Centurion',
+                'native_compact_id': 12883,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 5969,
+        'resource_name': 'GB23_Centurion',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 48,
+                'native_compact_id': 12378,
+                'resource_name': '_77mm_APCBC_Mk8T',
+                'shell_definition_id': 'shell:uk-GB23_Centurion-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 49,
+                'native_compact_id': 12634,
+                'resource_name': '_77mm_APDS_Mk1T',
+                'shell_definition_id': 'shell:uk-GB23_Centurion-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 50,
+                'native_compact_id': 12890,
+                'resource_name': '_77mm_HE_Mk1T',
+                'shell_definition_id': 'shell:uk-GB23_Centurion-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 23,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:uk:GB23_Centurion',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '512956004100c90004004a003c0000',
+        'descriptor_sha256': '8623f22041d5de381faf647d0b926808ff16336e493a21ffbadedd6eeabe95e2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 32,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 50,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'uk-GB25_Loyd_Carrier',
+        'legacy_inventory': None,
+        'max_hp': 80,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB25_Loyd_Carrier',
+                'native_compact_id': 22098,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Ford_V8-220',
+                'native_compact_id': 16725,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_13pdr_Gun',
+                'native_compact_id': 15444,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N14',
+                'native_compact_id': 1111,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB25_Loyd_Carrier',
+                'native_compact_id': 19027,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 10577,
+        'resource_name': 'GB25_Loyd_Carrier',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 91,
+                'native_compact_id': 23386,
+                'resource_name': '_13pdr_HE',
+                'shell_definition_id': 'shell:uk-GB25_Loyd_Carrier-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 2,
+        'type_id': 41,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB25_Loyd_Carrier',
+    },
+    {
+        'ammo_capacity': 150,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '512a59000400c90009004c003e0000',
+        'descriptor_sha256': '4893d3c023ed4ceb2904262472c995b58a525fcfc9749c2111298df0fe5da952',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 32,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'uk-GB26_Birch_Gun',
+        'legacy_inventory': None,
+        'max_hp': 190,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB26_Birch_Gun',
+                'native_compact_id': 22866,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Vickers-Armstrong',
+                'native_compact_id': 1109,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_18_pdr_SPG_Gun',
+                'native_compact_id': 15956,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk1',
+                'native_compact_id': 2391,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_2_GB26_Birch_Gun',
+                'native_compact_id': 19539,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 10833,
+        'resource_name': 'GB26_Birch_Gun',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 92,
+                'native_compact_id': 23642,
+                'resource_name': '_18pdr_HE_Mk_1C',
+                'shell_definition_id': 'shell:uk-GB26_Birch_Gun-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 93,
+                'native_compact_id': 23898,
+                'resource_name': '_18pdr_AP_Mk_1T',
+                'shell_definition_id': 'shell:uk-GB26_Birch_Gun-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 4,
+        'type_id': 42,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB26_Birch_Gun',
+    },
+    {
+        'ammo_capacity': 112,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '510d1f001500c90009001e003e0000',
+        'descriptor_sha256': '7c1a8dbbfe2982e3a8c3a48e5ca613a149848f9d8f3cadc454f26ea5b912625c',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 45,
+                'max_regen_health': 22,
+            },
+        ),
+        'kind': 'uk-GB27_Sexton',
+        'legacy_inventory': None,
+        'max_hp': 140,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB27_Sexton',
+                'native_compact_id': 8018,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Wright_Continental_R-975C1',
+                'native_compact_id': 5461,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_18_pdr_SPG_Gun',
+                'native_compact_id': 15956,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk1',
+                'native_compact_id': 2391,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB27_Sexton',
+                'native_compact_id': 7763,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 3409,
+        'resource_name': 'GB27_Sexton',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 92,
+                'native_compact_id': 23642,
+                'resource_name': '_18pdr_HE_Mk_1C',
+                'shell_definition_id': 'shell:uk-GB27_Sexton-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 93,
+                'native_compact_id': 23898,
+                'resource_name': '_18pdr_AP_Mk_1T',
+                'shell_definition_id': 'shell:uk-GB27_Sexton-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 3,
+        'type_id': 13,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB27_Sexton',
+    },
+    {
+        'ammo_capacity': 32,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '512b5b002e00ca0009004d001a0000',
+        'descriptor_sha256': '716f550cd2882a7e95975107941b496a08b5e6aaf286fb33b7a063656099b6e0',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 66,
+                'max_regen_health': 33,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+        ),
+        'kind': 'uk-GB28_Bishop',
+        'legacy_inventory': None,
+        'max_hp': 350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB28_Bishop',
+                'native_compact_id': 23378,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:AEC_A189',
+                'native_compact_id': 11861,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Medium',
+                'native_compact_id': 51798,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:OQF_25pdr_Gun_Mk_II',
+                'native_compact_id': 6740,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk1',
+                'native_compact_id': 2391,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB28_Bishop',
+                'native_compact_id': 19795,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 11089,
+        'resource_name': 'GB28_Bishop',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 43,
+                'native_compact_id': 11098,
+                'resource_name': '_25pdr_HE_Mk_1D',
+                'shell_definition_id': 'shell:uk-GB28_Bishop-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 84,
+                'native_compact_id': 21594,
+                'resource_name': '_25pdr_AP_Mk_1T_SC',
+                'shell_definition_id': 'shell:uk-GB28_Bishop-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 44,
+                'native_compact_id': 11354,
+                'resource_name': '_25pdr_AP_Mk_1T',
+                'shell_definition_id': 'shell:uk-GB28_Bishop-stock-ap2',
+                'suffix': 'ap2',
+            },
+        ),
+        'tier': 5,
+        'type_id': 43,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB28_Bishop',
+    },
+    {
+        'ammo_capacity': 64,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '512c5d001700cb000f004e003f0000',
+        'descriptor_sha256': 'ad4d85efcb4c3f0aec5eaaac86d3b9cb97ed6877009cecde34161e4a989a788c',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 80,
+                'max_regen_health': 48,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'gun',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'uk-GB29_Crusader_5inch',
+        'legacy_inventory': None,
+        'max_hp': 350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB29_Crusader_5inch',
+                'native_compact_id': 23890,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Nuffield_liberty_MKIV',
+                'native_compact_id': 5973,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Average',
+                'native_compact_id': 52054,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_4.5inch_SPG_Howitzer',
+                'native_compact_id': 16212,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N9',
+                'native_compact_id': 3927,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB29_Crusader_5inch',
+                'native_compact_id': 20051,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 11345,
+        'resource_name': 'GB29_Crusader_5inch',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 94,
+                'native_compact_id': 24154,
+                'resource_name': '_4.5inch_HE_Mk_13',
+                'shell_definition_id': 'shell:uk-GB29_Crusader_5inch-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 44,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB29_Crusader_5inch',
+    },
+    {
+        'ammo_capacity': 76,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '512d5f000d00cb0011005100400000',
+        'descriptor_sha256': '298279ab4b319acd4ead8e05f03fdeb3839578c7f62ebb0c259c367d39f2f601',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'uk-GB30_FV3805',
+        'legacy_inventory': None,
+        'max_hp': 450,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB30_FV3805',
+                'native_compact_id': 24402,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royse_Meteor_MkIV',
+                'native_compact_id': 3413,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Average',
+                'native_compact_id': 52054,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_5.5inch_SPG_Gun',
+                'native_compact_id': 16468,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk3',
+                'native_compact_id': 4439,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB30_FV3805',
+                'native_compact_id': 20819,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 11601,
+        'resource_name': 'GB30_FV3805',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 95,
+                'native_compact_id': 24410,
+                'resource_name': '_5.5inch_HE_Mk_4',
+                'shell_definition_id': 'shell:uk-GB30_FV3805-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 100,
+                'native_compact_id': 25690,
+                'resource_name': '_5.5inch_HE_Mk_5',
+                'shell_definition_id': 'shell:uk-GB30_FV3805-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 9,
+        'type_id': 45,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB30_FV3805',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '513065002300cc0014005500430000',
+        'descriptor_sha256': 'ef3d5cc4c3e158ccc93b24e5c13c4edd5e303241f64417f1ecdb9efb9c531bf2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 320,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 180,
+                'max_regen_health': 108,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'gun',
+                'max_health': 288,
+                'max_regen_health': 144,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'uk-GB31_Conqueror_Gun',
+        'legacy_inventory': None,
+        'max_hp': 530,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB31_Conqueror_Gun',
+                'native_compact_id': 25938,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royse_Meteor_M120',
+                'native_compact_id': 9045,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Heavy',
+                'native_compact_id': 52310,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_9.2inch_SPG_Howitzer',
+                'native_compact_id': 17236,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:C45',
+                'native_compact_id': 5207,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB31_Conqueror_Gun',
+                'native_compact_id': 21843,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 12369,
+        'resource_name': 'GB31_Conqueror_Gun',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 99,
+                'native_compact_id': 25434,
+                'resource_name': '_9.2inch_HE_Mk_18',
+                'shell_definition_id': 'shell:uk-GB31_Conqueror_Gun-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 103,
+                'native_compact_id': 26458,
+                'resource_name': '_9.2inch_HE_Mk_19',
+                'shell_definition_id': 'shell:uk-GB31_Conqueror_Gun-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 10,
+        'type_id': 48,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB31_Conqueror_Gun',
+    },
+    {
+        'ammo_capacity': 60,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '51cd01000100cd0011000100010000',
+        'descriptor_sha256': '9f6ab61eef3b7837851b32b1fc6d62ec51090e943390f525246c893e2c5905b9',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 260,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+        ),
+        'kind': 'uk-GB32_Tortoise',
+        'legacy_inventory': None,
+        'max_hp': 2000,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB32_Tortoise',
+                'native_compact_id': 338,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royse_Meteor_MkV',
+                'native_compact_id': 341,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Large',
+                'native_compact_id': 52566,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_32-pounder_AT_Gun_OQF',
+                'native_compact_id': 340,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk3',
+                'native_compact_id': 4439,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB32_Tortoise',
+                'native_compact_id': 339,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 52561,
+        'resource_name': 'GB32_Tortoise',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 1,
+                'native_compact_id': 346,
+                'resource_name': '_32pdr_AP_MkI',
+                'shell_definition_id': 'shell:uk-GB32_Tortoise-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 2,
+                'native_compact_id': 602,
+                'resource_name': '_32pdr_APCR_MkII',
+                'shell_definition_id': 'shell:uk-GB32_Tortoise-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 3,
+                'native_compact_id': 858,
+                'resource_name': '_32pdr_HE_MkI',
+                'shell_definition_id': 'shell:uk-GB32_Tortoise-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 9,
+        'type_id': 205,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:uk:GB32_Tortoise',
+    },
+    {
+        'ammo_capacity': 65,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '512650001c00cc0009004700380000',
+        'descriptor_sha256': '3ca8d60f2aeb79831b941881e296c3b574bd6546160fb17e46c9bde3ebedc088',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 82,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 200,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'uk-GB40_Gun_Carrier_Churchill',
+        'legacy_inventory': None,
+        'max_hp': 650,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB40_Gun_Carrier_Churchill',
+                'native_compact_id': 20562,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Meadows_DAV',
+                'native_compact_id': 7253,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Heavy',
+                'native_compact_id': 52310,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_3inch_20_cwt_MkIII_AT_Gun',
+                'native_compact_id': 14420,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk1',
+                'native_compact_id': 2391,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB40_Gun_Carrier_Churchill',
+                'native_compact_id': 18259,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 9809,
+        'resource_name': 'GB40_Gun_Carrier_Churchill',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 85,
+                'native_compact_id': 21850,
+                'resource_name': '_3inch_AP',
+                'shell_definition_id': 'shell:uk-GB40_Gun_Carrier_Churchill-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 86,
+                'native_compact_id': 22106,
+                'resource_name': '_3inch_APCR',
+                'shell_definition_id': 'shell:uk-GB40_Gun_Carrier_Churchill-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 87,
+                'native_compact_id': 22362,
+                'resource_name': '_3inch_HE',
+                'shell_definition_id': 'shell:uk-GB40_Gun_Carrier_Churchill-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 38,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:uk:GB40_Gun_Carrier_Churchill',
+    },
+    {
+        'ammo_capacity': 400,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '511e40003800c90010003d00050000',
+        'descriptor_sha256': '7faf90b125b712a4d17b3a550f87cec32c41936d105968987e74d9acfef8ed94',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 86,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 85,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 60,
+                'max_regen_health': 36,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 36,
+                'max_regen_health': 18,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'uk-GB58_Cruiser_Mk_III',
+        'legacy_inventory': None,
+        'max_hp': 140,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB58_Cruiser_Mk_III',
+                'native_compact_id': 16466,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Nuffield_liberty_MKII',
+                'native_compact_id': 14421,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_15mm_Machine_gun_BESA',
+                'native_compact_id': 1364,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N11',
+                'native_compact_id': 4183,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB58_Cruiser_Mk_III',
+                'native_compact_id': 15699,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 7761,
+        'resource_name': 'GB58_Cruiser_Mk_III',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 12,
+                'native_compact_id': 3162,
+                'resource_name': '_15mm_AP_W_Mk1',
+                'shell_definition_id': 'shell:uk-GB58_Cruiser_Mk_III-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 2,
+        'type_id': 30,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:uk:GB58_Cruiser_Mk_III',
+    },
+    {
+        'ammo_capacity': 144,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '51d23f003600cd0002003c00240000',
+        'descriptor_sha256': 'c1d3d8086d326823a0f8b4a26b5ab67c8234fe3c3a79b3eb96e3861377cfe8d2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 220,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 160,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'gun',
+                'max_health': 144,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 140,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'uk-GB63_TOG_II',
+        'legacy_inventory': None,
+        'max_hp': 1400,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB63_TOG_II',
+                'native_compact_id': 16210,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Paxman_Ricardo',
+                'native_compact_id': 13909,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Large',
+                'native_compact_id': 52566,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:OQF_17pdr_Gun_Mk_VII_A',
+                'native_compact_id': 9300,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:British_Wireless_set_N19',
+                'native_compact_id': 599,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB63_TOG_II',
+                'native_compact_id': 15443,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 53841,
+        'resource_name': 'GB63_TOG_II',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 40,
+                'native_compact_id': 10330,
+                'resource_name': '_17pdr_AP_Mk3T',
+                'shell_definition_id': 'shell:uk-GB63_TOG_II-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 41,
+                'native_compact_id': 10586,
+                'resource_name': '_17pdr_APC_Mk4T',
+                'shell_definition_id': 'shell:uk-GB63_TOG_II-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 42,
+                'native_compact_id': 10842,
+                'resource_name': '_17pdr_HE_Mk1T',
+                'shell_definition_id': 'shell:uk-GB63_TOG_II-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 210,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:uk:GB63_TOG_II',
+    },
+    {
+        'ammo_capacity': 120,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '512752001700cc0008004800330000',
+        'descriptor_sha256': '8b94924ac62b040c64049dc0589c1f8a686b1609aea99a8f2f65e9b2ade2b784',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 220,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'gun',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'uk-GB75_AT7',
+        'legacy_inventory': None,
+        'max_hp': 1250,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB75_AT7',
+                'native_compact_id': 21074,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Nuffield_liberty_MKIV',
+                'native_compact_id': 5973,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Heavy',
+                'native_compact_id': 52310,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:QF_6_pounder_Mk_V_AT',
+                'native_compact_id': 13140,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk2',
+                'native_compact_id': 2135,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB75_AT7',
+                'native_compact_id': 18515,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 10065,
+        'resource_name': 'GB75_AT7',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 7,
+                'native_compact_id': 1882,
+                'resource_name': '_6pdr_AP_MK_1T',
+                'shell_definition_id': 'shell:uk-GB75_AT7-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 8,
+                'native_compact_id': 2138,
+                'resource_name': '_6pdr_APCR_MK_1T',
+                'shell_definition_id': 'shell:uk-GB75_AT7-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 14,
+                'native_compact_id': 3674,
+                'resource_name': '_6pdr_HE_MK_10T',
+                'shell_definition_id': 'shell:uk-GB75_AT7-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 39,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:uk:GB75_AT7',
+    },
+    {
+        'ammo_capacity': 400,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '51d666004400c90015005700440000',
+        'descriptor_sha256': '779d862b987ccede28413f0a4795cb77a72d8114084ea9d464fc04ccf97aa5cf',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 38,
+                'max_regen_health': 19,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 85,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 80,
+                'max_regen_health': 48,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 36,
+                'max_regen_health': 18,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'uk-GB76_Mk_VIC',
+        'legacy_inventory': None,
+        'max_hp': 150,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB76_Mk_VIC',
+                'native_compact_id': 26194,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Meadows_ESTB',
+                'native_compact_id': 17493,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_15mm_Machine_gun_BESA_',
+                'native_compact_id': 17492,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N9A',
+                'native_compact_id': 5463,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB76_Mk_VIC',
+                'native_compact_id': 22355,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 54865,
+        'resource_name': 'GB76_Mk_VIC',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 12,
+                'native_compact_id': 3162,
+                'resource_name': '_15mm_AP_W_Mk1',
+                'shell_definition_id': 'shell:uk-GB76_Mk_VIC-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 2,
+        'type_id': 214,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:uk:GB76_Mk_VIC',
+    },
+    {
+        'ammo_capacity': 64,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '512e61004200ca00080052001a0000',
+        'descriptor_sha256': '172b99213e6eabd2f8cd9ba1432e195ae6b360adc0236e508d03f9f7f1b844d0',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'gun',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'uk-GB77_FV304',
+        'legacy_inventory': None,
+        'max_hp': 280,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB77_FV304',
+                'native_compact_id': 24914,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royce_Meteorite_V8',
+                'native_compact_id': 16981,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Medium',
+                'native_compact_id': 51798,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:OQF_25pdr_Gun_Mk_II',
+                'native_compact_id': 6740,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk2',
+                'native_compact_id': 2135,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB77_FV304',
+                'native_compact_id': 21075,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 11857,
+        'resource_name': 'GB77_FV304',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 43,
+                'native_compact_id': 11098,
+                'resource_name': '_25pdr_HE_Mk_1D',
+                'shell_definition_id': 'shell:uk-GB77_FV304-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 84,
+                'native_compact_id': 21594,
+                'resource_name': '_25pdr_AP_Mk_1T_SC',
+                'shell_definition_id': 'shell:uk-GB77_FV304-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 44,
+                'native_compact_id': 11354,
+                'resource_name': '_25pdr_AP_Mk_1T',
+                'shell_definition_id': 'shell:uk-GB77_FV304-stock-ap2',
+                'suffix': 'ap2',
+            },
+        ),
+        'tier': 6,
+        'type_id': 46,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB77_FV304',
+    },
+    {
+        'ammo_capacity': 112,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '51d558004000c90002004b003d0000',
+        'descriptor_sha256': 'c9ad4a3789bfde0343a9cdd7921634a1d4b3ca0d7d8f1bd6d1e40d33135bb24d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 160,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'gun',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 45,
+                'max_regen_health': 22,
+            },
+        ),
+        'kind': 'uk-GB78_Sexton_I',
+        'legacy_inventory': None,
+        'max_hp': 140,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_Sexton_I',
+                'native_compact_id': 22610,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Wright_Continental_R-975EC2_A',
+                'native_compact_id': 16469,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Small',
+                'native_compact_id': 51542,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_25pdr_Field_Gun',
+                'native_compact_id': 15700,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:British_Wireless_set_N19',
+                'native_compact_id': 599,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_Sexton_I',
+                'native_compact_id': 19283,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 54609,
+        'resource_name': 'GB78_Sexton_I',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 43,
+                'native_compact_id': 11098,
+                'resource_name': '_25pdr_HE_Mk_1D',
+                'shell_definition_id': 'shell:uk-GB78_Sexton_I-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 84,
+                'native_compact_id': 21594,
+                'resource_name': '_25pdr_AP_Mk_1T_SC',
+                'shell_definition_id': 'shell:uk-GB78_Sexton_I-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 44,
+                'native_compact_id': 11354,
+                'resource_name': '_25pdr_AP_Mk_1T',
+                'shell_definition_id': 'shell:uk-GB78_Sexton_I-stock-ap2',
+                'suffix': 'ap2',
+            },
+        ),
+        'tier': 3,
+        'type_id': 213,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB78_Sexton_I',
+    },
+    {
+        'ammo_capacity': 48,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '512f63000d00cb0011005400400000',
+        'descriptor_sha256': '09c025b42736e81896c42c8403bc6b63b2cbda753d480e4e4b90bfce48b1a863',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 247,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 134,
+                'max_regen_health': 67,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'uk-GB79_FV206',
+        'legacy_inventory': None,
+        'max_hp': 430,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:uk:chassis:Chassis_GB79_FV206',
+                'native_compact_id': 25426,
+            },
+            'engine': {
+                'module_id': 'module:uk:engine:Rolls_Royse_Meteor_MkIV',
+                'native_compact_id': 3413,
+            },
+            'fuelTank': {
+                'module_id': 'module:uk:fuelTank:Average',
+                'native_compact_id': 52054,
+            },
+            'gun': {
+                'module_id': 'module:uk:gun:_5.5inch_SPG_Gun',
+                'native_compact_id': 16468,
+            },
+            'radio': {
+                'module_id': 'module:uk:radio:N19Mk3',
+                'native_compact_id': 4439,
+            },
+            'turret': {
+                'module_id': 'module:uk:turret:Turret_1_GB79_FV206',
+                'native_compact_id': 21587,
+            },
+        },
+        'nation': 'uk',
+        'nation_id': 5,
+        'native_compact_id': 12113,
+        'resource_name': 'GB79_FV206',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 95,
+                'native_compact_id': 24410,
+                'resource_name': '_5.5inch_HE_Mk_4',
+                'shell_definition_id': 'shell:uk-GB79_FV206-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 100,
+                'native_compact_id': 25690,
+                'resource_name': '_5.5inch_HE_Mk_5',
+                'shell_definition_id': 'shell:uk-GB79_FV206-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 8,
+        'type_id': 47,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:uk:GB79_FV206',
+    },
+    {
+        'ammo_capacity': 54,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '211b37000c00cc0008003100250000',
+        'descriptor_sha256': '6b8bc07d224eac3b65d8503a9ffe40b43828c4c6d0b2b30eabcf5b4a72dd2f8b',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 170,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'usa-M10_Wolverine',
+        'legacy_inventory': None,
+        'max_hp': 340,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M10_Wolverine',
+                'native_compact_id': 14114,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_Continental_R-975EC2',
+                'native_compact_id': 3109,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Heavy',
+                'native_compact_id': 52262,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_AT_Gun_M7_L50',
+                'native_compact_id': 9508,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508',
+                'native_compact_id': 2087,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M10_Wolverine',
+                'native_compact_id': 12579,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 6945,
+        'resource_name': 'M10_Wolverine',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 104,
+                'native_compact_id': 26666,
+                'resource_name': '_76mm_M62',
+                'shell_definition_id': 'shell:usa-M10_Wolverine-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 105,
+                'native_compact_id': 26922,
+                'resource_name': '_76mm_M79',
+                'shell_definition_id': 'shell:usa-M10_Wolverine-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 106,
+                'native_compact_id': 27178,
+                'resource_name': '_76mm_M42A1',
+                'shell_definition_id': 'shell:usa-M10_Wolverine-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 5,
+        'type_id': 27,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:M10_Wolverine',
+    },
+    {
+        'ammo_capacity': 20,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '211f40000d00cb000c003800160000',
+        'descriptor_sha256': '3cb8bb17372c0095bea402329d432ab0ca2dbe8f3b9ba15156f84edbeba9b6c2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'gun',
+                'max_health': 188,
+                'max_regen_health': 94,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'usa-M12',
+        'legacy_inventory': None,
+        'max_hp': 350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M12',
+                'native_compact_id': 16418,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_Continental_R-975C1',
+                'native_compact_id': 3365,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_155mm_Gun_M1918M1',
+                'native_compact_id': 5668,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_510',
+                'native_compact_id': 3111,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M12',
+                'native_compact_id': 14371,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 7969,
+        'resource_name': 'M12',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 35,
+                'native_compact_id': 9002,
+                'resource_name': '_155mm_HE_M101',
+                'shell_definition_id': 'shell:usa-M12-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 45,
+                'native_compact_id': 11562,
+                'resource_name': '_155mm_HE_M101M2',
+                'shell_definition_id': 'shell:usa-M12-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 7,
+        'type_id': 31,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M12',
+    },
+    {
+        'ammo_capacity': 45,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '212d5d000c00cc000c004f00250000',
+        'descriptor_sha256': '5a5e14f0200f2d43cd7b5090410b9690d20de8d4c350892947cb8d06621dbed9',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'usa-M18_Hellcat',
+        'legacy_inventory': None,
+        'max_hp': 550,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M18_Hellcat',
+                'native_compact_id': 23842,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_Continental_R-975EC2',
+                'native_compact_id': 3109,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Heavy',
+                'native_compact_id': 52262,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_AT_Gun_M7_L50',
+                'native_compact_id': 9508,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_510',
+                'native_compact_id': 3111,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M18_Hellcat',
+                'native_compact_id': 20259,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 11553,
+        'resource_name': 'M18_Hellcat',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 104,
+                'native_compact_id': 26666,
+                'resource_name': '_76mm_M62',
+                'shell_definition_id': 'shell:usa-M18_Hellcat-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 105,
+                'native_compact_id': 26922,
+                'resource_name': '_76mm_M79',
+                'shell_definition_id': 'shell:usa-M18_Hellcat-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 106,
+                'native_compact_id': 27178,
+                'resource_name': '_76mm_M42A1',
+                'shell_definition_id': 'shell:usa-M18_Hellcat-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 45,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:M18_Hellcat',
+    },
+    {
+        'ammo_capacity': 1800,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '21070e001100c90004000e000c0000',
+        'descriptor_sha256': '35ae506eac06596868c66d6d7e6bc29f11c2ee8c2b16289ccf67100b5a78b468',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 65,
+                'max_regen_health': 32,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 85,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 30,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'usa-M2_lt',
+        'legacy_inventory': None,
+        'max_hp': 140,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:VVSS_T16E1',
+                'native_compact_id': 3618,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Cuiberson_T-10204',
+                'native_compact_id': 4389,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_12.7mm_MG_HB_M2',
+                'native_compact_id': 3108,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200',
+                'native_compact_id': 1063,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:M2D27810',
+                'native_compact_id': 3619,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 1825,
+        'resource_name': 'M2_lt',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 42,
+                'resource_name': '_12.7mm_AP_M2',
+                'shell_definition_id': 'shell:usa-M2_lt-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 2,
+        'type_id': 7,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:M2_lt',
+    },
+    {
+        'ammo_capacity': 126,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '211224000100c9000c002100130000',
+        'descriptor_sha256': 'b996b6ddcf9b95eff68afd2c307702dc7074c1888fb590827834a3e339afa765',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'usa-M37',
+        'legacy_inventory': None,
+        'max_hp': 180,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:T85E1',
+                'native_compact_id': 9250,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_W-670',
+                'native_compact_id': 293,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_105mm_Howitzer_M3',
+                'native_compact_id': 4900,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_510',
+                'native_compact_id': 3111,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:M37D1',
+                'native_compact_id': 8483,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 4641,
+        'resource_name': 'M37',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 26,
+                'native_compact_id': 6698,
+                'resource_name': '_105mm_HE_M1',
+                'shell_definition_id': 'shell:usa-M37-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 27,
+                'native_compact_id': 6954,
+                'resource_name': '_105mm_HEAT_M67',
+                'shell_definition_id': 'shell:usa-M37-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 18,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M37',
+    },
+    {
+        'ammo_capacity': 750,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '210101000200ca0004000100010000',
+        'descriptor_sha256': '78ad3bb11e0ef5a4127ec702563060aa6e6f3a6a7d49e575142c00031c3be022',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 78,
+                'max_regen_health': 41,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'usa-M3_Stuart',
+        'legacy_inventory': None,
+        'max_hp': 220,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:chassisE1',
+                'native_compact_id': 290,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Guiberson_T-1020-4',
+                'native_compact_id': 549,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Medium',
+                'native_compact_id': 51750,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_20mm_Hispano_Suiza_Birgikt_gun',
+                'native_compact_id': 292,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200',
+                'native_compact_id': 1063,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:D37812',
+                'native_compact_id': 291,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 289,
+        'resource_name': 'M3_Stuart',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 1,
+                'native_compact_id': 298,
+                'resource_name': '_20mm_AP',
+                'shell_definition_id': 'shell:usa-M3_Stuart-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 2,
+                'native_compact_id': 554,
+                'resource_name': '_20mm_APCR',
+                'shell_definition_id': 'shell:usa-M3_Stuart-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 3,
+        'type_id': 1,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:M3_Stuart',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '211d3c000d00cb000c0036002a0000',
+        'descriptor_sha256': '71502994370faba0f501d649bee5db1856116d48fc3e27f5480042da57126298',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 134,
+                'max_regen_health': 67,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 120,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'gun',
+                'max_health': 230,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'usa-M40M43',
+        'legacy_inventory': None,
+        'max_hp': 400,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M40M43',
+                'native_compact_id': 15394,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_Continental_R-975C1',
+                'native_compact_id': 3365,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_155mm_Gun_M1A1',
+                'native_compact_id': 10788,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_510',
+                'native_compact_id': 3111,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M40M43',
+                'native_compact_id': 13859,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 7457,
+        'resource_name': 'M40M43',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 50,
+                'native_compact_id': 12842,
+                'resource_name': '_155mm_HE_M101M4',
+                'shell_definition_id': 'shell:usa-M40M43-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 51,
+                'native_compact_id': 13098,
+                'resource_name': '_155mm_HE_M101M6',
+                'shell_definition_id': 'shell:usa-M40M43-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 8,
+        'type_id': 29,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M40M43',
+    },
+    {
+        'ammo_capacity': 22,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '211020000100ca000c001e00150000',
+        'descriptor_sha256': '8b812d645ebc7dcb9c959238add5f20655dae03f94693a461e6fb3c7408ce06e',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 168,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 55,
+                'max_regen_health': 27,
+            },
+        ),
+        'kind': 'usa-M41',
+        'legacy_inventory': None,
+        'max_hp': 230,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:T72',
+                'native_compact_id': 8226,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_W-670',
+                'native_compact_id': 293,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Medium',
+                'native_compact_id': 51750,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_155mm_Howitzer_M1',
+                'native_compact_id': 5412,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_510',
+                'native_compact_id': 3111,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:M14',
+                'native_compact_id': 7715,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 4129,
+        'resource_name': 'M41',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 36,
+                'native_compact_id': 9258,
+                'resource_name': '_155mm_HE_M102',
+                'shell_definition_id': 'shell:usa-M41-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 37,
+                'native_compact_id': 9514,
+                'resource_name': '_155mm_HEAT_M167',
+                'shell_definition_id': 'shell:usa-M41-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 5,
+        'type_id': 16,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M41',
+    },
+    {
+        'ammo_capacity': 36,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '21407f004100ca003d006c00150000',
+        'descriptor_sha256': 'a9164cb00d3baf39ef2e65a69ebce132a426711712759f1958569c9dcfdf3097',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 80,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'gun',
+                'max_health': 168,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'usa-M44',
+        'legacy_inventory': None,
+        'max_hp': 280,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M44',
+                'native_compact_id': 32546,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_AOS-895-3',
+                'native_compact_id': 16677,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Medium',
+                'native_compact_id': 51750,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_155mm_Howitzer_M1',
+                'native_compact_id': 5412,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:AN_PRC_10',
+                'native_compact_id': 15655,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M44',
+                'native_compact_id': 27683,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 16417,
+        'resource_name': 'M44',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 36,
+                'native_compact_id': 9258,
+                'resource_name': '_155mm_HE_M102',
+                'shell_definition_id': 'shell:usa-M44-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 37,
+                'native_compact_id': 9514,
+                'resource_name': '_155mm_HEAT_M167',
+                'shell_definition_id': 'shell:usa-M44-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 6,
+        'type_id': 64,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M44',
+    },
+    {
+        'ammo_capacity': 60,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '21376c003f00cd0037005d00480000',
+        'descriptor_sha256': 'a1ed2aa679b49f2c965bc02eccfddb9c195a2aea523e653240f17e06ce954925',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 285,
+                'max_regen_health': 142,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 260,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'gun',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'usa-M48A1',
+        'legacy_inventory': None,
+        'max_hp': 2000,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M48A1',
+                'native_compact_id': 27682,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_AV-1790-7B',
+                'native_compact_id': 16165,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Large',
+                'native_compact_id': 52518,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_90mm_Gun_M41',
+                'native_compact_id': 18468,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:AN-VRC-7',
+                'native_compact_id': 14119,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M48A1',
+                'native_compact_id': 23843,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 14113,
+        'resource_name': 'M48A1',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 23,
+                'native_compact_id': 5930,
+                'resource_name': '_90mm_AP_M77',
+                'shell_definition_id': 'shell:usa-M48A1-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 24,
+                'native_compact_id': 6186,
+                'resource_name': '_90mm_HVAP_M304',
+                'shell_definition_id': 'shell:usa-M48A1-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 25,
+                'native_compact_id': 6442,
+                'resource_name': '_90mm_HE_M71',
+                'shell_definition_id': 'shell:usa-M48A1-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 55,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:usa:M48A1',
+    },
+    {
+        'ammo_capacity': 90,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '21cc39002b00cb00000033001e0000',
+        'descriptor_sha256': 'aeb570f26ef6017cf6c83ca64faf07f92eaab33f2951123352af972d4f8e9d1d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 176,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 114,
+                'max_regen_health': 57,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'usa-M4A2E4',
+        'legacy_inventory': None,
+        'max_hp': 480,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M4A2E4',
+                'native_compact_id': 14626,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:General_Motors_6046',
+                'native_compact_id': 11045,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_Gun_M3_L37A',
+                'native_compact_id': 7716,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508_1',
+                'native_compact_id': 39,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M4A2E4',
+                'native_compact_id': 13091,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 52257,
+        'resource_name': 'M4A2E4',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 14,
+                'native_compact_id': 3626,
+                'resource_name': '_75mm_M61',
+                'shell_definition_id': 'shell:usa-M4A2E4-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 15,
+                'native_compact_id': 3882,
+                'resource_name': '_75mm_M72',
+                'shell_definition_id': 'shell:usa-M4A2E4-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4138,
+                'resource_name': '_75mm_M48',
+                'shell_definition_id': 'shell:usa-M4A2E4-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 5,
+        'type_id': 204,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:usa:M4A2E4',
+    },
+    {
+        'ammo_capacity': 40,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '213f7d004f00cb003d006b00570000',
+        'descriptor_sha256': '113a63cebf2d682e195ec7eefdc771aa78a936252a31784c0d605092c3768eba',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 260,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 84,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'gun',
+                'max_health': 230,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'usa-M53_55',
+        'legacy_inventory': None,
+        'max_hp': 450,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M53_55',
+                'native_compact_id': 32034,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAC_R',
+                'native_compact_id': 20261,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_155mm_Gun_M46',
+                'native_compact_id': 22308,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:AN_PRC_10',
+                'native_compact_id': 15655,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M53_55',
+                'native_compact_id': 27427,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 16161,
+        'resource_name': 'M53_55',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 50,
+                'native_compact_id': 12842,
+                'resource_name': '_155mm_HE_M101M4',
+                'shell_definition_id': 'shell:usa-M53_55-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 51,
+                'native_compact_id': 13098,
+                'resource_name': '_155mm_HE_M101M6',
+                'shell_definition_id': 'shell:usa-M53_55-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 9,
+        'type_id': 63,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M53_55',
+    },
+    {
+        'ammo_capacity': 870,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '211429000300ca0008002600010000',
+        'descriptor_sha256': 'ce9a7fc201925ca1417c61248bdb5b31d4c1a7e7f419f54b7b7125d3083ff87d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 123,
+                'max_regen_health': 58,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 140,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'usa-M5_Stuart',
+        'legacy_inventory': None,
+        'max_hp': 290,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:VVSS_T16E3',
+                'native_compact_id': 10530,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Twin_Cadillac_42series',
+                'native_compact_id': 805,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Medium',
+                'native_compact_id': 51750,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_20mm_Hispano_Suiza_Birgikt_gun',
+                'native_compact_id': 292,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508',
+                'native_compact_id': 2087,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:M44',
+                'native_compact_id': 9763,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 5153,
+        'resource_name': 'M5_Stuart',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 1,
+                'native_compact_id': 298,
+                'resource_name': '_20mm_AP',
+                'shell_definition_id': 'shell:usa-M5_Stuart-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 2,
+                'native_compact_id': 554,
+                'resource_name': '_20mm_APCR',
+                'shell_definition_id': 'shell:usa-M5_Stuart-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 4,
+        'type_id': 20,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:M5_Stuart',
+    },
+    {
+        'ammo_capacity': 69,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '210e1c000d00c90008001b00130000',
+        'descriptor_sha256': 'fc46e9d7f69d547a54cc0fe45f27b6c08dca3d7f7891363438ee3fbe532eca4b',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 45,
+                'max_regen_health': 22,
+            },
+        ),
+        'kind': 'usa-M7_Priest',
+        'legacy_inventory': None,
+        'max_hp': 140,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:VVSST49',
+                'native_compact_id': 7202,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_Continental_R-975C1',
+                'native_compact_id': 3365,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_105mm_Howitzer_M3',
+                'native_compact_id': 4900,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508',
+                'native_compact_id': 2087,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:M7D1',
+                'native_compact_id': 6947,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 3617,
+        'resource_name': 'M7_Priest',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 26,
+                'native_compact_id': 6698,
+                'resource_name': '_105mm_HE_M1',
+                'shell_definition_id': 'shell:usa-M7_Priest-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 27,
+                'native_compact_id': 6954,
+                'resource_name': '_105mm_HEAT_M67',
+                'shell_definition_id': 'shell:usa-M7_Priest-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 3,
+        'type_id': 14,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:M7_Priest',
+    },
+    {
+        'ammo_capacity': 46,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '212854000300cb000c0047003b0000',
+        'descriptor_sha256': '8144230797ea29ab8342dbce8c579487c3ec03133de1e26cd38882c8afb830e3',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 123,
+                'max_regen_health': 58,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 140,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'usa-M8A1',
+        'legacy_inventory': None,
+        'max_hp': 250,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_M8A1',
+                'native_compact_id': 21538,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Twin_Cadillac_42series',
+                'native_compact_id': 805,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_AT_Howitzer_M3',
+                'native_compact_id': 15140,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_510',
+                'native_compact_id': 3111,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_M8A1',
+                'native_compact_id': 18211,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 10273,
+        'resource_name': 'M8A1',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4138,
+                'resource_name': '_75mm_M48',
+                'shell_definition_id': 'shell:usa-M8A1-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 22,
+                'native_compact_id': 5674,
+                'resource_name': '_75mm_HEAT_M66',
+                'shell_definition_id': 'shell:usa-M8A1-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 40,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:M8A1',
+    },
+    {
+        'ammo_capacity': 700,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '21cb28001c00cb000f002400190000',
+        'descriptor_sha256': '6acfbbc96e41e42dc58435a0e7adb9730bd62652cb764a2bc03dce62c290f508',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 78,
+                'max_regen_health': 39,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 130,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 96,
+                'max_regen_health': 48,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'usa-MTLS-1G14',
+        'legacy_inventory': None,
+        'max_hp': 250,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:MTLS_T1',
+                'native_compact_id': 10274,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Hercules_HXE',
+                'native_compact_id': 7205,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_37mm_44_caliber_automatic_cannon',
+                'native_compact_id': 6436,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_210A',
+                'native_compact_id': 3879,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:MTLS_D1',
+                'native_compact_id': 9251,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 52001,
+        'resource_name': 'MTLS-1G14',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 9,
+                'native_compact_id': 2346,
+                'resource_name': '_37mm_APC_M59A1',
+                'shell_definition_id': 'shell:usa-MTLS-1G14-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 10,
+                'native_compact_id': 2602,
+                'resource_name': '_37mm_APC_M59A5',
+                'shell_definition_id': 'shell:usa-MTLS-1G14-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 11,
+                'native_compact_id': 2858,
+                'resource_name': '_37mm_HE_M54',
+                'shell_definition_id': 'shell:usa-MTLS-1G14-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 203,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:MTLS-1G14',
+    },
+    {
+        'ammo_capacity': 92,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '21ca14002200cb000a0013001d0000',
+        'descriptor_sha256': '532a3602fe317eadde7f295cdc0ceb55299a02988e5347c38ac085d3c2b2afe2',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 160,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 94,
+                'max_regen_health': 47,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'usa-Ram-II',
+        'legacy_inventory': None,
+        'max_hp': 610,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:VVSS_WE210',
+                'native_compact_id': 5154,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAA_1',
+                'native_compact_id': 8741,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:QF_6_pounder_Mk_IIIA',
+                'native_compact_id': 7460,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:British_Wireless_set_N19',
+                'native_compact_id': 2599,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Ram_II_D1',
+                'native_compact_id': 4899,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 51745,
+        'resource_name': 'Ram-II',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 12,
+                'native_compact_id': 3114,
+                'resource_name': '_6pdr_AP_MKs_4',
+                'shell_definition_id': 'shell:usa-Ram-II-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 13,
+                'native_compact_id': 3370,
+                'resource_name': '_6pdr_APCR_MK_1T',
+                'shell_definition_id': 'shell:usa-Ram-II-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 5,
+        'type_id': 202,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:usa:Ram-II',
+    },
+    {
+        'ammo_capacity': 112,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '21d378004700c900e8036600520000',
+        'descriptor_sha256': '380d0422846df5d84503b9fa18d01437018e2bfd0d1f1f31994a5707d24ff215',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 140,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'usa-Sexton_I',
+        'legacy_inventory': None,
+        'max_hp': 160,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_Sexton_I',
+                'native_compact_id': 30754,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_Continental_R-975EC2_A',
+                'native_compact_id': 18213,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_25pdr_Field_Gun',
+                'native_compact_id': 21028,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:T23radio',
+                'native_compact_id': 256039,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_Sexton_I',
+                'native_compact_id': 26147,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 54049,
+        'resource_name': 'Sexton_I',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 94,
+                'native_compact_id': 24106,
+                'resource_name': '_25pdr_HE_Mk_1D',
+                'shell_definition_id': 'shell:usa-Sexton_I-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 100,
+                'native_compact_id': 25642,
+                'resource_name': '_25pdr_AP_Mk_1T_SC',
+                'shell_definition_id': 'shell:usa-Sexton_I-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 95,
+                'native_compact_id': 24362,
+                'resource_name': '_25pdr_AP_Mk_1T',
+                'shell_definition_id': 'shell:usa-Sexton_I-stock-ap2',
+                'suffix': 'ap2',
+            },
+        ),
+        'tier': 3,
+        'type_id': 211,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:Sexton_I',
+    },
+    {
+        'ammo_capacity': 80,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '21d16b003c00c90035005c00470000',
+        'descriptor_sha256': 'a3d61c264ed6a67aca5c09b702fe900c11968cff7931dc99718d0c6a3744cb77',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 123,
+                'max_regen_health': 58,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 130,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 54,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'usa-T1_E6',
+        'legacy_inventory': None,
+        'max_hp': 160,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T1_E6',
+                'native_compact_id': 27426,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:American_LFF_Corporation_V12',
+                'native_compact_id': 15397,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_37mm_semiautomatic_gun_M1924A1',
+                'native_compact_id': 18212,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200A',
+                'native_compact_id': 13607,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_T1_E6',
+                'native_compact_id': 23587,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 53537,
+        'resource_name': 'T1_E6',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 6,
+                'native_compact_id': 1578,
+                'resource_name': '_37mm_AP1937',
+                'shell_definition_id': 'shell:usa-T1_E6-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 7,
+                'native_compact_id': 1834,
+                'resource_name': '_37mm_APCBC1935',
+                'shell_definition_id': 'shell:usa-T1_E6-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 8,
+                'native_compact_id': 2090,
+                'resource_name': '_37mm_HE1916',
+                'shell_definition_id': 'shell:usa-T1_E6-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 2,
+        'type_id': 209,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:T1_E6',
+    },
+    {
+        'ammo_capacity': 70,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '213b72000f00cb0008006300000000',
+        'descriptor_sha256': '6fdde2bd3ec3d884eab835f1f942c828ca15a9c25a0a3b7533026e739b87119a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 114,
+                'max_regen_health': 57,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'usa-T21',
+        'legacy_inventory': None,
+        'max_hp': 590,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T21',
+                'native_compact_id': 29218,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAA',
+                'native_compact_id': 3877,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_Gun_M3_L37',
+                'native_compact_id': 36,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508',
+                'native_compact_id': 2087,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_2_T21',
+                'native_compact_id': 25379,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 15137,
+        'resource_name': 'T21',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 14,
+                'native_compact_id': 3626,
+                'resource_name': '_75mm_M61',
+                'shell_definition_id': 'shell:usa-T21-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 15,
+                'native_compact_id': 3882,
+                'resource_name': '_75mm_M72',
+                'shell_definition_id': 'shell:usa-T21-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4138,
+                'resource_name': '_75mm_M48',
+                'shell_definition_id': 'shell:usa-T21-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 59,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:T21',
+    },
+    {
+        'ammo_capacity': 1800,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '21091200e803cc00e8031100ff0000',
+        'descriptor_sha256': 'c9419910bb001c725bab859291c9d5ed6672f97b5971fee7d92bf2817b617e83',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 182,
+                'max_regen_health': 97,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'gun',
+                'max_health': 30,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+        ),
+        'kind': 'usa-T23',
+        'legacy_inventory': None,
+        'max_hp': 1310,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:VVSS_T51',
+                'native_compact_id': 4642,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAN_T23',
+                'native_compact_id': 256037,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Heavy',
+                'native_compact_id': 52262,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_12.7mm_T23',
+                'native_compact_id': 65316,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:T23radio',
+                'native_compact_id': 256039,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:T23T80',
+                'native_compact_id': 4387,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 2337,
+        'resource_name': 'T23',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 42,
+                'resource_name': '_12.7mm_AP_M2',
+                'shell_definition_id': 'shell:usa-T23-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 8,
+        'type_id': 9,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:usa:T23',
+    },
+    {
+        'ammo_capacity': 47,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '212b59001000cc0008004c00290000',
+        'descriptor_sha256': '399515618c8e428d45c795929f941249e274b16dbc731c8f8962466a0b52822a',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 200,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'usa-T25_2',
+        'legacy_inventory': None,
+        'max_hp': 800,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T25_2',
+                'native_compact_id': 22818,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAN',
+                'native_compact_id': 4133,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Heavy',
+                'native_compact_id': 52262,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_90mm_AT_Gun_M3',
+                'native_compact_id': 10532,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508',
+                'native_compact_id': 2087,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_T25_2',
+                'native_compact_id': 19491,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 11041,
+        'resource_name': 'T25_2',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 23,
+                'native_compact_id': 5930,
+                'resource_name': '_90mm_AP_M77',
+                'shell_definition_id': 'shell:usa-T25_2-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 24,
+                'native_compact_id': 6186,
+                'resource_name': '_90mm_HVAP_M304',
+                'shell_definition_id': 'shell:usa-T25_2-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 25,
+                'native_compact_id': 6442,
+                'resource_name': '_90mm_HE_M71',
+                'shell_definition_id': 'shell:usa-T25_2-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 43,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:T25_2',
+    },
+    {
+        'ammo_capacity': 1200,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '21c905000900c9000f0005001b0000',
+        'descriptor_sha256': '001a473aefc2bb0911ead2e9e3036aae1ca0d0a3b1bb0c5094bd2fb943c3e364',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 130,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'usa-T2_lt',
+        'legacy_inventory': None,
+        'max_hp': 150,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:T16E2',
+                'native_compact_id': 1314,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_R-670-5',
+                'native_compact_id': 2341,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_20mm_Hispano_Suiza_Birgikt_gun_A',
+                'native_compact_id': 6948,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_210A',
+                'native_compact_id': 3879,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:T2D1',
+                'native_compact_id': 1315,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 51489,
+        'resource_name': 'T2_lt',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 1,
+                'native_compact_id': 298,
+                'resource_name': '_20mm_AP',
+                'shell_definition_id': 'shell:usa-T2_lt-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 2,
+                'native_compact_id': 554,
+                'resource_name': '_20mm_APCR',
+                'shell_definition_id': 'shell:usa-T2_lt-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 2,
+        'type_id': 201,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:T2_lt',
+    },
+    {
+        'ammo_capacity': 110,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner', 'loader'),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '21162d002100c90004002a00050000',
+        'descriptor_sha256': '18f64f7240056ca70d36d5762ad4d3f429de15e59c912a65a7ccb834eb99a236',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 85,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 54,
+                'max_regen_health': 27,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'usa-T2_med',
+        'legacy_inventory': None,
+        'max_hp': 155,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:T2E1',
+                'native_compact_id': 11554,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Liberty',
+                'native_compact_id': 8485,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_37mm_semiautomatic_gun_M1924',
+                'native_compact_id': 1316,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200',
+                'native_compact_id': 1063,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:T2T1',
+                'native_compact_id': 10787,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 5665,
+        'resource_name': 'T2_med',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 6,
+                'native_compact_id': 1578,
+                'resource_name': '_37mm_AP1937',
+                'shell_definition_id': 'shell:usa-T2_med-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 7,
+                'native_compact_id': 1834,
+                'resource_name': '_37mm_APCBC1935',
+                'shell_definition_id': 'shell:usa-T2_med-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 8,
+                'native_compact_id': 2090,
+                'resource_name': '_37mm_HE1916',
+                'shell_definition_id': 'shell:usa-T2_med-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 2,
+        'type_id': 22,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:usa:T2_med',
+    },
+    {
+        'ammo_capacity': 34,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '210b17003200cd00130016003d0000',
+        'descriptor_sha256': 'b836177a8a6f25b1449fc8d57374c480fd30e69780db5e11b73347b9b470b5e9',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 260,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 240,
+                'max_regen_health': 160,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'gun',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 150,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'usa-T34_hvy',
+        'legacy_inventory': None,
+        'max_hp': 1500,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:T80E3',
+                'native_compact_id': 5922,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_AV-1790-3A1',
+                'native_compact_id': 12837,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Large',
+                'native_compact_id': 52518,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_120mm_Gun_T53A1',
+                'native_compact_id': 15652,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_528A1',
+                'native_compact_id': 4903,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:T34T7',
+                'native_compact_id': 5667,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 2849,
+        'resource_name': 'T34_hvy',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 30,
+                'native_compact_id': 7722,
+                'resource_name': '_120mm_AP_T42',
+                'shell_definition_id': 'shell:usa-T34_hvy-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 31,
+                'native_compact_id': 7978,
+                'resource_name': '_120mm_APCR_T62',
+                'shell_definition_id': 'shell:usa-T34_hvy-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 32,
+                'native_compact_id': 8234,
+                'resource_name': '_120mm_HE-T67',
+                'shell_definition_id': 'shell:usa-T34_hvy-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 11,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:usa:T34_hvy',
+    },
+    {
+        'ammo_capacity': 98,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '211e3e001800cb0004003700210000',
+        'descriptor_sha256': '5ac8111fd5b272efeb6029d51b4c57c8e4ea9324fab71cd3e627c2b025590d37',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 156,
+                'max_regen_health': 78,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 140,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'usa-T40',
+        'legacy_inventory': None,
+        'max_hp': 275,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T40',
+                'native_compact_id': 15906,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Wright_R-975EC2',
+                'native_compact_id': 6181,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Average',
+                'native_compact_id': 52006,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_Howitzer_M1A1',
+                'native_compact_id': 8484,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200',
+                'native_compact_id': 1063,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_T40',
+                'native_compact_id': 14115,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 7713,
+        'resource_name': 'T40',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4138,
+                'resource_name': '_75mm_M48',
+                'shell_definition_id': 'shell:usa-T40-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 22,
+                'native_compact_id': 5674,
+                'resource_name': '_75mm_HEAT_M66',
+                'shell_definition_id': 'shell:usa-T40-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 30,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:T40',
+    },
+    {
+        'ammo_capacity': 40,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '210810004e00c900040010000d0000',
+        'descriptor_sha256': 'd9134775e5f59d4443150424054f2dc936347a8496e3a6eb63697170d8e04362',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'usa-T57',
+        'legacy_inventory': None,
+        'max_hp': 80,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:VVSS_T36E6',
+                'native_compact_id': 4130,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_W-670-12',
+                'native_compact_id': 20005,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_76mm_Gun_M1918',
+                'native_compact_id': 3364,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200',
+                'native_compact_id': 1063,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:T51D1',
+                'native_compact_id': 4131,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 2081,
+        'resource_name': 'T57',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 20,
+                'native_compact_id': 5162,
+                'resource_name': '_76mm_HE_M42B1',
+                'shell_definition_id': 'shell:usa-T57-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 21,
+                'native_compact_id': 5418,
+                'resource_name': '_76mm_HEAT',
+                'shell_definition_id': 'shell:usa-T57-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 2,
+        'type_id': 8,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:T57',
+    },
+    {
+        'ammo_capacity': 1350,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '21d781003b00c9000f006d005c0000',
+        'descriptor_sha256': 'b3c4680446b7953f6095503a0a1a54d1a3a98451585cb9a37a330f42ce426f60',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 30,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'usa-T7_Combat_Car',
+        'legacy_inventory': None,
+        'max_hp': 150,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T7_Combat_Car',
+                'native_compact_id': 33058,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Continental_W-670-9A',
+                'native_compact_id': 15141,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_12.7mm_MG_HB_M2_A',
+                'native_compact_id': 23588,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_210A',
+                'native_compact_id': 3879,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_T7_Combat_Car',
+                'native_compact_id': 27939,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 55073,
+        'resource_name': 'T7_Combat_Car',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 0,
+                'native_compact_id': 42,
+                'resource_name': '_12.7mm_AP_M2',
+                'shell_definition_id': 'shell:usa-T7_Combat_Car-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 2,
+        'type_id': 215,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:usa:T7_Combat_Car',
+    },
+    {
+        'ammo_capacity': 45,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '211933000200c90004002f00210000',
+        'descriptor_sha256': '8812011846c054bbb2bc1660711801b53f55928c06e37023775ff94ec23de6e6',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 78,
+                'max_regen_health': 41,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 104,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'usa-T82',
+        'legacy_inventory': None,
+        'max_hp': 160,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T82_1',
+                'native_compact_id': 13090,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Guiberson_T-1020-4',
+                'native_compact_id': 549,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Small',
+                'native_compact_id': 51494,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_75mm_Howitzer_M1A1',
+                'native_compact_id': 8484,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_200',
+                'native_compact_id': 1063,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:T82T47',
+                'native_compact_id': 12067,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 6433,
+        'resource_name': 'T82',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 16,
+                'native_compact_id': 4138,
+                'resource_name': '_75mm_M48',
+                'shell_definition_id': 'shell:usa-T82-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 22,
+                'native_compact_id': 5674,
+                'resource_name': '_75mm_HEAT_M66',
+                'shell_definition_id': 'shell:usa-T82-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 3,
+        'type_id': 25,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:T82',
+    },
+    {
+        'ammo_capacity': 16,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '212144004c00cc003c003a002f0000',
+        'descriptor_sha256': 'b67cda1010775c9423357fe519090bba3cf83a3a104c889ed71d80282527b109',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'gun',
+                'max_health': 288,
+                'max_regen_health': 144,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'usa-T92',
+        'legacy_inventory': None,
+        'max_hp': 500,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T92',
+                'native_compact_id': 17442,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAF_R1',
+                'native_compact_id': 19493,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Heavy',
+                'native_compact_id': 52262,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_240mm_Howitzer_M1',
+                'native_compact_id': 12068,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_528R1',
+                'native_compact_id': 15399,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_T92',
+                'native_compact_id': 14883,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 8481,
+        'resource_name': 'T92',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 48,
+                'native_compact_id': 12330,
+                'resource_name': '_240mm_HE_M146',
+                'shell_definition_id': 'shell:usa-T92-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 56,
+                'native_compact_id': 14378,
+                'resource_name': '_240mm_M114_M78',
+                'shell_definition_id': 'shell:usa-T92-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 49,
+                'native_compact_id': 12586,
+                'resource_name': '_240mm_HE_M160',
+                'shell_definition_id': 'shell:usa-T92-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 10,
+        'type_id': 33,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:usa:T92',
+    },
+    {
+        'ammo_capacity': 62,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '212246002500cc0008003b002d0000',
+        'descriptor_sha256': 'd0124b1075798759a79718e6fd0cb1b502623d91fd642fd0a1aead22de1877fa',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 234,
+                'max_regen_health': 123,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 260,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+        ),
+        'kind': 'usa-T95',
+        'legacy_inventory': None,
+        'max_hp': 1700,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:usa:chassis:Chassis_T95',
+                'native_compact_id': 17954,
+            },
+            'engine': {
+                'module_id': 'module:usa:engine:Ford_GAF',
+                'native_compact_id': 9509,
+            },
+            'fuelTank': {
+                'module_id': 'module:usa:fuelTank:Heavy',
+                'native_compact_id': 52262,
+            },
+            'gun': {
+                'module_id': 'module:usa:gun:_105mm_AT_Gun_T5E1',
+                'native_compact_id': 11556,
+            },
+            'radio': {
+                'module_id': 'module:usa:radio:SCR_508',
+                'native_compact_id': 2087,
+            },
+            'turret': {
+                'module_id': 'module:usa:turret:Turret_1_T95',
+                'native_compact_id': 15139,
+            },
+        },
+        'nation': 'usa',
+        'nation_id': 2,
+        'native_compact_id': 8737,
+        'resource_name': 'T95',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 28,
+                'native_compact_id': 7210,
+                'resource_name': '_105mm_AP_T32',
+                'shell_definition_id': 'shell:usa-T95-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 29,
+                'native_compact_id': 7466,
+                'resource_name': '_105mm_APCR_T29E3',
+                'shell_definition_id': 'shell:usa-T95-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 38,
+                'native_compact_id': 9770,
+                'resource_name': '_105mm_HE_M11',
+                'shell_definition_id': 'shell:usa-T95-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 9,
+        'type_id': 34,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:usa:T95',
+    },
+    {
+        'ammo_capacity': 150,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '010810000000ca0003000e00130000',
+        'descriptor_sha256': 'b83480fd1ac99d09cb5e9d716a8bfbc9f08ddf3a64b4180b31d092155e8cdbb1',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 105,
+                'max_regen_health': 52,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 68,
+                'max_regen_health': 34,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'ussr-A-20',
+        'legacy_inventory': None,
+        'max_hp': 310,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:A-20_mod_1938',
+                'native_compact_id': 4098,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-2',
+                'native_compact_id': 5,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Medium',
+                'native_compact_id': 51718,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_45mm_20K',
+                'native_compact_id': 4868,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_9R',
+                'native_compact_id': 775,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:A-20_mod_1938',
+                'native_compact_id': 3587,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 2049,
+        'resource_name': 'A-20',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 13,
+                'native_compact_id': 3338,
+                'resource_name': '_45mm_UBR-240A',
+                'shell_definition_id': 'shell:ussr-A-20-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 14,
+                'native_compact_id': 3594,
+                'resource_name': '_45mm_UBR-240PA',
+                'shell_definition_id': 'shell:ussr-A-20-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 15,
+                'native_compact_id': 3850,
+                'resource_name': '_45mm_UOF-240A',
+                'shell_definition_id': 'shell:ussr-A-20-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 4,
+        'type_id': 8,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:ussr:A-20',
+    },
+    {
+        'ammo_capacity': 160,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '013170000100cb0003005d00020000',
+        'descriptor_sha256': '36575a5e0b791cb903324d18a43279bc80006a9680082acb0e2c024219f4d151',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 145,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 160,
+                'max_regen_health': 110,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 106,
+                'max_regen_health': 53,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'ussr-A44',
+        'legacy_inventory': None,
+        'max_hp': 1000,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_A44',
+                'native_compact_id': 28674,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-2-34',
+                'native_compact_id': 261,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_76mm_F-34',
+                'native_compact_id': 516,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_9R',
+                'native_compact_id': 775,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_A44',
+                'native_compact_id': 23811,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 12545,
+        'resource_name': 'A44',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 28,
+                'native_compact_id': 7178,
+                'resource_name': '_76mm_UBR-354A',
+                'shell_definition_id': 'shell:ussr-A44-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 32,
+                'native_compact_id': 8202,
+                'resource_name': '_76mm_UBR-354MP',
+                'shell_definition_id': 'shell:ussr-A44-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 30,
+                'native_compact_id': 7690,
+                'resource_name': '_76mm_UOF-354',
+                'shell_definition_id': 'shell:ussr-A44-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 49,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:ussr:A44',
+    },
+    {
+        'ammo_capacity': 140,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '01ca3b002500cb000a003000450000',
+        'descriptor_sha256': '4984dd51e9cea256df9ae3292892b8937d8edb8ba58f4b0c918928c1535f8a67',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 75,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 140,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'gun',
+                'max_health': 94,
+                'max_regen_health': 47,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'ussr-Churchill_LL',
+        'legacy_inventory': None,
+        'max_hp': 700,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Churchll',
+                'native_compact_id': 15106,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:Bedford_Twin-Six',
+                'native_compact_id': 9477,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:QF_6_pounder_Mk_III',
+                'native_compact_id': 17668,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:Mk19R',
+                'native_compact_id': 2567,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Churchll_mk_III',
+                'native_compact_id': 12291,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 51713,
+        'resource_name': 'Churchill_LL',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 25,
+                'native_compact_id': 6410,
+                'resource_name': '_6pdr_AP_MKs_4',
+                'shell_definition_id': 'shell:ussr-Churchill_LL-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 26,
+                'native_compact_id': 6666,
+                'resource_name': '_6pdr_APCR_MK_1T',
+                'shell_definition_id': 'shell:ussr-Churchill_LL-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 5,
+        'type_id': 202,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:ussr:Churchill_LL',
+    },
+    {
+        'ammo_capacity': 68,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '010204000300cc00080003000b0000',
+        'descriptor_sha256': 'ef93ed9576b3ec11448e092142d91b277b8f1d4672f9229a7dba12138bacaff6',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 190,
+                'max_regen_health': 95,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 180,
+                'max_regen_health': 120,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 150,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 170,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'gun',
+                'max_health': 122,
+                'max_regen_health': 61,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 140,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'ussr-IS',
+        'legacy_inventory': None,
+        'max_hp': 1130,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:IS-1',
+                'native_compact_id': 1026,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-2IS',
+                'native_compact_id': 773,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Heavy',
+                'native_compact_id': 52230,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_85mm_D-5T',
+                'native_compact_id': 2820,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10RK',
+                'native_compact_id': 2055,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:IS-85',
+                'native_compact_id': 771,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 513,
+        'resource_name': 'IS',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 36,
+                'native_compact_id': 9226,
+                'resource_name': '_85mm_UBR-365K',
+                'shell_definition_id': 'shell:ussr-IS-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 37,
+                'native_compact_id': 9482,
+                'resource_name': '_85mm_UBR-365P',
+                'shell_definition_id': 'shell:ussr-IS-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 38,
+                'native_compact_id': 9738,
+                'resource_name': '_85mm_UOF-365K',
+                'shell_definition_id': 'shell:ussr-IS-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 7,
+        'type_id': 2,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:ussr:IS',
+    },
+    {
+        'ammo_capacity': 60,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '01d04f003100cc0014003f00520000',
+        'descriptor_sha256': 'd9abe93c2fef6824e385c6e67b79e2619787e0436190eea39893ef9449e412fa',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 220,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 150,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'gun',
+                'max_health': 180,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 160,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+        ),
+        'kind': 'ussr-KV-5',
+        'legacy_inventory': None,
+        'max_hp': 1780,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_KV-5',
+                'native_compact_id': 20226,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M500',
+                'native_compact_id': 12549,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Heavy',
+                'native_compact_id': 52230,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_107mm_ZiS-6M',
+                'native_compact_id': 20996,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10RKM',
+                'native_compact_id': 5127,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_KV-5',
+                'native_compact_id': 16131,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 53249,
+        'resource_name': 'KV-5',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 45,
+                'native_compact_id': 11530,
+                'resource_name': '_107mm_UBR-420',
+                'shell_definition_id': 'shell:ussr-KV-5-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 46,
+                'native_compact_id': 11786,
+                'resource_name': '_107mm_UBR-420P',
+                'shell_definition_id': 'shell:ussr-KV-5-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 47,
+                'native_compact_id': 12042,
+                'resource_name': '_107mm_UOF-420',
+                'shell_definition_id': 'shell:ussr-KV-5-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 8,
+        'type_id': 208,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:ussr:KV-5',
+    },
+    {
+        'ammo_capacity': 80,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '01295c000200cb0004004a001c0000',
+        'descriptor_sha256': '587fe84d149443d060024701708abe891fc01d2125f0b94edad6fccb3c65c208',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 90,
+                'max_regen_health': 44,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 160,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 140,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'ussr-KV2',
+        'legacy_inventory': None,
+        'max_hp': 810,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_KV2_1',
+                'native_compact_id': 23554,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-17F',
+                'native_compact_id': 517,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_122mm_cannon_U-11',
+                'native_compact_id': 7172,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_KV2',
+                'native_compact_id': 18947,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 10497,
+        'resource_name': 'KV2',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 50,
+                'native_compact_id': 12810,
+                'resource_name': '_122mm_OF420S',
+                'shell_definition_id': 'shell:ussr-KV2-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 49,
+                'native_compact_id': 12554,
+                'resource_name': '_122mm_BP450S',
+                'shell_definition_id': 'shell:ussr-KV2-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 6,
+        'type_id': 41,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:ussr:KV2',
+    },
+    {
+        'ammo_capacity': 300,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '014192000a00cb0005007a00130000',
+        'descriptor_sha256': 'e34a2f57b457f63e6e8288d2b188815d77c289c72b8c891f51dee6c5e5169495',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 145,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 140,
+                'max_regen_health': 90,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 68,
+                'max_regen_health': 34,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'ussr-MT25',
+        'legacy_inventory': None,
+        'max_hp': 510,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_R101_MT25',
+                'native_compact_id': 37378,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-2K',
+                'native_compact_id': 2565,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_45mm_20K',
+                'native_compact_id': 4868,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_9RM',
+                'native_compact_id': 1287,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_R101_MT25',
+                'native_compact_id': 31235,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 16641,
+        'resource_name': 'MT25',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 13,
+                'native_compact_id': 3338,
+                'resource_name': '_45mm_UBR-240A',
+                'shell_definition_id': 'shell:ussr-MT25-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 14,
+                'native_compact_id': 3594,
+                'resource_name': '_45mm_UBR-240PA',
+                'shell_definition_id': 'shell:ussr-MT25-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 15,
+                'native_compact_id': 3850,
+                'resource_name': '_45mm_UOF-240A',
+                'shell_definition_id': 'shell:ussr-MT25-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 6,
+        'type_id': 65,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:ussr:MT25',
+    },
+    {
+        'ammo_capacity': 42,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '01387e002400cd000b0068006c0000',
+        'descriptor_sha256': 'afc1fb14bd6b0cb013f0cb32f3c635082e5b14660d61216986755a4cfb8634b5',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 210,
+                'max_regen_health': 140,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'gun',
+                'max_health': 210,
+                'max_regen_health': 105,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'ussr-Object263',
+        'legacy_inventory': None,
+        'max_hp': 1900,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_Object263',
+                'native_compact_id': 32258,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-50T',
+                'native_compact_id': 9221,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Large',
+                'native_compact_id': 52486,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_130mm_S-70A',
+                'native_compact_id': 27652,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10RK-26',
+                'native_compact_id': 2823,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_Object263',
+                'native_compact_id': 26627,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 14337,
+        'resource_name': 'Object263',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 105,
+                'native_compact_id': 26890,
+                'resource_name': '_130mm_UBR-482M',
+                'shell_definition_id': 'shell:ussr-Object263-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 106,
+                'native_compact_id': 27146,
+                'resource_name': '_130mm_UBR-482PM',
+                'shell_definition_id': 'shell:ussr-Object263-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 107,
+                'native_compact_id': 27402,
+                'resource_name': '_130mm_UOF-482M',
+                'shell_definition_id': 'shell:ussr-Object263-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 56,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:ussr:Object263',
+    },
+    {
+        'ammo_capacity': 47,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '012149006100cb0004003b00190000',
+        'descriptor_sha256': '733347c6d77757517a00d98db2a13a2c981a881d8321c68a9b2ca381557dd850',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 90,
+                'max_regen_health': 44,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 150,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 150,
+                'max_regen_health': 115,
+            },
+            {
+                'device': 'gun',
+                'max_health': 222,
+                'max_regen_health': 111,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+        ),
+        'kind': 'ussr-Object_212',
+        'legacy_inventory': None,
+        'max_hp': 460,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_Object_212',
+                'native_compact_id': 18690,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-17F_R',
+                'native_compact_id': 24837,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_152mm_BR-2',
+                'native_compact_id': 6404,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_Object_212',
+                'native_compact_id': 15107,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 8449,
+        'resource_name': 'Object_212',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 65,
+                'native_compact_id': 16650,
+                'resource_name': '_152mm_53-OF-551',
+                'shell_definition_id': 'shell:ussr-Object_212-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 67,
+                'native_compact_id': 17162,
+                'resource_name': '_152mm_53-G-551',
+                'shell_definition_id': 'shell:ussr-Object_212-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 66,
+                'native_compact_id': 16906,
+                'resource_name': '_152mm_53-OF-551BM',
+                'shell_definition_id': 'shell:ussr-Object_212-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 9,
+        'type_id': 33,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:Object_212',
+    },
+    {
+        'ammo_capacity': 18,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '01224b002400cc000b003c00510000',
+        'descriptor_sha256': 'd6f52678d58308b8d7e176549cc88818b1aa487317a44d32f400959e15eb1e72',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 130,
+                'max_regen_health': 65,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 175,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'radio',
+                'max_health': 250,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 180,
+                'max_regen_health': 135,
+            },
+            {
+                'device': 'gun',
+                'max_health': 280,
+                'max_regen_health': 140,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+        ),
+        'kind': 'ussr-Object_261',
+        'legacy_inventory': None,
+        'max_hp': 510,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_Object_261',
+                'native_compact_id': 19202,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-50T',
+                'native_compact_id': 9221,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Heavy',
+                'native_compact_id': 52230,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_180mm_B-1-P',
+                'native_compact_id': 20740,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10RK-26',
+                'native_compact_id': 2823,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_Object_261',
+                'native_compact_id': 15363,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 8705,
+        'resource_name': 'Object_261',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 79,
+                'native_compact_id': 20234,
+                'resource_name': '_180mm_F-600D',
+                'shell_definition_id': 'shell:ussr-Object_261-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 81,
+                'native_compact_id': 20746,
+                'resource_name': '_180mm_UBR-600',
+                'shell_definition_id': 'shell:ussr-Object_261-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 80,
+                'native_compact_id': 20490,
+                'resource_name': '_180mm_F-600BM',
+                'shell_definition_id': 'shell:ussr-Object_261-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 10,
+        'type_id': 34,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:Object_261',
+    },
+    {
+        'ammo_capacity': 50,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '014398004900cd0018007f00690000',
+        'descriptor_sha256': '1c463fc4e1f61db2d4809386685e7e2fbbed58deb7662badb394273cef39e8ca',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 360,
+                'max_regen_health': 180,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 210,
+                'max_regen_health': 140,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'radio',
+                'max_health': 200,
+                'max_regen_health': 150,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 250,
+                'max_regen_health': 190,
+            },
+            {
+                'device': 'gun',
+                'max_health': 200,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 170,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+        ),
+        'kind': 'ussr-Object_430',
+        'legacy_inventory': None,
+        'max_hp': 1900,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_Object_430',
+                'native_compact_id': 38914,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:_5TD',
+                'native_compact_id': 18693,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Large',
+                'native_compact_id': 52486,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_100mm_D54_TS',
+                'native_compact_id': 26884,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:R113M',
+                'native_compact_id': 6151,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_Object_430',
+                'native_compact_id': 32515,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 17153,
+        'resource_name': 'Object_430',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 77,
+                'native_compact_id': 19722,
+                'resource_name': '_100mm_UBR-412PB',
+                'shell_definition_id': 'shell:ussr-Object_430-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 101,
+                'native_compact_id': 25866,
+                'resource_name': '_100mm_3UBK4M',
+                'shell_definition_id': 'shell:ussr-Object_430-stock-heat',
+                'suffix': 'heat',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 100,
+                'native_compact_id': 25610,
+                'resource_name': '_100mm_3UOF10',
+                'shell_definition_id': 'shell:ussr-Object_430-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 10,
+        'type_id': 67,
+        'vehicle_class': 'mediumTank',
+        'vehicle_id': 'vehicle:ussr:Object_430',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '01070c000a00cb0004000b00190000',
+        'descriptor_sha256': 'daf1eb9599260e86d4b28a53946fdfd6efd7d0a184220439e448c2f7d3e0561b',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 145,
+                'max_regen_health': 72,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 222,
+                'max_regen_health': 111,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'ussr-S-51',
+        'legacy_inventory': None,
+        'max_hp': 350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:S-51',
+                'native_compact_id': 3074,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-2K',
+                'native_compact_id': 2565,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_152mm_BR-2',
+                'native_compact_id': 6404,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:S-51_01',
+                'native_compact_id': 2819,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 1793,
+        'resource_name': 'S-51',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 65,
+                'native_compact_id': 16650,
+                'resource_name': '_152mm_53-OF-551',
+                'shell_definition_id': 'shell:ussr-S-51-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 67,
+                'native_compact_id': 17162,
+                'resource_name': '_152mm_53-G-551',
+                'shell_definition_id': 'shell:ussr-S-51-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 66,
+                'native_compact_id': 16906,
+                'resource_name': '_152mm_53-OF-551BM',
+                'shell_definition_id': 'shell:ussr-S-51-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 7,
+        'type_id': 7,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:S-51',
+    },
+    {
+        'ammo_capacity': 30,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '012a61001600cd0008004f000f0000',
+        'descriptor_sha256': 'ec025c4801ce42bb93e2801f500b3e977f9eb756da3c72f5b3c1ef1419ee8f50',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 260,
+                'max_regen_health': 130,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 210,
+                'max_regen_health': 140,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 200,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'radio',
+                'max_health': 150,
+                'max_regen_health': 125,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 220,
+                'max_regen_health': 165,
+            },
+            {
+                'device': 'gun',
+                'max_health': 192,
+                'max_regen_health': 96,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 160,
+                'max_regen_health': 80,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+        ),
+        'kind': 'ussr-ST_I',
+        'legacy_inventory': None,
+        'max_hp': 1800,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_ST_I',
+                'native_compact_id': 24834,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:V-11',
+                'native_compact_id': 5637,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Large',
+                'native_compact_id': 52486,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_122-mm_D-25T_with_wedges_shutter',
+                'native_compact_id': 3844,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10RK',
+                'native_compact_id': 2055,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_ST_I',
+                'native_compact_id': 20227,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 10753,
+        'resource_name': 'ST_I',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 51,
+                'native_compact_id': 13066,
+                'resource_name': '_122mm_UBR-471',
+                'shell_definition_id': 'shell:ussr-ST_I-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 52,
+                'native_compact_id': 13322,
+                'resource_name': '_122mm_UBR-471P',
+                'shell_definition_id': 'shell:ussr-ST_I-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 53,
+                'native_compact_id': 13578,
+                'resource_name': '_122mm_UOF-471',
+                'shell_definition_id': 'shell:ussr-ST_I-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 9,
+        'type_id': 42,
+        'vehicle_class': 'heavyTank',
+        'vehicle_id': 'vehicle:ussr:ST_I',
+    },
+    {
+        'ammo_capacity': 32,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '011020000200cb0004001b00190000',
+        'descriptor_sha256': '61d82373919ac7241d3a2d32d0f2ae34a128d4f92759eb09f04f2447963494fa',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 90,
+                'max_regen_health': 44,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 130,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'gun',
+                'max_health': 222,
+                'max_regen_health': 111,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+        ),
+        'kind': 'ussr-SU-14',
+        'legacy_inventory': None,
+        'max_hp': 410,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:SU-14',
+                'native_compact_id': 8194,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-17F',
+                'native_compact_id': 517,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_152mm_BR-2',
+                'native_compact_id': 6404,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:SU-14_1',
+                'native_compact_id': 6915,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 4097,
+        'resource_name': 'SU-14',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 65,
+                'native_compact_id': 16650,
+                'resource_name': '_152mm_53-OF-551',
+                'shell_definition_id': 'shell:ussr-SU-14-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 67,
+                'native_compact_id': 17162,
+                'resource_name': '_152mm_53-G-551',
+                'shell_definition_id': 'shell:ussr-SU-14-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 66,
+                'native_compact_id': 16906,
+                'resource_name': '_152mm_53-OF-551BM',
+                'shell_definition_id': 'shell:ussr-SU-14-stock-he2',
+                'suffix': 'he2',
+            },
+        ),
+        'tier': 8,
+        'type_id': 16,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU-14',
+    },
+    {
+        'ammo_capacity': 24,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+        ),
+        'descriptor_hex': '010f1e000e00c90001001a00280000',
+        'descriptor_sha256': 'c888aa312e457e9718f6259f49b78d2debac3898bfca6cdfc5c71352f48f4f81',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 25,
+                'max_regen_health': 17,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 40,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'ussr-SU-18',
+        'legacy_inventory': None,
+        'max_hp': 70,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:SU-18',
+                'native_compact_id': 7682,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:MS-1',
+                'native_compact_id': 3589,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Small',
+                'native_compact_id': 51462,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_76mm_cannon_mod_1927',
+                'native_compact_id': 10244,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_71-TK-1',
+                'native_compact_id': 263,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:SU-18',
+                'native_compact_id': 6659,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 3841,
+        'resource_name': 'SU-18',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 35,
+                'native_compact_id': 8970,
+                'resource_name': '_76mm_UOF-354K',
+                'shell_definition_id': 'shell:ussr-SU-18-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 29,
+                'native_compact_id': 7434,
+                'resource_name': '_76mm_BP-354',
+                'shell_definition_id': 'shell:ussr-SU-18-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 2,
+        'type_id': 15,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU-18',
+    },
+    {
+        'ammo_capacity': 48,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('radioman',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '011e41001300c90002003500280000',
+        'descriptor_sha256': '486bf9ba607556ef385e75f1ca08df308292c3d22f5df15287ab922f41a71fd0',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'ussr-SU-26',
+        'legacy_inventory': None,
+        'max_hp': 110,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Su-26A',
+                'native_compact_id': 16642,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:T-26',
+                'native_compact_id': 4869,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Small',
+                'native_compact_id': 51462,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_76mm_cannon_mod_1927',
+                'native_compact_id': 10244,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_71-TK-3',
+                'native_compact_id': 519,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:SU-26',
+                'native_compact_id': 13571,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 7681,
+        'resource_name': 'SU-26',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 35,
+                'native_compact_id': 8970,
+                'resource_name': '_76mm_UOF-354K',
+                'shell_definition_id': 'shell:ussr-SU-26-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 29,
+                'native_compact_id': 7434,
+                'resource_name': '_76mm_BP-354',
+                'shell_definition_id': 'shell:ussr-SU-26-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 3,
+        'type_id': 30,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU-26',
+    },
+    {
+        'ammo_capacity': 48,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+        ),
+        'descriptor_hex': '011326001300c900020020002a0000',
+        'descriptor_sha256': '4cca3b1ae9139d9b2dd3bbd410035bc7c58379f8b3d5208878ae66cb5ba2571d',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 60,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'gun',
+                'max_health': 84,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'ussr-SU-5',
+        'legacy_inventory': None,
+        'max_hp': 160,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:SU-5',
+                'native_compact_id': 9730,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:T-26',
+                'native_compact_id': 4869,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Small',
+                'native_compact_id': 51462,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_76mm_cannon_mod_1905_30',
+                'native_compact_id': 10756,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_71-TK-3',
+                'native_compact_id': 519,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:SU-5',
+                'native_compact_id': 8195,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 4865,
+        'resource_name': 'SU-5',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 119,
+                'native_compact_id': 30474,
+                'resource_name': '_76mm_BR-350A',
+                'shell_definition_id': 'shell:ussr-SU-5-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 35,
+                'native_compact_id': 8970,
+                'resource_name': '_76mm_UOF-354K',
+                'shell_definition_id': 'shell:ussr-SU-5-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 29,
+                'native_compact_id': 7434,
+                'resource_name': '_76mm_BP-354',
+                'shell_definition_id': 'shell:ussr-SU-5-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 4,
+        'type_id': 19,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU-5',
+    },
+    {
+        'ammo_capacity': 26,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '01162c002300ca0004002400370000',
+        'descriptor_sha256': '35cadfb0bba9444757eca59c65a5a458e6b6a9ff685e354fdfc660c34f2beb6f',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 85,
+                'max_regen_health': 43,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 90,
+                'max_regen_health': 70,
+            },
+            {
+                'device': 'gun',
+                'max_health': 164,
+                'max_regen_health': 82,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'ussr-SU-8',
+        'legacy_inventory': None,
+        'max_hp': 270,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:SU-8',
+                'native_compact_id': 11266,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-5-400F',
+                'native_compact_id': 8965,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Medium',
+                'native_compact_id': 51718,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_122mm_howitzer_A-19',
+                'native_compact_id': 14084,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Su-8',
+                'native_compact_id': 9219,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 5633,
+        'resource_name': 'SU-8',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 53,
+                'native_compact_id': 13578,
+                'resource_name': '_122mm_UOF-471',
+                'shell_definition_id': 'shell:ussr-SU-8-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 52,
+                'native_compact_id': 13322,
+                'resource_name': '_122mm_UBR-471P',
+                'shell_definition_id': 'shell:ussr-SU-8-stock-apcr',
+                'suffix': 'apcr',
+            },
+        ),
+        'tier': 6,
+        'type_id': 22,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU-8',
+    },
+    {
+        'ammo_capacity': 20,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '014090001b00ca0004007900790000',
+        'descriptor_sha256': 'a7dccd53c48f507beb0a28a18779a2dd4dd7d0868d42ea797ef31b03b4cbfac3',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 132,
+                'max_regen_health': 66,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'ussr-SU122A',
+        'legacy_inventory': None,
+        'max_hp': 210,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_R100_SU122A',
+                'native_compact_id': 36866,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:GAZ-203',
+                'native_compact_id': 6917,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Medium',
+                'native_compact_id': 51718,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_122mm_M-30',
+                'native_compact_id': 30980,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_R100_SU122A',
+                'native_compact_id': 30979,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 16385,
+        'resource_name': 'SU122A',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 120,
+                'native_compact_id': 30730,
+                'resource_name': '_122mm_OF-462',
+                'shell_definition_id': 'shell:ussr-SU122A-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 121,
+                'native_compact_id': 30986,
+                'resource_name': '_122mm_BP-463',
+                'shell_definition_id': 'shell:ussr-SU122A-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 5,
+        'type_id': 64,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU122A',
+    },
+    {
+        'ammo_capacity': 32,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 2,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 3,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 4,
+            },
+            {
+                'roles': ('loader',),
+                'seat': 5,
+            },
+        ),
+        'descriptor_hex': '013f8e000200cb0004007700380000',
+        'descriptor_sha256': 'f03d2aace9255fdd0552ae8d6e34bd3c567f4e831084fa610a9b1a2fc25ba7e8',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 90,
+                'max_regen_health': 44,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 45,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 140,
+                'max_regen_health': 100,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 110,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'gun',
+                'max_health': 202,
+                'max_regen_health': 101,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'ussr-SU14_1',
+        'legacy_inventory': None,
+        'max_hp': 350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_SU14_1',
+                'native_compact_id': 36354,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-17F',
+                'native_compact_id': 517,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_152mm_howitzer_ML-20_mod_1931',
+                'native_compact_id': 14340,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_10R',
+                'native_compact_id': 1031,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_SU14_1',
+                'native_compact_id': 30467,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 16129,
+        'resource_name': 'SU14_1',
+        'shells': (
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 64,
+                'native_compact_id': 16394,
+                'resource_name': '_152mm_53-OF-530',
+                'shell_definition_id': 'shell:ussr-SU14_1-stock-he',
+                'suffix': 'he',
+            },
+            {
+                'family': 'HOLLOW_CHARGE',
+                'item_id': 63,
+                'native_compact_id': 16138,
+                'resource_name': '_152mm_53BP540',
+                'shell_definition_id': 'shell:ussr-SU14_1-stock-heat',
+                'suffix': 'heat',
+            },
+        ),
+        'tier': 7,
+        'type_id': 63,
+        'vehicle_class': 'SPG',
+        'vehicle_id': 'vehicle:ussr:SU14_1',
+    },
+    {
+        'ammo_capacity': 98,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '01d45f003600cb001e004d00570000',
+        'descriptor_sha256': 'f8a088ca910bce72c1e78483f18c5363b7f72676dee3b3b66a5f931397174385',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 86,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 90,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 106,
+                'max_regen_health': 53,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 50,
+                'max_regen_health': 25,
+            },
+        ),
+        'kind': 'ussr-SU76I',
+        'legacy_inventory': None,
+        'max_hp': 170,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_SU76I',
+                'native_compact_id': 24322,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:Maybach_HL_120_TRM_A',
+                'native_compact_id': 13829,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_76mm_F-34S_A',
+                'native_compact_id': 22276,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_9R_O',
+                'native_compact_id': 7687,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_SU76I',
+                'native_compact_id': 19715,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 54273,
+        'resource_name': 'SU76I',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 28,
+                'native_compact_id': 7178,
+                'resource_name': '_76mm_UBR-354A',
+                'shell_definition_id': 'shell:ussr-SU76I-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 32,
+                'native_compact_id': 8202,
+                'resource_name': '_76mm_UBR-354MP',
+                'shell_definition_id': 'shell:ussr-SU76I-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 30,
+                'native_compact_id': 7690,
+                'resource_name': '_76mm_UOF-354',
+                'shell_definition_id': 'shell:ussr-SU76I-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 3,
+        'type_id': 212,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:ussr:SU76I',
+    },
+    {
+        'ammo_capacity': 58,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander',),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+            {
+                'roles': ('loader', 'radioman'),
+                'seat': 3,
+            },
+        ),
+        'descriptor_hex': '01d259003600cb0016004800550000',
+        'descriptor_sha256': '1a29177ed7fac96339a92b572d0a45ad89fbd6725ff27bab2769eadb61336655',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 86,
+                'max_regen_health': 42,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 130,
+                'max_regen_health': 85,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 150,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'radio',
+                'max_health': 120,
+                'max_regen_health': 60,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 100,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'gun',
+                'max_health': 122,
+                'max_regen_health': 61,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 100,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 70,
+                'max_regen_health': 35,
+            },
+        ),
+        'kind': 'ussr-SU_85I',
+        'legacy_inventory': None,
+        'max_hp': 380,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_SU_85I',
+                'native_compact_id': 22786,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:Maybach_HL_120_TRM_A',
+                'native_compact_id': 13829,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Average',
+                'native_compact_id': 51974,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_85mm_D-5S-85A_1',
+                'native_compact_id': 21764,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_9RM_O',
+                'native_compact_id': 5639,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_SU_85I',
+                'native_compact_id': 18435,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 53761,
+        'resource_name': 'SU_85I',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 36,
+                'native_compact_id': 9226,
+                'resource_name': '_85mm_UBR-365K',
+                'shell_definition_id': 'shell:ussr-SU_85I-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 37,
+                'native_compact_id': 9482,
+                'resource_name': '_85mm_UBR-365P',
+                'shell_definition_id': 'shell:ussr-SU_85I-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 38,
+                'native_compact_id': 9738,
+                'resource_name': '_85mm_UOF-365K',
+                'shell_definition_id': 'shell:ussr-SU_85I-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 5,
+        'type_id': 210,
+        'vehicle_class': 'AT-SPG',
+        'vehicle_id': 'vehicle:ussr:SU_85I',
+    },
+    {
+        'ammo_capacity': 1000,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'gunner', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 1,
+            },
+        ),
+        'descriptor_hex': '013c89005c00c90001007300750000',
+        'descriptor_sha256': 'e5f57adec525093ef8025ea5405874b460f090b20434e1f2b2badedac961fa40',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 40,
+                'max_regen_health': 21,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 75,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 100,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'radio',
+                'max_health': 100,
+                'max_regen_health': 49,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 50,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'gun',
+                'max_health': 30,
+                'max_regen_health': 15,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 40,
+                'max_regen_health': 20,
+            },
+        ),
+        'kind': 'ussr-T-60',
+        'legacy_inventory': None,
+        'max_hp': 150,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_T-60',
+                'native_compact_id': 35074,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:GAZ-202',
+                'native_compact_id': 23557,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Small',
+                'native_compact_id': 51462,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_12.7mm_DSHK',
+                'native_compact_id': 29956,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_71-TK-1',
+                'native_compact_id': 263,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_T-60',
+                'native_compact_id': 29443,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 15361,
+        'resource_name': 'T-60',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 117,
+                'native_compact_id': 29962,
+                'resource_name': '_12.7mm_AP_B32',
+                'shell_definition_id': 'shell:ussr-T-60-stock-ap',
+                'suffix': 'ap',
+            },
+        ),
+        'tier': 2,
+        'type_id': 60,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:ussr:T-60',
+    },
+    {
+        'ammo_capacity': 100,
+        'battle_admission': 'always',
+        'client_ui': {
+            'ammo': False,
+            'crew': False,
+        },
+        'crew': (
+            {
+                'roles': ('commander', 'radioman', 'loader'),
+                'seat': 0,
+            },
+            {
+                'roles': ('gunner',),
+                'seat': 1,
+            },
+            {
+                'roles': ('driver',),
+                'seat': 2,
+            },
+        ),
+        'descriptor_hex': '013e8c001c00ca0003007600130000',
+        'descriptor_sha256': 'e417930e7e7b1607107acb161040ad0639ac3283d7b2f66a1c8de0bc53ec5857',
+        'devices': (
+            {
+                'device': 'engine',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+            {
+                'device': 'ammoBay',
+                'max_health': 110,
+                'max_regen_health': 75,
+            },
+            {
+                'device': 'fuelTank',
+                'max_health': 125,
+                'max_regen_health': 50,
+            },
+            {
+                'device': 'radio',
+                'max_health': 110,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'leftTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'rightTrack',
+                'max_health': 70,
+                'max_regen_health': 55,
+            },
+            {
+                'device': 'gun',
+                'max_health': 68,
+                'max_regen_health': 34,
+            },
+            {
+                'device': 'turretRotator',
+                'max_health': 80,
+                'max_regen_health': 40,
+            },
+            {
+                'device': 'surveyingDevice',
+                'max_health': 60,
+                'max_regen_health': 30,
+            },
+        ),
+        'kind': 'ussr-T80',
+        'legacy_inventory': None,
+        'max_hp': 350,
+        'modules': {
+            'chassis': {
+                'module_id': 'module:ussr:chassis:Chassis_T80',
+                'native_compact_id': 35842,
+            },
+            'engine': {
+                'module_id': 'module:ussr:engine:M-80',
+                'native_compact_id': 7173,
+            },
+            'fuelTank': {
+                'module_id': 'module:ussr:fuelTank:Medium',
+                'native_compact_id': 51718,
+            },
+            'gun': {
+                'module_id': 'module:ussr:gun:_45mm_20K',
+                'native_compact_id': 4868,
+            },
+            'radio': {
+                'module_id': 'module:ussr:radio:_9R',
+                'native_compact_id': 775,
+            },
+            'turret': {
+                'module_id': 'module:ussr:turret:Turret_1_T80',
+                'native_compact_id': 30211,
+            },
+        },
+        'nation': 'ussr',
+        'nation_id': 0,
+        'native_compact_id': 15873,
+        'resource_name': 'T80',
+        'shells': (
+            {
+                'family': 'ARMOR_PIERCING',
+                'item_id': 13,
+                'native_compact_id': 3338,
+                'resource_name': '_45mm_UBR-240A',
+                'shell_definition_id': 'shell:ussr-T80-stock-ap',
+                'suffix': 'ap',
+            },
+            {
+                'family': 'ARMOR_PIERCING_CR',
+                'item_id': 14,
+                'native_compact_id': 3594,
+                'resource_name': '_45mm_UBR-240PA',
+                'shell_definition_id': 'shell:ussr-T80-stock-apcr',
+                'suffix': 'apcr',
+            },
+            {
+                'family': 'HIGH_EXPLOSIVE',
+                'item_id': 15,
+                'native_compact_id': 3850,
+                'resource_name': '_45mm_UOF-240A',
+                'shell_definition_id': 'shell:ussr-T80-stock-he',
+                'suffix': 'he',
+            },
+        ),
+        'tier': 4,
+        'type_id': 62,
+        'vehicle_class': 'lightTank',
+        'vehicle_id': 'vehicle:ussr:T80',
     },
 )
 
