@@ -5,7 +5,7 @@ use crate::gateway091::shared::vehicle_profile::VehicleKind;
 pub(super) const IS7_PROFILE_SHA256:&str="2fefea06de45fd172894ea7330f59d8efa9f9914a4f88192bb7b5f6ce8d47a90";
 const MS1_HANDLING_SHA256:&str="48f8ac675afafbe8605bd97bd92dc2c37f26673b65a548d4f0402b815f7ee9a1";
 const IS7_HANDLING_SHA256:&str="2b72923c904678b5471ca4c8e01125f787d0baeb8cf2153c322a126fa1b6cfd7";
-const PHYSICS_FIELDS:[&str;14]=["body_half_extents","body_center_offset","wheel_points","mass_kg",
+pub(crate) const PHYSICS_FIELDS:[&str;14]=["body_half_extents","body_center_offset","wheel_points","mass_kg",
     "max_forward_mps","max_reverse_mps","engine_max_torque_nm","wheel_radius","suspension_min",
     "suspension_max","track_max_brake_torque","longitudinal_friction","lateral_friction","stationary_steering_ratio"];
 

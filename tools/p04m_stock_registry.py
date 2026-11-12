@@ -5,7 +5,7 @@ This module validates facts/candidate DTO shape, not crew/ammo ownership.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from types import MappingProxyType
 
 from game_profile_tx import TransactionError
@@ -54,18 +54,22 @@ def active_pins():
 
 
 def mixed_admission(kind, zero_economy):
-    """Owned mixed battle admission: legacy NEW_KINDS rule or the catalog field."""
+    """Owned mixed battle admission: legacy NEW_KINDS rule or the catalog field (a build: its stock kind's)."""
     c = _catalog()
     if c is None:
         return kind not in NEW_KINDS or zero_economy()
-    value = c.admission(kind)
+    from content0_builds import stock_kind
+    value = c.admission(stock_kind(kind))
     return value == "always" or (value == "zero_economy_policy" and zero_economy())
 
 
 def legacy_route_admitted(kind):
     """Version1 P08B route: only kinds admitted without any policy."""
     c = _catalog()
-    return kind not in NEW_KINDS if c is None else c.admission(kind) == "always"
+    if c is None:
+        return kind not in NEW_KINDS
+    from content0_builds import stock_kind
+    return c.admission(stock_kind(kind)) == "always"
 
 
 @dataclass(frozen=True)
@@ -79,9 +83,11 @@ class StockProfile:
     shell_compact_id: int
     modules: tuple[tuple[str, str], ...]
     crew_roles: tuple[tuple[str, ...], ...]
+    # CONTENT-0 3.3: a build (stock turret and gun) keeps its vehicle's stock mount, shells and capacity.
+    assembly_kind: str = ""
 
     @property
-    def assembly_id(self): return self.kind + "-stock"
+    def assembly_id(self): return (self.assembly_kind or self.kind) + "-stock"
 
     @property
     def shell_definition_id(self): return "shell:" + self.assembly_id + "-ap"
@@ -110,12 +116,27 @@ class StockRegistry:
                 require(tuple(catalog.modules[modules[role]]["native_compact_id"] for role in ROLES) == spec["module_cds"], "P04M_DEFINITION_MISMATCH")
             profiles[kind] = StockProfile(kind, key, cd, encoded, hp, capacity, shell,
                 tuple((role, modules[role]) for role in ROLES), crew)
-        self.profiles = MappingProxyType(profiles)
         self.by_vehicle = MappingProxyType({p.vehicle_id: p for p in profiles.values()})
+        # CONTENT-0 3.3 stage 1 (catalog mode): builds with the stock turret and gun, by exact descriptor.
+        by_descriptor = {}
+        if _catalog() is not None:
+            import content0_builds
+            for encoded, b in sorted(content0_builds.load().items()):
+                stock = profiles.get(b["stock_kind"])
+                if stock is None or stock.assembly_kind:
+                    continue
+                require(stock.vehicle_id == b["vehicle_id"] and b["max_hp"] == stock.max_hp and b["label"] not in profiles
+                    and descriptor(catalog, {"vehicle_id": b["vehicle_id"], "modules": dict(b["modules"])}).hex() == encoded,
+                    "P04M_DEFINITION_MISMATCH")
+                profiles[b["label"]] = by_descriptor[encoded] = replace(stock, kind=b["label"], descriptor_hex=encoded,
+                    modules=tuple((role, b["modules"][role]) for role in ROLES), assembly_kind=stock.kind)
+        self.profiles = MappingProxyType(profiles)
+        self.by_descriptor = MappingProxyType(by_descriptor)
         # The registry hash the gateway pins covers the legacy kinds only; generated
         # (BATTLE-ANY) kinds are bound by the activated catalog hash instead.
         self.sha256 = sha(canonical({"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256,
-            "profiles": [asdict(profiles[kind]) for kind in sorted(profiles) if kind in PINS]}))
+            "profiles": [{k: v for k, v in asdict(profiles[kind]).items() if k != "assembly_kind"}
+                         for kind in sorted(profiles) if kind in PINS]}))
 
     @staticmethod
     def inventory_id(account, native, kind):
@@ -143,8 +164,13 @@ class StockRegistry:
         profile = self.by_vehicle.get(owned["vehicle_id"])
         require(profile is not None, "BATTLE_PROFILE_UNSUPPORTED")
         require(owned["vehicle_inventory_id"] == self.inventory_id(account, owned["native_id"], profile.kind), "P04M_INVENTORY_MISMATCH")
-        require(owned["modules"] == dict(profile.modules)
-            and descriptor(self.catalog, owned).hex() == profile.descriptor_hex, "BATTLE_PROFILE_UNSUPPORTED")
+        if owned["modules"] != dict(profile.modules):
+            # CONTENT-0 3.3: a mounted build of this vehicle (stage 1: stock turret and gun), by exact descriptor.
+            build = self.by_descriptor.get(descriptor(self.catalog, owned).hex())
+            require(build is not None and build.vehicle_id == owned["vehicle_id"] and owned["modules"] == dict(build.modules),
+                "BATTLE_PROFILE_UNSUPPORTED")
+            return build
+        require(descriptor(self.catalog, owned).hex() == profile.descriptor_hex, "BATTLE_PROFILE_UNSUPPORTED")
         return profile
 
     def resolve_selected(self, aggregate, account, native):

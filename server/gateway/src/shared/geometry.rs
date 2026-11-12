@@ -718,6 +718,8 @@ impl Bundle {
         self.module_volumes = Some(volumes); Ok(self)
     }
     pub fn module_volumes(&self) -> Option<&super::module_volumes::ModuleVolumes> { self.module_volumes.as_deref() }
+    /// CONTENT-0 3.3: the shared volumes a build with the stock turret binds too.
+    pub fn module_volumes_arc(&self) -> Option<std::sync::Arc<super::module_volumes::ModuleVolumes>> { self.module_volumes.clone() }
     /// World chassis mesh of the checked actor pose (vehicle frame, no turret);
     /// None without a bound chassis. Same pose identity as `world_mesh`.
     pub fn chassis_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Option<Mesh>> {
