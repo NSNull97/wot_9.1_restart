@@ -20,8 +20,8 @@ class Avatar(object):
 
 
 class Vehicle(object):
-    def __init__(self, entity_id, x, y=10., z=5.):
-        self.id, self.position = entity_id, Vec(x, y, z)
+    def __init__(self, entity_id, x, y=10., z=5., yaw=0.5):
+        self.id, self.position, self.yaw = entity_id, Vec(x, y, z), yaw
 
 
 class Other(object):
@@ -53,7 +53,7 @@ class PoseTraceTests(unittest.TestCase):
     def test_sample_reads_every_vehicle_and_times_only_for_the_avatar(self):
         engine = Engine(Avatar(), [Vehicle(152109059, 1.23456), Vehicle(152043523, -7.0), Other()])
         row = m.sample(engine, Avatar, Vehicle)
-        self.assertEqual(row['vehicles'], [[152043523, -7.0, 10.0, 5.0, True], [152109059, 1.235, 10.0, 5.0, False]])
+        self.assertEqual(row['vehicles'], [[152043523, -7.0, 10.0, 5.0, True, 0.5], [152109059, 1.235, 10.0, 5.0, False, 0.5]])
         self.assertEqual((row['native_time'], row['server_time'], row['arena_unique_id']), (12.5, 140.25, 77))
         self.assertFalse(row['observer_mutated_gameplay'])
         self.assertIsNone(m.sample(Engine(object(), []), Avatar, Vehicle))
@@ -61,6 +61,8 @@ class PoseTraceTests(unittest.TestCase):
     def test_unbounded_values_and_counts_fail_closed(self):
         self.assertRaises(ValueError, m.sample, Engine(Avatar(), [Vehicle(1, float('nan'))]), Avatar, Vehicle)
         self.assertRaises(ValueError, m.sample, Engine(Avatar(), [Vehicle(1, 5000.)]), Avatar, Vehicle)
+        self.assertRaises(ValueError, m.sample, Engine(Avatar(), [Vehicle(1, 0., yaw=float('nan'))]), Avatar, Vehicle)
+        self.assertRaises(ValueError, m.sample, Engine(Avatar(), [Vehicle(1, 0., yaw=7.)]), Avatar, Vehicle)
         many = [Vehicle(n, 0.) for n in range(m.MAX_VEHICLES + 1)]
         self.assertRaises(ValueError, m.sample, Engine(Avatar(), many), Avatar, Vehicle)
 

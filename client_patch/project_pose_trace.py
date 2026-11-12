@@ -3,7 +3,10 @@
 
 Read-only. While the player is the native Avatar, every 0.1 s one event
 records BigWorld.time(), BigWorld.serverTime() and the position every native
-Vehicle entity currently has (the own vehicle flagged). It calls no game
+Vehicle entity currently has (the own vehicle flagged) and, since version 2,
+its hull yaw (entity.yaw, radians, last in the row): owner 12.11 saw an SU-152
+turn on the spot smoothly in one place and in jerks in another; positions
+alone cannot show that. It calls no game
 command and assigns no Entity/filter/UI state. With the gateway's
 SHARED_SNAPSHOT (server positions per tick) it measures display lag directly;
 the 1 Hz shared_native_snapshot was too coarse (NET-01 battle 2026-10-29).
@@ -14,7 +17,7 @@ and re-prepare to roll back. Pure Python 2.7 at import time.
 """
 import math
 
-VERSION = 1
+VERSION = 2
 SETTING = 'trace_pose_10hz'
 EVENT = 'native_pose_sample'
 PERIOD = 0.1
@@ -41,6 +44,13 @@ def _coordinate(value):
     return round(value, 3)
 
 
+def _yaw(value):
+    value = float(value)
+    if math.isnan(value) or math.isinf(value) or abs(value) > 2 * math.pi + 1e-3:
+        raise ValueError('native vehicle yaw is not bounded')
+    return round(value, 4)
+
+
 def sample(engine, avatar_class, vehicle_class):
     """One row set, or None when the native player is not the battle Avatar."""
     player = engine.player()
@@ -54,7 +64,8 @@ def sample(engine, avatar_class, vehicle_class):
         if len(rows) >= MAX_VEHICLES:
             raise ValueError('pose trace vehicle bound')
         p = entity.position
-        rows.append([entity.id, _coordinate(p.x), _coordinate(p.y), _coordinate(p.z), entity.id == own])
+        rows.append([entity.id, _coordinate(p.x), _coordinate(p.y), _coordinate(p.z), entity.id == own,
+                     _yaw(entity.yaw)])
     rows.sort(key=lambda row: row[0])
     return dict(native_time=float(engine.time()), server_time=float(engine.serverTime()),
                 arena_unique_id=player.arenaUniqueID, player_vehicle_id=own, vehicles=rows,
