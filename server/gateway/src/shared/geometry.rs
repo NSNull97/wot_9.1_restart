@@ -561,7 +561,33 @@ impl Bundle {
         if value["schema"]!="battle-any-source.v1"||value["vehicle_id"]!=e.vehicle_id.as_str()||value["battle_admission"]!=false
             ||value["classification"]!="VERIFIED_STATIC_ORIGINAL_717"||value["identity"]["descriptor_hex"]!=descriptor.as_str()
             ||value["identity"]["type_compact_id"]!=vehicle.vehicle_compact_id() {return Err(bad());}
-        let geometry=&value["geometry"];
+        Self::from_generated_geometry(vehicle,e,&value["geometry"])
+    }
+    /// CONTENT-0 3.3: the geometry of a non-stock build from its three pinned collision parts
+    /// (`parts/<sha256>.json` of tools/battle_any_profiles.py: hull, turret, turret x gun).
+    pub fn load_generated_parts(local_root:&Path,parts_dir:&Path,vehicle:VehicleKind)->io::Result<Self> {
+        let e=vehicle.generated().ok_or_else(||bad())?;
+        let pins=e.part_sha256.as_ref().ok_or_else(||bad())?;
+        non_reparse(local_root)?;non_reparse(parts_dir)?;
+        let root=local_root.canonicalize()?;let dir=parts_dir.canonicalize()?;
+        if !dir.starts_with(&root)||dir==root {return Err(bad());}
+        let mut components=Vec::with_capacity(3);
+        for (slot,pin) in pins.iter().enumerate() {
+            let path=dir.join(format!("{pin}.json"));non_reparse(&path)?;
+            let file=fs::File::open(&path)?;
+            if !file.metadata()?.is_file()||file.metadata()?.len()>MAX_BYTES {return Err(bad());}
+            let mut raw=Vec::new();file.take(MAX_BYTES+1).read_to_end(&mut raw)?;
+            if raw.is_empty()||raw.len() as u64>MAX_BYTES||format!("{:x}",Sha256::digest(&raw))!=*pin {return Err(bad());}
+            let value:Value=serde_json::from_slice(&raw).map_err(|_|bad())?;
+            fields(&value,&["component","members","schema","slot","vehicle_id"])?;
+            if value["schema"]!="battle-any-part.v1"||value["vehicle_id"]!=e.vehicle_id.as_str()||value["slot"]!=slot as u64
+                ||!value["members"].is_object() {return Err(bad());}
+            components.push(value["component"].clone());
+        }
+        let geometry=serde_json::json!({"components":components,"hull_position":e.pivots[0],"turret_position":e.pivots[1],"gun_position":e.pivots[2]});
+        Self::from_generated_geometry(vehicle,e,&geometry)
+    }
+    fn from_generated_geometry(vehicle:VehicleKind,e:&super::generated_vehicles::Entry,geometry:&Value)->io::Result<Self>{
         fields(geometry,&["components","gun_position","hull_position","turret_position"])?;
         let hull=vector(&geometry["hull_position"])?;let turret=vector(&geometry["turret_position"])?;let gun=vector(&geometry["gun_position"])?;
         if [hull,turret,gun]!=e.pivots {return Err(bad());}
@@ -2104,6 +2130,37 @@ pub(super) mod tests {
         let c=decode_impact_diagnostic(&raw,&b).unwrap();
         let segment=perf02_strict_impact_model(&b,&c).expect("retained first surface must survive bounded reanchor");
         assert!(same_surface(&native_decoder_first(&b,&segment),&c.triangle));
+    }
+    /// CONTENT-0 3.3 (explicit fixture: CONTENT0_LOCAL_ROOT, CONTENT0_BUILD_PARTS = export `parts`,
+    /// CONTENT0_STOCK_BUNDLES = export `bundles`): a build with the stock turret and gun (another engine,
+    /// radio or chassis) loads from its parts to exactly the stock bundle's meshes, bounds and pivots of
+    /// those parts; a tampered or foreign part is refused.
+    #[test] #[ignore] fn content0_build_parts_rebuild_the_stock_meshes() {
+        use super::super::generated_vehicles as generated;
+        let root=std::env::var("CONTENT0_LOCAL_ROOT").expect("CONTENT0_LOCAL_ROOT");
+        let parts=std::env::var("CONTENT0_BUILD_PARTS").expect("CONTENT0_BUILD_PARTS");
+        let bundles=std::env::var("CONTENT0_STOCK_BUNDLES").expect("CONTENT0_STOCK_BUNDLES");
+        let (root,parts,bundles)=(Path::new(&root),Path::new(&parts),Path::new(&bundles));
+        let registry=generated::registry().unwrap();
+        let mut checked=0;
+        for e in registry.entries().iter().filter(|e|!e.stock) {
+            let Some(stock)=registry.by_vehicle(&e.vehicle_id).map(generated::entry) else {continue};
+            if e.gun_compact_id!=stock.gun_compact_id||e.parts!=stock.parts||e.pivots[1..]!=stock.pivots[1..] {continue;}
+            let name=stock.vehicle_id.trim_start_matches("vehicle:").replacen(':',"-",1)+".json";
+            let whole=Bundle::load(root,&bundles.join(name)).unwrap();
+            let built=Bundle::load_generated_parts(root,parts,VehicleKind::Generated(e.id)).unwrap();
+            assert_eq!(format!("{:?}",built.components),format!("{:?}",whole.components),"{}",e.label);
+            assert_eq!(built.bounds,whole.bounds,"{}",e.label);
+            assert_eq!([built.turret,built.gun],[whole.turret,whole.gun],"{}",e.label);
+            assert_eq!(built.hull,e.pivots[0]);
+            checked+=1;if checked==40 {break;}
+        }
+        assert_eq!(checked,40);
+        // A stock entry has no parts; another directory without the pinned files is refused.
+        let stock=registry.entries().iter().find(|e|e.stock).unwrap();
+        assert!(Bundle::load_generated_parts(root,parts,VehicleKind::Generated(stock.id)).is_err());
+        let build=registry.entries().iter().find(|e|!e.stock).unwrap();
+        assert!(Bundle::load_generated_parts(root,bundles,VehicleKind::Generated(build.id)).is_err());
     }
     #[test] fn malformed_bundle_hash_path_and_bounds_fail_closed() {
         assert!(Bundle::from_bytes(b"{}").is_err());
