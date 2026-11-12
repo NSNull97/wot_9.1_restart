@@ -88,7 +88,8 @@ def _identity(value):
     return _bounded_id(value, "item_id")
 
 
-def validate_request(request, authenticated_account_id):
+def validate_request(request, authenticated_account_id, *, stand_grant=False):
+    """``stand_grant`` admits the stand-only ``grant_vehicle`` operation; no client command maps to it."""
     _bounded_id(authenticated_account_id, "authenticated_account_id")
     require(type(request) is dict and set(request) == REQUEST_FIELDS)
     _bounded_id(request["account_id"], "account_id")
@@ -101,6 +102,9 @@ def validate_request(request, authenticated_account_id):
         require(set(payload) == {"vehicle_id", "unlock_index"})
         _identity(payload["vehicle_id"]); _number(payload["unlock_index"], 0, 4095)
     elif operation == "buy_vehicle":
+        require(set(payload) == {"vehicle_id"}); _identity(payload["vehicle_id"])
+    elif operation == "grant_vehicle":
+        require(stand_grant is True, "UNSUPPORTED_OPERATION")
         require(set(payload) == {"vehicle_id"}); _identity(payload["vehicle_id"])
     elif operation == "buy_vehicle_equipped":
         # CONTENT-0 Shop.buyVehicle flags CREW (tariff level) and/or SHELLS; at least one.
@@ -191,18 +195,28 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
         unlocked.add(item)
         if item in catalog.vehicles: unlocked.update(_default_unlocks(catalog, item))
         details = {"item_id": item, "historical_xp": edge["historical_xp"]}
-    elif operation in ("buy_vehicle", "buy_vehicle_equipped"):
+    elif operation in ("buy_vehicle", "buy_vehicle_equipped", "grant_vehicle"):
         # The equipped purchase is the same research transition; its crew and
         # ammunition belong to the store's _equip_purchase in the same transaction.
         vehicle_id = payload["vehicle_id"]
         require(vehicle_id in catalog.vehicles, "UNKNOWN_VEHICLE_TYPE")
         vehicle = catalog.vehicles[vehicle_id]
-        price = _price(vehicle, zero_gold)
-        _available_type(vehicle, zero_gold)
-        # A gold (premium) vehicle has no research edge; it reaches this point
-        # only under the explicit zero-economy policy and becomes unlocked.
-        premium = price["currency"] == "gold"
-        require(vehicle_id in unlocked or premium, "VEHICLE_NOT_RESEARCHED")
+        grant = operation == "grant_vehicle"
+        if grant:
+            # CONTENT-0 (owner 12.11): a stand grant of a vehicle the shop never sells (secret, not in shop,
+            # special). Zero-economy accounts only; observer/event vehicles and unsupported assemblies stay out.
+            require(zero_gold, "EXPLICIT_TEST_LAB_POLICY_REQUIRED")
+            require(not vehicle.get("unsupported_reason"), "UNSUPPORTED_CONFIGURATION")
+            require(not set(vehicle.get("tags", ())) & {"observer", "event_battles"}, "VEHICLE_ACQUISITION_UNSUPPORTED")
+            price = deepcopy(vehicle["historical_price"])
+            premium = False
+        else:
+            price = _price(vehicle, zero_gold)
+            _available_type(vehicle, zero_gold)
+            # A gold (premium) vehicle has no research edge; it reaches this point
+            # only under the explicit zero-economy policy and becomes unlocked.
+            premium = price["currency"] == "gold"
+        require(vehicle_id in unlocked or premium or grant, "VEHICLE_NOT_RESEARCHED")
         require(not any(r["vehicle_id"] == vehicle_id for r in value["vehicles"]), "VEHICLE_ALREADY_OWNED")
         require(len(value["vehicles"]) < min(MAX_OWNED, value["garage_slots"]), "GARAGE_LIMIT")
         native = value["next_native_id"]
@@ -214,9 +228,10 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
         value["vehicles"].append({"vehicle_inventory_id": inventory_id, "native_id": native,
                                   "vehicle_id": vehicle_id, "modules": modules, "runtime_supported": False})
         value["next_native_id"] += 1
-        if premium:
+        if premium or grant:
             unlocked.add(vehicle_id); unlocked.update(_default_unlocks(catalog, vehicle_id))
         details = {"vehicle_inventory_id": inventory_id, "historical_price": price}
+        if grant: details["stand_grant"] = True
     elif operation == "buy_module":
         item, count = payload["module_id"], payload["count"]
         require(item in catalog.modules, "UNKNOWN_MODULE")
@@ -570,8 +585,20 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         require(equipment is None, "CORRUPT_STORE")
         return self._next_aggregate(before, research, revision)
 
-    def execute(self, request, *, authenticated_account_id, prepare_response=None, native_binding=None):
-        request = validate_request(request, authenticated_account_id)
+    def grant_vehicle(self, *, account_id, vehicle_id):
+        """CONTENT-0 stand operation (owner 12.11): add a vehicle the shop never sells (secret, not in shop) to a
+        zero-economy account through the same journaled transition as a purchase. An owned vehicle is not
+        granted again ({"status": "owned"}, no write)."""
+        _bounded_id(vehicle_id, "vehicle_id")
+        profile = self.read_profile(account_id)
+        if any(r["vehicle_id"] == vehicle_id for r in profile["research"]["vehicles"]):
+            return {"status": "owned", "revision": profile["revision"], "vehicle_id": vehicle_id}
+        request = {"account_id": account_id, "command_key": "content0-stand-grant:" + vehicle_id + ":r" + str(profile["revision"]),
+                   "expected_revision": profile["revision"], "operation": "grant_vehicle", "payload": {"vehicle_id": vehicle_id}}
+        return self.execute(request, authenticated_account_id=account_id, stand_grant=True)
+
+    def execute(self, request, *, authenticated_account_id, prepare_response=None, native_binding=None, stand_grant=False):
+        request = validate_request(request, authenticated_account_id, stand_grant=stand_grant)
         require((prepare_response is None and native_binding is None) or
                 (callable(prepare_response) and type(native_binding) is str and re.fullmatch(r"[0-9a-f]{64}", native_binding)), "INVALID_NATIVE_PROJECTION")
         self.initialize()

@@ -150,6 +150,37 @@ class BuyWithCrewStoreTests(CrewV2Tests if CrewV2Tests is not None else unittest
         self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
         self.wire = 1
 
+    def test_content0_stand_grant_adds_a_vehicle_the_shop_never_sells(self):
+        # Owner 12.11: secret / not-in-shop vehicles cannot be bought; the stand grants them.
+        from p09e_research_store import TransactionError
+        catalog = self.store.catalog
+        hidden = sorted(v for v, row in catalog.vehicles.items()
+                        if not row.get("acquisition_allowed") and not row.get("unsupported_reason")
+                        and not set(row.get("tags", ())) & {"observer", "event_battles"}
+                        and v in self.store.registry.by_vehicle)
+        self.assertTrue(hidden, "the fixture catalogue has a hidden vehicle with a battle profile")
+        target = hidden[0]
+        before = self.store.read_profile(self.account)
+        request = {"account_id": self.account, "command_key": "client-grant", "expected_revision": before["revision"],
+                   "operation": "grant_vehicle", "payload": {"vehicle_id": target}}
+        with self.assertRaises(TransactionError):
+            self.store.execute(request, authenticated_account_id=self.account)   # no client path to the grant
+        with self.assertRaises(TransactionError):
+            self.store.execute(dict(request, command_key="client-buy", operation="buy_vehicle"), authenticated_account_id=self.account)
+        observer = [v for v, row in catalog.vehicles.items() if "observer" in row.get("tags", ())]
+        for vehicle_id in observer[:1]:
+            with self.assertRaises(TransactionError):
+                self.store.grant_vehicle(account_id=self.account, vehicle_id=vehicle_id)
+        self.assertEqual(self.store.read_profile(self.account), before, "refusals write nothing")
+        result = self.store.grant_vehicle(account_id=self.account, vehicle_id=target)
+        after = self.store.read_profile(self.account)
+        self.assertEqual((result["status"], after["revision"]), ("applied", before["revision"] + 1))
+        self.assertEqual(result["details"]["stand_grant"], True)
+        self.assertIn(target, [r["vehicle_id"] for r in after["research"]["vehicles"]])
+        self.assertIn(target, after["research"]["unlocked"])
+        self.assertEqual(self.store.grant_vehicle(account_id=self.account, vehicle_id=target)["status"], "owned")
+        self.assertEqual(self.store.read_profile(self.account), after)
+
     def test_content0_economy_topup_raises_an_old_account_to_the_current_floor(self):
         # Owner 12.11 (stand -21): accounts granted before the floor rose kept 100 rounds of an 1800-round belt.
         self.assertEqual(self.store.economy_topup(account_id=self.account)["status"], "unchanged")
