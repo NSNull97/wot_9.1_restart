@@ -127,10 +127,12 @@ def name_ids(identity, nation_id=0):
     return tuple(ids[key][(identity - 1) % len(ids[key])] for key in ("first_name_id", "last_name_id", "icon_id"))
 
 
-def passport(identity, type_id, role, capacity=CAPACITY, nation_id=0):
+def passport(identity, type_id, role, capacity=CAPACITY, nation_id=0, role_level=50):
+    """The server-allocated passport of one identity. Recruitment is always 50; a
+    CONTENT-0 vehicle purchase with crew (``plan_purchase``) uses the tariff level."""
     require(type(identity) is int and type(capacity) is int and 4 <= identity <= capacity, "FREE_RECRUITMENT_EXHAUSTED")
     first, last, icon = name_ids(identity, nation_id)
-    return unskilled(vehicle_type_id=type_id, role=role, role_level=50,
+    return unskilled(vehicle_type_id=type_id, role=role, role_level=role_level,
         first_name_id=first, last_name_id=last, icon_id=icon, nation_id=nation_id)
 
 
@@ -188,7 +190,9 @@ def native_crew(value, contract=None):
                 require(row["role"] == ("commander" if identity == 1 else "driver") and sha(base) == DESCRIPTOR_PINS[row["role"]], "CORRUPT_STORE")
             else:
                 require(row["crew_id"] == recruit_identity(value["account_id"], identity)
-                    and base == passport(identity, decoded["vehicle_type_id"], row["role"], capacity, decoded["nation_id"]), "CORRUPT_STORE")
+                    and decoded["role_level"] in contract.PASSPORT_LEVELS
+                    and base == passport(identity, decoded["vehicle_type_id"], row["role"], capacity, decoded["nation_id"],
+                                         decoded["role_level"]), "CORRUPT_STORE")
             vehicle, seat = row["vehicle_native_id"], row["seat"]
             require(type(vehicle) is int and (vehicle == -1 or vehicle in types), "CORRUPT_STORE")
             if vehicle == -1: require(seat is None, "CORRUPT_STORE")
@@ -227,6 +231,8 @@ class CrewContract:
     COMMAND, RECRUIT_COMMAND = "p04m.crew_transfer.v1", "p04m.recruit_assign.v1"
     LEARN_COMMAND, DISMISS_COMMAND, BARRACKS_COMMAND = "p04m.learn_skill.v1", "p04m.dismiss.v1", "p04m.recruit_barracks.v1"
     CAPACITY, BERTHS, PROFILE_BOUND = CAPACITY, BERTHS, 16384
+    # Passport training levels a stored identity may carry. v1 only ever hired 50.
+    PASSPORT_LEVELS = (50,)
 
     @classmethod
     def native_crew(cls, value):
@@ -319,6 +325,29 @@ class CrewContract:
         result["configuration_revision"] += 1; native_crew(result, cls); return result
 
     @classmethod
+    def plan_purchase(cls, before, vehicle, role_level, *, account_id):
+        """CONTENT-0 Shop.buyVehicle with BUY_VEHICLE_FLAG.CREW: one new identity per seat of
+        the just-bought (empty) vehicle, primary seat role, the tariff's training level, in seat
+        order, from the same lifetime allocator and passports as recruitment. All or nothing."""
+        native_crew(before, cls); stock = pins()
+        require(before["account_id"] == account_id, "FOREIGN_ACCOUNT")
+        require(before["configuration_revision"] < 2**31 - 1, "REVISION_EXHAUSTED")
+        require(role_level in cls.PASSPORT_LEVELS, "RECRUIT_SELECTION_UNSUPPORTED")
+        result = deepcopy(before); types = vehicles(result); rows = result["members"]
+        require(vehicle in types and not any(r["vehicle_native_id"] == vehicle for r in rows), "RECRUIT_SELECTION_UNSUPPORTED")
+        kind = types[vehicle]; seats = stock[kind][6]
+        require(1 <= len(seats) <= 8, "RECRUIT_SELECTION_UNSUPPORTED")
+        require(result["next_native_id"] + len(seats) - 1 <= cls.CAPACITY, "FREE_RECRUITMENT_EXHAUSTED")
+        type_id, nation_id = stock[kind][1] >> 8, (stock[kind][1] >> 4) & 15
+        for seat, roles in enumerate(seats):
+            identity = result["next_native_id"]
+            raw = passport(identity, type_id, roles[0], cls.CAPACITY, nation_id, role_level)
+            rows.append(dict(native_id=identity, crew_id=recruit_identity(account_id, identity), role=roles[0],
+                descriptor_hex=raw.hex(), vehicle_native_id=vehicle, seat=seat))
+            result.update(next_native_id=identity + 1, free_recruitment_left=cls.CAPACITY - identity)
+        result["configuration_revision"] += 1; native_crew(result, cls); return result
+
+    @classmethod
     def operation_response(cls, request, revision, crew, *, operation, before_crew):
         value = dict(status={"transfer": "transferred", "recruit": "recruited", "recruit_barracks": "recruited", "learn": "learned", "dismiss": "dismissed"}[operation],
             account_id=request["account_id"], native_database_id=request["native_database_id"], command_key=request["command_key"],
@@ -336,6 +365,11 @@ class CrewContractV2(CrewContract):
     COMMAND, RECRUIT_COMMAND = "p04m.crew_transfer.v2", "p04m.recruit_assign.v2"
     LEARN_COMMAND, DISMISS_COMMAND, BARRACKS_COMMAND = "p04m.learn_skill.v2", "p04m.dismiss.v2", "p04m.recruit_barracks.v2"
     CAPACITY, PROFILE_BOUND = V2_CAPACITY, 65536
+    # CONTENT-0 (owner 12.11): the original VehicleBuyWindow tariffs courses/school/academy
+    # (0/1/2) hire the whole crew at 50/75/100. Only plan_purchase creates 75/100 passports;
+    # recruitment keeps 50. The stored V2 policy hash is unchanged (no migration): a reader
+    # that also admits these passports, see docs/research/CONTENT0_BUY_WITH_CREW.md.
+    PASSPORT_LEVELS = (50, 75, 100)
 
 
 CONTRACTS = (CrewContract, CrewContractV2)

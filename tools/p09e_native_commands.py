@@ -17,6 +17,12 @@ INT4_METHOD = 0x90
 INT_ARRAY_METHOD = 0x97
 UNLOCK, EQUIP, BUY_VEHICLE, BUY_ITEM, BUY_AND_EQUIP = 201, 101, 301, 302, 308
 MAX_BUNDLE = 512
+# common/accountcommands.pyc BUY_VEHICLE_FLAG: NONE 0, CREW 1, SHELLS 16 (Shop.buyVehicle line 766
+# ORs them). VehicleBuyer passes crewType as the tariff, -1 when "without crew" is checked.
+BUY_CREW, BUY_SHELLS = 1, 16
+# Tariff = index into shop.tankmanCost; the original window labels the rows courses 50%, school 75%,
+# academy 100% (Flash RecruitWindow/VehicleBuyWindow: courses 0, school 1, academy 2). CONTENT-0 is free.
+CREW_TARIFF_LEVELS = {0: 50, 1: 75, 2: 100}
 MAX_COMMANDS = 16
 
 
@@ -93,8 +99,11 @@ crew and shell auto-purchase must never become free by a generic cost override.
         require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
         require(0 < a[1] < 2**31)
         # Original Shop.buyVehicle sets the CREW/SHELLS flags; VehicleBuyer
-        # sends tariff -1 exactly when no crew is bought.
-        require(a[2:] == (0, -1), "AUTOBUY_CREW_SHELLS_UNSUPPORTED")
+        # sends tariff -1 exactly when no crew is bought. Any other flag bit or
+        # tariff stays an explicit unavailable answer.
+        flags, tariff = a[2], a[3]
+        require(flags in (0, BUY_SHELLS, BUY_CREW, BUY_CREW | BUY_SHELLS)
+                and (tariff in CREW_TARIFF_LEVELS if flags & BUY_CREW else tariff == -1), "AUTOBUY_CREW_SHELLS_UNSUPPORTED")
     elif request.command == BUY_ITEM:
         require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
         require(0 < a[1] < 2**31 and 1 <= a[2] <= 100)
@@ -121,9 +130,15 @@ def domain_request(request: NativeRequest, *, catalog, aggregate, account_id,
     if request.command == UNLOCK:
         operation = "research"
         payload = {"vehicle_id": resolve(vehicle_ids, a[0], "UNKNOWN_VEHICLE"), "unlock_index": a[1]}
-    elif request.command == BUY_VEHICLE:
+    elif request.command == BUY_VEHICLE and a[2] == 0:
         operation = "buy_vehicle"
         payload = {"vehicle_id": resolve(vehicle_ids, a[1], "UNKNOWN_VEHICLE")}
+    elif request.command == BUY_VEHICLE:
+        # CONTENT-0: crew and/or base ammunition with the purchase, one transaction.
+        operation = "buy_vehicle_equipped"
+        payload = {"vehicle_id": resolve(vehicle_ids, a[1], "UNKNOWN_VEHICLE"),
+                   "crew_role_level": CREW_TARIFF_LEVELS[a[3]] if a[2] & BUY_CREW else 0,
+                   "load_shells": bool(a[2] & BUY_SHELLS)}
     elif request.command == BUY_ITEM:
         operation = "buy_module"
         payload = {"module_id": resolve(module_ids, a[1], "UNKNOWN_MODULE"), "count": a[2]}

@@ -29,7 +29,9 @@ REJECTIONS = frozenset({"INVALID_NATIVE_REQUEST", "UNKNOWN_VEHICLE", "UNKNOWN_MO
     "UNSUPPORTED_CONFIGURATION", "GOLD_PURCHASE_UNSUPPORTED", "VEHICLE_ALREADY_OWNED", "GARAGE_LIMIT",
     "INTERNAL_COMPONENT_UNSUPPORTED", "MODULE_NOT_RESEARCHED", "DEPOT_OVERFLOW", "VEHICLE_RESERVED",
     "DUPLICATE_MODULE_SLOT", "INCOMPATIBLE_MODULE", "INCOMPATIBLE_TURRET_GUN", "CHASSIS_OVERLOAD",
-    "NO_CONFIGURATION_CHANGE", "UNLOAD_AMMUNITION_REQUIRED", "MODULE_NOT_OWNED", "INVALID_INPUT"})
+    "NO_CONFIGURATION_CHANGE", "UNLOAD_AMMUNITION_REQUIRED", "MODULE_NOT_OWNED", "INVALID_INPUT",
+    # CONTENT-0 purchase with crew/base ammunition (pool store only).
+    "FREE_RECRUITMENT_EXHAUSTED", "RECRUIT_SELECTION_UNSUPPORTED", "UNSUPPORTED_MOUNT", "AMMUNITION_CONFIGURATION_UNSUPPORTED"})
 GARAGE_REJECTIONS = REJECTIONS | frozenset({"AMMUNITION_CONFIGURATION_UNSUPPORTED", "PURCHASE_UNSUPPORTED",
     "CAPACITY_EXCEEDED", "INSUFFICIENT_STOCK", "INCOMPATIBLE_SHELL", "UNSUPPORTED_MOUNT",
     "FREE_RECRUITMENT_EXHAUSTED", "RECRUIT_SELECTION_UNSUPPORTED", "TRANSFER_SELECTION_UNSUPPORTED",
@@ -91,7 +93,14 @@ def native_service(store, request, *, authenticated_account_id):
         def project(before, after, result):
             value = dict(response)
             value["revision"] = result["revision"]
-            value["update_hex"] = update_delta(store.catalog, before["research"], after["research"], request["wire_revision"]).hex()
+            if result["operation"] == "buy_vehicle_equipped":
+                # Chained Account.update diffs; the gateway emits them in order before success.
+                updates = store.purchase_updates(before, after, result, request["wire_revision"])
+                value["wire_revision"] = request["wire_revision"] + len(updates)
+                if len(updates) > 1: value["extra_update_hex"] = [update.hex() for update in updates[1:]]
+            else:
+                updates = [update_delta(store.catalog, before["research"], after["research"], request["wire_revision"])]
+            value["update_hex"] = updates[0].hex()
             return value
         return store.execute(domain, authenticated_account_id=authenticated_account_id,
             native_binding=sha(canonical(request)), prepare_response=project)

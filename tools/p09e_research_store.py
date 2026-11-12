@@ -41,7 +41,10 @@ ECONOMY_POLICY_SHA256 = sha(canonical(ECONOMY_POLICY))
 SHOP_REVISION = 5
 EARLIER_SHOP_REVISIONS = (3, 4)
 MAX_STATE = 256 * 1024
-MAX_NATIVE_RESPONSE = 4096
+# CONTENT-0: a purchase with crew/ammunition answers with up to EQUIPPED_UPDATES chained updates.
+MAX_NATIVE_RESPONSE = 16384
+EQUIPPED_UPDATES = 12
+CREW_ROLE_LEVELS = (0, 50, 75, 100)
 # CONTENT-0 step 2 (stand -15, 11.11): an owner hangar of nine vehicles with crews reached 17.4 KB and refused the
 # SU-5 research; the context is a subset of the profile, kept with the journal below MAX_STATE.
 MAX_NATIVE_CONTEXT = 128 * 1024
@@ -99,6 +102,11 @@ def validate_request(request, authenticated_account_id):
         _identity(payload["vehicle_id"]); _number(payload["unlock_index"], 0, 4095)
     elif operation == "buy_vehicle":
         require(set(payload) == {"vehicle_id"}); _identity(payload["vehicle_id"])
+    elif operation == "buy_vehicle_equipped":
+        # CONTENT-0 Shop.buyVehicle flags CREW (tariff level) and/or SHELLS; at least one.
+        require(set(payload) == {"vehicle_id", "crew_role_level", "load_shells"}); _identity(payload["vehicle_id"])
+        require(payload["crew_role_level"] in CREW_ROLE_LEVELS and type(payload["crew_role_level"]) is int
+                and type(payload["load_shells"]) is bool and (payload["crew_role_level"] or payload["load_shells"]))
     elif operation == "buy_module":
         require(set(payload) == {"module_id", "count"})
         _identity(payload["module_id"]); _number(payload["count"], 1, 100)
@@ -183,7 +191,9 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
         unlocked.add(item)
         if item in catalog.vehicles: unlocked.update(_default_unlocks(catalog, item))
         details = {"item_id": item, "historical_xp": edge["historical_xp"]}
-    elif operation == "buy_vehicle":
+    elif operation in ("buy_vehicle", "buy_vehicle_equipped"):
+        # The equipped purchase is the same research transition; its crew and
+        # ammunition belong to the store's _equip_purchase in the same transaction.
         vehicle_id = payload["vehicle_id"]
         require(vehicle_id in catalog.vehicles, "UNKNOWN_VEHICLE_TYPE")
         vehicle = catalog.vehicles[vehicle_id]
@@ -547,6 +557,19 @@ class ResearchStore(NativeBarracksRecruitmentStore):
     def _economy_grants(self, account_id):
         """Store-specific grants of the economy policy, inside its transaction."""
 
+    # CONTENT-0 buy_vehicle_equipped hooks. Only a store that owns crew and
+    # ammunition rows (the P04M pool) implements them; elsewhere the purchase
+    # with crew/shells stays an explicit unavailable answer.
+    def _equipment_plan(self, before, research, payload):
+        raise TransactionError("AUTOBUY_CREW_SHELLS_UNSUPPORTED")
+
+    def _equip_purchase(self, account, before, research, payload):
+        raise TransactionError("AUTOBUY_CREW_SHELLS_UNSUPPORTED")
+
+    def _expected_aggregate(self, before, research, revision, equipment):
+        require(equipment is None, "CORRUPT_STORE")
+        return self._next_aggregate(before, research, revision)
+
     def execute(self, request, *, authenticated_account_id, prepare_response=None, native_binding=None):
         request = validate_request(request, authenticated_account_id)
         require((prepare_response is None and native_binding is None) or
@@ -580,13 +603,19 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             raw = _encode(after)
             c.execute("UPDATE p09e_research SET state_json=?,state_sha256=? WHERE account_id=?", (raw, sha(raw.encode("ascii")), account))
             self._failpoint("after_research_state")
+            equipment = None
+            if request["operation"] == "buy_vehicle_equipped":
+                equipment = self._equip_purchase(account, profile, after, request["payload"])
+                details = dict(details, equipment=equipment)
+                self._failpoint("after_purchase_equipment")
             public_before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()[0]
             self._save_crew_projection(account, revision + 1, public_before)
             response = self._response_research(request, revision + 1, details)
             native = None
-            if prepare_response is not None:
+            if prepare_response is not None or equipment is not None:
                 final = self.read_profile(account)
-                require(final == self._next_aggregate(profile, after, revision + 1), "CORRUPT_STORE")
+                require(final == self._expected_aggregate(profile, after, revision + 1, equipment), "CORRUPT_STORE")
+            if prepare_response is not None:
                 native = prepare_response(deepcopy(profile), deepcopy(final), deepcopy(response))
                 require(type(native) is dict and native.get("replayed") is False and len(canonical(native)) <= MAX_NATIVE_RESPONSE, "INVALID_NATIVE_PROJECTION")
             native_context = None
@@ -639,6 +668,11 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         try:
             after, details = plan(self.catalog, journal["before"], request["operation"], request["payload"], account_id=request["account_id"], reserved=journal["reserved"], loaded=journal["loaded"],
                                   zero_gold=self.zero_economy(request["account_id"]))
+            equipment = None
+            if request["operation"] == "buy_vehicle_equipped":
+                equipment = journal["response"]["details"]["equipment"]
+                require(type(equipment) is dict, "CORRUPT_STORE")
+                details = dict(details, equipment=equipment)
             response = self._response_research(request, destination, details)
             require((after == journal["after"] if legacy else sha(canonical(after)) == journal["after_sha256"])
                     and response == journal["response"], "CORRUPT_STORE")
@@ -652,7 +686,9 @@ class ResearchStore(NativeBarracksRecruitmentStore):
                     before = {**context, "research": journal["before"]}
                 require(type(before) is dict and before["research"] == journal["before"] and before["revision"] == source
                         and before["account_id"] == request["account_id"], "CORRUPT_STORE")
-                final = self._next_aggregate(before, after, destination)
+                # The equipped purchase's crew/ammunition is re-derived from the before-state.
+                require(equipment is None or self._equipment_plan(before, after, request["payload"]) == equipment, "CORRUPT_STORE")
+                final = self._expected_aggregate(before, after, destination, equipment)
                 native = prepare_response(before, final, response)
                 require(type(native) is dict and native == journal["native_response"] and native.get("replayed") is False, "CORRUPT_STORE")
                 response = native

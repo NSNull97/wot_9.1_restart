@@ -51,7 +51,10 @@ impl Request {
         let ok=self.id>0 && match (self.command,self.arguments.as_slice()) {
             (201,[vehicle,index,zero])=>positive(*vehicle) && (0..4096).contains(index) && *zero==0,
             (101,[vehicle,module,gun])=>positive(*vehicle) && positive(*module) && nonnegative(*gun),
-            (301,[shop,vehicle,flags,tariff])=>*shop==SHOP_REVISION && positive(*vehicle) && *flags==0 && *tariff==-1,
+            // BUY_VEHICLE_FLAG none 0 / crew 1 / shells 16; tariff -1 without crew, else the
+            // tankmanCost row 0..2 (CONTENT-0 courses/school/academy). Anything else: unavailable.
+            (301,[shop,vehicle,flags,tariff])=>*shop==SHOP_REVISION && positive(*vehicle)
+                && matches!(*flags,0|1|16|17) && if *flags&1==1 {(0..=2).contains(tariff)} else {*tariff==-1},
             (302,[shop,module,count,gold])=>*shop==SHOP_REVISION && positive(*module) && (1..=100).contains(count) && *gold==0,
             (308,[shop,module,vehicle,slot,paid,gun])=>*shop==SHOP_REVISION && positive(*module) && positive(*vehicle)
                 && *slot==0 && *paid==0 && nonnegative(*gun),
@@ -136,6 +139,11 @@ mod tests {
         else {bytes.extend(args[0].to_le_bytes());for a in &args[1..] {bytes.extend((*a as i32).to_le_bytes());}}
         (method,bytes)
     }
+    #[test] fn buy_vehicle_admits_the_window_crew_and_shell_choices_only() {
+        let request=|flags:i64,tariff:i64|Request{id:226,command:301,arguments:vec![SHOP_REVISION,3329,flags,tariff]};
+        for (flags,tariff) in [(0,-1),(16,-1),(1,0),(1,1),(1,2),(17,0),(17,2)] {assert!(request(flags,tariff).validate_supported().is_ok(),"{flags} {tariff}");}
+        for (flags,tariff) in [(0,0),(16,1),(1,-1),(1,3),(17,-1),(2,-1),(32,-1),(18,0),(-1,-1)] {assert!(request(flags,tariff).validate_supported().is_err(),"{flags} {tariff}");}
+    }
     #[test] fn exact_source_shapes_and_semantic_options() {
         for command in COMMANDS {
             let (method,bytes)=packet(command);let r=Request::decode(method,&bytes).unwrap();
@@ -148,7 +156,7 @@ mod tests {
     #[test] fn signed_widths_survive_decode_but_unsupported_cannot_dispatch() {
         let (method,mut raw)=packet(201);raw[4..12].copy_from_slice(&i64::MAX.to_le_bytes());raw[12..16].copy_from_slice(&i32::MIN.to_le_bytes());
         let r=Request::decode(method,&raw).unwrap();assert_eq!(r.arguments,[i64::MAX,i32::MIN as i64,0]);assert!(r.validate_supported().is_err());
-        for (command,index,value) in [(301,2,1),(301,2,16),(301,3,0),(301,3,1),(301,3,2),(301,0,4),(302,0,3),(302,0,4),(302,2,101),(302,3,1),(308,3,1),(308,4,1),(201,1,4096)] {
+        for (command,index,value) in [(301,2,1),(301,2,2),(301,3,0),(301,3,1),(301,3,2),(301,0,4),(302,0,3),(302,0,4),(302,2,101),(302,3,1),(308,3,1),(308,4,1),(201,1,4096)] {
             let (method,raw)=packet(command);let mut r=Request::decode(method,&raw).unwrap();r.arguments[index]=value;assert!(r.validate_supported().is_err());
         }
     }
