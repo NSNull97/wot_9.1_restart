@@ -30,6 +30,10 @@ AUDITED_SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/Ammunitio
 AUDITED_PYC_SHA256 = '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'
 NOTICE = (u'Смена модулей, покупка и снятие оборудования недоступны в тестовом стенде. '
           u'Характеристики установленных модулей доступны для просмотра.')
+# CONTENT-0 3.1: with the research lab on, the five module kinds go to the
+# server; this notice names what is still unavailable there.
+RESEARCH_NOTICE = (u'Снятие модулей, оборудование и снаряжение пока недоступны в тестовом стенде. '
+                   u'Ходовую, двигатель, радиостанцию, башню и орудие можно установить со Склада.')
 EMPTY_TOOLTIP = (u'{HEADER}Недоступно в тестовом стенде{/HEADER}'
                  u'{BODY}Каталог оборудования и снаряжения пока не подключён. '
                  u'Покупка и установка недоступны.{/BODY}')
@@ -143,6 +147,7 @@ class _ModuleChangeGuard(object):
         self.messages = messages
         self.record = record
         self.allow_research = allow_research
+        self.notice = RESEARCH_NOTICE if allow_research else NOTICE
         self.original = panel_class.__dict__['setVehicleModule']
         self.original_update = panel_class.__dict__['_update']
         self.original_data = self._descriptor('as_setDataS')
@@ -171,7 +176,7 @@ class _ModuleChangeGuard(object):
                          original_mutation_called=False)
             if guard.messages.g_instance is None:
                 raise RuntimeError('original SystemMessages is unavailable for module denial')
-            guard.messages.pushMessage(NOTICE, type=guard.messages.SM_TYPE.Warning)
+            guard.messages.pushMessage(guard.notice, type=guard.messages.SM_TYPE.Warning)
             guard.record('capability_notice', capability='module_changes',
                          phase='return', channel='original_SystemMessages_Warning')
 
