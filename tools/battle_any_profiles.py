@@ -864,6 +864,167 @@ def runtime_facts(v, tables, modules, row):
                 crew_seats=seats, weights_kg=weights)
 
 
+# ---- CONTENT-0 3.3: the build table the gateway embeds --------------------------------------------------------------
+#
+# The gateway copies, never computes: every number of a build's runtime profile is in this table, written here from
+# the same module tables `assemble` uses. Per vehicle: the hull part and crew; per module the facts the runtime binds;
+# per chassis x engine the physics without the mass; per build its label, modules, descriptor, mass, HP and decision.
+# Collision parts (hull, turret, turret x gun) are separate pinned files.
+
+BUILDS_SCHEMA = "wot091-battle-builds.v1"
+PART_SCHEMA = "battle-any-part.v1"
+BUILDS = _DIR / "battle_builds.v1.json"
+MAX_BUILDS_TABLE = 32 * 1024 * 1024
+MAX_PART = 512 * 1024
+MAX_BUILD_LABEL = 96
+
+
+def build_label(kind, row, stock):
+    """Stock keeps the kind label; another build is `<kind>--<8 hex of its descriptor>`."""
+    return kind if stock else kind + "--" + sha(row["identity"]["descriptor_hex"].encode("ascii"))[:8]
+
+
+def part_document(vehicle_id, slot, part):
+    raw = canonical(dict(schema=PART_SCHEMA, vehicle_id=vehicle_id, slot=slot, component=part["component"],
+                         members=dict(sorted(part["members"].items())))) + b"\n"
+    require(len(raw) <= MAX_PART, vehicle_id + ": part size bound")
+    return raw
+
+
+def _summary(component):
+    return dict(name=component["name"], vertex_format=component["vertex_format"], vertices=len(component["vertices"]),
+                triangles=len(component["triangles"]), excluded_degenerate=len(component["excluded_degenerate_triangle_ids"]),
+                armor_ids=[m["kind"] for m in component["materials"] if m["kind"] <= 16],
+                material_kinds=[m["kind"] for m in component["materials"]])
+
+
+def _part_ref(vehicle_id, slot, part, parts):
+    raw = part_document(vehicle_id, slot, part)
+    key = sha(raw)
+    parts[key] = raw
+    return dict(sha256=key, bytes=len(raw), **_summary(part["component"]))
+
+
+DRIVE_FIELDS = ("body_half_extents", "body_center_offset", "wheel_points", "max_forward_mps", "max_reverse_mps",
+                "engine_max_torque_nm", "wheel_radius", "suspension_min", "suspension_max", "track_max_brake_torque",
+                "longitudinal_friction", "lateral_friction", "stationary_steering_ratio")
+
+
+def vehicle_builds(catalog, tables, builds):
+    """(vehicle record, {part sha: bytes}, [(label, full row)]) of every build of one vehicle."""
+    vehicle_id = tables["vehicle_id"]
+    parts, rows, out = {}, [], dict(builds=[], chassis={}, engines={}, radios={}, fuel_tanks={}, turrets={}, mounts={},
+                                    drives={})
+    stock_modules = builds[0]
+    for m in builds:
+        row, raw = assemble(catalog, tables, m)
+        stock = m == stock_modules
+        kind = kind_label(row)
+        entry = dict(modules=m, status=row["status"], refusal=row["refusal"], detail=row["detail"],
+                     descriptor_hex=row["identity"]["descriptor_hex"], module_compact_ids=row["identity"]["module_compact_ids"],
+                     max_hp=row["identity"]["max_hp"], mass_kg=row["identity"]["mass_kg"], stock=stock)
+        if row["status"] == "generated":
+            label = build_label(kind, row, stock)
+            require(len(label) <= MAX_BUILD_LABEL, vehicle_id + ": build label bound")
+            entry.update(label=label, weights_kg=row["weights_kg"])
+            rows.append((label, row))
+            t, g, c, e = m["turret"], m["gun"], m["chassis"], m["engine"]
+            mount = tables["mount"][t + "/" + g]
+            turret = tables["turret"][t]
+            out["mounts"].setdefault(t + "/" + g, dict(gun=mount["gun"], shots=row["shots"], shell_suffixes=row["shell_suffixes"],
+                device=mount["device"], part=_part_ref(vehicle_id, 2, mount["part"], parts)))
+            out["turrets"].setdefault(t, dict(turret_rotation_deg_s=turret["turret_rotation_deg_s"], view_range_m=turret["view_range_m"],
+                gun_position=turret["gun_position"], rotator=turret["rotator"], surveying=turret["surveying"],
+                part=_part_ref(vehicle_id, 1, turret["part"], parts)))
+            ch = tables["chassis"][c]
+            out["chassis"].setdefault(c, dict(dispersion_vehicle_movement=ch["dispersion_vehicle_movement"],
+                dispersion_vehicle_rotation=ch["dispersion_vehicle_rotation"], hull_position=ch["hull_position"],
+                track=ch["track"], handling=row["handling"], support_rule=row["support_rule"],
+                movement={k: row["movement"][k] for k in ("chassis_rotation_deg_s", "brake_force_source", "carrying_point",
+                                                         "terrain_resistance", "rotation_is_around_center")}))
+            out["engines"].setdefault(e, dict(engine_power_hp=row["movement"]["engine_power_hp"],
+                fire_starting_chance=row["engine_fire_starting_chance"], device=tables["engine"][e]["device"]))
+            out["radios"].setdefault(m["radio"], tables["radio"][m["radio"]])
+            out["fuel_tanks"].setdefault(m["fuelTank"], tables["fuelTank"][m["fuelTank"]])
+            drive = {k: row["physics"][k] for k in DRIVE_FIELDS}
+            require(out["drives"].setdefault(c + "/" + e, drive) == drive, vehicle_id + ": drive physics depends on more than chassis x engine")
+            if "hull" not in out:
+                out["hull"] = dict(kind=kind, part=_part_ref(vehicle_id, 0, tables["hull"]["part"], parts), hull_aabb=row["hull_aabb"],
+                                   speed_limits_kmh=row["movement"]["speed_limits_kmh"], turret_position=row["pivots"]["turret_position"],
+                                   ammo_bay=tables["hull"]["ammo_bay"], crew_seats=row["crew_seats"])
+            entry["geometry_sha256"] = sha(canonical([out["hull"]["part"]["sha256"], out["turrets"][t]["part"]["sha256"],
+                                                      out["mounts"][t + "/" + g]["part"]["sha256"]]))
+        out["builds"].append(entry)
+    return out, parts, rows
+
+
+def project(row, qualified_kind=None):
+    """The runtime facts of one full profile row (what the gateway Entry binds): the check of the build table."""
+    g = row["gun"]
+    return dict(kind=qualified_kind or row["kind"], vehicle_id=row["vehicle_id"], nation=row["native_nation_id"],
+                descriptor=row["identity"]["descriptor_hex"], type_compact_id=row["identity"]["type_compact_id"],
+                gun_compact_id=row["identity"]["module_compact_ids"]["gun"], max_hp=row["identity"]["max_hp"],
+                mass_kg=row["identity"]["mass_kg"], view_range_m=row["view_range_m"], gun=g, shots=row["shots"],
+                pivots=row["pivots"], shell_suffixes=row["shell_suffixes"], devices=row["devices"], crew_seats=row["crew_seats"],
+                engine_fire_starting_chance=row["engine_fire_starting_chance"], physics=row["physics"], handling=row["handling"],
+                components=row["geometry"]["components"], weights_kg=row["weights_kg"], movement=row["movement"],
+                hull_aabb=row["hull_aabb"], support_rule=row["support_rule"])
+
+
+def project_build(vehicle, entry):
+    """The same runtime facts read from the build table only (copy, no arithmetic): the gateway's rule."""
+    m = entry["modules"]
+    t, g, c, e = m["turret"], m["gun"], m["chassis"], m["engine"]
+    hull, mount, turret, chassis, engine = (vehicle["hull"], vehicle["mounts"][t + "/" + g], vehicle["turrets"][t],
+                                            vehicle["chassis"][c], vehicle["engines"][e])
+    gun = dict(mount["gun"], dispersion_vehicle_movement=chassis["dispersion_vehicle_movement"],
+               dispersion_vehicle_rotation=chassis["dispersion_vehicle_rotation"], turret_rotation_deg_s=turret["turret_rotation_deg_s"])
+    caps = (engine["device"], hull["ammo_bay"], vehicle["fuel_tanks"][m["fuelTank"]]["device"], vehicle["radios"][m["radio"]]["device"],
+            chassis["track"], chassis["track"], mount["device"], turret["rotator"], turret["surveying"])
+    physics = dict(vehicle["drives"][c + "/" + e], mass_kg=entry["mass_kg"])
+    summary = lambda ref: {k: v for k, v in ref.items() if k not in ("sha256", "bytes")}
+    movement = dict(chassis["movement"], engine_power_hp=engine["engine_power_hp"], speed_limits_kmh=hull["speed_limits_kmh"])
+    return dict(kind=hull["kind"], vehicle_id=vehicle["vehicle_id"], nation=vehicle["native_nation_id"],
+                descriptor=entry["descriptor_hex"], type_compact_id=vehicle["type_compact_id"],
+                gun_compact_id=entry["module_compact_ids"]["gun"], max_hp=entry["max_hp"], mass_kg=entry["mass_kg"],
+                view_range_m=turret["view_range_m"], gun=gun, shots=mount["shots"],
+                pivots=dict(hull_position=chassis["hull_position"], turret_position=hull["turret_position"], gun_position=turret["gun_position"]),
+                shell_suffixes=mount["shell_suffixes"],
+                devices=[dict(device=d, extra_index=26 + i, **cap) for i, (d, cap) in enumerate(zip(DEVICES, caps))],
+                crew_seats=hull["crew_seats"], engine_fire_starting_chance=engine["fire_starting_chance"], physics=physics,
+                handling=chassis["handling"], components=[summary(hull["part"]), summary(turret["part"]), summary(mount["part"])],
+                weights_kg=entry["weights_kg"], movement=movement, hull_aabb=hull["hull_aabb"], support_rule=chassis["support_rule"])
+
+
+def build_table(original, profile_raw=None):
+    """(build table bytes, {part sha: bytes}, [(label, full row)] of every generated build)."""
+    src, catalog, defaults, factor, effects = context(original)
+    tests = {v["vehicle_id"] for v in test_vehicles.load()[0]["vehicles"]} if TEST_LAB else set()
+    vehicles, parts, rows = {}, {}, []
+    for vehicle_id in sorted(catalog.vehicles):
+        if vehicle_id in tests:
+            continue
+        v = catalog.vehicles[vehicle_id]
+        builds = configurations(v)
+        tables = module_tables(src, catalog, vehicle_id, defaults, factor, effects, builds)
+        record, vehicle_parts, vehicle_rows = vehicle_builds(catalog, tables, builds)
+        if not vehicle_rows:
+            continue
+        stock_row = vehicle_rows[0][1]  # vehicle-level facts are the same in every build
+        record.update(vehicle_id=vehicle_id, native_nation_id=stock_row["native_nation_id"],
+                      type_compact_id=stock_row["identity"]["type_compact_id"], tier=v["tier"], vehicle_class=stock_row["vehicle_class"])
+        vehicles[vehicle_id] = record
+        parts.update(vehicle_parts)
+        rows.extend(vehicle_rows)
+    labels = [label for label, _ in rows]
+    require(len(labels) == len(set(labels)), "duplicate build label")
+    table = dict(schema=BUILDS_SCHEMA, target="v.0.9.1 #717 RU", research_catalog_sha256=CATALOG_SHA256, policy=POLICY,
+                 profile_table_sha256=sha(TABLE.read_bytes() if profile_raw is None else profile_raw), builds=len(rows), vehicles=vehicles)
+    raw = canonical(table) + b"\n"
+    require(len(raw) <= MAX_BUILDS_TABLE, "build table size bound")
+    return raw, parts, rows
+
+
 def physics_definitions(table):
     """Embedded C# definitions of every generated non-legacy kind (exact canonical rows)."""
     rows = []
@@ -979,15 +1140,24 @@ def export(original, out, update=False):
     raw, bundles = build(original)
     committed = TABLE.read_bytes() if TABLE.is_file() else None
     require(update or committed is None or committed == raw, "generated table differs from committed; use --update")
+    builds_raw, parts, _ = build_table(original, raw)
     out.mkdir()
     (out / "bundles").mkdir()
     for name, data in sorted(bundles.items()):
         with (out / "bundles" / name).open("xb") as stream:
             stream.write(data)
+    # CONTENT-0 3.3: collision parts of every build, by SHA-256 (hull, turret, turret x gun).
+    (out / "parts").mkdir()
+    for key, data in sorted(parts.items()):
+        with (out / "parts" / (key + ".json")).open("xb") as stream:
+            stream.write(data)
+    with (out / "battle_builds.v1.json").open("xb") as stream:
+        stream.write(builds_raw)
     with (out / "battle_profiles.v1.json").open("xb") as stream:
         stream.write(raw)
     if update or committed is None:
         TABLE.write_bytes(raw)
+        BUILDS.write_bytes(builds_raw)
         BINDING.write_bytes(binding(raw))
         if QUALIFICATION.is_file():  # a first test_lab build: `qualify` writes the pins
             RUST_PINS.write_bytes(rust_pins())
@@ -1000,6 +1170,7 @@ def export(original, out, update=False):
     receipt = dict(schema="battle-any-export.v1", status="PASS_PINNED_SOURCE_EXPORT", table_sha256=sha(raw), table_bytes=len(raw),
                    vehicles=len(table["vehicles"]), counts=dict(sorted(counts.items())), bundles=len(bundles),
                    bundles_sha256=sha(canonical({k: sha(v) for k, v in sorted(bundles.items())})),
+                   builds_table_sha256=sha(builds_raw), builds=json.loads(builds_raw)["builds"], parts=len(parts),
                    committed_table_changed=committed is not None and committed != raw,
                    runtime_registration=False, native="NOT_RUN", client_bytecode_executed=False)
     with (out / "receipt.json").open("xb") as stream:

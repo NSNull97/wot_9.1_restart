@@ -111,5 +111,48 @@ class EveryBuild(unittest.TestCase):
                          (v["module_mass_grams"]["module:ussr:engine:V-2K"] - v["module_mass_grams"]["module:ussr:engine:M-17T"]) / 1000)
 
 
+@unittest.skipUnless((ORIGINAL / "WorldOfTanks.exe").is_file(), "original #717 client absent")
+@unittest.skipIf(generator.TEST_LAB, "main catalogue build table")
+class BuildTable(unittest.TestCase):
+    """CONTENT-0 3.3: the embedded build table reproduces every generated build by copying alone."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.raw, cls.parts, cls.rows = generator.build_table(ORIGINAL)
+        cls.table = json.loads(cls.raw)
+
+    def test_rebuild_equals_committed_table(self):
+        self.assertEqual(self.raw, generator.BUILDS.read_bytes())
+        self.assertEqual(self.table["profile_table_sha256"], generator.sha(generator.TABLE.read_bytes()))
+        self.assertEqual(self.table["builds"], COUNTS["generated"])
+
+    def test_every_generated_build_is_copied_from_the_table(self):
+        by_label = {e["label"]: (v, e) for v in self.table["vehicles"].values() for e in v["builds"] if "label" in e}
+        self.assertEqual(len(by_label), len(self.rows))
+        for label, row in self.rows:
+            vehicle, entry = by_label[label]
+            self.assertEqual(generator.project(row), generator.project_build(vehicle, entry), label)
+            self.assertLessEqual(len(label), generator.MAX_BUILD_LABEL)
+
+    def test_stock_builds_are_the_stock_profile_rows(self):
+        stock = {r["kind"]: r for r in json.loads(generator.TABLE.read_bytes())["vehicles"] if r["status"] == "generated"}
+        rows = {label: row for label, row in self.rows}
+        stock_labels = [e["label"] for v in self.table["vehicles"].values() for e in v["builds"] if e["stock"] and "label" in e]
+        self.assertEqual(sorted(stock_labels), sorted(stock))
+        for label in stock_labels:
+            self.assertEqual(generator.canonical(rows[label]), generator.canonical(stock[label]), label)
+
+    def test_parts_are_pinned_by_their_digest(self):
+        refs = set()
+        for v in self.table["vehicles"].values():
+            refs.add(v["hull"]["part"]["sha256"])
+            refs.update(t["part"]["sha256"] for t in v["turrets"].values())
+            refs.update(m["part"]["sha256"] for m in v["mounts"].values())
+        self.assertEqual(refs, set(self.parts))
+        for key, raw in self.parts.items():
+            self.assertEqual(generator.sha(raw), key)
+            self.assertLessEqual(len(raw), generator.MAX_PART)
+
+
 if __name__ == "__main__":
     unittest.main()
