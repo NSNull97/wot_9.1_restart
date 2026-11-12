@@ -251,8 +251,8 @@ class PoolStoreTests(unittest.TestCase):
         self.assertEqual(len(cap), 6); self.assertFalse(cap["admission"])
         state = projected.state(aggregate, self.store.layouts(self.account))
         self.assertEqual(state["inventory"][1]["crew"][3], [4, 5, 6])
-        # One native count per pool shell: 15 legacy shells, more in CAT-01 mode (BATTLE-ANY rows).
-        self.assertEqual(len(state["inventory"][10]), len(self.store.shells))
+        # One native count per shell compact ID (shared depot rows, CONTENT-0 step 1): 15 legacy shells, more in CAT-01 mode.
+        self.assertEqual(len(state["inventory"][10]), len(self.store.depot_cd))
         self.assertTrue(len(self.store.shells) >= 15)
         self.assertEqual(state["inventory"][1]["lock"], {})
         self.store.battle(self.battle_request("run_open"), authenticated_account_id=self.account)
