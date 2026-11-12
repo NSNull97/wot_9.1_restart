@@ -7,7 +7,10 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKER = ROOT / 'tools' / 'p08c_late_results_service.py'
-CATALOG = '76afa3dcb003ffcc7a17c1b3a7c37aee39ccd4dbe05b1356bb64a3eb7686aefe'
+sys.path.insert(0, str(ROOT / 'tools'))
+import catalog_v1_data  # noqa: E402
+# The committed main catalogue (rebuilt by the CONTENT-0 main transfer; was a pinned 12-vehicle hash).
+CATALOG = catalog_v1_data.CATALOG_SHA256
 ARGS = ['--database', 'never-opened.sqlite', '--original-root', 'never-read',
         '--account-id', '12345678-1234-4234-8234-123456789000', '--shell-catalog', 'never-read',
         '--terminal-policy', 'never-read', '--ammo-rack-loss']

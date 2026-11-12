@@ -189,8 +189,10 @@ class PoolStore(ResultsStore):
     def _stored_json(self, raw):
         # v2 profile/ledger rows legitimately exceed the frozen 16 KiB F-K bound;
         # every smaller row keeps the frozen reader.
-        # A v2 marker row exists only for an activated pool owner (set_crew_contract).
-        if type(raw) is str and len(raw) > MAX_JSON and self._crew_contract() is CrewContractV2:
+        # A v2 marker row exists only for an activated pool owner (set_crew_contract). Since the CONTENT-0 main
+        # transfer (12.11) a v1 profile takes the same bound (the main catalogue's depot), still read by _json
+        # (P09E MAX_STATE, 256 KB).
+        if type(raw) is str and len(raw) > MAX_JSON:
             # The bounded depth scan is pure Python; an identical string that
             # already passed it in this process is only decoded again.
             digest = hashlib.sha256(raw.encode("utf-8")).digest()
