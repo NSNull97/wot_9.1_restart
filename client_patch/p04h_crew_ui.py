@@ -122,7 +122,9 @@ def checked_expected(value, role_level=None):
             if (row['vehicle_type_id'] != 13 or row['role'] != role
                     or row['role_level'] != 100 or row['sha256'] != pin):
                 raise ValueError('accepted original tankman descriptor changed')
-        elif role_level is not None and row['role_level'] != role_level:
+        # CONTENT-0 (owner 12.11): the original VehicleBuyWindow hires 75/100 (school/academy) besides
+        # the 50 of barracks recruitment; any other level still refuses the window.
+        elif role_level is not None and row['role_level'] not in (role_level, 75, 100):
             raise ValueError('new tankman level differs from selected policy')
     if set(seats) - set(range(1, len(members) + 1)):
         raise ValueError('vehicle references an absent native tankman')

@@ -55,6 +55,16 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(ui.member_row(sparse(),'10')['inventory_id'],10)
         self.assertEqual(ui.member_row(sparse(),2)['skills'],['driver_smoothDriving'])
 
+    def test_content0_purchase_crew_levels_75_and_100_are_valid(self):
+        # Owner 12.11: the recruit window did not open after a purchase with a school/academy crew.
+        recruited=[row['inventory_id'] for row in sparse()['tankmen'] if row['inventory_id']>3 and row['role_level']==50 and not row['skills']]
+        self.assertTrue(recruited)
+        for level,ok in ((75,True),(100,True),(60,False)):
+            v=sparse();next(r for r in v['tankmen'] if r['inventory_id']==recruited[0]).update(role_level=level)
+            if ok: self.assertEqual(ui.checked_expected(v,50),v)
+            else:
+                with self.assertRaises(ValueError): ui.checked_expected(v,50)
+
     def test_absent_duplicate_unsorted_bool_or_dangling_ids_reject(self):
         cases=[]
         v=sparse();v['tankmen'].reverse();cases.append(v)

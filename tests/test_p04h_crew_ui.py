@@ -63,7 +63,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(ui.checked_expected(completed(), 50), completed())
         for change in (lambda v:v['is7_crew'].append(None), lambda v:v['tankmen'][9].update(inventory_id=9),
                 lambda v:v['tankmen'][9].update(role='gunner'), lambda v:v['tankmen'][0].update(role_level=50),
-                lambda v:v['tankmen'][9].update(role_level=100), lambda v:v.update(free_quota=17),
+                lambda v:v['tankmen'][9].update(role_level=60), lambda v:v.update(free_quota=17),
                 lambda v:v['is7_crew'].__setitem__(4, 10), lambda v:v['tankmen'][9].update(sha256='bad'),
                 lambda v:v['tankmen'][9].update(free_xp=1), lambda v:v['tankmen'][9].update(no_skills=1),
                 lambda v:v['tankmen'][9].update(vehicle_type_id=29), lambda v:v['tankmen'].append({})):
