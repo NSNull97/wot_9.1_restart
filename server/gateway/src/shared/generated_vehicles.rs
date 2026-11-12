@@ -335,10 +335,9 @@ mod tests {
         for (i,e) in r.entries().iter().enumerate() {
             assert_eq!(e.id.get(),i);assert_eq!(r.by_label(&e.label),Some(e.id));
             assert!(VehicleKind::from_label(&e.label).is_none(),"{} shadows a legacy label",e.label);
-            if cfg!(feature="test_lab") {
-                assert!((1..=crate::p06t_armament091::MAX_CLIP).contains(&e.gun.clip_count)&&(1..=crate::p06t_armament091::MAX_BURST).contains(&e.gun.burst_count),"{}",e.label);
-                assert!(e.gun.burst_count==1||e.gun.clip_count>=e.gun.burst_count&&e.gun.burst_interval_seconds>0.,"{}",e.label);
-            } else {assert!((1..=6).contains(&e.gun.clip_count)&&e.gun.burst_count==1,"{}",e.label);}
+            // Automatic guns on main too since the CONTENT-0 main transfer (owner 12.11).
+            assert!((1..=crate::p06t_armament091::MAX_CLIP).contains(&e.gun.clip_count)&&(1..=crate::p06t_armament091::MAX_BURST).contains(&e.gun.burst_count),"{}",e.label);
+            assert!(e.gun.burst_count==1||e.gun.clip_count>=e.gun.burst_count&&e.gun.burst_interval_seconds>0.,"{}",e.label);
             assert!(!e.crew.is_empty()&&e.max_hp>0&&e.gun.capacity>0,"{}",e.label);
         }
     }

@@ -75,10 +75,7 @@ fn wide_pitch_generated_profiles_are_supported_and_quantize_over_absolute(){
         if (absolute.min,absolute.max)!=(basic.min_pitch,basic.max_pitch){wide.push(entry.label.as_str());}
     }
     wide.sort_unstable();
-    #[cfg(not(feature="test_lab"))]
-    let expected=["france-AMX_13_75","germany-Pz_IV_AusfH","japan-Ke_Ni","japan-Ke_Ni_B",
-                  "uk-GB40_Gun_Carrier_Churchill","usa-M4A2E4"].as_slice();
-    #[cfg(feature="test_lab")]
+    // main and test_lab share the generated rows since the CONTENT-0 main transfer (owner 12.11).
     let expected=["china-Ch24_Type64","france-AMX_13_75","france-D2","germany-Pz_IV_AusfH","japan-Ke_Ni","japan-Ke_Ni_B",
                   "uk-GB40_Gun_Carrier_Churchill","usa-M4A2E4","usa-T7_Combat_Car","ussr-Object_430"].as_slice();
     assert_eq!(wide,expected);
