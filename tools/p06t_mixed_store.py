@@ -138,7 +138,10 @@ class MixedAmmoStore(PoolStore):
             row = battle_any.profile(p.vehicle_id)
             require(row is not None and row["status"] == "generated" and row["kind"] == kind, "P06T_SOURCE_MISMATCH")
             mount = self.mounts[p.assembly_id]
-            require(row["gun"]["max_ammo"] == mount.capacity and not row["gun"]["burst"]
+            # CONTENT-0 2.6: test_lab admits automatic guns; the gateway schedules the burst, the store keeps
+            # one ammo count per shell as for any gun. main still refuses them.
+            import test_vehicles
+            require(row["gun"]["max_ammo"] == mount.capacity and (not row["gun"]["burst"] or test_vehicles.enabled())
                 and row["identity"]["type_compact_id"] == mount.vehicle_native_compact_id
                 and row["identity"]["module_compact_ids"]["gun"] == mount.gun_native_compact_id
                 and [s["compact_descr"] for s in row["shots"]] == [self.shells[s].native_compact_id for s in mount.shell_ids]
