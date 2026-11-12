@@ -910,7 +910,17 @@ DRIVE_FIELDS = ("body_half_extents", "body_center_offset", "wheel_points", "max_
                 "longitudinal_friction", "lateral_friction", "stationary_steering_ratio")
 
 
-def vehicle_builds(catalog, tables, builds):
+def _chassis_armor_ref(chassis_armor, module, parts):
+    """SHELL-02 track armour part of one chassis module (`chassis-armor-part.v1`) or its explicit refusal."""
+    raw, refusal = chassis_armor(module.split(":")[-1])
+    if raw is None:
+        return dict(sha256=None, bytes=None, refusal=refusal)
+    key = sha(raw)
+    parts[key] = raw
+    return dict(sha256=key, bytes=len(raw), refusal=None)
+
+
+def vehicle_builds(catalog, tables, builds, chassis_armor=None):
     """(vehicle record, {part sha: bytes}, [(label, full row)]) of every build of one vehicle."""
     vehicle_id = tables["vehicle_id"]
     parts, rows, out = {}, [], dict(builds=[], chassis={}, engines={}, radios={}, fuel_tanks={}, turrets={}, mounts={},
@@ -945,7 +955,8 @@ def vehicle_builds(catalog, tables, builds):
                 dispersion_vehicle_rotation=ch["dispersion_vehicle_rotation"], hull_position=ch["hull_position"],
                 track=ch["track"], handling=row["handling"], support_rule=row["support_rule"],
                 movement={k: row["movement"][k] for k in ("chassis_rotation_deg_s", "brake_force_source", "carrying_point",
-                                                         "terrain_resistance", "rotation_is_around_center")}))
+                                                         "terrain_resistance", "rotation_is_around_center")},
+                armor=_chassis_armor_ref(chassis_armor, c, parts) if chassis_armor else None))
             out["engines"].setdefault(e, dict(engine_power_hp=row["movement"]["engine_power_hp"],
                 fire_starting_chance=row["engine_fire_starting_chance"], device=tables["engine"][e]["device"]))
             out["radios"].setdefault(m["radio"], tables["radio"][m["radio"]])
@@ -1004,6 +1015,8 @@ def build_table(original, profile_raw=None):
     """(build table bytes, {part sha: bytes}, [(label, full row)] of every generated build)."""
     src, catalog, defaults, factor, effects = context(original)
     tests = {v["vehicle_id"] for v in test_vehicles.load()[0]["vehicles"]} if TEST_LAB else set()
+    import chassis_armor_export  # imports this module; loaded only when the build table is made
+    common, kinds_by_label = chassis_armor_export.context(src)
     vehicles, parts, rows = {}, {}, []
     for vehicle_id in sorted(catalog.vehicles):
         if vehicle_id in tests:
@@ -1011,7 +1024,8 @@ def build_table(original, profile_raw=None):
         v = catalog.vehicles[vehicle_id]
         builds = configurations(v)
         tables = module_tables(src, catalog, vehicle_id, defaults, factor, effects, builds)
-        record, vehicle_parts, vehicle_rows = vehicle_builds(catalog, tables, builds)
+        armor = lambda chassis, vid=vehicle_id: chassis_armor_export.chassis_part(src, catalog, vid, chassis, common, kinds_by_label)
+        record, vehicle_parts, vehicle_rows = vehicle_builds(catalog, tables, builds, armor)
         if not vehicle_rows:
             continue
         stock_row = vehicle_rows[0][1]  # vehicle-level facts are the same in every build

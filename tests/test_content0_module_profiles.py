@@ -152,10 +152,35 @@ class BuildTable(unittest.TestCase):
             refs.add(v["hull"]["part"]["sha256"])
             refs.update(t["part"]["sha256"] for t in v["turrets"].values())
             refs.update(m["part"]["sha256"] for m in v["mounts"].values())
+            refs.update(c["armor"]["sha256"] for c in v["chassis"].values() if c["armor"]["sha256"] is not None)
         self.assertEqual(refs, set(self.parts))
         for key, raw in self.parts.items():
             self.assertEqual(generator.sha(raw), key)
             self.assertLessEqual(len(raw), generator.MAX_PART)
+
+    def test_stock_chassis_armor_part_is_the_stock_chassis_bundle_component(self):
+        # SHELL-02 per chassis: the stock chassis part carries exactly the stock chassis bundle's armour mesh.
+        import chassis_armor_export
+        stock = {r["vehicle_id"]: r for r in json.loads(chassis_armor_export.TABLE.read_bytes())["vehicles"]}
+        _, bundles = chassis_armor_export.build(ORIGINAL)
+        compared = refused = 0
+        for vehicle_id, v in self.table["vehicles"].items():
+            chassis = next(e["modules"]["chassis"] for e in v["builds"] if e["stock"])
+            ref = v["chassis"].get(chassis, {}).get("armor")
+            row = stock[vehicle_id]
+            if ref is None:
+                continue
+            if row["status"] != "generated":
+                self.assertIsNone(ref["sha256"], vehicle_id)
+                self.assertEqual(ref["refusal"][0], row["refusal"], vehicle_id)
+                refused += 1
+                continue
+            part = json.loads(self.parts[ref["sha256"]])
+            whole = json.loads(bundles[row["bundle"]])
+            self.assertEqual(part["component"], whole["component"], vehicle_id)
+            self.assertEqual(part["hull_position"], whole["hull_position"], vehicle_id)
+            compared += 1
+        self.assertGreater(compared, 300)
 
 
 if __name__ == "__main__":

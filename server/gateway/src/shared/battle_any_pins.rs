@@ -3,4 +3,4 @@
 pub const TABLE_SHA256:&str="b7ff5cb403cde99ec6e78d84373a9ac34a6215408e434d7191428f84b88d0917";
 pub const QUALIFICATION_SHA256:&str="0bdec2d03521bb5f3da15b777be0f705d4eadc8dbcc49e177f064a4163db6603";
 // CONTENT-0 3.3: battle_builds.v1.json (every mountable build).
-pub const BUILDS_SHA256:&str="83899a500419781283fd5390edfc07270e41856166810d7e813a30d68800765a";
+pub const BUILDS_SHA256:&str="c31e13ac5a20bbc5e63b65a222281d4833b6e84a656228a3767de80cfbd1fbe6";
