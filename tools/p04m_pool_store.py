@@ -489,6 +489,43 @@ class PoolStore(ResultsStore):
             c.rollback()
             raise
 
+    def economy_topup(self, *, account_id):
+        """CONTENT-0 2.6 stand operation: apply the current zero-economy depot floor to an existing account.
+
+        The floor is applied when the economy is granted or the depot migrated; an account granted before the
+        floor rose (owner 12.11: M2 light 20 + 80 of 1800) keeps its old counts until this runs. Explicit
+        zero-economy accounts only, every owned vehicle available; counts only rise; the profile is
+        re-projected at revision+1 and verified (all or nothing). Idempotent: nothing to raise -> unchanged."""
+        self.initialize()
+        require(self.pool_active() and account_id == self.pool_account, "POOL_INACTIVE")
+        c = self.connection
+        c.execute("BEGIN IMMEDIATE")
+        try:
+            row = c.execute("SELECT * FROM game_snapshot WHERE account_id=?", (account_id,)).fetchone()
+            require(row is not None, "UNKNOWN_ACCOUNT")
+            require(self.zero_economy(account_id), "EXPLICIT_TEST_LAB_POLICY_REQUIRED")
+            states = [r[0] for r in c.execute("SELECT state FROM game_vehicle WHERE account_id=? LIMIT ?",
+                                               (account_id, MAX_OWNED + 1))]
+            require(all(state == "available" for state in states), "VEHICLE_RESERVED")
+            depot = lambda: dict(c.execute("SELECT shell_id,quantity FROM p09c_ammo_depot WHERE account_id=?", (account_id,)))
+            old = depot()
+            before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account_id,)).fetchone()[0]
+            self._economy_grants(account_id)
+            new = depot()
+            require(all(new.get(k, 0) >= v for k, v in old.items()), "CORRUPT_STORE")
+            raised = {k: [old.get(k, 0), v] for k, v in sorted(new.items()) if v != old.get(k, 0)}
+            if not raised:
+                c.rollback()
+                return {"status": "unchanged", "revision": row["revision"], "raised": {}}
+            self._save_crew_projection(account_id, row["revision"] + 1, before)
+            after = self.read_profile(account_id)
+            require(after["revision"] == row["revision"] + 1, "CORRUPT_STORE")
+            c.commit()
+            return {"status": "topped_up", "revision": after["revision"], "raised": raised}
+        except Exception:
+            c.rollback()
+            raise
+
     def _save_crew_projection(self, account, revision, before):
         if self.pool_active(): self._ensure_pool_rows(account)
         return super()._save_crew_projection(account, revision, before)

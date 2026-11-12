@@ -150,6 +150,22 @@ class BuyWithCrewStoreTests(CrewV2Tests if CrewV2Tests is not None else unittest
         self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
         self.wire = 1
 
+    def test_content0_economy_topup_raises_an_old_account_to_the_current_floor(self):
+        # Owner 12.11 (stand -21): accounts granted before the floor rose kept 100 rounds of an 1800-round belt.
+        self.assertEqual(self.store.economy_topup(account_id=self.account)["status"], "unchanged")
+        before = self.store.read_profile(self.account)
+        key = self.store.depot_keys[0]
+        target = before["depot"][key] + 777
+        self.store.depot_mount_capacity[key] = target    # as if a larger magazine now carried this shell
+        result = self.store.economy_topup(account_id=self.account)
+        after = self.store.read_profile(self.account)
+        self.assertEqual((result["status"], result["revision"]), ("topped_up", before["revision"] + 1))
+        self.assertEqual(result["raised"], {key: [before["depot"][key], target]})
+        self.assertEqual(after["depot"][key], target)
+        self.assertEqual({k: v for k, v in after["depot"].items() if k != key},
+                         {k: v for k, v in before["depot"].items() if k != key})
+        self.assertEqual(self.store.economy_topup(account_id=self.account)["status"], "unchanged")
+
     def research_to(self, target):
         known = set(self.profile()["research"]["unlocked"])
         if target in known: return
