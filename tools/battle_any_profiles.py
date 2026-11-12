@@ -51,7 +51,7 @@ import test_vehicles  # noqa: E402
 TEST_LAB = test_vehicles.enabled()
 # CONTENT-0 2.5b (test_lab): collision primitive groups and component <armor> records may also name the
 # device/crew kinds of material_kinds.xml (ms1_contact_bundle.DEVICE_KINDS); main keeps the MS-1 set.
-KINDS = materials.ALL_KINDS if TEST_LAB else materials.EXPECTED_KINDS
+KINDS = materials.ALL_KINDS  # CONTENT-0 main transfer (owner 12.11): device/crew kinds for main too
 # SPG-01 (owner 2026-11-09): the SPGs admitted on a test_lab stand, those the runtime can take now.
 # The main variant refuses every SPG; one- and two-shell SPGs need a separate card.
 STAND_SPG = frozenset("vehicle:" + name for name in (
@@ -117,9 +117,8 @@ POLICY = {
     "physics": {"envelope": {k: list(v) for k, v in ENVELOPE.items()},
                 "mapping": MAPPING},
     "damage_model": "P06T single-plate test_lab on proxy AABB armour (unchanged by this card)",
-    "armament": ({"max_clip": MAX_CLIP_TEST_LAB, "max_burst": MAX_BURST, "burst": "server-scheduled-test_lab-v1"}
-                 if TEST_LAB else {"max_clip": MAX_CLIP, "burst": "unsupported"}),
-    "spg": "refused: indirect fire/artillery view out of scope",
+    "armament": {"max_clip": MAX_CLIP_TEST_LAB, "max_burst": MAX_BURST, "burst": "server-scheduled-test_lab-v1"},
+    "spg": "admitted: SPG-01/02 rules (one to three shells); bots take no SPG until indirect fire (8a decision B)",
     "battle_admission": "NONE: a generated row is runtime-ineligible until a runtime layer loads it",
     "wire_readiness_code": "BATTLE_PROFILE_UNSUPPORTED",
 }
@@ -314,8 +313,6 @@ def child_section(node, name, label):
 
 def active_armor(node, path):
     """The <armor> section of one active component (hull, turret, gun)."""
-    if not TEST_LAB:
-        return materials._children(materials._section(node, path), "active component")["armor"]
     for name in path:
         node = child_section(node, name, "active component")
     return child_section(node, "armor", "active component")
@@ -328,7 +325,7 @@ def visual_binding(model, visual, stem):
     box, i.e. the vertices are in the component frame like a nodeless visual's (INFERRED, the child node
     transforms are not applied). Returns the visual box a nodefull mesh must lie in, else None."""
     keys = [k for k in ("/nodelessVisual[1]", "/nodefullVisual[1]") if k in model]
-    allowed = [["/nodelessVisual[1]"]] + ([["/nodefullVisual[1]"]] if TEST_LAB else [])
+    allowed = [["/nodelessVisual[1]"], ["/nodefullVisual[1]"]]
     require(keys in allowed and model[keys[0]] == stem, "collision model/visual binding")
     require(visual.get("/node[1]/identifier[1]") == "Scene Root" and
             visual.get("/node[1]/transform[1]") == [1., 0., 0., 0., 1., 0., 0., 0., 1., 0., 0., 0.], "nonidentity visual root")
@@ -468,26 +465,25 @@ def _supports(chassis_flat, chassis):
             left, right = (next(r for r in rows if r[field] == n) for n in names)
             if left["is_left"] is True and right["is_left"] is False and left["radius"] == right["radius"]:
                 return rule, left["radius"], groups, wheels
-    # CONTENT-0 2.3 (test_lab): many #717 chassis list several W_L/W_R road-wheel groups, or the two sides differ by
+    # CONTENT-0 2.3 (main since the 12.11 transfer): many #717 chassis list several W_L/W_R road-wheel groups, or the two sides differ by
     # the client's float rounding (Tiger II 0.41715100 / 0.41715, M48A1 0.2 mm). Every W_L group on the left and every
     # W_R group on the right, each side within 1 mm, the two sides within 2 mm: the support radius is their mean.
-    if TEST_LAB:
-        left = [g["radius"] for g in groups if g["template"] == "W_L" and g["is_left"] is True]
-        right = [g["radius"] for g in groups if g["template"] == "W_R" and g["is_left"] is False]
-        if (left and right and max(left) - min(left) <= 0.001 and max(right) - min(right) <= 0.001
-                and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.002):
-            return "groups-W_L-W_R-2mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
-        # CONTENT-0 2.3b (test_lab): four more #717 chassis. B1 mixes 101.9 and 99.7 mm bogie wheels on one side, FV206
-        # 267.3 and 268.9 mm; ELC AMX lists 272.3 mm left and 263.7 mm right; TOG II names every road wheel group
-        # WD_L/WD_R and has no W_ group. The radius only sets the ride height: road groups W_ (WD_ when no W_ group
-        # exists), each side within 5 mm, the sides within 10 mm, the mean radius.
-        has_w = any(g["template"] in ("W_L", "W_R") for g in groups)
-        prefix = "W" if has_w else "WD"
-        left = [g["radius"] for g in groups if g["template"] == prefix + "_L" and g["is_left"] is True]
-        right = [g["radius"] for g in groups if g["template"] == prefix + "_R" and g["is_left"] is False]
-        if (left and right and max(left) - min(left) <= 0.005 and max(right) - min(right) <= 0.005
-                and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.010):
-            return "groups-" + prefix + "_L-" + prefix + "_R-10mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
+    left = [g["radius"] for g in groups if g["template"] == "W_L" and g["is_left"] is True]
+    right = [g["radius"] for g in groups if g["template"] == "W_R" and g["is_left"] is False]
+    if (left and right and max(left) - min(left) <= 0.001 and max(right) - min(right) <= 0.001
+            and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.002):
+        return "groups-W_L-W_R-2mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
+    # CONTENT-0 2.3b: four more #717 chassis. B1 mixes 101.9 and 99.7 mm bogie wheels on one side, FV206
+    # 267.3 and 268.9 mm; ELC AMX lists 272.3 mm left and 263.7 mm right; TOG II names every road wheel group
+    # WD_L/WD_R and has no W_ group. The radius only sets the ride height: road groups W_ (WD_ when no W_ group
+    # exists), each side within 5 mm, the sides within 10 mm, the mean radius.
+    has_w = any(g["template"] in ("W_L", "W_R") for g in groups)
+    prefix = "W" if has_w else "WD"
+    left = [g["radius"] for g in groups if g["template"] == prefix + "_L" and g["is_left"] is True]
+    right = [g["radius"] for g in groups if g["template"] == prefix + "_R" and g["is_left"] is False]
+    if (left and right and max(left) - min(left) <= 0.005 and max(right) - min(right) <= 0.005
+            and abs(sum(left) / len(left) - sum(right) / len(right)) <= 0.010):
+        return "groups-" + prefix + "_L-" + prefix + "_R-10mm", (sum(left) + sum(right)) / (len(left) + len(right)), groups, wheels
     raise Refused("SUPPORT_SOURCE_UNRESOLVED", "no equal W_L/W_R group or W_L0/W_R0 wheel pair")
 
 
@@ -555,8 +551,8 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             clip_count=clip_count, clip_rate_per_minute=clip_rate,
             clip_interval_seconds=60.0 / clip_rate if clip_count > 1 else 0.0,
             clip_source="MOUNTED_OR_SHARED" if clip is not None else "ORIGINAL_LOADER_DEFAULT",
-            burst=burst is not None, **(dict(burst_count=burst_count, burst_rate_per_minute=burst_rate,
-                burst_interval_seconds=60.0 / burst_rate if burst_count > 1 else 0.0) if TEST_LAB else {}),
+            burst=burst is not None, burst_count=burst_count, burst_rate_per_minute=burst_rate,
+            burst_interval_seconds=60.0 / burst_rate if burst_count > 1 else 0.0,
             pitch_limits=vector(mounted("pitchLimits"), 2, "pitch limits"),
             extra_pitch_limits=extra or None, pitch_envelope=envelope,
             dispersion_turret_rotation=_num(mounted_sub("shotDispersionFactors[1]/turretRotation"), "turret dispersion", 10),
@@ -583,16 +579,12 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
         raise ProfileError(vehicle_id + ": source fact: " + str(error)) from error
     try:
         # SPG-02: every SPG on the test_lab stand (was the eight of STAND_SPG).
-        refuse_if(kind == "SPG" and not TEST_LAB, "SPG_INDIRECT_FIRE_OUT_OF_SCOPE", "SPG")
-        # Main keeps the P06T limit. CONTENT-0 2.6 (test_lab): bursts and long clips; a burst needs a clip
+        # CONTENT-0 main transfer (owner 12.11): SPGs on main too (was test_lab only).
+        # CONTENT-0 2.6 (main since the 12.11 transfer): bursts and long clips; a burst needs a clip
         # (the client rejects burst > clip > 1; burst on a single-shot gun is not admitted by the runtime).
-        if TEST_LAB:
-            refuse_if(not 1 <= clip_count <= MAX_CLIP_TEST_LAB or not 1 <= burst_count <= MAX_BURST
-                      or burst_count > 1 and (clip_count == 1 or burst_count > clip_count), "AUTOMATIC_GUN_UNSUPPORTED",
-                      "clip %d burst %d" % (clip_count, burst_count))
-        else:
-            refuse_if(row["gun"]["burst"] or not 1 <= clip_count <= MAX_CLIP, "AUTOMATIC_GUN_UNSUPPORTED",
-                      "burst" if row["gun"]["burst"] else "clip " + str(clip_count))
+        refuse_if(not 1 <= clip_count <= MAX_CLIP_TEST_LAB or not 1 <= burst_count <= MAX_BURST
+                  or burst_count > 1 and (clip_count == 1 or burst_count > clip_count), "AUTOMATIC_GUN_UNSUPPORTED",
+                  "clip %d burst %d" % (clip_count, burst_count))
         refuse_if(not aim_envelope_supported(envelope, row["gun"]["turret_yaw_limits"]), "AIM_ENVELOPE_UNSUPPORTED",
                   "pitch envelope " + json.dumps(envelope, sort_keys=True))
         try:
@@ -601,7 +593,7 @@ def vehicle_row(src, catalog, vehicle_id, defaults, factor, effects):
             raise ProfileError(vehicle_id + ": shell fact: " + str(error)) from error
         # Main: every runtime codec carries exactly three ordered stacks. SPG-02 / CONTENT-0 2.2 (test_lab): one to
         # three source shots for every vehicle; the runtime keeps three cells and marks the missing ones absent.
-        refuse_if(not (1 <= len(row["shots"]) <= 3) or (not TEST_LAB and len(row["shots"]) != 3), "SHELL_SOURCE_UNSUPPORTED",
+        refuse_if(not (1 <= len(row["shots"]) <= 3), "SHELL_SOURCE_UNSUPPORTED",
                   "%d source shots, runtime needs 3" % len(row["shots"]))
         rule, radius, groups, wheels = _supports(vf, chassis)
         carrying, speed = movement["carrying_point"], movement["speed_limits_kmh"]

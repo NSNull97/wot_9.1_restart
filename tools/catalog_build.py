@@ -200,7 +200,7 @@ def build_document(original_root, profiles_path=PROFILES_PATH):
                 "device caps disagree with client source: " + p["kind"])
         if p["battle_admission"] != "none":
             # Every admitted consumer freezes exactly three ordered stacks (SPG-02: test_lab SPGs one to three).
-            require(len(shells) == 3 or (TEST_LAB and "SPG" in v["tags"] and 1 <= len(shells) <= 3),
+            require(1 <= len(shells) <= 3,
                     "admitted profile needs three source shell stacks: " + p["kind"])
         classes = [t for t in v["tags"] if t in ("lightTank", "mediumTank", "heavyTank", "AT-SPG", "SPG")]
         require(len(classes) == 1, "vehicle class tag")
@@ -259,8 +259,9 @@ def _generated_row(p, v, research, descriptor):
             and v["native_compact_id"] == identity["type_compact_id"] and gun_params.get("maxAmmo") == gun["max_ammo"]
             and [list(r) for r in v["crew_roles"]] == identity["crew_roles"], "generated identity differs: " + p["kind"])
     # SPG-02 / CONTENT-0 2.2: a test_lab vehicle may carry one or two shells; every main row exactly three.
-    require(len(g["shell_suffixes"]) == len(g["shots"]) and (len(g["shots"]) == 3 or (TEST_LAB
-            and 1 <= len(g["shots"]) <= 3)), "admitted profile needs three shell stacks: " + p["kind"])
+    # CONTENT-0 main transfer (owner 12.11): one to three shells on main too (SPG-02, 2.2).
+    require(len(g["shell_suffixes"]) == len(g["shots"]) and 1 <= len(g["shots"]) <= 3,
+            "admitted profile needs one to three shell stacks: " + p["kind"])
     shells = [{"suffix": suffix, "shell_definition_id": "shell:" + p["kind"] + "-stock-" + suffix,
                "resource_name": s["resource"], "family": s["family"], "item_id": s["item_id"],
                "native_compact_id": s["compact_descr"]}

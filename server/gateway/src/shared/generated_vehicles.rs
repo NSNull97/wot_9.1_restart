@@ -191,7 +191,7 @@ fn burst(g:&Value)->io::Result<(u8,f64)> {
     }
     let count=u8::try_from(u(&g["burst_count"])?).map_err(|_|bad("burst count"))?;
     let interval=f(&g["burst_interval_seconds"])?;
-    if count==0||count>crate::p06t_armament091::MAX_BURST||count>1&&!cfg!(feature="test_lab")
+    if count==0||count>crate::p06t_armament091::MAX_BURST
         ||count==1&&interval!=0.||count>1&&!(0.01..=2.).contains(&interval){return Err(bad("burst bounds"));}
     Ok((count,interval))
 }
@@ -223,8 +223,8 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
         let nation=u8::try_from(u(&row["native_nation_id"])?).map_err(|_|bad("nation"))?;
         let type_cd=u32::try_from(u(&identity["type_compact_id"])?).map_err(|_|bad("type"))?;
         let gun_cd=u32::try_from(u(&identity["module_compact_ids"]["gun"])?).map_err(|_|bad("gun"))?;
-        // CONTENT-0 2.6: long clips and bursts of the automatic guns are test_lab rows only.
-        let max_clip=if cfg!(feature="test_lab"){crate::p06t_armament091::MAX_CLIP}else{6};
+        // CONTENT-0 2.6: long clips and bursts of the automatic guns (main since the 12.11 transfer).
+        let max_clip=crate::p06t_armament091::MAX_CLIP;
         let clip=u8::try_from(u(&g["clip_count"])?).ok().filter(|c|(1..=max_clip).contains(c)).ok_or_else(||bad("clip"))?;
         let (burst_count,burst_interval)=burst(g)?;
         let gun=GunProfile{mount:Mount::Generated(id),native_nation_id:nation,
