@@ -2156,6 +2156,17 @@ pub(super) mod tests {
             checked+=1;if checked==40 {break;}
         }
         assert_eq!(checked,40);
+        // SHELL-02 per chassis: a build's track armour part loads and binds to the build's own geometry.
+        let mut armoured=0;
+        for e in registry.entries().iter().filter(|e|!e.stock&&e.chassis_armor_sha256.is_some()).step_by(97).take(60) {
+            let kind=VehicleKind::Generated(e.id);
+            let chassis=super::super::chassis_armor::ChassisArmor::load_build_part(root,parts,kind).unwrap();
+            let built=Bundle::load_generated_parts(root,parts,kind).unwrap();
+            chassis.check_binding(&built).unwrap();
+            assert_eq!(chassis.hull_position,e.pivots[0],"{}",e.label);
+            armoured+=1;
+        }
+        assert_eq!(armoured,60);
         // A stock entry has no parts; another directory without the pinned files is refused.
         let stock=registry.entries().iter().find(|e|e.stock).unwrap();
         assert!(Bundle::load_generated_parts(root,parts,VehicleKind::Generated(stock.id)).is_err());

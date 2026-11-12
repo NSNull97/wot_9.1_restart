@@ -93,6 +93,8 @@ pub struct Entry {
     pub stock:bool,
     /// Collision part pins (hull, turret, turret x gun) of a non-stock build; stock builds keep their bundle.
     pub part_sha256:Option<[String;3]>,
+    /// SHELL-02 track armour part of a non-stock build's chassis (None: stock, or the chassis source is refused).
+    pub chassis_armor_sha256:Option<String>,
     /// Per-kind evidence labels of the explicit test_lab policies.
     pub ap_policy:String,
     pub impact_label:String,
@@ -245,7 +247,8 @@ fn build_rows(builds:&Value,table_sha:&str)->io::Result<Vec<Value>> {
                 "pivots":{"hull_position":chassis["hull_position"],"turret_position":hull["turret_position"],"gun_position":turret["gun_position"]},
                 "devices":devices,"crew_seats":hull["crew_seats"],"engine_fire_starting_chance":engine["fire_starting_chance"],
                 "view_range_m":turret["view_range_m"],"physics":physics,"handling":chassis["handling"],
-                "geometry":{"sha256":b["geometry_sha256"],"bytes":bytes,"components":parts}}));
+                "geometry":{"sha256":b["geometry_sha256"],"bytes":bytes,"components":parts},
+                "chassis_armor":chassis["armor"]["sha256"]}));
         }
     }
     Ok(rows)
@@ -338,7 +341,8 @@ fn build(table:&[u8],qualification:&[u8],builds:&[u8])->io::Result<Registry> {
             let pin=|c:&Value|->io::Result<String>{let h=s(&c["sha256"])?;if h.len()==64&&h.bytes().all(|b|b.is_ascii_hexdigit()){Ok(h.to_owned())}else{Err(bad("part pin"))}};
             Some([pin(&components[0])?,pin(&components[1])?,pin(&components[2])?])};
         let entry=Entry{id,label:label.to_owned(),vehicle_id:s(&row["vehicle_id"])?.to_owned(),nation_id:nation,descriptor,
-            stock,part_sha256,
+            stock,part_sha256,chassis_armor_sha256:if stock||row["chassis_armor"].is_null(){None}else{
+                let h=s(&row["chassis_armor"])?;if h.len()!=64||!h.bytes().all(|b|b.is_ascii_hexdigit()){return Err(bad("chassis part pin"));}Some(h.to_owned())},
             type_compact_id:type_cd,gun_compact_id:gun_cd,
             max_hp:i16::try_from(u(&identity["max_hp"])?).map_err(|_|bad("hp"))?,mass_kg:f(&identity["mass_kg"])?,
             view_range:f(&row["view_range_m"])? as f32,aim,source_aim,gun,
