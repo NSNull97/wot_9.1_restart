@@ -185,7 +185,7 @@ class StockRegistry:
         require(profile is not None, "BATTLE_PROFILE_UNSUPPORTED")
         require(owned["vehicle_inventory_id"] == self.inventory_id(account, owned["native_id"], profile.kind), "P04M_INVENTORY_MISMATCH")
         if owned["modules"] != dict(profile.modules):
-            # CONTENT-0 3.3: a mounted build of this vehicle (stage 1: stock turret and gun), by exact descriptor.
+            # CONTENT-0 3.3/4: a mounted build of this vehicle (any generated build), by exact descriptor.
             build = self.by_descriptor.get(descriptor(self.catalog, owned).hex())
             require(build is not None and build.vehicle_id == owned["vehicle_id"] and owned["modules"] == dict(build.modules),
                 "BATTLE_PROFILE_UNSUPPORTED")
@@ -234,6 +234,11 @@ class StockRegistry:
                     # installed modules do not form the curated stock assembly.
                     entry["kind"] = known.kind
                 p = self.resolve_owned(aggregate["account_id"], owned)
+                if p.assembly_kind:
+                    # CONTENT-0 3.3/4: the legacy (P08B/P04M companion) route knows catalogue kinds only and closes every
+                    # generated kind; a build is named there by its stock kind and assembly, its own battle travels the
+                    # mixed route (freeze_mixed). The gateway would refuse a build label here ("closed source kind").
+                    p = self.profiles[p.assembly_kind]
                 entry.update(kind=p.kind, assembly_id=p.assembly_id)
                 if not legacy_route_admitted(p.kind):
                     entry["readiness_code"] = "OWNER_ACCEPTANCE_REQUIRED"

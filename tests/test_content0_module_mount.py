@@ -136,11 +136,14 @@ class ModuleMountTests(mixed.MixedStoreTests):
         # (label <kind>--<descriptor digest>) on the stock mount, shells and capacity: the stock readiness.
         self.assertEqual(self.battle_code(native), stock_code)
         aggregate = self.store.read_profile(self.account)
+        # The legacy companion route names a build by its stock kind (the gateway closes every generated kind there).
         entry = next(e for e in self.store.registry.capabilities(aggregate) if e["native_inventory_id"] == native)
-        self.assertTrue(entry["kind"].startswith("ussr-KV-3--"), entry)
-        self.assertEqual(entry["assembly_id"], "ussr-KV-3-stock")
-        build = self.store.registry.profiles[entry["kind"]]
-        self.assertEqual(build.descriptor_hex, descriptor(self.catalog, mounted).hex())
+        self.assertEqual((entry["kind"], entry["assembly_id"], entry["readiness_code"]), ("ussr-KV-3", "ussr-KV-3-stock", "BATTLE_PROFILE_UNSUPPORTED"))
+        build = self.store.registry.by_descriptor[descriptor(self.catalog, mounted).hex()]
+        self.assertTrue(build.kind.startswith("ussr-KV-3--") and build.assembly_id == "ussr-KV-3-stock", build.kind)
+        # The mixed route seats the build under its own label.
+        if stock_code is None:
+            self.assertEqual(self.store.freeze_mixed(aggregate, native)["kind"], build.kind)
         self.assertTrue(all(r["state"] == "available" for r in aggregate["vehicles"]))
 
         # Login fixture still publishes; the client sees the mounted descriptor and no profile refusal.
