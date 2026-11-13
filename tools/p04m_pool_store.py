@@ -419,6 +419,19 @@ class PoolStore(ResultsStore):
         """True when the stored mount is the one of the current pair (always for the stock pair)."""
         return (owned["vehicle_id"], owned["modules"]["turret"], owned["modules"]["gun"]) in self.pair_mount
 
+    def pair_layouts(self, aggregate):
+        """CONTENT-0 4: {native: (shells, shellsLayout)} of every owned vehicle on its pair's mount, from the stored
+        loaded counts (the native record of p04m_pool_projection)."""
+        owned = {r["vehicle_inventory_id"]: r for r in aggregate["research"]["vehicles"]}
+        result = {}
+        for ammo in aggregate["ammunition"]:
+            vehicle = owned[ammo["vehicle_id"]]
+            if not self.pair_mounted(vehicle) or ammo["mount_id"] != self.mount_id_of(vehicle): continue
+            mount = self.mounts[ammo["mount_id"]]
+            layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, ammo["loaded"][key])]
+            result[vehicle["native_id"]] = (layout, {(mount.turret_native_compact_id, mount.gun_native_compact_id): layout})
+        return result
+
     def _mount_change(self, account, research):
         """CONTENT-0 4: after a module install, a vehicle whose turret x gun pair changed takes that pair's mount
         (loaded counts zero: the research plan refuses the change while shells are loaded, UNLOAD_AMMUNITION_REQUIRED)."""

@@ -22,7 +22,7 @@ from p04m_pool_projection import PoolProjectionSource
 from p08b_battle_projection import BattleProjectionSource
 from p08b_battle_service import battle_service
 from p09e_native_commands import NativeRequest, domain_request
-from p09e_research_projection import SHOP_REVISION, delta_tree, descriptor
+from p09e_research_projection import SHOP_REVISION, delta_tree, descriptor, update_delta
 from p09e_research_service import native_service
 
 KV3 = "vehicle:ussr:KV-3"
@@ -171,20 +171,33 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.refused("INVALID_GUN_SELECTION", 101, (native, self.cd(KV3_TURRET), self.cd(V5)))
 
         # equipTurret(turret, 0): the current F-30 stays, it fits the KV-3 turret.
-        before, after, _ = self.accepted(101, (native, self.cd(KV3_TURRET), 0))
+        before, after, reply = self.accepted(101, (native, self.cd(KV3_TURRET), 0))
         self.assertEqual(self.owned(KV3)["modules"]["gun"], F30)
-        delta = delta_tree(self.catalog, before, after, 1)["inventory"][1]
+        layouts = self.store.pair_layouts(self.profile())
+        # The reply the client got is this delta (wire revision 1 of native_request).
+        self.assertEqual(reply["update_hex"], update_delta(self.catalog, before, after, 1, layouts).hex())
+        delta = delta_tree(self.catalog, before, after, 1, layouts)["inventory"][1]
         definition = self.catalog.vehicles[KV3]
         self.assertEqual(delta["repair"], {native: (0, definition["hull_max_hp"] + definition["turret_max_hp"][KV3_TURRET])})
-        self.assertEqual((delta["shells"], delta["shellsLayout"]), ({native: []}, {native: {}}))
+        # CONTENT-0 4: the KV-3 turret x F-30 pair has its own mount (capacity and shells of that pair in the client
+        # XML); the vehicle moves to it with nothing loaded and the client gets that pair's empty layout.
+        mount = self.store.mounts[self.store.mount_id_of(self.owned(KV3))]
+        self.assertEqual(mount.mount_id, "ussr-KV-3@KV-3/_85mm_F-30")
+        layout = [n for key in mount.shell_ids for n in (self.store.shells[key].native_compact_id, 0)]
+        self.assertEqual((delta["shells"], delta["shellsLayout"]),
+                         ({native: layout}, {native: {(self.cd(KV3_TURRET), self.cd(F30)): layout}}))
         self.assertEqual(after["depot"].get(KV220), 1)
-        # CONTENT-0 3.3 stage 1: another turret waits for step 4 (its mount and shells): an explicit refusal.
-        self.assertEqual(self.battle_code(native), "BATTLE_PROFILE_UNSUPPORTED")
+        build = self.store.registry.by_descriptor[descriptor(self.catalog, self.owned(KV3)).hex()]
+        self.assertEqual((build.assembly_id, build.capacity, build.max_hp),
+                         (mount.mount_id, mount.capacity, self.catalog.vehicles[KV3]["hull_max_hp"] + self.catalog.vehicles[KV3]["turret_max_hp"][KV3_TURRET]))
+        # The build is admitted; nothing is loaded yet.
+        self.assertEqual(self.battle_code(native), "AMMUNITION_EMPTY")
 
         # equipTurret(turret, gun) with the turret already mounted swaps the gun.
         before, after, _ = self.accepted(101, (native, self.cd(KV3_TURRET), self.cd(D10T)))
         self.assertEqual(self.owned(KV3)["modules"]["gun"], D10T)
         self.assertEqual(after["depot"].get(F30), 1)
+        self.assertEqual(self.store.mount_id_of(self.owned(KV3)), "ussr-KV-3@KV-3/_100mm_D10T")
         # The stock turret cannot carry the mounted D-10T; 0.9.1 'not for current vehicle'.
         self.refused("INCOMPATIBLE_TURRET_GUN", 101, (native, self.cd(KV220), 0))
         # Stock pair back in one command: both return, both leave the depot.

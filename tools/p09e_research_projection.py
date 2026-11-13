@@ -166,8 +166,8 @@ class ResearchProjectionSource(BarracksRecruitmentProjectionSource):
         return files
 
 
-def update_delta(catalog, before, after, wire_revision):
-    return encode(delta_tree(catalog, before, after, wire_revision), MAX_UPDATE)
+def update_delta(catalog, before, after, wire_revision, layouts=None):
+    return encode(delta_tree(catalog, before, after, wire_revision, layouts), MAX_UPDATE)
 
 
 def _merge(base, part):
@@ -203,7 +203,9 @@ def chained_updates(first, parts, wire_revision, maximum):
     return updates
 
 
-def delta_tree(catalog, before, after, wire_revision):
+def delta_tree(catalog, before, after, wire_revision, layouts=None):
+    """``layouts`` (CONTENT-0 4, the pool store): {native: (shells, shellsLayout)} of the vehicles mounted on their
+    turret x gun pair's mount; a changed pair then advertises that mount's layout instead of nothing."""
     require(type(wire_revision) is int and 1 <= wire_revision < 2**31 - 1)
     delta = {"prevRev": wire_revision, "rev": wire_revision + 1}
     unlocked = sorted(set(after["unlocked"]) - set(before["unlocked"]))
@@ -226,7 +228,8 @@ def delta_tree(catalog, before, after, wire_revision):
             if vehicle["modules"]["turret"] != by_id[native]["modules"]["turret"]:
                 inv[1].setdefault("repair", {})[native] = garage_record(catalog, vehicle)["repair"]
             if any(vehicle["modules"][k] != by_id[native]["modules"][k] for k in ("turret", "gun")):
-                inv[1].setdefault("shells", {})[native] = []
-                inv[1].setdefault("shellsLayout", {})[native] = {}
+                shells, layout = (layouts or {}).get(native, ([], {}))
+                inv[1].setdefault("shells", {})[native] = list(shells)
+                inv[1].setdefault("shellsLayout", {})[native] = dict(layout)
     if inv: delta["inventory"] = inv
     return delta
