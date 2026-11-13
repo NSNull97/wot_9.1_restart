@@ -34,6 +34,9 @@ pub fn configure(local_root:&Path,dir:&Path)->io::Result<()> {
     }
 }
 fn source()->io::Result<&'static Source>{SOURCE.get().ok_or_else(||bad("resource directory not bound"))}
+/// The bound (local root, directory): the BW01 worker process binds the same pair (CONTENT-0 4: builds fought
+/// in a worker failed with "resource directory not bound").
+pub fn bound()->Option<(PathBuf,PathBuf)>{SOURCE.get().map(|s|(s.root.clone(),s.dir.clone()))}
 
 /// A non-stock generated build (stock kinds and the closed kinds are not builds).
 pub fn is_build(kind:VehicleKind)->bool{kind.generated().is_some_and(|e|!e.stock)}

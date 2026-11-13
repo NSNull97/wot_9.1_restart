@@ -159,7 +159,8 @@ impl Link {
             if their!=build {return Err(lost("build mismatch"));}
             // The worker takes its anchor on receipt: instants differ by the transit time only.
             let anchor=Instant::now();
-            write_frame(&mut stream,HELLO,&bw_wire::encode(&(build.to_owned(),settings.catalog_v1),anchor,&mut arcs)?,deadline)?;
+            let resources=super::super::build_resources::bound();
+            write_frame(&mut stream,HELLO,&bw_wire::encode(&(build.to_owned(),settings.catalog_v1,resources),anchor,&mut arcs)?,deadline)?;
             // READY follows the worker's registry check (CONTENT-0 4: a profile per build): it waits under the
             // startup timeout like the first step; accept and AUTH stay under the handshake deadline.
             let ready=deadline.max(Instant::now()+settings.startup_timeout);
@@ -305,9 +306,11 @@ pub fn run(port:u16)->io::Result<()> {
     let mut arcs=Arcs::new(true);let deadline=Instant::now()+HANDSHAKE;
     write_frame(&mut s,AUTH,&bw_wire::encode(&(token,build.to_owned()),Instant::now(),&mut arcs)?,deadline)?;
     let hello=read_frame(&mut s,HELLO,Some(deadline))?;let anchor=Instant::now();
-    let (their,catalog_v1):(String,bool)=bw_wire::decode(&hello,anchor,&mut arcs)?;
+    let (their,catalog_v1,resources):(String,bool,Option<(std::path::PathBuf,std::path::PathBuf)>)=bw_wire::decode(&hello,anchor,&mut arcs)?;
     if their!=build {return Err(lost("build mismatch"));}
     if catalog_v1 {crate::profile13_v2091::enable_catalog_v1()?;}
+    // CONTENT-0 4: the build resource directory the gateway bound (same local-root/reparse checks here).
+    if let Some((root,dir))=resources {super::super::build_resources::configure(&root,&dir)?;}
     registry.join().map_err(|_|lost("registry thread"))??;
     write_frame(&mut s,READY,&bw_wire::encode(&build.to_owned(),anchor,&mut arcs)?,Instant::now()+HANDSHAKE)?;
     let mut runtime:Option<IntegratedRuntime>=None;
