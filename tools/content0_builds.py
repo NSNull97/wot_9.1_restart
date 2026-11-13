@@ -59,6 +59,15 @@ def pair(modules):
     return modules["turret"] + "/" + modules["gun"]
 
 
+def devices_of(v, m):
+    """The terminal policy's ordered device maxima (extra index 26.., the gateway Entry caps order) of configuration
+    ``m`` of build-table vehicle ``v``."""
+    caps = (v["engines"][m["engine"]]["device"], v["hull"]["ammo_bay"], v["fuel_tanks"][m["fuelTank"]]["device"],
+            v["radios"][m["radio"]]["device"], v["chassis"][m["chassis"]]["track"], v["chassis"][m["chassis"]]["track"],
+            v["mounts"][pair(m)]["device"], v["turrets"][m["turret"]]["rotator"], v["turrets"][m["turret"]]["surveying"])
+    return tuple((26 + i, cap["max_health"]) for i, cap in enumerate(caps))
+
+
 def mounts():
     """{(vehicle id, turret id, gun id): mount} of every turret x gun pair of the build table (cached per mode):
     capacity (`max_ammo`) and the ordered shells (suffix, resource, family, item ID, native compact ID, gold flag)."""
@@ -95,9 +104,6 @@ def load():
         if len(stock) != 1:
             raise BuildTableError(vehicle_id + ": stock build")
         stock = stock[0]
-        caps = lambda m: (v["engines"][m["engine"]]["device"], v["hull"]["ammo_bay"], v["fuel_tanks"][m["fuelTank"]]["device"],
-                          v["radios"][m["radio"]]["device"], v["chassis"][m["chassis"]]["track"], v["chassis"][m["chassis"]]["track"],
-                          v["mounts"][pair(m)]["device"], v["turrets"][m["turret"]]["rotator"], v["turrets"][m["turret"]]["surveying"])
         for e in v["builds"]:
             if e["stock"] or e["status"] != "generated":
                 continue
@@ -107,8 +113,7 @@ def load():
             stock_pair = (m["turret"], m["gun"]) == (s["turret"], s["gun"])
             if stock_pair and e["max_hp"] != stock["max_hp"]:
                 raise BuildTableError(vehicle_id + ": build of the stock pair with other hit points")
-            # The terminal policy's ordered device maxima (extra index 26.., as the gateway Entry caps).
-            devices = tuple((26 + i, cap["max_health"]) for i, cap in enumerate(caps(m)))
+            devices = devices_of(v, m)
             builds[e["descriptor_hex"]] = MappingProxyType(dict(label=e["label"], vehicle_id=vehicle_id,
                 stock_kind=v["hull"]["kind"], modules=MappingProxyType(dict(m)), max_hp=e["max_hp"], mass_kg=e["mass_kg"],
                 stock_pair=stock_pair, devices=devices, crew_count=len(v["hull"]["crew_seats"])))

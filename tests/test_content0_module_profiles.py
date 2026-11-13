@@ -183,5 +183,26 @@ class BuildTable(unittest.TestCase):
         self.assertGreater(compared, 300)
 
 
+class StoreBuilds(unittest.TestCase):
+    """CONTENT-0 4: what the domain reads from the build table agrees with the stock rows it already trusts."""
+
+    def test_stock_devices_and_mounts_equal_the_stock_profile_rows(self):
+        import battle_any
+        import content0_builds
+        table, mounts, checked = content0_builds._table(), content0_builds.mounts(), 0
+        for vehicle_id, v in table["vehicles"].items():
+            stock = next(e for e in v["builds"] if e["stock"])
+            row = battle_any.profile(vehicle_id)
+            if stock["status"] != "generated" or row is None or row.get("status") != "generated":
+                continue
+            m = stock["modules"]
+            self.assertEqual(content0_builds.devices_of(v, m), tuple((d["extra_index"], d["max_health"]) for d in row["devices"]), vehicle_id)
+            mount = mounts[(vehicle_id, m["turret"], m["gun"])]
+            self.assertEqual((mount["capacity"], [s[4] for s in mount["shells"]]),
+                             (row["gun"]["max_ammo"], [s["compact_descr"] for s in row["shots"]]), vehicle_id)
+            checked += 1
+        self.assertGreater(checked, 300)
+
+
 if __name__ == "__main__":
     unittest.main()
