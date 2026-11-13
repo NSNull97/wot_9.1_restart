@@ -86,6 +86,31 @@ class P06TNativeSelectionTests(unittest.TestCase):
         self.item.intCD = 7425
         self.assertEqual(self.eligible()['reason'], 'unsupported_vehicle')
 
+    def test_content0_catalogue_build_hint_reads_its_own_descriptor(self):
+        # CONTENT-0 3.3/4 (stand -22, M18 Hellcat top turret and gun): the stock descriptor differs; with the
+        # catalogue table the hint reads the build's health, capacity and shots; the server decides admission.
+        self.select(3329)
+        self.native.profile13_vehicles = dict(module.PROFILE13_VEHICLES)
+        build = b'build-descriptor'
+        self.item.descriptor = Box(makeCompactDescr=lambda: build, maxHealth=120,
+            gun={'maxAmmo': 40, 'shots': [{'shell': {'compactDescr': cd}} for cd in (4000, 4001, 4002)]})
+        inv = self.current.invID
+        self.inventory['compDescr'][inv] = build
+        self.inventory['repair'][inv] = (0, 120)
+        self.inventory['shells'][inv] = [4000, 30, 4001, 5, 4002, 5]
+        for shell, (cd, count) in zip(self.item.shells, ((4000, 30), (4001, 5), (4002, 5))):
+            shell.intCD, shell.count = cd, count
+        self.assertEqual(self.eligible(), dict(allowed=True, reason='supported_profile13_owned_vehicle', queued=False))
+        self.inventory['shells'][inv][1] = 31
+        self.item.shells[0].count = 31
+        self.assertEqual(self.eligible()['reason'], 'unsupported_mixed_loadout', 'over the build gun capacity')
+        self.inventory['shells'][inv][1] = 30
+        self.item.shells[0].count = 30
+        self.inventory['repair'][inv] = (0, 90)
+        self.assertEqual(self.eligible()['reason'], 'unsupported_crew_readiness', 'the build health, not the stock one')
+        self.native.profile13_vehicles = module.PROFILE13_VEHICLES
+        self.assertEqual(self.eligible()['reason'], 'unsupported_configuration', 'legacy table: stock only')
+
     def test_mixed_gui_mismatch_and_bool_counts_fail_closed(self):
         self.load((0, 3, 0))
         self.item.shells[1].count = 2

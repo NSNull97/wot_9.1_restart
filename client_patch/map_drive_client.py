@@ -502,7 +502,19 @@ class _Native(object):
             return dict(allowed=False, reason='unsupported_vehicle', queued=False)
         descriptor_sha, seats, health, capacity, shell_ids = spec
         if _raw_sha(item.descriptor.makeCompactDescr()) != descriptor_sha:
-            return dict(allowed=False, reason='unsupported_configuration', queued=False)
+            if not p06t_mixed_ammo or self.profile13_vehicles is PROFILE13_VEHICLES:
+                return dict(allowed=False, reason='unsupported_configuration', queued=False)
+            # CONTENT-0 3.3/4: a build (other modules, turret or gun) of a catalogue vehicle. The hint reads the
+            # descriptor's own health (VehicleDescr.maxHealth = hull + turret), gun capacity and shots; the server
+            # admits or refuses the exact build (freeze_mixed).
+            desc = item.descriptor
+            descriptor_sha = _raw_sha(desc.makeCompactDescr())
+            health = _integer(desc.maxHealth, 1, 65535, 'build health')
+            capacity = _integer(desc.gun['maxAmmo'], 1, 65535, 'build capacity')
+            shots = desc.gun['shots']
+            if type(shots) not in (list, tuple) or not 1 <= len(shots) <= 3:
+                raise ValueError('one to three build shots required')
+            shell_ids = tuple(_integer(shot['shell']['compactDescr'], 1, 65535, 'build shell') for shot in shots)
         inventory = cache.items.inventory.getCacheValue(1, {})
         if type(inventory) is not dict or len(inventory) > 32:
             raise ValueError('bounded profile13 vehicle inventory required')
