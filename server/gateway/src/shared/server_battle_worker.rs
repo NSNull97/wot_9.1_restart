@@ -290,8 +290,10 @@ pub(super) fn step_all(arenas:&mut [arena::Arena],commands:&[Option<arena::Comma
 
 /// The worker process: `sr-gateway bw01-battle-worker PORT`, token on stdin.
 pub fn run(port:u16)->io::Result<()> {
-    // Ids decoded from the gateway are checked against this process's registry.
-    super::super::generated_vehicles::registry()?;
+    // Ids decoded from the gateway are checked against this process's registry. CONTENT-0 3.3: verifying
+    // the 12 196-entry registry runs beside the build hash (both inside the handshake deadline) and is
+    // joined before the first step frame is decoded.
+    let registry=std::thread::spawn(||super::super::generated_vehicles::registry().map(|_|()));
     let build=build_sha256()?;
     let mut hex=String::new();io::stdin().take(TOKEN as u64*2+1).read_to_string(&mut hex)?;
     if hex.len()!=TOKEN*2 {return Err(lost("token"));}
@@ -304,6 +306,7 @@ pub fn run(port:u16)->io::Result<()> {
     let (their,catalog_v1):(String,bool)=bw_wire::decode(&hello,anchor,&mut arcs)?;
     if their!=build {return Err(lost("build mismatch"));}
     if catalog_v1 {crate::profile13_v2091::enable_catalog_v1()?;}
+    registry.join().map_err(|_|lost("registry thread"))??;
     write_frame(&mut s,READY,&bw_wire::encode(&build.to_owned(),anchor,&mut arcs)?,deadline)?;
     let mut runtime:Option<IntegratedRuntime>=None;
     loop {

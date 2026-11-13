@@ -88,8 +88,18 @@ pub fn profile(mount:Mount)->&'static GunProfile{match mount{Mount::Generated(id
 /// Catalogue membership over the curated mounts and the verified BATTLE-ANY generated
 /// registry (a generated gun's shells live in its registry entry, not in PROFILES).
 pub fn known_shell(shell:&Shell)->bool{
-    PROFILES.iter().any(|p|p.shots.contains(shell))
-        ||crate::gateway091::shared::generated_vehicles::registry().is_ok_and(|r|r.entries().iter().any(|e|e.gun.shots.contains(shell)))
+    PROFILES.iter().any(|p|p.shots.contains(shell))||generated_shells().is_some_and(|m|m.get(&shell.compact_descr).is_some_and(|v|v.contains(shell)))
+}
+/// CONTENT-0 3.3: the registry's distinct shells by compact id (12 196 entries share a few thousand shells),
+/// built once from the verified registry; None when the registry failed verification.
+fn generated_shells()->Option<&'static std::collections::BTreeMap<u16,Vec<Shell>>>{
+    static SHELLS:std::sync::OnceLock<Option<std::collections::BTreeMap<u16,Vec<Shell>>>>=std::sync::OnceLock::new();
+    SHELLS.get_or_init(||{
+        let r=crate::gateway091::shared::generated_vehicles::registry().ok()?;
+        let mut m:std::collections::BTreeMap<u16,Vec<Shell>>=Default::default();
+        for s in r.entries().iter().flat_map(|e|e.gun.shots.iter()){let v=m.entry(s.compact_descr).or_default();if !v.contains(s){v.push(*s);}}
+        Some(m)
+    }).as_ref()
 }
 /// Catalogue membership only. Server inventory, selection, reload and actor
 /// ownership must be checked separately by authority before a shot is admitted.

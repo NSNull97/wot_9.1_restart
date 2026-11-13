@@ -10,7 +10,9 @@ const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
 
 #[test] fn the_table_has_every_battle_gun_and_the_curated_guns_are_their_mounts() {
     let registry = crate::gateway091::shared::generated_vehicles::registry().unwrap();
-    for e in registry.entries() { gun(VehicleKind::from_owned_label(e.label.as_str()).unwrap().name()).unwrap(); }
+    // CONTENT-0 3.3: a build shares its vehicle's row (keyed by vehicle id); a vehicle whose stock build is refused
+    // has no battle gun row (its builds are not admitted: stage 1 needs the stock entry).
+    for e in registry.entries().iter().filter(|e| e.stock || registry.by_vehicle(&e.vehicle_id).is_some()) { gun(VehicleKind::from_owned_label(e.label.as_str()).unwrap().name()).unwrap(); }
     for kind in VehicleKind::SUPPORTED { gun(kind.name()).unwrap(); }
     assert!(gun("ussr:no-such").is_err());
     let doc: Value = serde_json::from_slice(TABLE).unwrap();

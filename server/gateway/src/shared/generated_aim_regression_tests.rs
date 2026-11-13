@@ -89,7 +89,10 @@ fn wide_pitch_generated_profiles_are_supported_and_quantize_over_absolute(){
 fn wide_pitch_controller_keeps_sector_clamp_and_wire_round_trips_through_client_decoder(){
     let registry=crate::gateway091::shared::generated_vehicles::registry().unwrap();
     let mut checked=0;
+    // CONTENT-0 3.3: the envelope and the aim are the turret x gun pair's; each distinct pair once.
+    let mut pairs=std::collections::BTreeSet::new();
     for entry in registry.entries(){
+        if !pairs.insert((entry.vehicle_id.as_str(),entry.parts[1].as_str(),entry.parts[2].as_str(),format!("{:?}{:?}",entry.source_aim,entry.aim))){continue;}
         let kind=VehicleKind::Generated(entry.id);let envelope=kind.source_aim().unwrap().envelope;
         let absolute=envelope.absolute();let basic=kind.aim();
         if (absolute.min,absolute.max)==(basic.min_pitch,basic.max_pitch){continue;}
