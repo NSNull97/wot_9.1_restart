@@ -982,7 +982,7 @@ impl Trace {
         terrain:&terrain::Terrain,geometry:&super::geometry::Bundle,target_actor:&super::model::Actor)->io::Result<()>{
         self.common(battle_id,shot_id,server_tick)?;let kind=self.kind_for_slot(target)?;
         let shell=self.selected_shell(shot_id).flatten().ok_or_else(||invalid("splash without selected source"))?;
-        let blast=if self.layers{super::dispersion::blast_factor(&super::shell_rules::rules()?.accuracy,self.kind_for_slot(attacker)?.name())?}else{1.};
+        let blast=if self.layers{super::dispersion::blast_factor(&super::shell_rules::rules()?.accuracy,self.kind_for_slot(attacker)?.dispersion_name())?}else{1.};
         let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||invalid("splash source radius"))?*blast;
         if self.has_terminal(shot_id)||self.admission_facts(shot_id).map(|v|v.0)!=Some(attacker)
             ||terrain.map_id()!=self.map||geometry.vehicle_kind()!=kind||target_actor.vehicle_kind()!=kind||target_actor.health!=health_before

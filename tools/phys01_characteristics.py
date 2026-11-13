@@ -21,9 +21,9 @@ BUILD_TABLES = (ROOT / "config/catalog/battle_builds.v1.json", ROOT / "config/te
 MAX_ROWS = 16384
 
 
-def stage1_builds():
-    """CONTENT-0 3.3 stage 1: (vehicle row of the build table, stock build, build) of every generated non-stock
-    build that keeps the stock turret, gun and fuel tank (the builds the domain admits, tools/content0_builds.py)."""
+def generated_builds():
+    """CONTENT-0 3.3/4: (vehicle row of the build table, stock build, build) of every generated non-stock build (the
+    builds the domain admits, tools/content0_builds.py)."""
     for path in BUILD_TABLES:
         for vehicle_id, v in json.loads(path.read_bytes())["vehicles"].items():
             stock = [e for e in v["builds"] if e["stock"]]
@@ -32,8 +32,9 @@ def stage1_builds():
             s = stock[0]["modules"]
             for e in v["builds"]:
                 m = e["modules"]
-                if (not e["stock"] and e["status"] == "generated"
-                        and (m["turret"], m["gun"], m["fuelTank"]) == (s["turret"], s["gun"], s["fuelTank"])):
+                if not e["stock"] and e["status"] == "generated":
+                    if m["fuelTank"] != s["fuelTank"]:
+                        raise ValueError(e["label"] + ": fuel tank")
                     yield v, stock[0], e
 
 
@@ -60,7 +61,7 @@ def build():
                 if rows.setdefault(kind, row) != row:
                     raise ValueError(kind + ": tables disagree")
     # CONTENT-0 3.3: a build moves on its own chassis (the build table copies the chassis movement from the client).
-    for v, _, e in stage1_builds():
+    for v, _, e in generated_builds():
         m = v["chassis"][e["modules"]["chassis"]]["movement"]
         row = dict(vehicle=v["vehicle_id"], terrain_resistance=[float(x) for x in m["terrain_resistance"]],
                    rotation_is_around_center=m["rotation_is_around_center"])

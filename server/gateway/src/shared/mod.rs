@@ -21,7 +21,7 @@ fn record_size(payload: &[u8], at: usize) -> io::Result<Option<usize>> {
 }
 /// SPG-01: the strategic sight exists on an SPG only; any other vehicle keeps refusing its records.
 fn spg_owner(world: &World, slot: usize) -> bool {
-    world.actors.get(slot).is_some_and(|actor| dispersion::gun(actor.vehicle_kind().name()).is_ok_and(|gun| gun.spg))
+    world.actors.get(slot).is_some_and(|actor| dispersion::gun(actor.vehicle_kind().dispersion_name()).is_ok_and(|gun| gun.spg))
 }
 fn var2_size(payload: &[u8], at: usize) -> io::Result<usize> {
     if payload.len() - at < 3 { return Err(bad()); }

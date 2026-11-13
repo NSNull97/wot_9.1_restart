@@ -60,7 +60,7 @@ impl World {
     pub(super) fn shot_deviation(&self,actor:&Actor,sequence:u32)->io::Result<Option<ShotDeviation>>{
         if !self.impact.layers(){return Ok(None);}
         let rules=crate::gateway091::shared::shell_rules::rules()?;
-        let gun=super::super::dispersion::firing_gun(&rules.accuracy,actor.vehicle_kind().name())?;
+        let gun=super::super::dispersion::firing_gun(&rules.accuracy,actor.vehicle_kind().dispersion_name())?;
         // A shot before the first step has the resting circle (factor 1).
         let angle=actor.dispersion.unwrap_or(super::super::dispersion::State::new(actor.direction[0],actor.aim.yaw)).angle(gun);
         let seed=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,sequence).seed;
@@ -263,7 +263,7 @@ impl World {
         bundle:&geometry::Bundle)->io::Result<()>{
         let shell=projectile.shell.ok_or_else(||bad())?;
         let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||bad())?
-            *super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.name())?;
+            *super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.dispersion_name())?;
         let actor=actors.get(slot).ok_or_else(||bad())?;
         if !actor.alive(){return Ok(());}
         let devices=actor.devices.as_ref().ok_or_else(||bad())?;
@@ -365,7 +365,7 @@ impl World {
         center:[f32;3],tick:u32,exclude_target:Option<usize>,fragile_state:Option<&fragiles::State>)->io::Result<()> {
         let shell=projectile.shell.ok_or_else(||bad())?;
         if shell.family!=crate::p06t_shells091::Family::HighExplosive{return Ok(());}
-        let blast=if trace.layers(){super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.name())?}else{1.};
+        let blast=if trace.layers(){super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.dispersion_name())?}else{1.};
         let radius=(shell.explosion_radius_m.ok_or_else(||bad())?*blast)as f32;
         let terrain=self.terrain.as_ref().ok_or_else(||bad())?.clone();
         let excluded=fragile_state.map_or_else(Vec::new,|state|state.projectile_excluded());

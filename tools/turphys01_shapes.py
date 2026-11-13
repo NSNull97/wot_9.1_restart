@@ -45,15 +45,36 @@ def generated_rows():
 
 
 def build_rows(rows):
-    """CONTENT-0 3.3 stage 1: {build label: stock kind} — a build with the stock turret and gun has the stock hull and
-    turret boxes (the turret centre does not depend on the chassis hull position, ReferenceShapes.cs)."""
-    from phys01_characteristics import stage1_builds
+    """CONTENT-0 3.3/4: {build label: (stock kind, build geometry pin, turret part pin or None)} of every generated
+    build of a generated stock kind. The hull box and turret position are the stock hull's (the turret centre does
+    not depend on the chassis hull position, ReferenceShapes.cs); the turret box is the stock one when the build keeps
+    the stock turret, else the mesh bounds of its own turret part (None)."""
+    from phys01_characteristics import generated_builds
     out = {}
-    for v, stock, e in stage1_builds():
+    for v, stock, e in generated_builds():
         kind = v["hull"]["kind"]
-        if kind in rows and out.setdefault(e["label"], kind) != kind:
+        if kind not in rows:
+            continue
+        t = e["modules"]["turret"]
+        part = None if t == stock["modules"]["turret"] else v["turrets"][t]["part"]["sha256"]
+        row = (kind, e["geometry_sha256"], part)
+        if out.setdefault(e["label"], row) != row:
             raise ValueError(e["label"] + ": tables disagree")
     return out
+
+
+def turret_part_bounds(parts, digest, label):
+    """The turret component's mesh bounds of one collision part (`parts/<sha>.json`, pinned by its SHA)."""
+    found = [d / (digest + ".json") for d in parts if (d / (digest + ".json")).is_file()]
+    if not found:
+        raise ValueError(label + ": turret part " + digest + " absent")
+    raw = found[0].read_bytes()
+    if len(raw) > MAX_BUNDLE or hashlib.sha256(raw).hexdigest() != digest:
+        raise ValueError(label + ": turret part differs from its pin")
+    component = json.loads(raw)["component"]
+    if not component["name"].lower().startswith("turret"):
+        raise ValueError(label + ": not a turret part")
+    return turret_bounds(component["mesh_bounds"], label)
 
 
 def bounds(value, label):
@@ -91,7 +112,7 @@ def turret_bounds(value, kind):
     return bounds(value, kind + " turret")
 
 
-def build(directories):
+def build(directories, parts=()):
     rows = generated_rows()
     out = []
     for kind, (name, digest) in sorted(rows.items()):
@@ -103,7 +124,11 @@ def build(directories):
             raise ValueError(kind + ": bundle differs from the table pin")
         out.append(dict(project(kind, raw), bundle_sha256=digest))
     by_kind = {r["kind"]: r for r in out}
-    out += [dict(by_kind[kind], kind=label) for label, kind in build_rows(rows).items()]
+    for label, (kind, digest, turret) in build_rows(rows).items():
+        row = dict(by_kind[kind], kind=label, bundle_sha256=digest)
+        if turret is not None:
+            row["turret_bounds"] = turret_part_bounds(parts, turret, label)
+        out.append(row)
     out.sort(key=lambda r: r["kind"])
     if len(out) > MAX_ROWS:
         raise ValueError("turret shapes row count")
@@ -111,17 +136,17 @@ def build(directories):
                 vehicles=out)
 
 
-def check(directories):
+def check(directories, parts=()):
     data = json.loads(OUT.read_text(encoding="ascii"))
     if OUT.read_bytes() != canonical(data):
         raise ValueError("turret shapes not canonical")
     rows = generated_rows()
     kinds = {r["kind"]: r["bundle_sha256"] for r in data["vehicles"]}
     expected = {k: v[1] for k, v in rows.items()}
-    expected.update({label: rows[kind][1] for label, kind in build_rows(rows).items()})
+    expected.update({label: digest for label, (_, digest, _) in build_rows(rows).items()})
     if kinds != expected:
         raise ValueError("turret shapes do not cover exactly the generated rows and their bundle pins")
-    if directories and canonical(build(directories)) != OUT.read_bytes():
+    if directories and canonical(build(directories, parts)) != OUT.read_bytes():
         raise ValueError("turret shapes differ from the bundles")
     return dict(status="PASS", vehicles=len(kinds), bundles_checked=bool(directories))
 
@@ -130,13 +155,14 @@ def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("command", choices=("build", "check"))
     p.add_argument("--bundles", type=Path, action="append", default=[])
+    p.add_argument("--parts", type=Path, action="append", default=[], help="CONTENT-0 4: collision parts (parts/<sha>.json)")
     a = p.parse_args(argv)
     if a.command == "build":
         if not a.bundles:
             p.error("build needs --bundles")
-        OUT.write_bytes(canonical(build(a.bundles)))
+        OUT.write_bytes(canonical(build(a.bundles, a.parts)))
         a.command = "check"
-    print(json.dumps(check(a.bundles), sort_keys=True))
+    print(json.dumps(check(a.bundles, a.parts), sort_keys=True))
     return 0
 
 

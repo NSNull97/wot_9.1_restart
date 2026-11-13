@@ -73,6 +73,8 @@ impl VehicleKind {
         Self::Generated(id)=>&generated::entry(id).label } }
     pub fn name(self) -> &'static str { match self { Self::Ms1 => "ussr:MS-1", Self::Is7 => "ussr:IS-7",Self::T26=>"ussr:T-26",Self::T34=>"ussr:T-34",Self::T3485=>"ussr:T-34-85",Self::Wt128=>"germany:Waffentrager_E100",Self::Fv183=>"uk:GB48_FV215b_183",
         Self::Generated(id)=>generated::entry(id).vehicle_id.trim_start_matches("vehicle:") } }
+    /// CONTENT-0 4: the gun dispersion row of this kind (a build fires its own turret x gun pair).
+    pub fn dispersion_name(self) -> &'static str { match self { Self::Generated(id)=>&generated::entry(id).dispersion_key, _=>self.name() } }
     pub fn descriptor(self) -> &'static [u8] { match self {
         Self::Ms1 => crate::arena_vehicle091::MS1_DESCRIPTOR,
         Self::Is7 => &[0x01,0x1c,0x3a,0x00,0x24,0x00,0xcd,0x00,0x0b,0x00,0x2f,0x00,0x3a,0x00,0x00],

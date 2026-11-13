@@ -24,7 +24,7 @@ internal static class ReferenceShapes
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("MapDrive.TurretShapes")
             ?? throw new InvalidDataException("turret shapes absent");
         using var bytes = new MemoryStream(); stream.CopyTo(bytes);
-        if (bytes.Length is < 1 or > 4 * 1024 * 1024) throw new InvalidDataException("turret shapes size");
+        if (bytes.Length is < 1 or > 8 * 1024 * 1024) throw new InvalidDataException("turret shapes size");
         using var doc = CheckedInput.Json(bytes.ToArray()); var r = doc.RootElement;
         CheckedInput.Fields(r, "version", "policy", "source", "vehicles");
         if (r.GetProperty("version").GetInt32() != 1 || r.GetProperty("policy").GetString() != "turphys01-hull-turret-boxes-v1")
@@ -47,7 +47,7 @@ internal static class ReferenceShapes
             }
             result.Add(v.GetProperty("kind").GetString()!, row);
         }
-        // CONTENT-0 3.3: stock kinds plus the stage-1 builds (tools/turphys01_shapes.py MAX_ROWS).
+        // CONTENT-0 3.3/4: stock kinds plus every generated build (tools/turphys01_shapes.py MAX_ROWS).
         if (result.Count is < 1 or > 16384) throw new InvalidDataException("turret shapes count");
         return result;
     }

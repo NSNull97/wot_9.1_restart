@@ -15,13 +15,13 @@ class TurretShapesTest(unittest.TestCase):
 
     def test_every_generated_definition_has_a_row(self):
         rows = {r["kind"] for r in json.loads(tool.OUT.read_bytes())["vehicles"]}
-        import phys01_characteristics
-        stage1 = {e["label"] for _, _, e in phys01_characteristics.stage1_builds()}
-        self.assertTrue(stage1 and stage1 <= rows)
+        # CONTENT-0 4: every build of a generated stock kind has a row; a build of a vehicle whose stock row is
+        # refused has none (the domain admits no build without its stock profile, p04m_stock_registry).
+        builds = set(tool.build_rows(tool.generated_rows()))
+        self.assertTrue(len(builds) > 10000 and builds <= rows)
         for path in ("server/physics/Profiles/generated-definitions.json", "config/test_lab/generated-definitions.json"):
             for p in json.loads((ROOT / path).read_bytes())["profiles"]:
-                # CONTENT-0 3.3: a build outside stage 1 (another turret or gun) is not admitted and has no row.
-                if "--" in p["kind"] and p["kind"] not in stage1:
+                if "--" in p["kind"] and p["kind"].rpartition("--")[0] not in rows:
                     continue
                 self.assertIn(p["kind"], rows)
 

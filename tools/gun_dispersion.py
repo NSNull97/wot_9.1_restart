@@ -22,6 +22,8 @@ import packed_xml  # noqa: E402
 OUT = ROOT / "config" / "catalog" / "gun_dispersion.v1.json"
 PINS = ROOT / "server" / "gateway" / "src" / "shared" / "gun_dispersion_pins.rs"
 CATALOGS = (ROOT / "config" / "catalog" / "battle_profiles.v1.json", ROOT / "config" / "test_lab" / "battle_profiles.v1.json")
+BUILD_TABLES = (ROOT / "config" / "catalog" / "battle_builds.v1.json", ROOT / "config" / "test_lab" / "battle_builds.v1.json")
+MOUNT_PATH = re.compile(r"res/scripts/item_defs/vehicles/([a-z]+)/([^:]+)\.xml:(/turrets0\[1\]/([^/\[]+)\[1\]/guns\[1\]/([^/\[]+)\[1\])")
 SCHEMA = "wot091-gun-dispersion.v1"
 # Curated gateway kinds fire one exact stock gun (`p06t_shell_data::GunProfile::gun_compact_descr`).
 CURATED = {"ussr:MS-1": 5892, "ussr:IS-7": 14852, "ussr:T-26": 4100, "ussr:T-34": 4, "ussr:T-34-85": 1540,
@@ -104,6 +106,29 @@ def rows_from(client, catalog, table):
         table[name] = dict(after_shot=after, gun=gun["resource"], radius_m=radius, spg=row["vehicle_class"] == "SPG")
 
 
+def pair_key(name, mount_source_path):
+    """CONTENT-0 4: the row of one turret x gun pair, `<nation>:<vehicle>@<turret>/<gun>` (the gateway parses the
+    same client mount path, `dispersion::pair_key`)."""
+    m = MOUNT_PATH.fullmatch(mount_source_path)
+    require(m is not None, "mount path of " + name)
+    return name + "@" + m.group(4) + "/" + m.group(5), m
+
+
+def pair_rows(client, builds, table):
+    """Every turret x gun pair of the build table (CONTENT-0 4: a build fires its own mounted gun)."""
+    for vehicle_id, v in builds["vehicles"].items():
+        name = vehicle_id.split(":", 1)[1]
+        for key, mount in v["mounts"].items():
+            turret, _, gun = key.partition("/")
+            row_key, m = pair_key(name, mount["gun"]["mount_source_path"])
+            require(row_key == name + "@" + turret.split(":")[-1] + "/" + gun.split(":")[-1]
+                    and mount["gun"]["resource"] == gun.split(":")[-1] == m.group(5), "pair key of " + key)
+            radius, after = client.mounted(m.group(1), Path(m.group(2)).name, m.group(3), mount["gun"]["resource"])
+            require(abs(radius - float(mount["gun"]["shot_dispersion_radius"])) < 1e-9, "build table radius of " + row_key)
+            row = dict(after_shot=after, gun=mount["gun"]["resource"], radius_m=radius, spg=v["vehicle_class"] == "SPG")
+            require(table.setdefault(row_key, row) == row, "tables disagree on " + row_key)
+
+
 def build(client_root):
     client = Client(client_root)
     table = {}
@@ -114,6 +139,8 @@ def build(client_root):
         table[name] = dict(after_shot=after, compact=compact, gun=gun, radius_m=radius, spg=False)
     for path in CATALOGS:
         rows_from(client, json.loads(path.read_text("utf-8")), table)
+    for path in BUILD_TABLES:
+        pair_rows(client, json.loads(path.read_bytes()), table)
     document = dict(schema=SCHEMA, source="#717 res/scripts/item_defs/vehicles (mounted gun, else components/guns.xml)", guns=table)
     return json.dumps(document, sort_keys=True, separators=(",", ":"), ensure_ascii=True, allow_nan=False).encode("ascii") + b"\n"
 

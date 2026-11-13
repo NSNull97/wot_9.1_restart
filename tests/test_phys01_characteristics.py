@@ -24,13 +24,11 @@ class CharacteristicsTest(unittest.TestCase):
     def test_every_embedded_definition_has_a_row(self):
         rows = {r["kind"] for r in json.loads(tool.OUT.read_bytes())["vehicles"]}
         import phys01_characteristics
-        stage1 = {e["label"] for _, _, e in phys01_characteristics.stage1_builds()}
+        stage1 = {e["label"] for _, _, e in phys01_characteristics.generated_builds()}
         self.assertTrue(stage1 and stage1 <= rows)
         for path in ("server/physics/Profiles/generated-definitions.json", "config/test_lab/generated-definitions.json"):
             for p in json.loads((ROOT / path).read_bytes())["profiles"]:
-                # CONTENT-0 3.3: a build outside stage 1 (another turret or gun) is not admitted and has no row.
-                if "--" in p["kind"] and p["kind"] not in stage1:
-                    continue
+                # CONTENT-0 4: every build has a row; a legacy kind's builds have no definition.
                 self.assertIn(p["kind"], rows)
 
 

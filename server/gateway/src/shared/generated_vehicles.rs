@@ -95,6 +95,9 @@ pub struct Entry {
     pub part_sha256:Option<[String;3]>,
     /// SHELL-02 track armour part of a non-stock build's chassis (None: stock, or the chassis source is refused).
     pub chassis_armor_sha256:Option<String>,
+    /// CONTENT-0 4: the gun dispersion row (`dispersion::gun`): the vehicle name of a stock entry, the
+    /// `<vehicle>@<turret>/<gun>` row of a build's own turret x gun pair.
+    pub dispersion_key:String,
     /// Per-kind evidence labels of the explicit test_lab policies.
     pub ap_policy:String,
     pub impact_label:String,
@@ -340,7 +343,12 @@ fn build(table:&[u8],qualification:&[u8],builds:&[u8])->io::Result<Registry> {
         let part_sha256=if stock {None} else {
             let pin=|c:&Value|->io::Result<String>{let h=s(&c["sha256"])?;if h.len()==64&&h.bytes().all(|b|b.is_ascii_hexdigit()){Ok(h.to_owned())}else{Err(bad("part pin"))}};
             Some([pin(&components[0])?,pin(&components[1])?,pin(&components[2])?])};
-        let entry=Entry{id,label:label.to_owned(),vehicle_id:s(&row["vehicle_id"])?.to_owned(),nation_id:nation,descriptor,
+        let vehicle_name=s(&row["vehicle_id"])?.trim_start_matches("vehicle:").to_owned();
+        let dispersion_key=if stock {vehicle_name} else {
+            // The client mount path (up to 512 bytes; `s` bounds names at 128).
+            let path=g["mount_source_path"].as_str().filter(|p|p.len()<=512).ok_or_else(||bad("build mount path"))?;
+            super::dispersion::pair_key(&vehicle_name,path).ok_or_else(||bad("build mount path"))?};
+        let entry=Entry{id,label:label.to_owned(),vehicle_id:s(&row["vehicle_id"])?.to_owned(),nation_id:nation,descriptor,dispersion_key,
             stock,part_sha256,chassis_armor_sha256:if stock||row["chassis_armor"].is_null(){None}else{
                 let h=s(&row["chassis_armor"])?;if h.len()!=64||!h.bytes().all(|b|b.is_ascii_hexdigit()){return Err(bad("chassis part pin"));}Some(h.to_owned())},
             type_compact_id:type_cd,gun_compact_id:gun_cd,

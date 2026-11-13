@@ -62,7 +62,13 @@ pub fn geometry(kind:VehicleKind,stock:&Bundle)->io::Result<Arc<Bundle>> {
     if let Some(volumes)=stock.module_volumes_arc() {
         let s_e=stock_kind.generated().ok_or_else(||bad("stock entry"))?;
         if e.parts[1]==s_e.parts[1]&&e.pivots[1..]==s_e.pivots[1..] {bundle=bundle.with_module_volumes(volumes)?;}
-        else {println!("CONTENT0_BUILD_MODVOL_UNBOUND kind={} reason=non_stock_turret policy=lab_boxes",e.label);}
+        else {
+            // CONTENT-0 4: the skins mark only the stock turret model; the hull volumes (same hull) still bind,
+            // the other turret's modules and seats stay on their LAB boxes.
+            let hull_only=super::module_volumes::ModuleVolumes{turret:Default::default(),..(*volumes).clone()};
+            bundle=bundle.with_module_volumes(Arc::new(hull_only))?;
+            println!("CONTENT0_BUILD_MODVOL_HULL_ONLY kind={} reason=non_stock_turret turret_policy=lab_boxes",e.label);
+        }
     }
     let bundle=Arc::new(bundle);
     let mut cache=cache.lock().map_err(|_|bad("cache"))?;
