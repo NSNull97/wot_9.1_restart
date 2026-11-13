@@ -77,6 +77,12 @@ def mounted(item):
         return None
     turret, gun, capacity, shells = mounts[identity]
     desc = item.descriptor
+    if crew_vehicles.enabled() and (desc.turret['compactDescr'], desc.gun['compactDescr']) != (turret, gun):
+        # CONTENT-0 4: another turret x gun pair of a catalogue vehicle; the mount is the descriptor's own gun
+        # (capacity and shots), and the server authorizes every command against the owned pair.
+        turret, gun = desc.turret['compactDescr'], desc.gun['compactDescr']
+        capacity = desc.gun['maxAmmo']
+        shells = tuple(shot['shell']['compactDescr'] for shot in desc.gun['shots'])
     if (desc.type.compactDescr != identity or desc.turret['compactDescr'] != turret
             or desc.gun['compactDescr'] != gun or desc.gun['maxAmmo'] != capacity
             or item.ammoMaxSize != capacity or tuple(item.shellsLayoutIdx) != (turret, gun)):
