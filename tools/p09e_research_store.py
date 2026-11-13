@@ -581,6 +581,9 @@ class ResearchStore(NativeBarracksRecruitmentStore):
     def _equip_purchase(self, account, before, research, payload):
         raise TransactionError("AUTOBUY_CREW_SHELLS_UNSUPPORTED")
 
+    def _mount_change(self, account, research):
+        """CONTENT-0 4: the pool store moves a vehicle to its new turret x gun pair's mount; nothing here."""
+
     def _expected_aggregate(self, before, research, revision, equipment):
         require(equipment is None, "CORRUPT_STORE")
         return self._next_aggregate(before, research, revision)
@@ -630,6 +633,8 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             raw = _encode(after)
             c.execute("UPDATE p09e_research SET state_json=?,state_sha256=? WHERE account_id=?", (raw, sha(raw.encode("ascii")), account))
             self._failpoint("after_research_state")
+            if request["operation"] in ("install", "buy_equip"):
+                self._mount_change(account, after)
             equipment = None
             if request["operation"] == "buy_vehicle_equipped":
                 equipment = self._equip_purchase(account, profile, after, request["payload"])

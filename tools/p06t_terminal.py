@@ -55,6 +55,16 @@ class TerminalPolicy:
         document=dict(self.document,profiles=profiles)
         return TerminalPolicy(document,expected_sha256=sha(canonical(document)),generated=self.generated|frozenset(rows))
 
+    def with_builds(self,rows):
+        """CONTENT-0 3.3/4: rows of the generated builds (label -> max HP, crew count, ordered (extra index, device
+        max health)) from the pinned build table; a frozen build kind is its label. Stock rows unchanged."""
+        profiles=dict(self.document["profiles"])
+        for kind,(max_hp,crew_count,devices) in rows.items():
+            require(kind not in profiles and "--" in kind,"P06T_TERMINAL_POLICY_REQUIRED")
+            profiles[kind]=dict(max_hp=max_hp,crew_count=crew_count,devices=[{"extra_index":i,"max_health":h}for i,h in devices])
+        document=dict(self.document,profiles=profiles)
+        return TerminalPolicy(document,expected_sha256=sha(canonical(document)),generated=self.generated|frozenset(rows))
+
     @classmethod
     def from_manifest(cls,path):
         # Caller supplies a trusted configured path, never an incoming request.

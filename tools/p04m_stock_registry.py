@@ -83,17 +83,29 @@ class StockProfile:
     shell_compact_id: int
     modules: tuple[tuple[str, str], ...]
     crew_roles: tuple[tuple[str, ...], ...]
-    # CONTENT-0 3.3: a build (stock turret and gun) keeps its vehicle's stock mount, shells and capacity.
+    # CONTENT-0 3.3: a build's stock kind; it keeps that kind's stock mount, shells and capacity ...
     assembly_kind: str = ""
+    # ... unless (step 4) its turret x gun pair is another one: `<turret resource>/<gun resource>`.
+    pair: str = ""
 
     @property
-    def assembly_id(self): return (self.assembly_kind or self.kind) + "-stock"
+    def assembly_id(self): return (self.assembly_kind or self.kind) + ("@" + self.pair if self.pair else "-stock")
 
     @property
     def shell_definition_id(self): return "shell:" + self.assembly_id + "-ap"
 
     @property
     def primary_roles(self): return tuple(roles[0] for roles in self.crew_roles)
+
+
+def pair_name(modules):
+    """CONTENT-0 4: `<turret resource>/<gun resource>` of a configuration (the mount suffix of a non-stock pair)."""
+    return modules["turret"].split(":")[-1] + "/" + modules["gun"].split(":")[-1]
+
+
+def row_hp(catalog, vehicle_id, modules):
+    row = catalog.vehicles[vehicle_id]
+    return row["hull_max_hp"] + row["turret_max_hp"][modules["turret"]]
 
 
 class StockRegistry:
@@ -117,25 +129,33 @@ class StockRegistry:
             profiles[kind] = StockProfile(kind, key, cd, encoded, hp, capacity, shell,
                 tuple((role, modules[role]) for role in ROLES), crew)
         self.by_vehicle = MappingProxyType({p.vehicle_id: p for p in profiles.values()})
-        # CONTENT-0 3.3 stage 1 (catalog mode): builds with the stock turret and gun, by exact descriptor.
+        # CONTENT-0 3.3 / 4 (catalog mode): every generated build of a stock kind, by exact descriptor; a build of
+        # another turret x gun pair has that pair's mount (capacity, first shell) and its own hit points.
         by_descriptor = {}
         if _catalog() is not None:
             import content0_builds
+            mounts = content0_builds.mounts()
             for encoded, b in sorted(content0_builds.load().items()):
                 stock = profiles.get(b["stock_kind"])
-                if stock is None or stock.assembly_kind:
+                if stock is None or stock.assembly_kind or stock.kind in PINS:
                     continue
-                require(stock.vehicle_id == b["vehicle_id"] and b["max_hp"] == stock.max_hp and b["label"] not in profiles
-                    and descriptor(catalog, {"vehicle_id": b["vehicle_id"], "modules": dict(b["modules"])}).hex() == encoded,
-                    "P04M_DEFINITION_MISMATCH")
+                modules = dict(b["modules"])
+                require(stock.vehicle_id == b["vehicle_id"] and b["label"] not in profiles
+                    and descriptor(catalog, {"vehicle_id": b["vehicle_id"], "modules": modules}).hex() == encoded
+                    and b["max_hp"] == row_hp(catalog, b["vehicle_id"], modules), "P04M_DEFINITION_MISMATCH")
+                extra = {}
+                if not b["stock_pair"]:
+                    mount = mounts[(b["vehicle_id"], modules["turret"], modules["gun"])]
+                    extra = dict(max_hp=b["max_hp"], capacity=mount["capacity"], shell_compact_id=mount["shells"][0][4],
+                                 pair=pair_name(modules))
                 profiles[b["label"]] = by_descriptor[encoded] = replace(stock, kind=b["label"], descriptor_hex=encoded,
-                    modules=tuple((role, b["modules"][role]) for role in ROLES), assembly_kind=stock.kind)
+                    modules=tuple((role, modules[role]) for role in ROLES), assembly_kind=stock.kind, **extra)
         self.profiles = MappingProxyType(profiles)
         self.by_descriptor = MappingProxyType(by_descriptor)
         # The registry hash the gateway pins covers the legacy kinds only; generated
         # (BATTLE-ANY) kinds are bound by the activated catalog hash instead.
         self.sha256 = sha(canonical({"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256,
-            "profiles": [{k: v for k, v in asdict(profiles[kind]).items() if k != "assembly_kind"}
+            "profiles": [{k: v for k, v in asdict(profiles[kind]).items() if k not in ("assembly_kind", "pair")}
                          for kind in sorted(profiles) if kind in PINS]}))
 
     @staticmethod

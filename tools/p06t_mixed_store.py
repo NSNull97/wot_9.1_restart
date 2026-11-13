@@ -113,11 +113,23 @@ class MixedAmmoStore(PoolStore):
         require(document["schema"] == "p06t-shell-catalog.v1" and len(document["mounts"]) == 8, "P06T_SOURCE_MISMATCH")
         self.mixed_mounts = {row["id"]: row for row in document["mounts"] if row["id"] in self.mounts}
         generated = self._generated_mounts()
-        require(set(self.mixed_mounts) | set(generated) == set(self.mounts) and not set(self.mixed_mounts) & set(generated), "P06T_SOURCE_MISMATCH")
+        # CONTENT-0 4: other turret x gun pairs of generated kinds, built from the pinned build table (p04m_pool_store).
+        pairs = {key for key in self.mounts if "@" in key}
+        require(set(self.mixed_mounts) | set(generated) | pairs == set(self.mounts)
+            and not set(self.mixed_mounts) & set(generated) and not pairs & (set(self.mixed_mounts) | set(generated)), "P06T_SOURCE_MISMATCH")
         if generated:
             self.terminal_policy = self.terminal_policy.with_generated({key[:-len("-stock")]: row for key, row in generated.items()})
+            # CONTENT-0 3.3/4: a build's terminal row; its stock kind's row must agree with the build table's devices.
+            import content0_builds
+            builds = {b["label"]: b for b in content0_builds.load().values() if b["label"] in self.registry.profiles}
+            stock = {}
+            for b in builds.values():
+                row = self.terminal_policy.document["profiles"].get(b["stock_kind"])
+                require(row is not None and row["crew_count"] == b["crew_count"], "P06T_SOURCE_MISMATCH")
+                stock[b["stock_kind"]] = row
+            self.terminal_policy = self.terminal_policy.with_builds({label: (b["max_hp"], b["crew_count"], b["devices"]) for label, b in builds.items()})
         for key, mount in self.mounts.items():
-            if key in generated:
+            if key in generated or key in pairs:
                 continue
             data = self.mixed_mounts[key]
             require(data["max_ammo"] == mount.capacity and data["clip_count"] == data["burst_count"] == 1
