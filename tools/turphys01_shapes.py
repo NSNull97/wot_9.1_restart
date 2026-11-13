@@ -22,6 +22,7 @@ OUT = ROOT / "server/physics/Profiles/turret-shapes.json"
 POLICY = "turphys01-hull-turret-boxes-v1"
 MAX_BUNDLE = 64 * 1024 * 1024
 MIN_TURRET = .05  # metres per axis; project value
+MAX_ROWS = 16384
 
 
 def canonical(value):
@@ -38,9 +39,21 @@ def generated_rows():
             pin = (geometry["bundle"], geometry["sha256"])
             if rows.setdefault(kind, pin) != pin:
                 raise ValueError(kind + ": tables pin different geometry bundles")
-    if not 1 <= len(rows) <= 2048:
+    if not 1 <= len(rows) <= MAX_ROWS:
         raise ValueError("generated row count")
     return rows
+
+
+def build_rows(rows):
+    """CONTENT-0 3.3 stage 1: {build label: stock kind} — a build with the stock turret and gun has the stock hull and
+    turret boxes (the turret centre does not depend on the chassis hull position, ReferenceShapes.cs)."""
+    from phys01_characteristics import stage1_builds
+    out = {}
+    for v, stock, e in stage1_builds():
+        kind = v["hull"]["kind"]
+        if kind in rows and out.setdefault(e["label"], kind) != kind:
+            raise ValueError(e["label"] + ": tables disagree")
+    return out
 
 
 def bounds(value, label):
@@ -89,6 +102,11 @@ def build(directories):
         if len(raw) > MAX_BUNDLE or hashlib.sha256(raw).hexdigest() != digest:
             raise ValueError(kind + ": bundle differs from the table pin")
         out.append(dict(project(kind, raw), bundle_sha256=digest))
+    by_kind = {r["kind"]: r for r in out}
+    out += [dict(by_kind[kind], kind=label) for label, kind in build_rows(rows).items()]
+    out.sort(key=lambda r: r["kind"])
+    if len(out) > MAX_ROWS:
+        raise ValueError("turret shapes row count")
     return dict(version=1, policy=POLICY, source="battle_profiles.v1 geometry bundles (original client collision models)",
                 vehicles=out)
 
@@ -99,7 +117,9 @@ def check(directories):
         raise ValueError("turret shapes not canonical")
     rows = generated_rows()
     kinds = {r["kind"]: r["bundle_sha256"] for r in data["vehicles"]}
-    if kinds != {k: v[1] for k, v in rows.items()}:
+    expected = {k: v[1] for k, v in rows.items()}
+    expected.update({label: rows[kind][1] for label, kind in build_rows(rows).items()})
+    if kinds != expected:
         raise ValueError("turret shapes do not cover exactly the generated rows and their bundle pins")
     if directories and canonical(build(directories)) != OUT.read_bytes():
         raise ValueError("turret shapes differ from the bundles")

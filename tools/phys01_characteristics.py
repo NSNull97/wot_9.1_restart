@@ -17,6 +17,25 @@ TABLES = (ROOT / "config/catalog/battle_profiles.v1.json", ROOT / "config/test_l
 OUT = ROOT / "server/physics/Profiles/reference-characteristics.json"
 POLICY = "phys01-reference-characteristics-v1"
 
+BUILD_TABLES = (ROOT / "config/catalog/battle_builds.v1.json", ROOT / "config/test_lab/battle_builds.v1.json")
+MAX_ROWS = 16384
+
+
+def stage1_builds():
+    """CONTENT-0 3.3 stage 1: (vehicle row of the build table, stock build, build) of every generated non-stock
+    build that keeps the stock turret, gun and fuel tank (the builds the domain admits, tools/content0_builds.py)."""
+    for path in BUILD_TABLES:
+        for vehicle_id, v in json.loads(path.read_bytes())["vehicles"].items():
+            stock = [e for e in v["builds"] if e["stock"]]
+            if len(stock) != 1:
+                raise ValueError(vehicle_id + ": stock build")
+            s = stock[0]["modules"]
+            for e in v["builds"]:
+                m = e["modules"]
+                if (not e["stock"] and e["status"] == "generated"
+                        and (m["turret"], m["gun"], m["fuelTank"]) == (s["turret"], s["gun"], s["fuelTank"])):
+                    yield v, stock[0], e
+
 
 def canonical(value):
     return (json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":")) + "\n").encode("ascii")
@@ -40,7 +59,17 @@ def build():
                 # The test_lab table repeats main rows; a repeated kind must carry the same facts.
                 if rows.setdefault(kind, row) != row:
                     raise ValueError(kind + ": tables disagree")
-    if not 1 <= len(rows) <= 2048:
+    # CONTENT-0 3.3: a build moves on its own chassis (the build table copies the chassis movement from the client).
+    for v, _, e in stage1_builds():
+        m = v["chassis"][e["modules"]["chassis"]]["movement"]
+        row = dict(vehicle=v["vehicle_id"], terrain_resistance=[float(x) for x in m["terrain_resistance"]],
+                   rotation_is_around_center=m["rotation_is_around_center"])
+        if (not all(.3 <= x <= 10 for x in row["terrain_resistance"]) or len(row["terrain_resistance"]) != 3
+                or not isinstance(row["rotation_is_around_center"], bool)):
+            raise ValueError(e["label"] + ": terrain resistance/rotation source bounds")
+        if rows.setdefault(e["label"], row) != row:
+            raise ValueError(e["label"] + ": tables disagree")
+    if not 1 <= len(rows) <= MAX_ROWS:
         raise ValueError("characteristics row count")
     return canonical(dict(version=1, policy=POLICY, source="battle_profiles.v1 movement (client vehicle XML)",
                           vehicles=[dict(kind=k, **rows[k]) for k in sorted(rows)]))

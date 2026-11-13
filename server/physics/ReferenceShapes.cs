@@ -47,7 +47,8 @@ internal static class ReferenceShapes
             }
             result.Add(v.GetProperty("kind").GetString()!, row);
         }
-        if (result.Count is < 1 or > 2048) throw new InvalidDataException("turret shapes count");
+        // CONTENT-0 3.3: stock kinds plus the stage-1 builds (tools/turphys01_shapes.py MAX_ROWS).
+        if (result.Count is < 1 or > 16384) throw new InvalidDataException("turret shapes count");
         return result;
     }
     public static Row? For(string kind) => Rows.Value.TryGetValue(kind, out var row) ? row : null;
