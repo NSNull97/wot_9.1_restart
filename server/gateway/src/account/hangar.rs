@@ -305,7 +305,7 @@ fn requests_profile(body:&[u8],interactive:bool,ammo_service:bool,crew_service:b
                 // Explicit opt-in test_lab only; native capture is the gate.
                 Incoming::CrewService(crate::crew_service091::Request::decode(&packet[3..])?)
             },
-            0x97 if ammo_service && [56,64,72].contains(&length) && command_of(packet)==108 => {
+            0x97 if ammo_service && [32,40,48,56,64,72].contains(&length) && command_of(packet)==108 => {
                 Incoming::AmmoService(crate::ammo_service091::Request::decode(&packet[3..])?)
             },
             0x97 if interactive && [56,64,72].contains(&length) && command_of(packet)==108 => {
