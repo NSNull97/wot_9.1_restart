@@ -166,8 +166,8 @@ class ResearchProjectionSource(BarracksRecruitmentProjectionSource):
         return files
 
 
-def update_delta(catalog, before, after, wire_revision, layouts=None):
-    return encode(delta_tree(catalog, before, after, wire_revision, layouts), MAX_UPDATE)
+def update_delta(catalog, before, after, wire_revision, layouts=None, shell_depot=None):
+    return encode(delta_tree(catalog, before, after, wire_revision, layouts, shell_depot), MAX_UPDATE)
 
 
 def _merge(base, part):
@@ -203,7 +203,7 @@ def chained_updates(first, parts, wire_revision, maximum):
     return updates
 
 
-def delta_tree(catalog, before, after, wire_revision, layouts=None):
+def delta_tree(catalog, before, after, wire_revision, layouts=None, shell_depot=None):
     """``layouts`` (CONTENT-0 4, the pool store): {native: (shells, shellsLayout)} of the vehicles mounted on their
     turret x gun pair's mount; a changed pair then advertises that mount's layout instead of nothing."""
     require(type(wire_revision) is int and 1 <= wire_revision < 2**31 - 1)
@@ -231,5 +231,8 @@ def delta_tree(catalog, before, after, wire_revision, layouts=None):
                 shells, layout = (layouts or {}).get(native, ([], {}))
                 inv[1].setdefault("shells", {})[native] = list(shells)
                 inv[1].setdefault("shellsLayout", {})[native] = dict(layout)
+    if shell_depot:
+        # CONTENT-0 4: shells unloaded to the depot by a gun change (inventory 10, one count per compact ID).
+        inv.setdefault(10, {}).update(shell_depot)
     if inv: delta["inventory"] = inv
     return delta

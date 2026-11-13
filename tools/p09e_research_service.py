@@ -99,8 +99,10 @@ def native_service(store, request, *, authenticated_account_id):
                 value["wire_revision"] = request["wire_revision"] + len(updates)
                 if len(updates) > 1: value["extra_update_hex"] = [update.hex() for update in updates[1:]]
             else:
-                layouts = store.pair_layouts(after) if hasattr(store, "pair_layouts") and store.pool_active() else None
-                updates = [update_delta(store.catalog, before["research"], after["research"], request["wire_revision"], layouts)]
+                pool = hasattr(store, "pair_layouts") and store.pool_active() and "pool" in after
+                layouts = store.pair_layouts(after) if pool else None
+                depot = {store.depot_cd[key]: n for key, n in after["depot"].items() if before["depot"].get(key) != n} if pool else None
+                updates = [update_delta(store.catalog, before["research"], after["research"], request["wire_revision"], layouts, depot)]
             value["update_hex"] = updates[0].hex()
             return value
         return store.execute(domain, authenticated_account_id=authenticated_account_id,

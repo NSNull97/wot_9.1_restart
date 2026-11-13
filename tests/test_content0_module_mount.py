@@ -207,6 +207,35 @@ class ModuleMountTests(mixed.MixedStoreTests):
                          {KV3_TURRET: 1, D10T: 1, KV220: None, F30: None})
         self.assertNotEqual(self.battle_code(native), "BATTLE_PROFILE_UNSUPPORTED")
 
+    ammo_request = mixed.previous.PoolStoreTests.ammo_request
+    seed_owned_test_depot = mixed.previous.PoolStoreTests.seed_owned_test_depot
+
+    def test_gun_change_unloads_the_loaded_shells_to_the_shared_depot(self):
+        """CONTENT-0 4: the #717 client installs a gun with shells loaded and then loads the default layout
+        (module.pyc tryToLoadDefaultShellsLayout): the old gun's shells return to the depot (INFERRED)."""
+        self.buy_curated("KV-3")
+        native = self.owned(KV3)["native_id"]
+        stock = self.store.mounts[self.store.mount_id_of(self.owned(KV3))]
+        self.seed_owned_test_depot("ussr-KV-3", [10, 4, 0])
+        self.store.service(self.ammo_request(native, [6, 3, 0]), authenticated_account_id=self.account)
+        loaded = next(r for r in self.profile()["ammunition"] if r["vehicle_id"] == self.owned(KV3)["vehicle_inventory_id"])["loaded"]
+        self.assertEqual([loaded[k] for k in stock.shell_ids], [6, 3, 0])
+        depot = {k: self.profile()["depot"][self.store.depot_key[k]] for k in stock.shell_ids}
+        self.research(KV3, ZIS6); self.buy(ZIS6)
+        before, after, reply = self.accepted(101, (native, self.cd(ZIS6), 0))
+        self.assertEqual(self.owned(KV3)["modules"]["gun"], ZIS6)
+        profile = self.profile()
+        mount = self.store.mounts[self.store.mount_id_of(self.owned(KV3))]
+        self.assertEqual(mount.mount_id, "ussr-KV-3@KV-220_mod/_107mm_ZiS-6")
+        row = next(r for r in profile["ammunition"] if r["vehicle_id"] == self.owned(KV3)["vehicle_inventory_id"])
+        self.assertEqual((row["mount_id"], row["loaded"]), (mount.mount_id, {k: 0 for k in mount.shell_ids}))
+        self.assertEqual({k: profile["depot"][self.store.depot_key[k]] for k in stock.shell_ids},
+                         {k: depot[k] + n for k, n in zip(stock.shell_ids, [6, 3, 0])})
+        # The reply carries the new pair's empty layout and the depot counts the unload changed.
+        shell_depot = {self.store.shells[k].native_compact_id: profile["depot"][self.store.depot_key[k]] for k, n in zip(stock.shell_ids, [6, 3, 0]) if n}
+        self.assertEqual(reply["update_hex"], update_delta(self.catalog, before, after, 1, self.store.pair_layouts(profile), shell_depot).hex())
+        self.assertEqual(self.battle_code(native), "INCOMPLETE_CREW")
+
     # --- legacy MS-1 (native 1): mass, loaded shells, reservation ---------------------
     def test_ms1_overload_loaded_gun_and_reservation_refusals(self):
         for index in (0, 2, 3): self.accepted(201, (3329, index, 0))
