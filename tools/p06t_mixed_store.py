@@ -138,6 +138,11 @@ class MixedAmmoStore(PoolStore):
         for kind, p in self.registry.profiles.items():
             if kind in PINS or p.assembly_id not in self.mounts or p.assembly_id in self.mixed_mounts:
                 continue
+            if p.assembly_kind:
+                # CONTENT-0 3.3 stage 1: a build uses its stock kind's mount, checked with the stock profile.
+                require(self.registry.profiles.get(p.assembly_kind) is not None
+                    and self.registry.profiles[p.assembly_kind].assembly_id == p.assembly_id, "P06T_SOURCE_MISMATCH")
+                continue
             row = battle_any.profile(p.vehicle_id)
             require(row is not None and row["status"] == "generated" and row["kind"] == kind, "P06T_SOURCE_MISMATCH")
             mount = self.mounts[p.assembly_id]
