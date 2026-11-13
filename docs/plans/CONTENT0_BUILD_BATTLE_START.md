@@ -91,6 +91,19 @@
   записанный интервал шагов в активной фазе 683,7 мс, причина отдельного пика UNKNOWN.
   Квитанция `local/evidence/20261113-content0-build-battle/kv1s-owner-normal-retest.json`.
 
+## Кандидат для main
+
+- `132a8938`, `codex/content-0-s3-s4-merge`: шаги 3–4 от `4c348e49` с исправлениями проекции физики,
+  осадки, итогов боя и взрыва БК каземата. Лимиты пресс-аккаунта и правила попаданий в ствол остались на линии -22.
+- PASS, полный Rust-gate из корня D: 2 123 теста, 22 ignored. Команда
+  `python -B -X utf8 server/build.py gateway --test --cargo-temp-target --out local/build/server/content0-s3-s4-gate-restored-132a8938`.
+  SHA старого component06 восстановлен и проверен по архивным пинам.
+  Целевой Rust `test_lab` и release также PASS. Сводка `local/evidence/20261113-content0-build-battle/gate-candidate-132a8938.json`.
+- PASS NATIVE OWNER, -23, `132a8938`: нестоковый КВ-1С `ussr-KV-1s--84818961`, бой `25331331715566382`.
+  Сцена на 30 машин, результат ревизии 716, ACK и возврат в ангар. В интервале боя нет маркеров сброса или пересинхронизации.
+  Квитанция `local/evidence/20261113-content0-build-battle/kv1s-owner-scoped-132a8938.json`.
+- Python test_lab: 48 PASS, 8 пропусков проверок main. Полный Python-набор запущен из D: на `132a8938`, итог ожидается.
+  Лог `local/evidence/20261113-content0-build-battle/python-full-132a8938.log`.
 ## Откат стенда
 
 Откат отрыва орудия к предыдущему безопасному поведению: `local/evidence/20261113-content0-build-battle/deploy-followup.ps1 -GunDetach -Rollback`.
