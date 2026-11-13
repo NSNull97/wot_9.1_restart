@@ -190,8 +190,8 @@ class ModuleMountTests(mixed.MixedStoreTests):
         build = self.store.registry.by_descriptor[descriptor(self.catalog, self.owned(KV3)).hex()]
         self.assertEqual((build.assembly_id, build.capacity, build.max_hp),
                          (mount.mount_id, mount.capacity, self.catalog.vehicles[KV3]["hull_max_hp"] + self.catalog.vehicles[KV3]["turret_max_hp"][KV3_TURRET]))
-        # The build is admitted; nothing is loaded yet.
-        self.assertEqual(self.battle_code(native), "AMMUNITION_EMPTY")
+        # The build is admitted (no BATTLE_PROFILE_UNSUPPORTED); this freshly bought KV-3 has no crew yet.
+        self.assertEqual(self.battle_code(native), "INCOMPLETE_CREW")
 
         # equipTurret(turret, gun) with the turret already mounted swaps the gun.
         before, after, _ = self.accepted(101, (native, self.cd(KV3_TURRET), self.cd(D10T)))
