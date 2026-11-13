@@ -15,7 +15,7 @@ fn ignition_extra(world:&World,target:usize,cause:crate::p06t_device_state::Caus
 fn health(world:&World,target:usize,attacker:Option<usize>,reason:u8)->io::Result<Vec<u8>>{
     let actor=world.actors.get(target).ok_or_else(||model::bad())?;
     if !(0..=actor.vehicle_kind().max_health()).contains(&actor.health)||reason>10{return Err(model::bad());}
-    if world.ammo_detonations().iter().any(|event|event.target()==target){
+    if world.has_detached_turret(target){
         if actor.health!=0{return Err(model::bad());}
         return super::super::detached_turret::terminal_health(target,attacker,reason,
             super::super::detached_turret::DeathKind::Detached);
@@ -147,7 +147,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
             // for a dead player vehicle. Sending 0 after the parent's -2 erased
             // the detachment mark, so the victim kept its own turret while the
             // DetachedTurret flew (owner run 2026-10-19). HUD clamps to 0.
-            let native=if actor.health==0&&world.ammo_detonations().iter().any(|e|e.target()==target)
+            let native=if actor.health==0&&world.has_detached_turret(target)
                 {super::super::detached_turret::DeathKind::Detached.native_health()}else{actor.health};
             body.extend(native::owner_health(native,crew,actor.vehicle_kind().max_health()as u16)?);c.owner_health_sent=Some(actor.health);
         }

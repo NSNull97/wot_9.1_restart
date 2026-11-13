@@ -244,8 +244,21 @@ internal sealed class BattleTank : IDisposable
     static bool Finite(Vector3 v, float max) => float.IsFinite(v.X) && float.IsFinite(v.Y) && float.IsFinite(v.Z) && MathF.Abs(v.X) <= max && MathF.Abs(v.Y) <= max && MathF.Abs(v.Z) <= max;
     public void CheckSettled()
     {
-        if (reported.Count(i => Constraint.GetWheel(i).HasContact) < 3 || Body.GetLinearVelocity().Length() > 1)
-            throw new InvalidOperationException($"IPC7 actor failed to settle slot={Source.Slot} kind={Source.Kind} position={Body.Position} velocity={Body.GetLinearVelocity()}");
+        int reportedContacts = reported.Count(i => Constraint.GetWheel(i).HasContact);
+        int supportsPerTrack = wheels.Length / 2;
+        int leftContacts = 0, rightContacts = 0;
+        for (int i = 0; i < supportsPerTrack; i++)
+        {
+            if (Constraint.GetWheel(i).HasContact) leftContacts++;
+            if (Constraint.GetWheel(i + supportsPerTrack).HasContact) rightContacts++;
+        }
+        // PHYS-01 added intermediate supports which can bear load on uneven terrain
+        // without appearing in the six diagnostic slots carried by IPC7.
+        bool supported = reportedContacts >= 3 ||
+            (leftContacts > 0 && rightContacts > 0 && leftContacts + rightContacts >= 3);
+        var velocity = Body.GetLinearVelocity();
+        if (!supported || velocity.Length() > 1)
+            throw new InvalidOperationException($"IPC7 actor failed to settle slot={Source.Slot} kind={Source.Kind} contacts={reportedContacts} left={leftContacts} right={rightContacts} position={Body.Position} velocity={velocity}");
     }
     public object Metrics(BattleSceneInput.Control input) => MixedContactDiagnostics.Capture(
         Source.Slot, Source.Kind, Source.ConfigHash, Body, Constraint, controller, input);

@@ -70,7 +70,7 @@ def validate_request(value, account):
             _integer(row["shell_compact_id"], 1); _integer(row["count"], 0, MAX_STACK)
     if natural:
         require(type(value["results_json"]) is str and len(value["results_json"].encode("utf8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
-        value = dict(value, results_json=canonical(results_value(value["results_json"])).decode("ascii"))
+        value = dict(value, results_json=canonical(results_value(value["results_json"], mixed=True)).decode("ascii"))
     require(len(canonical(value)) <= (MAX_RESULT_REQUEST if natural else 16384 if value["operation"]=="finish" else 2048), "INVALID_INPUT")
     return deepcopy(value)
 
@@ -325,7 +325,7 @@ class MixedAmmoStore(PoolStore):
         self._failpoint("after_mixed_result")
         receipt = self._mixed_reservation(c.execute("SELECT * FROM p06t_reservation WHERE account_id=? AND reservation_id=?", (account,row["reservation_id"])).fetchone())
         if not abort and result["reason"] == "battle_finished":
-            value = results_value(request["results_json"]); arena = request["battle_id"].rsplit(":",1)[1]
+            value = results_value(request["results_json"], mixed=True); arena = request["battle_id"].rsplit(":",1)[1]
             self._match_mixed_result(value, receipt, request["native_database_id"], arena)
             require(not self._arena_has_result(account,arena), "RESULT_MISMATCH")
             raw = canonical(value).decode("ascii")
@@ -452,7 +452,7 @@ class MixedAmmoStore(PoolStore):
         require(row is not None, "RESULT_NOT_READY")
         require(type(row["results_json"]) is str and len(row["results_json"].encode("utf8")) <= MAX_RESULT_BYTES
             and sha(row["results_json"].encode("ascii")) == row["results_sha256"], "CORRUPT_STORE")
-        value = results_value(row["results_json"])
+        value = results_value(row["results_json"], mixed=True)
         reservation = self._mixed_reservation(self.connection.execute("SELECT * FROM p06t_reservation WHERE account_id=? AND reservation_id=?", (account,row["reservation_id"])).fetchone())
         require(reservation["status"] == "finished" and reservation["result"]["reason"] == "battle_finished"
             and reservation["battle_id"] == reservation["run_id"]+":"+arena, "RESULT_MISMATCH")

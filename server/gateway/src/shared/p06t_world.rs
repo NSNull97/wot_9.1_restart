@@ -150,6 +150,15 @@ impl World {
         }
         rack::Launch::derive(heading,charge,draws)
     }
+    fn detach_turret(&mut self, actors: &[Actor], event: rack::Event) -> io::Result<()> {
+        if !self.geometry_for(event.kind())?.has_detachable_turret() {
+            return Ok(());
+        }
+        if self.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
+        let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(actors,&event)?)?}else{rack::Flight::new(event)};
+        self.turret_flights.push(flight);
+        Ok(())
+    }
     pub(super) fn direct_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,
         contact:&Contact,bundle:&geometry::Bundle)->io::Result<crate::p06t_damage::Resolution>{
         let shell=projectile.shell.ok_or_else(||bad())?;let slot=contact.target_slot;
@@ -347,12 +356,10 @@ impl World {
         let outcome=ledger.apply(input)?;
         match outcome{
             rack::Outcome::New(event)=>{
-                if self.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
                 let mut fire=actors[slot].fire.clone();
                 if fire.lose_loaded_for_detonation()?!=event.lost(){return Err(bad());}
                 actors[slot].fire=fire;
-                let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(actors,&event)?)?}else{rack::Flight::new(event)};
-                self.turret_flights.push(flight);
+                self.detach_turret(actors,event)?;
                 self.ammo_detonation=Some(ledger);Ok(event.additional_damage())
             },
             rack::Outcome::Empty=>{self.ammo_detonation=Some(ledger);Ok(0)},
@@ -416,8 +423,7 @@ impl World{
             let mut fire=actors[target].fire.clone();fire.lose_loaded_for_detonation()?;actors[target].fire=fire;
             let crew=actors[target].alive();
             self.record_damage(&mut actors,target,attacker,shot,self.tick,0,input.health_before,crew,true,true)?;
-            let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(&actors,&event)?)?}else{rack::Flight::new(event)};
-            self.turret_flights.push(flight);self.ammo_detonation=Some(ledger);Ok(event)
+            self.detach_turret(&actors,event)?;self.ammo_detonation=Some(ledger);Ok(event)
         })();
         self.actors=actors;result
     }

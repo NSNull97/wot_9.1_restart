@@ -296,7 +296,7 @@ class LateResults:
             and ((seal["version"] == 1 and set(seal) == SEAL_V1 and seal["policy"] == POLICY_NAME)
                 or (seal["version"] == 2 and set(seal) == SEAL_V1 | {"bots"} and seal["policy"] == BOT_POLICY_NAME))
             and all(seal[k] == request[k] for k in ("run_id", "battle_id", "arena_id")) and canonical(seal).decode("utf8") == raw, "RESULT_MISMATCH")
-        results = results_value(seal["results_json"])
+        results = results_value(seal["results_json"], mixed=True)
         require(canonical(results).decode("utf8") == seal["results_json"] and results["arena_id"] == int(request["arena_id"]), "RESULT_MISMATCH")
         actors, bots = seal["actors"], seal.get("bots", [])
         participants = results["participants"]
@@ -410,7 +410,7 @@ class LateResults:
                 table, old = existing[0]
                 require(old["reservation_id"] == request["reservation_id"], "RESULT_MISMATCH")
                 if table == "p06t_result":
-                    require(stamp["reason"] == "battle_finished" and results_value(old["results_json"]) == results, "RESULT_MISMATCH")
+                    require(stamp["reason"] == "battle_finished" and results_value(old["results_json"], mixed=True) == results, "RESULT_MISMATCH")
                     self.store._read_mixed_result(authenticated_account_id, request["native_database_id"], request["arena_id"])
                 else:
                     require(table == "p08c_late_result" and old["seal_sha256"] == seal_sha and all(old[k] == request[k] for k in ("source_contract", "frozen_sha256", "release_terminal_sha256", "finished_revision")), "RESULT_MISMATCH")
@@ -534,7 +534,7 @@ class LateResults:
                 if after is not None: sql += " AND arena_id>?"; params.append(after)
                 rows = c.execute(sql + " ORDER BY arena_id LIMIT ?", (*params, limit + 1)).fetchall(); more = len(rows) > limit
                 for row in rows[:limit]:
-                    actual = self.read_late(account, native, row[0]); result = results_value(actual["results_json"])
+                    actual = self.read_late(account, native, row[0]); result = results_value(actual["results_json"], mixed=True)
                     own = next(p for p in result["participants"] if p["account_dbid"] == native)
                     values.append(dict(arena_id=row[0], seal_sha256=actual["seal_sha256"], arena_type_id=result["arena_type_id"],
                         created_unix=result["created_unix"], winner_team=result["winner_team"], own_team=own["team"],

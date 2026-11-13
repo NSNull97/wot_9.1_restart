@@ -83,6 +83,18 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.fx.store.close(); self.fx.store=self.factory()
         self.assertEqual(self.send(finish),dict(reply,replayed=True)); self.assertTrue(self.query()["acked"])
 
+    def test_natural_result_with_two_hundred_bot_shots_is_stored_and_read(self):
+        receipt = self.start()
+        finish = self.finish(receipt)
+        stats = json.loads(finish["results_json"])
+        stats["participants"][1]["shots"] = 200
+        finish["results_json"] = canonical(stats).decode("ascii")
+
+        self.assertEqual(self.send(finish)["status"], "finished")
+        self.fx.store.close()
+        self.fx.store = self.factory()
+        self.assertEqual(json.loads(self.query()["results_json"]), stats)
+
     def test_activation_is_additive_and_wrong_old_active_contract_is_refused(self):
         old = {r[0]: [tuple(v) for v in self.store.connection.execute('SELECT * FROM "'+r[0]+'"')] for r in self.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.activate()

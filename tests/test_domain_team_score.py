@@ -54,6 +54,28 @@ class TeamScoreJournal(unittest.TestCase):
         del value["interaction_details"]
         results.results_value(raw(value))
 
+    def test_mixed_results_preserve_high_rate_fire_and_bound_team_hits(self):
+        value = json.loads(GATEWAY)
+        participant = value["participants"][KILLER]
+        target = value["interaction_details"]["rows"][KILLER]["targets"][0]
+        score = value["team_score"]["rows"][KILLER]
+        participant.update(shots=200, direct_hits=199, piercings=199)
+        target.update(direct_hits=199, piercings=199)
+        score["team_hits"] = 199
+
+        self.assertEqual(results.results_value(raw(value), mixed=True), value)
+        self.refuse(value)
+        score["team_hits"] += 1
+        with self.assertRaises(TransactionError):
+            results.results_value(raw(value), mixed=True)
+        score["team_hits"] -= 1
+
+        participant["shots"] = results.MAX_BATTLE_SHOTS
+        self.assertEqual(results.results_value(raw(value), mixed=True), value)
+        participant["shots"] += 1
+        with self.assertRaises(TransactionError):
+            results.results_value(raw(value), mixed=True)
+
     def test_a_score_that_disagrees_with_the_deaths_is_refused(self):
         def poisons():
             yield lambda v: v["team_score"].update(version=2)

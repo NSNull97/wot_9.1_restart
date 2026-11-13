@@ -12,14 +12,11 @@ from p09d_ammo_store import require, sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_PARTICIPANTS, MAX_RESULT_REQUEST
-# RES-30: shots/device journal of a 30-actor battle (gateway MAX_BATTLE_SHOTS, MAX_DAMAGE_EVENTS).
-# CONTENT-0 2.6: same values as the gateway (model.rs MAX_AMMO_PER_ACTOR, MAX_BATTLE_SHOTS); automatic guns
-# carry up to 1800 rounds, so a stack and a battle journal outgrow the old 160 per actor.
-MAX_BATTLE_SHOTS = 16384
-MAX_DEVICE_SEQUENCE = MAX_BATTLE_SHOTS * 16
-from p08c_battle_results import results_value
+from p08c_battle_results import MAX_BATTLE_SHOTS, results_value
 from p06t_mixed_store import MixedAmmoStore, POLICY_SHA256 as BASE_POLICY_SHA256, SOURCE_SHA256, MAX_STACK
 from p06t_terminal import MANIFEST_SHA256
+# RES-30: shots/device journal of a 30-actor battle (gateway MAX_BATTLE_SHOTS, MAX_DAMAGE_EVENTS).
+MAX_DEVICE_SEQUENCE = MAX_BATTLE_SHOTS * 16
 
 VERSION = 4
 CONTRACT = "p06t-ammo-rack-loss.v1"
@@ -113,7 +110,7 @@ def validate_request(value, account):
         require(type(value["terminal_state_json"]) is str and len(value["terminal_state_json"].encode("utf8")) <= 8192, "INVALID_INPUT")
         value = dict(value, terminal_state_json=canonical(_json(value["terminal_state_json"])).decode("ascii"))
     if natural:
-        value = dict(value, results_json=canonical(results_value(value["results_json"])).decode("ascii"))
+        value = dict(value, results_json=canonical(results_value(value["results_json"], mixed=True)).decode("ascii"))
     require(len(canonical(value)) <= (MAX_RESULT_REQUEST if natural else 16384 if value["operation"] == "finish" else 2048), "INVALID_INPUT")
     return deepcopy(value)
 

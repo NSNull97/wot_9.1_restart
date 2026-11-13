@@ -534,6 +534,9 @@ impl World {
         self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
     }
     pub fn turret_flights(&self)->&[super::ammo_detonation::Flight]{&self.turret_flights}
+    pub(super) fn has_detached_turret(&self,slot:usize)->bool{
+        self.turret_flights.iter().any(|flight|flight.event().target()==slot)
+    }
     /// TURRET-01: set by the battle-scene runtime before any detonation, so
     /// every later rack event launches a Jolt body instead of the legacy point.
     pub fn enable_turret_jolt(&mut self)->io::Result<()>{

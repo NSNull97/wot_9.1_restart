@@ -730,6 +730,11 @@ impl Bundle {
     }
     fn component_bounds(&self) -> [[[f32; 3]; 2]; 3] {self.bounds}
     pub fn materials(&self) -> &Catalog { &self.materials }
+    /// Casemate assets can carry a single placeholder triangle as Turret_01.
+    /// It supplies no solid body for a detached turret.
+    pub(super) fn has_detachable_turret(&self) -> bool {
+        self.components[1].vertices.len() >= 4
+    }
     /// TURRET-01: source collision vertices of Turret and Gun that are extreme
     /// along 98 fixed directions, in the detached body frame (origin `pivot`
     /// in the vehicle frame, turret yaw applied, gun at neutral pitch as the
@@ -1216,6 +1221,12 @@ mod p06t_geometry_tests;
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    pub(in crate::gateway091::shared) fn bundle_with_turret_stub() -> Bundle {
+        let mut bundle = bundle();
+        bundle.components[1].vertices.truncate(3);
+        bundle.components[1].triangles.clear();
+        bundle
+    }
     fn actor_for(kind: VehicleKind) -> Actor {
         let mut world = super::super::model::World::new_for_vehicle(991, std::time::Instant::now(),
             crate::map_profile091::MapId::Prohorovka, kind).unwrap();

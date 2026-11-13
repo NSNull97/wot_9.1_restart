@@ -6,7 +6,7 @@ use serde::{Deserialize,Deserializer,de::{self,MapAccess,SeqAccess,Visitor}};
 use serde_json::Value;
 use sha2::{Digest,Sha256};
 use crate::battle091::profile13::{Context,FinishReason,Reservation as LegacyReservation};
-use crate::gateway091::shared::{vehicle_profile::VehicleKind,lifecycle_wire::Results};
+use crate::gateway091::shared::{vehicle_profile::VehicleKind,lifecycle_wire::{MAX_MIXED_RESULT_SHOTS,Results}};
 use crate::p06t_shells091 as source;
 use crate::gateway091::shared::vehicle_catalog::{self as catalog,Admission};
 use std::sync::atomic::{AtomicBool,Ordering};
@@ -257,7 +257,8 @@ fn results_v2(raw:&str)->io::Result<Results>{if raw.is_empty()||raw.len()>RESULT
         ||!(1..=5).contains(&r.finish_reason)||r.duration_seconds>3600||!(2..=MAX_ACTORS).contains(&r.participants.len()){return Err(bad("result header"));}
     r.validate_json_bytes(raw.len())?;
     for(i,p)in r.participants.iter().enumerate(){if p.vehicle_id==0||p.vehicle_id>i32::MAX as u32||p.account_dbid<=0||!(1..=2).contains(&p.team)
-        ||p.type_compact_descr==0||p.type_compact_descr>i32::MAX as u32||!(0..=10000).contains(&p.health)||p.shots>192||p.direct_hits>192||p.piercings>192
+        ||p.type_compact_descr==0||p.type_compact_descr>i32::MAX as u32||!(0..=10000).contains(&p.health)
+        ||p.shots>MAX_MIXED_RESULT_SHOTS||p.direct_hits>MAX_MIXED_RESULT_SHOTS||p.piercings>MAX_MIXED_RESULT_SHOTS
         ||p.damage_dealt>60000||p.damage_received>10000||usize::from(p.kills)>=MAX_ACTORS||p.capture_points>600||p.dropped_capture_points>600||p.mileage_metres>200000
         ||p.life_time>r.duration_seconds||p.killer_id>i32::MAX as u32||!(-1..=10).contains(&p.death_reason)||p.name.is_empty()||p.name.len()>48
         ||p.name.chars().any(|c|c.is_control())||p.health==0&&p.death_reason<0
@@ -409,6 +410,20 @@ mod tests{
                 remaining_ammunition:v["remaining_ammunition"].as_array().unwrap().iter().map(|r|Remaining{shell_compact_id:r["shell_compact_id"].as_u64().unwrap()as u16,count:r["count"].as_u64().unwrap()as u16}).collect::<Vec<_>>().try_into().unwrap(),
                 terminal_state_json:v["terminal_state_json"].as_str().unwrap().into(),reason:match v["reason"].as_str().unwrap(){"battle_finished"=>FinishReason::BattleFinished,_=>panic!("export reason")},
                 results_json:v.get("results_json").map(|s|s.as_str().unwrap().into())},_=>panic!("export operation")}
+    }
+    #[test]fn mixed_result_shot_budget_survives_profile13_finish_encoding(){
+        let all=vectors();
+        let row=all["vectors"].as_array().unwrap().iter().find(|r|r["request"]["results_json"].is_string()).unwrap();
+        let c=context(&row["request"]);
+        let mut finish=request(&row["request"]);
+        let Request::Finish{results_json:Some(raw),..}=&mut finish else{panic!("finish results vector")};
+        let mut result:Results=serde_json::from_str(raw).unwrap();
+        result.participants[0].shots=200;
+        *raw=serde_json::to_string(&result).unwrap();
+        let encoded:Value=serde_json::from_slice(&encode_request(&c,&finish).unwrap()).unwrap();
+        assert_eq!(results_v2(encoded["results_json"].as_str().unwrap()).unwrap().participants[0].shots,200);
+        result.participants[0].shots=MAX_MIXED_RESULT_SHOTS+1;
+        assert!(results_v2(&serde_json::to_string(&result).unwrap()).is_err());
     }
     #[test]fn p06t_actual_sqlite_three_stack_writer_vectors_match_request_and_reply_without_v1_conversion(){
         let v=vectors();let mut battle_count=0;let mut positive_dead=false;let mut recovered_v1=false;let mut refunded=false;

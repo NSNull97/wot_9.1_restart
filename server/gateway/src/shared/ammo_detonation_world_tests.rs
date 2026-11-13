@@ -199,6 +199,25 @@ fn second(w:&mut World,now:Instant){
 #[path="owner_hold_world_tests.rs"]
 mod owner_hold_world_tests;
 
+#[test]fn casemate_rack_detonation_preserves_death_without_a_detached_body(){
+    let now=Instant::now();
+    let mut w=template(now,915,true);
+    lab_attach(&mut w,0,[2,0,0]);lab_attach(&mut w,1,[5,6,7]);
+    let stub=Arc::new(super::super::super::geometry::tests::bundle_with_turret_stub());
+    w.geometry=Some(stub.clone());w.geometries[VehicleKind::Ms1.index()]=Some(stub);
+    start(&mut w,now);w.enable_turret_jolt().unwrap();
+
+    let event=w.force_detonation_for_test(1,0,1).unwrap();
+    assert_eq!(w.ammo_detonations(),&[event]);
+    assert_eq!(event.lost(),[5,6,7]);assert_eq!(w.actors[1].health,0);
+    assert_eq!(w.actors[1].fire.typed().unwrap().counts(),[0;3]);
+    assert!(w.rng_draws.is_empty());assert!(w.pending_turret_launches().is_empty());
+    assert!(!w.has_detached_turret(1));
+    let parent=super::super::super::turret_publication::parent_create(&w,1).unwrap();
+    assert_eq!(i16::from_le_bytes(parent[43..45].try_into().unwrap()),0);
+    assert!(!w.advance_turret_flights(now+Duration::from_millis(100)).unwrap());
+}
+
 #[test]fn turret01_actual_rack_event_launches_jolt_body_from_journalled_battle_rng(){
     let now=Instant::now();
     let base=||{let(owner,reservation)=actual_reservation();let mut w=template(now,reservation.battle,true);

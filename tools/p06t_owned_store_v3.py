@@ -475,7 +475,7 @@ class OwnedV3Store:
         if result is not None and result['reason']=='battle_finished':
             full=self.connection.execute('SELECT * FROM p06v3_result WHERE account_id=? AND reservation_id=?',(self.account,row['reservation_id'])).fetchone()
             require(full is not None and sha(full['results_json'].encode('ascii'))==full['results_sha256'],'RESULT_MISMATCH')
-            self._match_result(results_value(full['results_json']),receipt,self._owner()['native_database_id'])
+            self._match_result(results_value(full['results_json'],mixed=True),receipt,self._owner()['native_database_id'])
         return receipt
 
     def _match_result(self,full,receipt,native):
@@ -496,7 +496,7 @@ class OwnedV3Store:
                 and after['shell_compact_id']==before['shell_compact_id'],'INVALID_RESULT'); integer(after['count'],0,before['count'],'INVALID_RESULT')
         hp=None if abort else integer(request['terminal_hp'],0,f['max_hp'],'INVALID_RESULT')
         reason='aborted_restart' if abort else request['reason']; require(abort or reason in REASONS,'INVALID_RESULT')
-        full=None if abort or reason!='battle_finished' else results_value(request['results_json'])
+        full=None if abort or reason!='battle_finished' else results_value(request['results_json'],mixed=True)
         terminal=None if abort else self.terminal.validate(request['terminal_state_json'],frozen=f,terminal_hp=hp,results=full)
         result=dict(reason=reason,remaining_ammunition=remaining,consumed_ammunition=[dict(shell_compact_id=b['shell_compact_id'],count=b['count']-a['count']) for b,a in zip(original,remaining)],
             terminal_hp=hp,destroyed=None if abort else hp==0 or not terminal['crew_active'],repaired_hp=f['max_hp'],credits=0,xp=0,terminal_state=terminal)
@@ -547,7 +547,7 @@ class OwnedV3Store:
                 require(type(row)is dict and set(row)=={'shell_compact_id','count'},'INVALID_INPUT')
                 integer(row['shell_compact_id'],1,65535);integer(row['count'],0,160)
             integer(r['terminal_hp'],0,10000)
-        if natural:r=dict(r,results_json=canonical(results_value(r['results_json'])).decode('ascii'))
+        if natural:r=dict(r,results_json=canonical(results_value(r['results_json'],mixed=True)).decode('ascii'))
         require(len(canonical(r))<=(MAX_REQUEST if natural else 16384 if r['operation']=='finish'else 8192),'INVALID_INPUT'); return deepcopy(r)
 
     def execute(self,request,*,authenticated_account_id):
@@ -617,7 +617,7 @@ class OwnedV3Store:
                     require(sha(row['results_json'].encode('ascii'))==row['results_sha256'],'CORRUPT_STORE')
                     receipt=self._receipt(c.execute('SELECT * FROM p06v3_reservation WHERE account_id=? AND reservation_id=?',(self.account,row['reservation_id'])).fetchone())
                     require(receipt['status']=='finished'and receipt['result']['reason']=='battle_finished','RESULT_MISMATCH')
-                    self._match_result(results_value(row['results_json']),receipt,r['native_database_id'])
+                    self._match_result(results_value(row['results_json'],mixed=True),receipt,r['native_database_id'])
                     if operation=='ack':c.execute('UPDATE p06v3_result SET acked=1 WHERE account_id=? AND arena_id=?',(self.account,r['arena_id']))
                 response.update(status='missing'if row is None else'found'if operation=='query'else'acked',results_json=None if row is None else row['results_json'],acked=bool(row and(row['acked']or operation=='ack')))
             else:response['reservation']=self._receipt(active)if active else None
