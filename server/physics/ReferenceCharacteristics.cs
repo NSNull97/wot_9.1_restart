@@ -27,7 +27,7 @@ internal static class ReferenceCharacteristics
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("MapDrive.ReferenceCharacteristics")
             ?? throw new InvalidDataException("reference characteristics absent");
         using var bytes = new MemoryStream(); stream.CopyTo(bytes);
-        if (bytes.Length is < 1 or > 1024 * 1024) throw new InvalidDataException("reference characteristics size");
+        if (bytes.Length is < 1 or > 4 * 1024 * 1024) throw new InvalidDataException("reference characteristics size");
         using var doc = CheckedInput.Json(bytes.ToArray()); var r = doc.RootElement;
         CheckedInput.Fields(r, "version", "policy", "source", "vehicles");
         if (r.GetProperty("version").GetInt32() != 1 || r.GetProperty("policy").GetString() != "phys01-reference-characteristics-v1")
@@ -41,7 +41,8 @@ internal static class ReferenceCharacteristics
             var resistance = t.EnumerateArray().Select(x => CheckedInput.Number(x, .3f, 10)).ToArray();
             result.Add(v.GetProperty("kind").GetString()!, new(resistance, v.GetProperty("rotation_is_around_center").GetBoolean()));
         }
-        if (result.Count is < 1 or > 2048) throw new InvalidDataException("reference characteristics count");
+        // CONTENT-0 3.3/4: stock kinds plus every generated build (tools/phys01_characteristics.py MAX_ROWS).
+        if (result.Count is < 1 or > 16384) throw new InvalidDataException("reference characteristics count");
         return result;
     }
     public static Row For(string kind) => Rows.Value.TryGetValue(kind, out var row) ? row

@@ -21,6 +21,8 @@ pub(crate) mod real_test_capture;
 use crate::gateway091::shared::ram_proof;
 #[path="worker/profile.rs"]
 mod profile;
+/// CONTENT-0 3.3: the config fields a build replaces in its stock map config.
+pub(crate) use profile::PHYSICS_FIELDS;
 use crate::gateway091::shared::vehicle_profile::VehicleKind;
 pub use fracture::Receipt as FractureReceipt;
 pub use catalog::{CatalogSpec,CatalogEntry,Scene,CatalogAck,FALLING_ATOM_RESPONSE,MAX_CATALOG_OBJECTS,MAX_REMOVED_OBJECTS};

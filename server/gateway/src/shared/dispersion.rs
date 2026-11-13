@@ -37,6 +37,18 @@ pub fn gun(name: &str) -> io::Result<Gun> {
         .map_err(|_| bad())?.get(name).copied().ok_or_else(bad)
 }
 
+/// CONTENT-0 4: the row of one turret x gun pair, `<nation>:<vehicle>@<turret>/<gun>`, from the client mount path
+/// `res/scripts/item_defs/vehicles/<nation>/<file>.xml:/turrets0[1]/<turret>[1]/guns[1]/<gun>[1]`
+/// (tools/gun_dispersion.py `pair_key`, the same parse).
+pub fn pair_key(name: &str, mount_source_path: &str) -> Option<String> {
+    let (_, path) = mount_source_path.split_once(".xml:")?;
+    let rest = path.strip_prefix("/turrets0[1]/")?;
+    let (turret, rest) = rest.split_once("[1]/guns[1]/")?;
+    let gun = rest.strip_suffix("[1]")?;
+    let plain = |v: &str| !v.is_empty() && !v.contains(['/', '[', ']']);
+    (plain(turret) && plain(gun)).then(|| format!("{name}@{turret}/{gun}"))
+}
+
 /// SPG-01: the gun as the section 9 profile fires it (numeric dispersion / divisor for an SPG).
 pub fn firing_gun(accuracy: &Accuracy, name: &str) -> io::Result<Gun> {
     let g = gun(name)?;

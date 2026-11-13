@@ -70,7 +70,7 @@ def validate_request(value, account):
             _integer(row["shell_compact_id"], 1); _integer(row["count"], 0, MAX_STACK)
     if natural:
         require(type(value["results_json"]) is str and len(value["results_json"].encode("utf8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
-        value = dict(value, results_json=canonical(results_value(value["results_json"])).decode("ascii"))
+        value = dict(value, results_json=canonical(results_value(value["results_json"], mixed=True)).decode("ascii"))
     require(len(canonical(value)) <= (MAX_RESULT_REQUEST if natural else 16384 if value["operation"]=="finish" else 2048), "INVALID_INPUT")
     return deepcopy(value)
 
@@ -113,11 +113,23 @@ class MixedAmmoStore(PoolStore):
         require(document["schema"] == "p06t-shell-catalog.v1" and len(document["mounts"]) == 8, "P06T_SOURCE_MISMATCH")
         self.mixed_mounts = {row["id"]: row for row in document["mounts"] if row["id"] in self.mounts}
         generated = self._generated_mounts()
-        require(set(self.mixed_mounts) | set(generated) == set(self.mounts) and not set(self.mixed_mounts) & set(generated), "P06T_SOURCE_MISMATCH")
+        # CONTENT-0 4: other turret x gun pairs of generated kinds, built from the pinned build table (p04m_pool_store).
+        pairs = {key for key in self.mounts if "@" in key}
+        require(set(self.mixed_mounts) | set(generated) | pairs == set(self.mounts)
+            and not set(self.mixed_mounts) & set(generated) and not pairs & (set(self.mixed_mounts) | set(generated)), "P06T_SOURCE_MISMATCH")
         if generated:
             self.terminal_policy = self.terminal_policy.with_generated({key[:-len("-stock")]: row for key, row in generated.items()})
+            # CONTENT-0 3.3/4: a build's terminal row; its stock kind's row must agree with the build table's devices.
+            import content0_builds
+            builds = {b["label"]: b for b in content0_builds.load().values() if b["label"] in self.registry.profiles}
+            stock = {}
+            for b in builds.values():
+                row = self.terminal_policy.document["profiles"].get(b["stock_kind"])
+                require(row is not None and row["crew_count"] == b["crew_count"], "P06T_SOURCE_MISMATCH")
+                stock[b["stock_kind"]] = row
+            self.terminal_policy = self.terminal_policy.with_builds({label: (b["max_hp"], b["crew_count"], b["devices"]) for label, b in builds.items()})
         for key, mount in self.mounts.items():
-            if key in generated:
+            if key in generated or key in pairs:
                 continue
             data = self.mixed_mounts[key]
             require(data["max_ammo"] == mount.capacity and data["clip_count"] == data["burst_count"] == 1
@@ -137,6 +149,11 @@ class MixedAmmoStore(PoolStore):
         result = {}
         for kind, p in self.registry.profiles.items():
             if kind in PINS or p.assembly_id not in self.mounts or p.assembly_id in self.mixed_mounts:
+                continue
+            if p.assembly_kind:
+                # CONTENT-0 3.3/4: a build uses its stock kind's mount (checked with the stock profile) or its pair's.
+                stock = self.registry.profiles.get(p.assembly_kind)
+                require(stock is not None and (p.assembly_id == stock.assembly_id) == (not p.pair), "P06T_SOURCE_MISMATCH")
                 continue
             row = battle_any.profile(p.vehicle_id)
             require(row is not None and row["status"] == "generated" and row["kind"] == kind, "P06T_SOURCE_MISMATCH")
@@ -308,7 +325,7 @@ class MixedAmmoStore(PoolStore):
         self._failpoint("after_mixed_result")
         receipt = self._mixed_reservation(c.execute("SELECT * FROM p06t_reservation WHERE account_id=? AND reservation_id=?", (account,row["reservation_id"])).fetchone())
         if not abort and result["reason"] == "battle_finished":
-            value = results_value(request["results_json"]); arena = request["battle_id"].rsplit(":",1)[1]
+            value = results_value(request["results_json"], mixed=True); arena = request["battle_id"].rsplit(":",1)[1]
             self._match_mixed_result(value, receipt, request["native_database_id"], arena)
             require(not self._arena_has_result(account,arena), "RESULT_MISMATCH")
             raw = canonical(value).decode("ascii")
@@ -435,7 +452,7 @@ class MixedAmmoStore(PoolStore):
         require(row is not None, "RESULT_NOT_READY")
         require(type(row["results_json"]) is str and len(row["results_json"].encode("utf8")) <= MAX_RESULT_BYTES
             and sha(row["results_json"].encode("ascii")) == row["results_sha256"], "CORRUPT_STORE")
-        value = results_value(row["results_json"])
+        value = results_value(row["results_json"], mixed=True)
         reservation = self._mixed_reservation(self.connection.execute("SELECT * FROM p06t_reservation WHERE account_id=? AND reservation_id=?", (account,row["reservation_id"])).fetchone())
         require(reservation["status"] == "finished" and reservation["result"]["reason"] == "battle_finished"
             and reservation["battle_id"] == reservation["run_id"]+":"+arena, "RESULT_MISMATCH")

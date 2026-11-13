@@ -10,7 +10,22 @@ const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
 
 #[test] fn the_table_has_every_battle_gun_and_the_curated_guns_are_their_mounts() {
     let registry = crate::gateway091::shared::generated_vehicles::registry().unwrap();
-    for e in registry.entries() { gun(VehicleKind::from_owned_label(e.label.as_str()).unwrap().name()).unwrap(); }
+    // CONTENT-0 4: a stock entry has its vehicle's row, a build its own turret x gun pair's row; the build of the stock
+    // pair carries the stock row's numbers.
+    for e in registry.entries() {
+        let kind = VehicleKind::from_owned_label(e.label.as_str()).unwrap();
+        let own = gun(kind.dispersion_name()).unwrap();
+        assert_eq!(e.stock, kind.dispersion_name() == kind.name(), "{}", e.label);
+        if let Some(stock) = registry.by_vehicle(&e.vehicle_id).map(|id| VehicleKind::Generated(id)) {
+            if crate::gateway091::shared::generated_vehicles::entry(stock.generated().unwrap().id).gun_compact_id == e.gun_compact_id
+                && registry.entries()[stock.generated().unwrap().id.get()].parts[1] == e.parts[1] {
+                assert_eq!(own, gun(stock.name()).unwrap(), "{}", e.label);
+            }
+        }
+    }
+    assert_eq!(pair_key("ussr:KV-3", "res/scripts/item_defs/vehicles/ussr/kv-3.xml:/turrets0[1]/KV-220_mod[1]/guns[1]/_107mm_ZiS-6[1]").as_deref(),
+               Some("ussr:KV-3@KV-220_mod/_107mm_ZiS-6"));
+    assert_eq!(pair_key("x", "a.xml:/turrets0[1]/T[1]/guns[1]/G[2]"), None);
     for kind in VehicleKind::SUPPORTED { gun(kind.name()).unwrap(); }
     assert!(gun("ussr:no-such").is_err());
     let doc: Value = serde_json::from_slice(TABLE).unwrap();

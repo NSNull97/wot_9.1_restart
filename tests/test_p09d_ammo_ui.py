@@ -105,6 +105,23 @@ class MountTests(unittest.TestCase):
             del value.descriptor.gun['shots'][1]
             self.assertIsNone(ui.mounted(value))
 
+    def test_content0_catalogue_pair_mount_admitted_from_its_own_descriptor(self):
+        # CONTENT-0 4 (stand -22, M18 Hellcat top turret and gun): the stock row differs, the descriptor is the mount.
+        value = item()
+        value.descriptor.turret['compactDescr'] = 7000
+        value.descriptor.gun = {'compactDescr': 7001, 'maxAmmo': 45,
+                                'shots': [{'shell': {'compactDescr': cd}} for cd in (4000, 4001, 4002)]}
+        value.ammoMaxSize, value.shellsLayoutIdx = 45, (7000, 7001)
+        self.assertIsNone(ui.mounted(value), 'legacy (no catalogue): only the stock mount')
+        with mock.patch.object(ui.crew_vehicles, 'enabled', return_value=True),                 mock.patch.object(ui.crew_vehicles, 'mounts', return_value=dict(ui.MOUNTS)):
+            result = ui.mounted(value)
+            self.assertEqual((result['turret_cd'], result['gun_cd'], result['capacity'], result['compatible_shells']),
+                             (7000, 7001, 45, [4000, 4001, 4002]))
+            value.ammoMaxSize = 44
+            self.assertIsNone(ui.mounted(value))
+            value.ammoMaxSize, value.shellsLayoutIdx = 45, (7000, 5892)
+            self.assertIsNone(ui.mounted(value))
+
     def test_loaded_negative_shell_id_rejects(self):
         with self.assertRaises(ValueError):
             ui.flat([2570, 1, -2826, 6, 3082, 7])

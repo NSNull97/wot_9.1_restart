@@ -19,6 +19,8 @@ pub const MAX_RESULT_JSON_LEGACY:usize=32768;
 pub const MAX_RESULT_JSON:usize=262144;
 /// Requests/replies/seals that carry one escaped result journal.
 pub const MAX_RESULT_REQUEST:usize=655360;
+/// Mixed battles accept automatic guns under the same bounded shot journal as the simulation.
+pub(crate) const MAX_MIXED_RESULT_SHOTS:u16=super::model::MAX_BATTLE_SHOTS as u16;
 pub fn result_json_budget(rows:usize)->usize{if rows<=LEGACY_PARTICIPANTS{MAX_RESULT_JSON_LEGACY}else{MAX_RESULT_JSON}}
 
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,reason)}
@@ -309,10 +311,11 @@ impl Results {
             ||self.duration_seconds>3600||!(2..=MAX_PARTICIPANTS).contains(&self.participants.len()) {
             return Err(bad("lifecycle result header bound"));
         }
+        let shot_limit=if mixed{MAX_MIXED_RESULT_SHOTS}else{192};
         for (index,p) in self.participants.iter().enumerate() {
             if p.vehicle_id==0||p.vehicle_id>i32::MAX as u32||p.account_dbid<=0||!(1..=2).contains(&p.team)
                 ||p.type_compact_descr==0||p.type_compact_descr>i32::MAX as u32
-                ||!(0..=10000).contains(&p.health)||p.shots>192||p.direct_hits>192||p.piercings>192
+                ||!(0..=10000).contains(&p.health)||p.shots>shot_limit||p.direct_hits>shot_limit||p.piercings>shot_limit
                 ||p.damage_dealt>60000||p.damage_received>10000||usize::from(p.kills)>=MAX_PARTICIPANTS
                 ||p.capture_points>600||p.dropped_capture_points>600||p.mileage_metres>200000
                 ||p.life_time>self.duration_seconds||p.killer_id>i32::MAX as u32
@@ -510,6 +513,26 @@ mod tests {
             let mut r=result();r.arena_type_id=id;assert!(r.validate().is_ok() && r.validate_p06t().is_ok(),"arena type {id}");
         }
         for id in [0,3,i32::MAX] {let mut r=result();r.arena_type_id=id;assert!(r.validate().is_err() && r.validate_p06t().is_err());}
+    }
+    #[test] fn mixed_result_shot_budget_preserves_automatic_gun_totals() {
+        let mut r=result();
+        let count=|result:&Results|{
+            let raw=compact_results_p06t(result,1).unwrap();
+            let root=inert(&raw);let row=list(&tuple(&root)[1]);
+            row[PUBLIC_FIELDS.iter().position(|field|*field=="shots").unwrap()].clone()
+        };
+        r.participants[0].shots=200;
+        assert_eq!(count(&r),Data::Int(200));
+        assert!(r.validate().is_err());
+        r.participants[0].shots=MAX_MIXED_RESULT_SHOTS;
+        r.participants[0].direct_hits=MAX_MIXED_RESULT_SHOTS;
+        r.participants[0].piercings=MAX_MIXED_RESULT_SHOTS;
+        assert_eq!(count(&r),Data::Int(i64::from(MAX_MIXED_RESULT_SHOTS)));
+        for index in 0..3 {
+            let mut invalid=r.clone();let p=&mut invalid.participants[0];
+            *[&mut p.shots,&mut p.direct_hits,&mut p.piercings][index]+=1;
+            assert!(invalid.validate_p06t().is_err());
+        }
     }
     #[test] fn bound_result_owner_and_complete_field_count() {
         let r=result();let raw=compact_results(&r,1).unwrap();

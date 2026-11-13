@@ -16,7 +16,9 @@ internal static class GeneratedVehicleProfiles
 {
     public const string Policy="battle-any-generated-v1";
     public const string MappingPolicy="p06t-extended-six-support-v2";
-    public const int MaxDefinitionBytes=2*1024*1024;
+    public const int MaxDefinitionBytes=32*1024*1024;
+    // CONTENT-0 3.3: one definition per generated build (stock kinds and every mountable build).
+    public const int MaxDefinitions=16384;
     public sealed record Profile(string Kind,string Hash,string DefinitionHash,JsonElement Definition,JsonElement Document)
     {
         public JsonElement Physics=>Definition.GetProperty("physics");
@@ -70,7 +72,7 @@ internal static class GeneratedVehicleProfiles
             ValidateProjection(row);
             result.Add(kind,(row.Clone(),CheckedInput.Hash(Encoding.UTF8.GetBytes(row.GetRawText()+"\n"))));
         }
-        if(result.Count is <1 or >512)throw new InvalidDataException("generated definition count");
+        if(result.Count is <1 or >MaxDefinitions)throw new InvalidDataException("generated definition count");
         return result;
     }
     public static Profile Load(string root,string path,string hash)

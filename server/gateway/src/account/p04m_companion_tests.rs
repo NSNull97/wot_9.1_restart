@@ -148,3 +148,19 @@ fn hex(text:&str)->Vec<u8>{(0..text.len()).step_by(2).map(|i|u8::from_str_radix(
     assert_eq!(passport_id(&passport_sets(2).unwrap()[2],37),1,"usa icons 1..36 wrap at 37");
     assert!(passport_sets(9).is_err());
 }
+/// CONTENT-0 4 (stand -22, M18 Hellcat top gun): the shape check accepts the shells of another gun of the same
+/// generated vehicle type (any build in the registry), still bounded by that gun's capacity; foreign shells fail.
+#[test]fn content0_pair_gun_layout_passes_the_shape_check_and_foreign_shells_do_not(){
+    let registry=crate::gateway091::shared::generated_vehicles::registry().unwrap();
+    let shells=|e:&crate::gateway091::shared::generated_vehicles::Entry|[0,1,2].map(|i|if e.gun.shots[i].is_absent(){0}else{e.gun.shots[i].compact_descr as i32});
+    let (stock,other)=registry.entries().iter().find_map(|a|registry.entries().iter()
+        .find(|b|b.type_compact_id==a.type_compact_id&&shells(b)[1]!=0&&shells(b)!=shells(a)&&!shells(a).contains(&shells(b)[0]))
+        .map(|b|(a,b))).expect("a vehicle with two guns of different shells");
+    let (s,capacity)=(shells(other),other.gun.capacity as i32);let n=s.iter().take_while(|c|**c!=0).count();
+    let mut arguments=[0;16];arguments[..3].copy_from_slice(&[5,3,2*n as i32]);
+    for i in 0..n{arguments[3+2*i]=s[i];}arguments[4]=capacity;arguments[3+2*n]=6;
+    let r=crate::ammo_service091::Request{id:230,arguments};
+    assert_eq!(pair_ammo_layout(stock.type_compact_id,&r).unwrap().unwrap()[0].count as i32,capacity);
+    let mut over=r.clone();over.arguments[4]=capacity+1;assert!(pair_ammo_layout(stock.type_compact_id,&over).unwrap().is_none());
+    let mut foreign=r.clone();foreign.arguments[3]=1;assert!(pair_ammo_layout(stock.type_compact_id,&foreign).unwrap().is_none());
+}

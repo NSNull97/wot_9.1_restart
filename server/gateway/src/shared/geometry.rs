@@ -561,7 +561,33 @@ impl Bundle {
         if value["schema"]!="battle-any-source.v1"||value["vehicle_id"]!=e.vehicle_id.as_str()||value["battle_admission"]!=false
             ||value["classification"]!="VERIFIED_STATIC_ORIGINAL_717"||value["identity"]["descriptor_hex"]!=descriptor.as_str()
             ||value["identity"]["type_compact_id"]!=vehicle.vehicle_compact_id() {return Err(bad());}
-        let geometry=&value["geometry"];
+        Self::from_generated_geometry(vehicle,e,&value["geometry"])
+    }
+    /// CONTENT-0 3.3: the geometry of a non-stock build from its three pinned collision parts
+    /// (`parts/<sha256>.json` of tools/battle_any_profiles.py: hull, turret, turret x gun).
+    pub fn load_generated_parts(local_root:&Path,parts_dir:&Path,vehicle:VehicleKind)->io::Result<Self> {
+        let e=vehicle.generated().ok_or_else(||bad())?;
+        let pins=e.part_sha256.as_ref().ok_or_else(||bad())?;
+        non_reparse(local_root)?;non_reparse(parts_dir)?;
+        let root=local_root.canonicalize()?;let dir=parts_dir.canonicalize()?;
+        if !dir.starts_with(&root)||dir==root {return Err(bad());}
+        let mut components=Vec::with_capacity(3);
+        for (slot,pin) in pins.iter().enumerate() {
+            let path=dir.join(format!("{pin}.json"));non_reparse(&path)?;
+            let file=fs::File::open(&path)?;
+            if !file.metadata()?.is_file()||file.metadata()?.len()>MAX_BYTES {return Err(bad());}
+            let mut raw=Vec::new();file.take(MAX_BYTES+1).read_to_end(&mut raw)?;
+            if raw.is_empty()||raw.len() as u64>MAX_BYTES||format!("{:x}",Sha256::digest(&raw))!=*pin {return Err(bad());}
+            let value:Value=serde_json::from_slice(&raw).map_err(|_|bad())?;
+            fields(&value,&["component","members","schema","slot","vehicle_id"])?;
+            if value["schema"]!="battle-any-part.v1"||value["vehicle_id"]!=e.vehicle_id.as_str()||value["slot"]!=slot as u64
+                ||!value["members"].is_object() {return Err(bad());}
+            components.push(value["component"].clone());
+        }
+        let geometry=serde_json::json!({"components":components,"hull_position":e.pivots[0],"turret_position":e.pivots[1],"gun_position":e.pivots[2]});
+        Self::from_generated_geometry(vehicle,e,&geometry)
+    }
+    fn from_generated_geometry(vehicle:VehicleKind,e:&super::generated_vehicles::Entry,geometry:&Value)->io::Result<Self>{
         fields(geometry,&["components","gun_position","hull_position","turret_position"])?;
         let hull=vector(&geometry["hull_position"])?;let turret=vector(&geometry["turret_position"])?;let gun=vector(&geometry["gun_position"])?;
         if [hull,turret,gun]!=e.pivots {return Err(bad());}
@@ -692,6 +718,8 @@ impl Bundle {
         self.module_volumes = Some(volumes); Ok(self)
     }
     pub fn module_volumes(&self) -> Option<&super::module_volumes::ModuleVolumes> { self.module_volumes.as_deref() }
+    /// CONTENT-0 3.3: the shared volumes a build with the stock turret binds too.
+    pub fn module_volumes_arc(&self) -> Option<std::sync::Arc<super::module_volumes::ModuleVolumes>> { self.module_volumes.clone() }
     /// World chassis mesh of the checked actor pose (vehicle frame, no turret);
     /// None without a bound chassis. Same pose identity as `world_mesh`.
     pub fn chassis_mesh(&self, actor: &Actor, slot: usize, tick: u32) -> io::Result<Option<Mesh>> {
@@ -702,6 +730,11 @@ impl Bundle {
     }
     fn component_bounds(&self) -> [[[f32; 3]; 2]; 3] {self.bounds}
     pub fn materials(&self) -> &Catalog { &self.materials }
+    /// Casemate assets can carry a single placeholder triangle as Turret_01.
+    /// It supplies no solid body for a detached turret.
+    pub(super) fn has_detachable_turret(&self) -> bool {
+        self.components[1].vertices.len() >= 4
+    }
     /// TURRET-01: source collision vertices of Turret and Gun that are extreme
     /// along 98 fixed directions, in the detached body frame (origin `pivot`
     /// in the vehicle frame, turret yaw applied, gun at neutral pitch as the
@@ -1188,6 +1221,12 @@ mod p06t_geometry_tests;
 #[cfg(test)]
 pub(super) mod tests {
     use super::*;
+    pub(in crate::gateway091::shared) fn bundle_with_turret_stub() -> Bundle {
+        let mut bundle = bundle();
+        bundle.components[1].vertices.truncate(3);
+        bundle.components[1].triangles.clear();
+        bundle
+    }
     fn actor_for(kind: VehicleKind) -> Actor {
         let mut world = super::super::model::World::new_for_vehicle(991, std::time::Instant::now(),
             crate::map_profile091::MapId::Prohorovka, kind).unwrap();
@@ -2104,6 +2143,48 @@ pub(super) mod tests {
         let c=decode_impact_diagnostic(&raw,&b).unwrap();
         let segment=perf02_strict_impact_model(&b,&c).expect("retained first surface must survive bounded reanchor");
         assert!(same_surface(&native_decoder_first(&b,&segment),&c.triangle));
+    }
+    /// CONTENT-0 3.3 (explicit fixture: CONTENT0_LOCAL_ROOT, CONTENT0_BUILD_PARTS = export `parts`,
+    /// CONTENT0_STOCK_BUNDLES = export `bundles`): a build with the stock turret and gun (another engine,
+    /// radio or chassis) loads from its parts to exactly the stock bundle's meshes, bounds and pivots of
+    /// those parts; a tampered or foreign part is refused.
+    #[test] #[ignore] fn content0_build_parts_rebuild_the_stock_meshes() {
+        use super::super::generated_vehicles as generated;
+        let root=std::env::var("CONTENT0_LOCAL_ROOT").expect("CONTENT0_LOCAL_ROOT");
+        let parts=std::env::var("CONTENT0_BUILD_PARTS").expect("CONTENT0_BUILD_PARTS");
+        let bundles=std::env::var("CONTENT0_STOCK_BUNDLES").expect("CONTENT0_STOCK_BUNDLES");
+        let (root,parts,bundles)=(Path::new(&root),Path::new(&parts),Path::new(&bundles));
+        let registry=generated::registry().unwrap();
+        let mut checked=0;
+        for e in registry.entries().iter().filter(|e|!e.stock) {
+            let Some(stock)=registry.by_vehicle(&e.vehicle_id).map(generated::entry) else {continue};
+            if e.gun_compact_id!=stock.gun_compact_id||e.parts!=stock.parts||e.pivots[1..]!=stock.pivots[1..] {continue;}
+            let name=stock.vehicle_id.trim_start_matches("vehicle:").replacen(':',"-",1)+".json";
+            let whole=Bundle::load(root,&bundles.join(name)).unwrap();
+            let built=Bundle::load_generated_parts(root,parts,VehicleKind::Generated(e.id)).unwrap();
+            assert_eq!(format!("{:?}",built.components),format!("{:?}",whole.components),"{}",e.label);
+            assert_eq!(built.bounds,whole.bounds,"{}",e.label);
+            assert_eq!([built.turret,built.gun],[whole.turret,whole.gun],"{}",e.label);
+            assert_eq!(built.hull,e.pivots[0]);
+            checked+=1;if checked==40 {break;}
+        }
+        assert_eq!(checked,40);
+        // SHELL-02 per chassis: a build's track armour part loads and binds to the build's own geometry.
+        let mut armoured=0;
+        for e in registry.entries().iter().filter(|e|!e.stock&&e.chassis_armor_sha256.is_some()).step_by(97).take(60) {
+            let kind=VehicleKind::Generated(e.id);
+            let chassis=super::super::chassis_armor::ChassisArmor::load_build_part(root,parts,kind).unwrap();
+            let built=Bundle::load_generated_parts(root,parts,kind).unwrap();
+            chassis.check_binding(&built).unwrap();
+            assert_eq!(chassis.hull_position,e.pivots[0],"{}",e.label);
+            armoured+=1;
+        }
+        assert_eq!(armoured,60);
+        // A stock entry has no parts; another directory without the pinned files is refused.
+        let stock=registry.entries().iter().find(|e|e.stock).unwrap();
+        assert!(Bundle::load_generated_parts(root,parts,VehicleKind::Generated(stock.id)).is_err());
+        let build=registry.entries().iter().find(|e|!e.stock).unwrap();
+        assert!(Bundle::load_generated_parts(root,bundles,VehicleKind::Generated(build.id)).is_err());
     }
     #[test] fn malformed_bundle_hash_path_and_bounds_fail_closed() {
         assert!(Bundle::from_bytes(b"{}").is_err());

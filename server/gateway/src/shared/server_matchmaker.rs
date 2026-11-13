@@ -48,7 +48,7 @@ impl Runtime {
     /// Every bot kind needs its client tier: the group's bots keep its tolerance.
     pub(super) fn new(rules:mm::Rules,plan:&model::bots::Plan)->io::Result<Self> {
         // SPG-01: bots do not drive SPGs (no indirect-fire behaviour).
-        let bot_tiers=plan.kinds.iter().filter(|k|!crate::gateway091::shared::dispersion::gun(k.name()).is_ok_and(|g|g.spg)).map(|k|k.tier()?.map(|t|(*k,t)).ok_or_else(||bad("bot kind without a client tier")))
+        let bot_tiers=plan.kinds.iter().filter(|k|!crate::gateway091::shared::dispersion::gun(k.dispersion_name()).is_ok_and(|g|g.spg)).map(|k|k.tier()?.map(|t|(*k,t)).ok_or_else(||bad("bot kind without a client tier")))
             .collect::<io::Result<Vec<_>>>()?;
         Ok(Self{mm:Matchmaker::new(rules),bot_tiers,spent:Vec::new(),published:None})
     }

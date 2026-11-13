@@ -20,7 +20,7 @@ fn colliding(slot:usize,value:bool)->io::Result<Vec<u8>>{
 
 pub(super) fn parent_create(world:&World,slot:usize)->io::Result<Vec<u8>>{
     let mut body=wire::create_vehicle(world,slot)?;
-    if world.ammo_detonations().iter().any(|e|e.target()==slot){
+    if world.has_detached_turret(slot){
         if world.actors.get(slot).is_none_or(|a|a.health!=0)||body.get(42)!=Some(&3){return Err(bad());}
         let hp=body.get_mut(43..45).ok_or_else(||bad())?;
         hp.copy_from_slice(&detached_turret::DeathKind::Detached.native_health().to_le_bytes());

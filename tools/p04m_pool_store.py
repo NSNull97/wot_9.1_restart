@@ -116,6 +116,35 @@ class PoolStore(ResultsStore):
             self.mounts[p.assembly_id] = Mount(p.assembly_id, p.vehicle_id, p.vehicle_id.split(":")[-1], p.type_compact_id,
                 modules["turret"].split(":")[-1], catalog.modules[modules["turret"]]["native_compact_id"],
                 modules["gun"].split(":")[-1], catalog.modules[modules["gun"]]["native_compact_id"], p.capacity, tuple(shells))
+        # CONTENT-0 4 (catalog mode): one mount per other turret x gun pair of a generated stock kind, from the pinned
+        # build table (capacity and ordered shells of the client's turret/gun XML); `self.pair_mount` maps
+        # (vehicle, turret, gun) -> mount ID for every pair, the stock pair included.
+        self.pair_mount, pair_shells, pair_vehicles = {}, [], set()
+        for p in self.registry.profiles.values():
+            if not p.assembly_kind and p.assembly_id in self.mounts:
+                m = dict(p.modules); self.pair_mount[(p.vehicle_id, m["turret"], m["gun"])] = p.assembly_id
+        import catalog_v1
+        if catalog_v1.active():
+            import content0_builds
+            from p04m_stock_registry import pair_name
+            for (vehicle_id, turret, gun), source in sorted(content0_builds.mounts().items()):
+                stock = self.registry.by_vehicle.get(vehicle_id)
+                if stock is None or stock.kind in PINS:
+                    continue
+                pair_vehicles.add(vehicle_id)
+                if (vehicle_id, turret, gun) in self.pair_mount:
+                    continue
+                assembly = stock.kind + "@" + pair_name({"turret": turret, "gun": gun})
+                shells = []
+                for suffix, name, shell_kind, item_id, cd, _ in source["shells"]:
+                    key = "shell:" + assembly + "-" + suffix
+                    self.shells[key] = Shell(key, name, shell_kind, item_id, cd); shells.append(key); pair_shells.append(key)
+                self.mounts[assembly] = Mount(assembly, vehicle_id, vehicle_id.split(":")[-1], stock.type_compact_id,
+                    turret.split(":")[-1], catalog.modules[turret]["native_compact_id"], gun.split(":")[-1],
+                    catalog.modules[gun]["native_compact_id"], source["capacity"], tuple(shells))
+                self.pair_mount[(vehicle_id, turret, gun)] = assembly
+        # Vehicles whose every turret x gun pair has a mount (generated kinds): their shells unload on a gun change.
+        self.pair_vehicles = frozenset(pair_vehicles)
         # The ammo catalog hash pinned by the gateway covers the legacy mounts only;
         # BATTLE-ANY generated mounts are bound by the activated catalog hash.
         legacy = {key: value for key, value in self.mounts.items()
@@ -137,6 +166,9 @@ class PoolStore(ResultsStore):
             for suffix, *_ in rows:
                 key = "shell:" + assembly + "-" + suffix
                 rank.setdefault(key, (order.get(kind, len(order)), key))
+        # CONTENT-0 4: shells of the other pairs come after every stock shell, so existing depot keys never move.
+        for key in pair_shells:
+            rank.setdefault(key, (len(order) + 1, key))
         first = {}
         for key, shell in self.shells.items():
             cd = shell.native_compact_id
@@ -306,7 +338,7 @@ class PoolStore(ResultsStore):
         depot = {row[0]: row[1] for row in depot_rows}
         require(len(depot_rows) == len(self.depot_keys) and set(depot) == set(self.depot_keys)
             and all(type(n) is int and 0 <= n <= 1000000 for n in depot.values()), "CORRUPT_STORE")
-        expected = {r["vehicle_inventory_id"]: self.registry.by_vehicle[r["vehicle_id"]].assembly_id for r in self._research(account)["vehicles"] if r["vehicle_id"] in self.registry.by_vehicle}
+        expected = {r["vehicle_inventory_id"]: self.mount_id_of(r) for r in self._research(account)["vehicles"] if r["vehicle_id"] in self.registry.by_vehicle}
         require({row["vehicle_id"]: row["mount_id"] for row in result} == expected, "CORRUPT_STORE")
         return result, depot
 
@@ -382,6 +414,71 @@ class PoolStore(ResultsStore):
             require(self.connection.execute("UPDATE p09c_ammo_depot SET quantity=MAX(quantity,?) WHERE account_id=? AND shell_id=?",
                 (floor, account, key)).rowcount == 1, "CORRUPT_STORE")
 
+    def mount_id_of(self, owned):
+        """CONTENT-0 4: the mount of an owned vehicle's current turret x gun pair; a pair outside the build table
+        (legacy kinds) keeps the stock mount, whose shells stay unloaded and hidden."""
+        p = self.registry.by_vehicle[owned["vehicle_id"]]
+        return self.pair_mount.get((owned["vehicle_id"], owned["modules"]["turret"], owned["modules"]["gun"]), p.assembly_id)
+
+    def pair_mounted(self, owned):
+        """True when the stored mount is the one of the current pair (always for the stock pair)."""
+        return (owned["vehicle_id"], owned["modules"]["turret"], owned["modules"]["gun"]) in self.pair_mount
+
+    def pair_layouts(self, aggregate):
+        """CONTENT-0 4: {native: (shells, shellsLayout)} of every owned vehicle on its pair's mount, from the stored
+        loaded counts (the native record of p04m_pool_projection)."""
+        owned = {r["vehicle_inventory_id"]: r for r in aggregate["research"]["vehicles"]}
+        result = {}
+        for ammo in aggregate["ammunition"]:
+            vehicle = owned[ammo["vehicle_id"]]
+            if not self.pair_mounted(vehicle) or ammo["mount_id"] != self.mount_id_of(vehicle): continue
+            mount = self.mounts[ammo["mount_id"]]
+            layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, ammo["loaded"][key])]
+            result[vehicle["native_id"]] = (layout, {(mount.turret_native_compact_id, mount.gun_native_compact_id): layout})
+        return result
+
+    def _auto_unload(self, profile):
+        """CONTENT-0 4: the #717 client installs a gun while shells are loaded and then tries to load the default
+        layout (`gui/shared/gui_items/processors/module.pyc` tryToLoadDefaultShellsLayout), so the old gun's shells
+        leave the vehicle: they return to the shared depot (INFERRED from the client). Vehicles of generated kinds only
+        (every turret x gun pair has a mount); a legacy kind keeps UNLOAD_AMMUNITION_REQUIRED."""
+        if not self.pool_active() or "pool" not in profile: return frozenset()
+        return frozenset(r["vehicle_inventory_id"] for r in profile["research"]["vehicles"] if r["vehicle_id"] in self.pair_vehicles)
+
+    def _unload(self, loaded, depot):
+        """Depot counts after the loaded shells of one mount return (bounded like every depot write)."""
+        depot = dict(depot)
+        for key, n in loaded.items():
+            if n:
+                row = self.depot_key[key]; depot[row] = depot[row] + n
+                require(depot[row] <= 1000000, "DEPOT_OVERFLOW")
+        return depot
+
+    def _mount_change(self, account, research):
+        """CONTENT-0 4: after a module install, a vehicle whose turret x gun pair changed takes that pair's mount with
+        nothing loaded; the old mount's loaded shells return to the shared depot (_auto_unload)."""
+        if not self.pool_active(): return
+        c = self.connection
+        require(c.in_transaction, "POOL_TRANSACTION_REQUIRED")
+        for owned in research["vehicles"]:
+            if owned["vehicle_id"] not in self.registry.by_vehicle: continue
+            row = c.execute("SELECT mount_id,loaded_json FROM p09c_ammo_mount WHERE account_id=? AND vehicle_id=?", (account, owned["vehicle_inventory_id"])).fetchone()
+            target = self.mount_id_of(owned)
+            if row is None or row["mount_id"] == target: continue
+            loaded = _json(row["loaded_json"])
+            if any(loaded.values()):
+                require(owned["vehicle_id"] in self.pair_vehicles, "UNLOAD_AMMUNITION_REQUIRED")
+                keys = sorted({self.depot_key[key] for key in loaded})
+                depot = {key: c.execute("SELECT quantity FROM p09c_ammo_depot WHERE account_id=? AND shell_id=?", (account, key)).fetchone()[0] for key in keys}
+                for key, n in self._unload(loaded, depot).items():
+                    require(c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (n, account, key)).rowcount == 1, "CORRUPT_STORE")
+            mount = self.mounts[target]
+            require(c.execute("UPDATE p09c_ammo_mount SET mount_id=?,loaded_json=? WHERE account_id=? AND vehicle_id=?",
+                (target, canonical({key: 0 for key in mount.shell_ids}).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
+            layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, 0)]
+            require(c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?",
+                (json.dumps(layout), account, owned["native_id"])).rowcount == 1, "CORRUPT_STORE")
+
     def _ensure_pool_rows(self, account):
         require(self.connection.in_transaction, "POOL_TRANSACTION_REQUIRED")
         for key in self.depot_keys:
@@ -389,11 +486,11 @@ class PoolStore(ResultsStore):
         for owned in self._research(account)["vehicles"]:
             p = self.registry.by_vehicle.get(owned["vehicle_id"])
             if p is None: continue
-            mount = self.mounts[p.assembly_id]
+            mount_id = self.mount_id_of(owned); mount = self.mounts[mount_id]
             loaded = {key: 0 for key in mount.shell_ids}
             exists = self.connection.execute("SELECT 1 FROM p09c_ammo_mount WHERE account_id=? AND vehicle_id=?", (account, owned["vehicle_inventory_id"])).fetchone()
             if exists is None:
-                self.connection.execute("INSERT INTO p09c_ammo_mount VALUES (?,?,?,?)", (account, owned["vehicle_inventory_id"], p.assembly_id, canonical(loaded).decode("ascii")))
+                self.connection.execute("INSERT INTO p09c_ammo_mount VALUES (?,?,?,?)", (account, owned["vehicle_inventory_id"], mount_id, canonical(loaded).decode("ascii")))
                 layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, 0)]
                 self.connection.execute("INSERT INTO p09d_native_layout VALUES (?,?,?)", (account, owned["native_id"], json.dumps(layout)))
 
@@ -405,7 +502,11 @@ class PoolStore(ResultsStore):
         equals this store's projection except exactly the missing zero rows, and
         no owned vehicle mounts a missing shell, the rows are inserted, the
         zero-economy top-up applied and the profile re-projected at revision+1;
-        the full reader must then verify it (all or nothing). Idempotent."""
+        the full reader must then verify it (all or nothing). Idempotent.
+
+        CONTENT-0 4: the same migration moves a vehicle whose turret x gun pair was changed before step 4 (its row
+        kept the stock mount, nothing loaded) to its pair's mount; the stored snapshot must equal the new projection
+        with those rows put back as they were."""
         self.initialize()
         require(self.pool_active() and account_id == self.pool_account, "POOL_INACTIVE")
         c = self.connection
@@ -417,14 +518,24 @@ class PoolStore(ResultsStore):
                                                 (account_id, len(self.depot_keys) + 1))}
             require(present <= set(self.depot_keys), "CORRUPT_STORE")
             missing = sorted(set(self.depot_keys) - present)
-            if not missing:
+            research = self._research(account_id)
+            moved = []
+            for owned in research["vehicles"]:
+                if owned["vehicle_id"] not in self.registry.by_vehicle: continue
+                stored = c.execute("SELECT mount_id,loaded_json FROM p09c_ammo_mount WHERE account_id=? AND vehicle_id=?", (account_id, owned["vehicle_inventory_id"])).fetchone()
+                if stored is not None and stored["mount_id"] != self.mount_id_of(owned):
+                    loaded = _json(stored["loaded_json"])
+                    require(stored["mount_id"] in self.mounts and not any(loaded.values()), "UNLOAD_AMMUNITION_REQUIRED")
+                    moved.append((owned["vehicle_inventory_id"], stored["mount_id"], loaded))
+            if not missing and not moved:
                 c.commit()
                 return {"status": "unchanged", "revision": row["revision"], "added": []}
-            for owned in self._research(account_id)["vehicles"]:
+            for owned in research["vehicles"]:
                 p = self.registry.by_vehicle.get(owned["vehicle_id"])
                 require(p is None or not {self.depot_key[s] for s in self.mounts[p.assembly_id].shell_ids} & set(missing), "CORRUPT_STORE")
             for key in missing:
                 c.execute("INSERT INTO p09c_ammo_depot VALUES (?,?,0)", (account_id, key))
+            self._mount_change(account_id, research)
             vehicles = c.execute("SELECT vehicle_id,state,battle_id FROM game_vehicle WHERE account_id=? ORDER BY vehicle_id LIMIT ?",
                                  (account_id, MAX_OWNED + 1)).fetchall()
             require(all(r["state"] == "available" for r in vehicles), "VEHICLE_RESERVED")
@@ -432,6 +543,10 @@ class PoolStore(ResultsStore):
             value = _json(raw)
             for key in missing:
                 require(value["depot"].pop(key) == 0, "CORRUPT_STORE")
+            for vehicle_id, mount_id, loaded in moved:
+                entry = next(r for r in value["ammunition"] if r["vehicle_id"] == vehicle_id)
+                require(not any(entry["loaded"].values()), "CORRUPT_STORE")
+                entry.update(mount_id=mount_id, loaded=loaded)
             require(canonical(value).decode("ascii") == row["snapshot_json"], "CORRUPT_STORE")
             before = c.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account_id,)).fetchone()[0]
             if self.zero_economy(account_id):
@@ -440,7 +555,7 @@ class PoolStore(ResultsStore):
             after = self.read_profile(account_id)
             require(after["revision"] == row["revision"] + 1, "CORRUPT_STORE")
             c.commit()
-            return {"status": "extended", "revision": after["revision"], "added": missing}
+            return {"status": "extended", "revision": after["revision"], "added": missing, "moved": [m[0] for m in moved]}
         except Exception:
             c.rollback()
             raise
@@ -543,7 +658,7 @@ class PoolStore(ResultsStore):
         require(owned is not None, "UNKNOWN_VEHICLE")
         p = self.registry.by_vehicle.get(owned["vehicle_id"])
         require(p is not None, "UNSUPPORTED_MOUNT")
-        mount = self.mounts[p.assembly_id]
+        mount = self.mounts[self.mount_id_of(owned)]
         expected = {self.shells[key].native_compact_id: key for key in mount.shell_ids}
         values = layout[3:3 + k]; shells, counts = range(0, k, 2), range(1, k, 2)
         require(k == 2 * len(expected) and {abs(values[i]) for i in shells} == set(expected), "INCOMPATIBLE_SHELL")
@@ -780,10 +895,16 @@ class PoolStore(ResultsStore):
         mounts = {row["vehicle_id"]: row for row in value["ammunition"]}
         for owned in research["vehicles"]:
             p = self.registry.by_vehicle.get(owned["vehicle_id"])
-            if p is not None and owned["vehicle_inventory_id"] not in mounts:
-                mount = self.mounts[p.assembly_id]
-                value["ammunition"].append({"vehicle_id": owned["vehicle_inventory_id"], "mount_id": p.assembly_id,
-                    "loaded": {key: 0 for key in mount.shell_ids}})
+            if p is None: continue
+            mount_id = self.mount_id_of(owned)
+            row = mounts.get(owned["vehicle_inventory_id"])
+            if row is not None and row["mount_id"] != mount_id:
+                # CONTENT-0 4: another turret x gun pair (see _mount_change): its loaded shells return to the depot.
+                value["depot"] = self._unload(row["loaded"], value["depot"])
+                value["ammunition"].remove(row); row = None
+            if row is None:
+                value["ammunition"].append({"vehicle_id": owned["vehicle_inventory_id"], "mount_id": mount_id,
+                    "loaded": {key: 0 for key in self.mounts[mount_id].shell_ids}})
         value["ammunition"].sort(key=lambda row: row["vehicle_id"])
         return value
 
@@ -863,7 +984,7 @@ class PoolStore(ResultsStore):
         if equipment["loaded"]:
             self._ensure_pool_rows(account)
             owned = next(r for r in research["vehicles"] if r["native_id"] == equipment["vehicle_native_id"])
-            mount = self.mounts[self.registry.by_vehicle[owned["vehicle_id"]].assembly_id]
+            mount = self.mounts[self.mount_id_of(owned)]
             layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, equipment["loaded"][key])]
             require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?",
                 (canonical(equipment["loaded"]).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
@@ -892,7 +1013,7 @@ class PoolStore(ResultsStore):
             require(slots == seats[native] and left == final["crew_inventory"]["free_recruitment_left"], "INVALID_NATIVE_PROJECTION")
         if equipment["loaded"]:
             owned = next(r for r in final["research"]["vehicles"] if r["native_id"] == native)
-            mount = self.mounts[self.registry.by_vehicle[owned["vehicle_id"]].assembly_id]
+            mount = self.mounts[self.mount_id_of(owned)]
             layout = [n for key in mount.shell_ids for n in (self.shells[key].native_compact_id, equipment["loaded"][key])]
             parts.append({"inventory": {1: {"shells": {native: list(layout)}, "shellsLayout": {native: {
                 (mount.turret_native_compact_id, mount.gun_native_compact_id): list(layout)}}}}})
@@ -953,9 +1074,10 @@ class PoolStore(ResultsStore):
             require(profile["revision"] < 2**31 - 1, "REVISION_EXHAUSTED")
             require(request["layout"][0] == 5, "SHOP_REVISION_MISMATCH")
             owned = next(r for r in profile["research"]["vehicles"] if r["native_id"] == request["layout"][1])
-            stock = dict(self.registry.by_vehicle[owned["vehicle_id"]].modules)
-            require(all(owned["modules"][role] == stock[role] for role in ("turret", "gun")), "AMMUNITION_CONFIGURATION_UNSUPPORTED")
+            # CONTENT-0 4: the layout of the current pair's mount; a pair outside the build table stays unsupported.
+            require(self.pair_mounted(owned), "AMMUNITION_CONFIGURATION_UNSUPPORTED")
             ammo = next(r for r in profile["ammunition"] if r["vehicle_id"] == owned["vehicle_inventory_id"])
+            require(ammo["mount_id"] == mount.mount_id, "CORRUPT_STORE")
             loaded = ammo["loaded"]; depot = {shell: profile["depot"][self.depot_key[shell]] for shell in mount.shell_ids}
             remaining = {shell: depot[shell] + loaded[shell] - desired[shell] for shell in mount.shell_ids}
             require(all(n >= 0 for n in remaining.values()), "INSUFFICIENT_STOCK")

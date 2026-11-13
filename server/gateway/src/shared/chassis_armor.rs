@@ -158,6 +158,33 @@ impl ChassisArmor {
             || value["classification"] != "VERIFIED_STATIC_ORIGINAL_717" || value["vehicle_id"] != pin.vehicle_id.as_str()
             || value["identity"]["type_compact_id"].as_u64() != Some(u64::from(pin.type_compact_id))
             || value["identity"]["descriptor_hex"] != pin.descriptor_hex.as_str() { return Err(bad()); }
+        Self::from_value(&value, sha256, pin.vehicle_id, pin.type_compact_id, pin.descriptor_hex)
+    }
+
+    /// CONTENT-0 3.3: the track armour of a non-stock build from its chassis part
+    /// (`chassis-armor-part.v1`, pinned by SHA-256 in the embedded build table), bound to the build's identity.
+    pub fn load_build_part(local_root: &Path, parts_dir: &Path, kind: VehicleKind) -> io::Result<Self> {
+        let e = kind.generated().ok_or_else(bad)?;
+        let pin = e.chassis_armor_sha256.as_ref().ok_or_else(bad)?;
+        non_reparse(local_root)?; non_reparse(parts_dir)?;
+        let root = local_root.canonicalize()?; let dir = parts_dir.canonicalize()?;
+        if !dir.starts_with(&root) || dir == root { return Err(bad()); }
+        let path = dir.join(format!("{pin}.json")); non_reparse(&path)?;
+        let file = fs::File::open(&path)?;
+        if !file.metadata()?.is_file() || file.metadata()?.len() > MAX_BYTES { return Err(bad()); }
+        let mut raw = Vec::new(); file.take(MAX_BYTES + 1).read_to_end(&mut raw)?;
+        if raw.is_empty() || raw.len() as u64 > MAX_BYTES || digest(&raw) != *pin { return Err(bad()); }
+        let value: Value = serde_json::from_slice(&raw).map_err(|_| bad())?;
+        exact(&value, &["chassis", "component", "hull_position", "members", "schema", "vehicle_id"])?;
+        if value["schema"] != "chassis-armor-part.v1" || value["vehicle_id"] != e.vehicle_id.as_str() || !value["members"].is_object() {
+            return Err(bad());
+        }
+        text(&value["chassis"])?;
+        let descriptor = kind.descriptor().iter().map(|b| format!("{b:02x}")).collect::<String>();
+        Self::from_value(&value, pin.clone(), e.vehicle_id.clone(), kind.vehicle_compact_id(), descriptor)
+    }
+
+    fn from_value(value: &Value, sha256: String, vehicle_id: String, type_compact_id: u32, descriptor_hex: String) -> io::Result<Self> {
         let hull_position = vector(&value["hull_position"], 10.)?;
         let c = &value["component"];
         exact(c, &["excluded_degenerate_triangle_ids", "materials", "mesh_bounds", "name", "triangles", "vertex_format", "vertices", "visual_bounds"])?;
@@ -187,7 +214,7 @@ impl ChassisArmor {
         if excluded.iter().any(|id| *id < CHASSIS_BASE || *id >= CHASSIS_BASE + rows.len() as u32) { return Err(bad()); }
         // Mesh validation (bounds, indices, degenerate area) without trusting the export.
         Mesh::new(vertices.clone(), triangles.clone(), sha256.clone(), "chassis-local-v1")?;
-        Ok(Self { vehicle_id: pin.vehicle_id, sha256, type_compact_id: pin.type_compact_id, descriptor_hex: pin.descriptor_hex,
+        Ok(Self { vehicle_id, sha256, type_compact_id, descriptor_hex,
             hull_position, mesh, visual_bounds, vertices, triangles, materials })
     }
 

@@ -266,7 +266,11 @@ class CatalogFromPinnedClient(unittest.TestCase):
         catalog_v1.activate(catalog_v1_data.CATALOG_SHA256)
         current = registry.StockRegistry(research)
         self.assertEqual({k: current.profiles[k] for k in LEGACY_KINDS}, dict(legacy.profiles))
-        self.assertEqual(sorted(set(current.profiles) - set(legacy.profiles)), sorted(PILOT_KINDS))
+        # CONTENT-0 3.3: catalog mode adds the stage-1 builds of the stock kinds (by exact descriptor).
+        builds = {k for k, p in current.profiles.items() if p.assembly_kind}
+        self.assertEqual(builds, {p.kind for p in current.by_descriptor.values()})
+        self.assertTrue(all(current.profiles[k].assembly_kind in current.profiles for k in builds))
+        self.assertEqual(sorted(set(current.profiles) - set(legacy.profiles) - builds), sorted(PILOT_KINDS))
         for kind in PILOT_KINDS:
             self.assertEqual(current.profiles[kind].vehicle_id, catalog_v1.by_kind(kind)["vehicle_id"])
         # The gateway-pinned registry hash covers the legacy kinds only.

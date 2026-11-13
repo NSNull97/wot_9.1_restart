@@ -142,6 +142,10 @@ impl crate::bw_wire::Wire for SharedResources {
 impl SharedResources {
     /// Row of a kind in `kinds`/`maps`/`source_profiles`.
     pub fn slot(&self,kind:VehicleKind)->Option<usize>{self.kinds.iter().position(|k|*k==kind)}
+    /// CONTENT-0 3.3: the template row of a kind; a non-stock build uses its vehicle's stock row.
+    pub fn template_kind(&self,kind:VehicleKind)->VehicleKind{
+        if super::build_resources::is_build(kind) {super::build_resources::stock_of(kind).unwrap_or(kind)} else {kind}
+    }
 }
 /// Bound of generated rows in one template (same as the generated registry bound).
 const MAX_GENERATED:usize=super::generated_vehicles::MAX_GENERATED;
@@ -221,6 +225,10 @@ pub(super) fn load(local_root:&Path,manifest_path:&Path)->io::Result<Vec<Resourc
                 let path=pin(local_root,&reference,65536)?;
                 source_profiles[slot]=Some((path,reference.sha256));
             }
+        }
+        // CONTENT-0 3.3: non-stock builds read their files from the stock generated qualified profiles' directory.
+        if let Some((path,_))=source_profiles.iter().zip(&rows).find(|(source,row)|source.is_some()&&row.kind.is_generated()).and_then(|(s,_)|s.as_ref()) {
+            super::build_resources::configure(local_root,path.parent().ok_or_else(||bad("source profile directory"))?)?;
         }
         let shared=Arc::new(SharedResources{version:manifest.version,root:local_root.canonicalize()?,artifacts:crate::scene_worker::Artifacts::load(&path)?,
             kinds:rows.iter().map(|row|row.kind).collect(),

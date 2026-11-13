@@ -16,4 +16,13 @@ sha1 = "=0.10.7"
 sha2 = "=0.10.9"
 blowfish = "=0.9.1"
 serde = "=1.0.229"
-serde_json = "=1.0.151"
+serde_json = { version = "=1.0.151", features = ["raw_value"] }
+
+# Test builds: the BW01 worker hashes its own ~290 MB debug test executable before the 10 s handshake;
+# unoptimised sha2 does not fit under gate load (CONTENT-0 4). Release is unchanged.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.block-buffer]
+opt-level = 3
+[profile.dev.package.digest]
+opt-level = 3

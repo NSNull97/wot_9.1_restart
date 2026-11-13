@@ -108,7 +108,11 @@ impl Request {
     /// available for a real native RES_NOT_AVAILABLE response, not disconnect.
     pub fn decode(payload:&[u8])->io::Result<Self> {
         // SPG-02: a gun with n shells sends 10+2n arguments (12, 14 or 16); the rest of the array stays 0.
-        if ![56,64,72].contains(&payload.len()) {return Err(invalid("ammo command payload length"));}
+        // CONTENT-0 4: after a gun install the #717 client loads the default shells layout with no equipment
+        // layout (`processors/vehicle.pyc` tryToLoadDefaultShellsLayout -> `Inventory.setAndFillLayouts(inv, shells,
+        // None)`, which appends a single 0): 4+2n arguments (6, 8 or 10). Equipment is then left as it is; this
+        // command only ever carries an empty equipment layout here, so the request is read as that layout.
+        if ![32,40,48,56,64,72].contains(&payload.len()) {return Err(invalid("ammo command payload length"));}
         let id=i16::from_le_bytes([payload[0],payload[1]]);
         if id<=0 || payload[2..4]!=108i16.to_le_bytes()
             || payload[4..8]!=(((payload.len()-8)/4) as u32).to_le_bytes() {
@@ -117,6 +121,11 @@ impl Request {
         let mut arguments=[0;16];
         for (target,bytes) in arguments.iter_mut().zip(payload[8..].chunks_exact(4)) {
             *target=i32::from_le_bytes(bytes.try_into().map_err(|_|invalid("ammo argument"))?);
+        }
+        if payload.len()<=48 {
+            let k=(payload.len()-8)/4-4;
+            if arguments[2]!=k as i32 || arguments[3+k]!=0 {return Err(invalid("ammo shells-only layout"));}
+            arguments[3+k]=6;
         }
         Ok(Self{id,arguments})
     }
@@ -246,6 +255,23 @@ mod tests {
         assert!(r.layout_for_catalog([3338,3594,3850],30,5).is_err(),"a three-shell gun needs six layout values");
         let mut wrong=payload.clone();wrong[4..8].copy_from_slice(&16u32.to_le_bytes());assert!(Request::decode(&wrong).is_err());
         assert!(Request::decode(&payload[..payload.len()-4]).is_err());
+    }
+    /// CONTENT-0 4: tryToLoadDefaultShellsLayout after a gun install sends no equipment layout (a single 0):
+    /// 4+2n arguments; it reads as the same layout with the empty equipment layout. Stand -22 request 247 (M18).
+    #[test]fn content0_shells_only_layout_after_a_gun_install_reads_as_the_empty_equipment_layout(){
+        let shells_only=|args:&[i32]|{let mut p=247i16.to_le_bytes().to_vec();p.extend(108i16.to_le_bytes());
+            p.extend((args.len() as u32).to_le_bytes());for v in args{p.extend(v.to_le_bytes());}p};
+        let payload=shells_only(&[5,58,6,3338,0,3594,0,3850,0,0]);assert_eq!(payload.len(),48);
+        let r=Request::decode(&payload).unwrap();
+        assert_eq!(r.sent(),&[5,58,6,3338,0,3594,0,3850,0,6,0,0,0,0,0,0][..]);
+        assert_eq!(r.layout_for_catalog([3338,3594,3850],45,5).unwrap()[2],ShellCount{compact_id:3850,count:0});
+        let two=Request::decode(&shells_only(&[5,58,4,3338,7,3594,1,0])).unwrap();
+        assert_eq!(two.sent(),&[5,58,4,3338,7,3594,1,6,0,0,0,0,0,0][..]);
+        for bad in [&[5,58,6,3338,0,3594,0,3850,0,1][..],&[5,58,4,3338,0,3594,0,3850,0,0][..],&[5,58,6,3338,0,3594,0,0][..]] {
+            assert!(Request::decode(&shells_only(bad)).is_err(),"{bad:?}");
+        }
+        let mut wire=vec![0x97,48,0];wire.extend(&payload);
+        assert_eq!(hangar091::requests_ammo_service(&wire).unwrap(),vec![Incoming::AmmoService(r)]);
     }
     fn sync(id:i16,revision:i64,hash:i32)->Vec<u8> {
         let mut bytes=vec![0x8e,20,0];bytes.extend(id.to_le_bytes());bytes.extend(100i16.to_le_bytes());

@@ -65,6 +65,9 @@ fn shells() -> Vec<Shell> {
     let mut out: Vec<Shell> = PROFILES.iter().flat_map(|p| p.shots).collect();
     let registry = crate::gateway091::shared::generated_vehicles::registry().unwrap();
     out.extend(registry.entries().iter().flat_map(|e| e.gun.shots));
+    // CONTENT-0 3.3: builds repeat their guns' shells; every distinct shell is checked once.
+    let mut seen = std::collections::BTreeSet::new();
+    out.retain(|s| seen.insert(format!("{s:?}")));
     out
 }
 fn same<T: PartialEq + std::fmt::Debug>(a: io::Result<T>, b: io::Result<T>, what: &str) {

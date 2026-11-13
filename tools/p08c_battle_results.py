@@ -32,6 +32,9 @@ def registry_arena_types():
     require(len(types) == len(maps) and all(type(t) is int and t > 0 for t in types), "INVALID_INPUT")
     return types
 MAX_HTTP_BYTES = MAX_RESULT_REQUEST
+# Matches the mixed world's bounded shot journal (gateway model.rs).
+MAX_BATTLE_SHOTS = 16384
+MAX_LEGACY_RESULT_SHOTS = 192
 COMMON = {"version", "operation", "account_id", "native_database_id", "command_key", "arena_id"}
 STORE = {"run_id", "battle_id", "native_inventory_id", "reservation_id", "results_json"}
 HEADER = {"arena_id", "arena_type_id", "created_unix", "winner_team", "finish_reason", "duration_seconds", "participants"}
@@ -146,17 +149,17 @@ def _team_score(value):
     for row, own in zip(rows, participants):
         require(type(row) is dict and set(row) == TEAM_SCORE_ROW and row["vehicle_id"] == own["vehicle_id"], "INVALID_INPUT")
         require(type(row["frags"]) is int and -MAX_PARTICIPANTS < row["frags"] < MAX_PARTICIPANTS, "INVALID_INPUT")
-        _integer(row["team_kills"], 0, MAX_PARTICIPANTS - 1); _integer(row["team_hits"], 0, 192)
+        _integer(row["team_kills"], 0, MAX_PARTICIPANTS - 1); _integer(row["team_hits"], 0, own["direct_hits"])
         _integer(row["team_damage"], 0, 2**32 - 1)
         require(type(row["team_killer"]) is bool, "INVALID_INPUT")
         victims = [q for q in participants if q["killer_id"] == own["vehicle_id"] and q["vehicle_id"] != own["vehicle_id"]]
         allies = sum(1 for q in victims if q["team"] == own["team"])
         require(row["team_kills"] == allies and row["frags"] == len(victims) - 2 * allies
             and row["team_kills"] <= own["kills"] and row["team_damage"] <= own["damage_dealt"]
-            and row["team_hits"] <= own["direct_hits"] and (allies == 0 or row["team_killer"]), "INVALID_INPUT")
+            and (allies == 0 or row["team_killer"]), "INVALID_INPUT")
 
 
-def results_value(raw):
+def results_value(raw, *, mixed=False):
     require(type(raw) is str and len(raw.encode("utf-8")) <= MAX_RESULT_BYTES, "INVALID_INPUT")
     try:
         value = json.loads(raw, object_pairs_hook=_unique,
@@ -174,12 +177,13 @@ def results_value(raw):
     require(type(rows) is list and 2 <= len(rows) <= MAX_PARTICIPANTS, "INVALID_INPUT")
     # 2..6 rows keep the original 32KiB journal; roster30 rows get their own.
     require(len(raw.encode("utf-8")) <= result_budget(len(rows)), "INVALID_INPUT")
+    shot_limit = MAX_BATTLE_SHOTS if mixed else MAX_LEGACY_RESULT_SHOTS
     ids, owners, teams = set(), set(), set()
     for row in rows:
         require(type(row) is dict and set(row) == PARTICIPANT, "INVALID_INPUT")
         for field in ("vehicle_id", "account_dbid", "type_compact_descr"): _integer(row[field], 1)
         _integer(row["team"], 1, 2); _integer(row["health"], 0, 10000)
-        for field in ("shots", "direct_hits", "piercings"): _integer(row[field], 0, 192)
+        for field in ("shots", "direct_hits", "piercings"): _integer(row[field], 0, shot_limit)
         for field, maximum in (("damage_dealt", 60000), ("damage_received", 10000), ("kills", MAX_PARTICIPANTS - 1),
             ("capture_points", 600), ("dropped_capture_points", 600), ("mileage_metres", 200000),
             ("life_time", value["duration_seconds"]), ("killer_id", 2**31 - 1)):

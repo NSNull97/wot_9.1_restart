@@ -19,15 +19,23 @@ include!("battle_any_pins.rs");
 const TABLE:&[u8]=include_bytes!("../../../../config/catalog/battle_profiles.v1.json");
 #[cfg(not(feature="test_lab"))]
 const QUALIFICATION:&[u8]=include_bytes!("../../../../config/catalog/battle_qualification.v1.json");
+#[cfg(not(feature="test_lab"))]
+const BUILDS:&[u8]=include_bytes!("../../../../config/catalog/battle_builds.v1.json");
 #[cfg(feature="test_lab")]
 include!("battle_any_pins_test_lab.rs");
 #[cfg(feature="test_lab")]
 const TABLE:&[u8]=include_bytes!("../../../../config/test_lab/battle_profiles.v1.json");
 #[cfg(feature="test_lab")]
 const QUALIFICATION:&[u8]=include_bytes!("../../../../config/test_lab/battle_qualification.v1.json");
+#[cfg(feature="test_lab")]
+const BUILDS:&[u8]=include_bytes!("../../../../config/test_lab/battle_builds.v1.json");
 pub const POLICY:&str="battle-any-generated-v1";
 /// Same bound as the scene worker's angular frame and ram response.
 pub const MAX_GENERATED:usize=512;
+/// CONTENT-0 3.3: stock kinds plus every mountable build (12 520 in #717).
+pub const MAX_REGISTRY:usize=16384;
+/// Client vehicle device order of the build table (`DEVICES` of tools/battle_any_profiles.py).
+const DEVICES:[&str;9]=["engine","ammoBay","fuelTank","radio","leftTrack","rightTrack","gun","turretRotator","surveyingDevice"];
 
 fn bad(reason:&str)->io::Error{io::Error::new(io::ErrorKind::InvalidData,format!("generated vehicles: {reason}"))}
 
@@ -81,6 +89,15 @@ pub struct Entry {
     pub inertia_rotation_bits:[u32;4],
     /// Native shot effectsIndex of each stack (shot_effects.xml order).
     pub effects:[u8;3],
+    /// CONTENT-0 3.3: the stock build of its vehicle (`by_vehicle`/`by_compact` index only these).
+    pub stock:bool,
+    /// Collision part pins (hull, turret, turret x gun) of a non-stock build; stock builds keep their bundle.
+    pub part_sha256:Option<[String;3]>,
+    /// SHELL-02 track armour part of a non-stock build's chassis (None: stock, or the chassis source is refused).
+    pub chassis_armor_sha256:Option<String>,
+    /// CONTENT-0 4: the gun dispersion row (`dispersion::gun`): the vehicle name of a stock entry, the
+    /// `<vehicle>@<turret>/<gun>` row of a build's own turret x gun pair.
+    pub dispersion_key:String,
     /// Per-kind evidence labels of the explicit test_lab policies.
     pub ap_policy:String,
     pub impact_label:String,
@@ -100,12 +117,13 @@ pub struct Registry {
     by_label:BTreeMap<String,GeneratedId>,
     by_vehicle:BTreeMap<String,GeneratedId>,
     by_compact:BTreeMap<u32,GeneratedId>,
+    by_descriptor:BTreeMap<Vec<u8>,GeneratedId>,
 }
 static REGISTRY:OnceLock<Result<Registry,String>>=OnceLock::new();
 
 /// Verify and parse the embedded table once; repeated calls return the same result.
 pub fn registry()->io::Result<&'static Registry> {
-    REGISTRY.get_or_init(||build(TABLE,QUALIFICATION).map_err(|e|e.to_string())).as_ref().map_err(|e|bad(e))
+    REGISTRY.get_or_init(||build(TABLE,QUALIFICATION,BUILDS).map_err(|e|e.to_string())).as_ref().map_err(|e|bad(e))
 }
 /// An issued id always refers to a verified entry (issued only by `registry()`).
 pub fn entry(id:GeneratedId)->&'static Entry {
@@ -116,6 +134,8 @@ impl Registry {
     pub fn by_label(&self,label:&str)->Option<GeneratedId>{self.by_label.get(label).copied()}
     pub fn by_vehicle(&self,vehicle_id:&str)->Option<GeneratedId>{self.by_vehicle.get(vehicle_id).copied()}
     pub fn by_compact(&self,compact:u32)->Option<GeneratedId>{self.by_compact.get(&compact).copied()}
+    /// CONTENT-0 3.3: the build of an exact native vehicle descriptor (stock or mounted modules).
+    pub fn by_descriptor(&self,descriptor:&[u8])->Option<GeneratedId>{self.by_descriptor.get(descriptor).copied()}
     pub fn by_geometry(&self,sha256:&str)->Option<GeneratedId>{self.entries.iter().find(|e|e.geometry_sha256==sha256).map(|e|e.id)}
 }
 
@@ -196,22 +216,70 @@ fn burst(g:&Value)->io::Result<(u8,f64)> {
     Ok((count,interval))
 }
 
-fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
-    if digest(table)!=TABLE_SHA256||digest(qualification)!=QUALIFICATION_SHA256 {return Err(bad("embedded table/qualification SHA"));}
+/// CONTENT-0 3.3: the profile row of every generated non-stock build, copied from the build table
+/// (`project_build` of tools/battle_any_profiles.py): no arithmetic, every number is the generator's.
+fn build_rows(builds:&Value,table_sha:&str)->io::Result<Vec<Value>> {
+    if builds["schema"]!="wot091-battle-builds.v1"||builds["profile_table_sha256"]!=table_sha {return Err(bad("build table schema/profile pin"));}
+    let vehicles=builds["vehicles"].as_object().ok_or_else(||bad("build vehicles"))?;
+    let mut rows=Vec::new();
+    let pick=|map:&Value,key:&str|->io::Result<Value>{let v=&map[key];if v.is_object(){Ok(v.clone())}else{Err(bad("build module reference"))}};
+    for (vehicle_id,v) in vehicles {
+        for b in v["builds"].as_array().ok_or_else(||bad("builds"))? {
+            if b["status"]!="generated"||b["stock"]!=false {continue;}
+            if rows.len()>=MAX_REGISTRY {return Err(bad("build count"));}
+            let m=&b["modules"];
+            let (t,g,c,e)=(s(&m["turret"])?,s(&m["gun"])?,s(&m["chassis"])?,s(&m["engine"])?);
+            let (hull,mount,turret,chassis,engine)=(pick(v,"hull")?,pick(&v["mounts"],&format!("{t}/{g}"))?,pick(&v["turrets"],t)?,
+                pick(&v["chassis"],c)?,pick(&v["engines"],e)?);
+            let (fuel,radio)=(pick(&v["fuel_tanks"],s(&m["fuelTank"])?)?,pick(&v["radios"],s(&m["radio"])?)?);
+            let mut gun=mount["gun"].clone();
+            for key in ["dispersion_vehicle_movement","dispersion_vehicle_rotation"] {gun[key]=chassis[key].clone();}
+            gun["turret_rotation_deg_s"]=turret["turret_rotation_deg_s"].clone();
+            let caps=[&engine["device"],&hull["ammo_bay"],&fuel["device"],&radio["device"],&chassis["track"],&chassis["track"],
+                &mount["device"],&turret["rotator"],&turret["surveying"]];
+            let devices:Vec<Value>=caps.iter().enumerate().map(|(i,cap)|serde_json::json!({"device":DEVICES[i],"extra_index":26+i,
+                "max_health":cap["max_health"],"max_regen_health":cap["max_regen_health"]})).collect();
+            let mut physics=pick(&v["drives"],&format!("{c}/{e}"))?;physics["mass_kg"]=b["mass_kg"].clone();
+            let parts=[&hull["part"],&turret["part"],&mount["part"]];
+            let bytes:u64=parts.iter().map(|p|u(&p["bytes"])).sum::<io::Result<u64>>()?;
+            rows.push(serde_json::json!({"status":"generated","kind":b["label"],"vehicle_id":vehicle_id,
+                "native_nation_id":v["native_nation_id"],
+                "identity":{"descriptor_hex":b["descriptor_hex"],"type_compact_id":v["type_compact_id"],
+                    "module_compact_ids":b["module_compact_ids"],"max_hp":b["max_hp"],"mass_kg":b["mass_kg"]},
+                "gun":gun,"shots":mount["shots"],"shell_suffixes":mount["shell_suffixes"],
+                "pivots":{"hull_position":chassis["hull_position"],"turret_position":hull["turret_position"],"gun_position":turret["gun_position"]},
+                "devices":devices,"crew_seats":hull["crew_seats"],"engine_fire_starting_chance":engine["fire_starting_chance"],
+                "view_range_m":turret["view_range_m"],"physics":physics,"handling":chassis["handling"],
+                "geometry":{"sha256":b["geometry_sha256"],"bytes":bytes,"components":parts},
+                "chassis_armor":chassis["armor"]["sha256"]}));
+        }
+    }
+    Ok(rows)
+}
+
+fn build(table:&[u8],qualification:&[u8],builds:&[u8])->io::Result<Registry> {
+    if digest(table)!=TABLE_SHA256||digest(qualification)!=QUALIFICATION_SHA256||digest(builds)!=BUILDS_SHA256 {return Err(bad("embedded table/qualification/builds SHA"));}
     let table:Value=serde_json::from_slice(table).map_err(|_|bad("table JSON"))?;
     let qualification:Value=serde_json::from_slice(qualification).map_err(|_|bad("qualification JSON"))?;
     if table["schema"]!="wot091-battle-profiles.v1"||qualification["schema"]!="wot091-battle-qualification.v1"
         ||qualification["policy"]!=POLICY {return Err(bad("schema/policy"));}
     let mut qualified=BTreeMap::new();
     for row in qualification["profiles"].as_array().ok_or_else(||bad("qualified rows"))? {qualified.insert(s(&row["kind"])?.to_owned(),row);}
+    let mut rows:Vec<Value>=table["vehicles"].as_array().ok_or_else(||bad("vehicle rows"))?.clone();
+    let stock_rows=rows.len();
+    let builds:Value=serde_json::from_slice(builds).map_err(|_|bad("builds JSON"))?;
+    rows.extend(build_rows(&builds,TABLE_SHA256)?);
     let mut entries=Vec::new();
-    for row in table["vehicles"].as_array().ok_or_else(||bad("vehicle rows"))? {
+    let mut kinds=0;
+    for (index,row) in rows.iter().enumerate() {
+        let stock=index<stock_rows;
         if row["status"]!="generated" {continue;}
         let label=s(&row["kind"])?;
         // The five legacy kinds keep their hand-closed VehicleKind arms.
         if matches!(label,"ms1"|"is7"|"t26"|"t34"|"t3485") {continue;}
         let q=qualified.get(label).ok_or_else(||bad("generated row without qualification"))?;
-        if entries.len()>=MAX_GENERATED {return Err(bad("registry size"));}
+        if stock {kinds+=1;}
+        if kinds>MAX_GENERATED||entries.len()>=MAX_REGISTRY {return Err(bad("registry size"));}
         let id=GeneratedId(u16::try_from(entries.len()).map_err(|_|bad("id"))?);
         let identity=&row["identity"];let g=&row["gun"];
         let descriptor=hex(s(&identity["descriptor_hex"])?)?;
@@ -272,7 +340,17 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
         let effects=parsed.map(|(_,e)|e);
         let bits=|key:&str,n:usize|->io::Result<Vec<u32>>{arr(&q[key],n)?.iter().map(|x|u32::try_from(u(x)?).map_err(|_|bad("bits"))).collect()};
         let principal=bits("principal_inverse_bits",3)?;let rotation=bits("inertia_rotation_bits_xyzw",4)?;
-        let entry=Entry{id,label:label.to_owned(),vehicle_id:s(&row["vehicle_id"])?.to_owned(),nation_id:nation,descriptor,
+        let part_sha256=if stock {None} else {
+            let pin=|c:&Value|->io::Result<String>{let h=s(&c["sha256"])?;if h.len()==64&&h.bytes().all(|b|b.is_ascii_hexdigit()){Ok(h.to_owned())}else{Err(bad("part pin"))}};
+            Some([pin(&components[0])?,pin(&components[1])?,pin(&components[2])?])};
+        let vehicle_name=s(&row["vehicle_id"])?.trim_start_matches("vehicle:").to_owned();
+        let dispersion_key=if stock {vehicle_name} else {
+            // The client mount path (up to 512 bytes; `s` bounds names at 128).
+            let path=g["mount_source_path"].as_str().filter(|p|p.len()<=512).ok_or_else(||bad("build mount path"))?;
+            super::dispersion::pair_key(&vehicle_name,path).ok_or_else(||bad("build mount path"))?};
+        let entry=Entry{id,label:label.to_owned(),vehicle_id:s(&row["vehicle_id"])?.to_owned(),nation_id:nation,descriptor,dispersion_key,
+            stock,part_sha256,chassis_armor_sha256:if stock||row["chassis_armor"].is_null(){None}else{
+                let h=s(&row["chassis_armor"])?;if h.len()!=64||!h.bytes().all(|b|b.is_ascii_hexdigit()){return Err(bad("chassis part pin"));}Some(h.to_owned())},
             type_compact_id:type_cd,gun_compact_id:gun_cd,
             max_hp:i16::try_from(u(&identity["max_hp"])?).map_err(|_|bad("hp"))?,mass_kg:f(&identity["mass_kg"])?,
             view_range:f(&row["view_range_m"])? as f32,aim,source_aim,gun,
@@ -291,11 +369,14 @@ fn build(table:&[u8],qualification:&[u8])->io::Result<Registry> {
     }
     if entries.is_empty() {return Err(bad("empty registry"));}
     let mut by_label=BTreeMap::new();let mut by_vehicle=BTreeMap::new();let mut by_compact=BTreeMap::new();
+    let mut by_descriptor=BTreeMap::new();
     for e in &entries {
-        if by_label.insert(e.label.clone(),e.id).is_some()||by_vehicle.insert(e.vehicle_id.clone(),e.id).is_some()
-            ||by_compact.insert(e.type_compact_id,e.id).is_some() {return Err(bad("duplicate generated identity"));}
+        if by_label.insert(e.label.clone(),e.id).is_some()||by_descriptor.insert(e.descriptor.clone(),e.id).is_some()
+            ||e.stock&&(by_vehicle.insert(e.vehicle_id.clone(),e.id).is_some()||by_compact.insert(e.type_compact_id,e.id).is_some())
+            {return Err(bad("duplicate generated identity"));}
     }
-    Ok(Registry{entries,by_label,by_vehicle,by_compact})
+    // A vehicle whose stock build is refused (e.g. its stock aim envelope) may still have other generated builds.
+    Ok(Registry{entries,by_label,by_vehicle,by_compact,by_descriptor})
 }
 fn hex(text:&str)->io::Result<Vec<u8>> {
     if text.len()%2!=0||text.len()>64 {return Err(bad("descriptor hex"));}
@@ -330,10 +411,16 @@ mod tests {
         let r=registry().unwrap();
         // main and test_lab: the
         // qualified rows of config/test_lab/battle_qualification.v1.json (CONTENT-0 2.6+2.5b).
-        assert_eq!(r.entries().len(),if cfg!(feature="test_lab"){363}else{362});
+        assert_eq!(r.entries().iter().filter(|e|e.stock).count(),if cfg!(feature="test_lab"){363}else{362});
+        // CONTENT-0 3.3: every other generated build of the build table (main: 12 196 qualified in all).
+        if !cfg!(feature="test_lab") {assert_eq!(r.entries().len(),12196);}
+        assert!(r.entries()[..r.entries().iter().filter(|e|e.stock).count()].iter().all(|e|e.stock),"stock entries keep their ids");
         for refused in ["vehicle:france:AMX_13_90","vehicle:france:AMX_M4_1945"] {assert!(r.by_vehicle(refused).is_none(),"{refused}");}
         for (i,e) in r.entries().iter().enumerate() {
             assert_eq!(e.id.get(),i);assert_eq!(r.by_label(&e.label),Some(e.id));
+            assert_eq!(r.by_descriptor(&e.descriptor),Some(e.id),"{}",e.label);
+            assert_eq!(e.stock,r.by_vehicle(&e.vehicle_id)==Some(e.id),"{}",e.label);
+            assert_eq!(e.stock,e.part_sha256.is_none(),"{}",e.label);
             assert!(VehicleKind::from_label(&e.label).is_none(),"{} shadows a legacy label",e.label);
             // Automatic guns on main too since the CONTENT-0 main transfer (owner 12.11).
             assert!((1..=crate::p06t_armament091::MAX_CLIP).contains(&e.gun.clip_count)&&(1..=crate::p06t_armament091::MAX_BURST).contains(&e.gun.burst_count),"{}",e.label);
@@ -373,10 +460,10 @@ mod tests {
     #[test]
     fn tampered_or_foreign_bytes_are_refused() {
         let mut table=TABLE.to_vec();let n=table.len();table[n/2]^=1;
-        assert!(build(&table,QUALIFICATION).is_err());
+        assert!(build(&table,QUALIFICATION,BUILDS).is_err());
         let mut q=QUALIFICATION.to_vec();let n=q.len();q[n/2]^=1;
-        assert!(build(TABLE,&q).is_err());
-        assert!(build(QUALIFICATION,TABLE).is_err());
+        assert!(build(TABLE,&q,BUILDS).is_err());
+        assert!(build(QUALIFICATION,TABLE,BUILDS).is_err());
         assert!(hex("0").is_err()&&hex("zz").is_err()&&hex(&"00".repeat(33)).is_err());
     }
 }

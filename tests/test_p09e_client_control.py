@@ -45,6 +45,9 @@ class ResearchCapabilityTests(unittest.TestCase):
         for args in forbidden: self.Panel().setVehicleModule(*args)
         self.assertEqual(self.mutations, [])
         self.assertEqual(len(self.notices), len(forbidden))
+        # CONTENT-0 3.1: the research-mode notice names what is still unavailable.
+        self.assertEqual({text for text, _ in self.notices}, {prior.POLICY.RESEARCH_NOTICE})
+        self.assertNotEqual(prior.POLICY.RESEARCH_NOTICE, prior.POLICY.NOTICE)
 
     def test_original_exception_is_not_converted_into_fake_success(self):
         def broken(*args): raise ValueError("native processor failed")

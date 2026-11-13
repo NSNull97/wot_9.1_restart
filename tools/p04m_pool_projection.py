@@ -20,6 +20,7 @@ class PoolProjectionSource(BattleProjectionSource):
         self._pool_base = source
         self._pool_snapshot, self._pool_profile = store._baseline(store._pool_row())
         self.registry, self.shells, self.mounts = store.registry, store.shells, store.mounts
+        self.pair_mounted = store.pair_mounted
         self.depot_cd = store.depot_cd
         self.ammo_catalog_sha256 = store.ammo_catalog_sha256
         self._zero_gold = store.zero_economy(self._pool_profile["account_id"])
@@ -43,8 +44,7 @@ class PoolProjectionSource(BattleProjectionSource):
             if native in crews: record["crew"] = crews[native]
         for ammo in aggregate["ammunition"]:
             owned = owned_by_id[ammo["vehicle_id"]]; native = owned["native_id"]
-            p = self.registry.by_vehicle[owned["vehicle_id"]]
-            if any(owned["modules"][role] != dict(p.modules)[role] for role in ("turret", "gun")):
+            if not self.pair_mounted(owned):
                 require(not any(ammo["loaded"].values()), "AMMUNITION_CONFIGURATION_UNSUPPORTED")
                 continue
             mount = self.mounts[ammo["mount_id"]]; layout = layouts[native]

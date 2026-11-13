@@ -57,7 +57,10 @@ def catalog_profile13_vehicles(hints):
 
 PROFILE13_REASONS = {
     'unsupported_vehicle': u'У этой машины пока нет проверенного боевого профиля.',
-    'unsupported_configuration': u'Для боя нужна проверенная стандартная сборка МС-1 или ИС-7.',
+    # CONTENT-0 3.1: the descriptor differs from the stock one when non-stock
+    # modules are mounted; the server refuses it too (BATTLE_PROFILE_UNSUPPORTED).
+    'unsupported_configuration': (u'На машине установлены нестоковые модули. Бой пока доступен только '
+                                  u'в стоковой комплектации: верните стоковые модули со Склада.'),
     'unsupported_crew_readiness': u'Нужен полный экипаж и готовая к бою машина.',
     'unsupported_ap_loadout': u'Пока поддерживаются только бронебойные: загрузите от одного снаряда до вместимости БК, остальные выгрузите.',
     'unsupported_mixed_loadout': u'Загрузите хотя бы один штатный снаряд; общий боекомплект не должен превышать вместимость машины.',
@@ -499,7 +502,19 @@ class _Native(object):
             return dict(allowed=False, reason='unsupported_vehicle', queued=False)
         descriptor_sha, seats, health, capacity, shell_ids = spec
         if _raw_sha(item.descriptor.makeCompactDescr()) != descriptor_sha:
-            return dict(allowed=False, reason='unsupported_configuration', queued=False)
+            if not p06t_mixed_ammo or self.profile13_vehicles is PROFILE13_VEHICLES:
+                return dict(allowed=False, reason='unsupported_configuration', queued=False)
+            # CONTENT-0 3.3/4: a build (other modules, turret or gun) of a catalogue vehicle. The hint reads the
+            # descriptor's own health (VehicleDescr.maxHealth = hull + turret), gun capacity and shots; the server
+            # admits or refuses the exact build (freeze_mixed).
+            desc = item.descriptor
+            descriptor_sha = _raw_sha(desc.makeCompactDescr())
+            health = _integer(desc.maxHealth, 1, 65535, 'build health')
+            capacity = _integer(desc.gun['maxAmmo'], 1, 65535, 'build capacity')
+            shots = desc.gun['shots']
+            if type(shots) not in (list, tuple) or not 1 <= len(shots) <= 3:
+                raise ValueError('one to three build shots required')
+            shell_ids = tuple(_integer(shot['shell']['compactDescr'], 1, 65535, 'build shell') for shot in shots)
         inventory = cache.items.inventory.getCacheValue(1, {})
         if type(inventory) is not dict or len(inventory) > 32:
             raise ValueError('bounded profile13 vehicle inventory required')

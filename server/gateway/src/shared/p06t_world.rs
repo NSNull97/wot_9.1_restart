@@ -60,7 +60,7 @@ impl World {
     pub(super) fn shot_deviation(&self,actor:&Actor,sequence:u32)->io::Result<Option<ShotDeviation>>{
         if !self.impact.layers(){return Ok(None);}
         let rules=crate::gateway091::shared::shell_rules::rules()?;
-        let gun=super::super::dispersion::firing_gun(&rules.accuracy,actor.vehicle_kind().name())?;
+        let gun=super::super::dispersion::firing_gun(&rules.accuracy,actor.vehicle_kind().dispersion_name())?;
         // A shot before the first step has the resting circle (factor 1).
         let angle=actor.dispersion.unwrap_or(super::super::dispersion::State::new(actor.direction[0],actor.aim.yaw)).angle(gun);
         let seed=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,sequence).seed;
@@ -149,6 +149,15 @@ impl World {
             self.rng_draws.push((event.shot(),event.target(),rack::LAUNCH_ORDINAL+i as u8,value));*draw=value;
         }
         rack::Launch::derive(heading,charge,draws)
+    }
+    fn detach_turret(&mut self, actors: &[Actor], event: rack::Event) -> io::Result<()> {
+        if !self.geometry_for(event.kind())?.has_detachable_turret() {
+            return Ok(());
+        }
+        if self.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
+        let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(actors,&event)?)?}else{rack::Flight::new(event)};
+        self.turret_flights.push(flight);
+        Ok(())
     }
     pub(super) fn direct_mixed(&mut self,actors:&mut[Actor],trace:&mut impact::Trace,projectile:&Projectile,
         contact:&Contact,bundle:&geometry::Bundle)->io::Result<crate::p06t_damage::Resolution>{
@@ -263,7 +272,7 @@ impl World {
         bundle:&geometry::Bundle)->io::Result<()>{
         let shell=projectile.shell.ok_or_else(||bad())?;
         let radius=shell.explosion_radius_m.filter(|r|*r>0.).ok_or_else(||bad())?
-            *super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.name())?;
+            *super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.dispersion_name())?;
         let actor=actors.get(slot).ok_or_else(||bad())?;
         if !actor.alive(){return Ok(());}
         let devices=actor.devices.as_ref().ok_or_else(||bad())?;
@@ -347,12 +356,10 @@ impl World {
         let outcome=ledger.apply(input)?;
         match outcome{
             rack::Outcome::New(event)=>{
-                if self.turret_flights.len()>=MAX_ACTORS{return Err(bad());}
                 let mut fire=actors[slot].fire.clone();
                 if fire.lose_loaded_for_detonation()?!=event.lost(){return Err(bad());}
                 actors[slot].fire=fire;
-                let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(actors,&event)?)?}else{rack::Flight::new(event)};
-                self.turret_flights.push(flight);
+                self.detach_turret(actors,event)?;
                 self.ammo_detonation=Some(ledger);Ok(event.additional_damage())
             },
             rack::Outcome::Empty=>{self.ammo_detonation=Some(ledger);Ok(0)},
@@ -365,7 +372,7 @@ impl World {
         center:[f32;3],tick:u32,exclude_target:Option<usize>,fragile_state:Option<&fragiles::State>)->io::Result<()> {
         let shell=projectile.shell.ok_or_else(||bad())?;
         if shell.family!=crate::p06t_shells091::Family::HighExplosive{return Ok(());}
-        let blast=if trace.layers(){super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.name())?}else{1.};
+        let blast=if trace.layers(){super::super::dispersion::blast_factor(&crate::gateway091::shared::shell_rules::rules()?.accuracy,projectile.vehicle_kind.dispersion_name())?}else{1.};
         let radius=(shell.explosion_radius_m.ok_or_else(||bad())?*blast)as f32;
         let terrain=self.terrain.as_ref().ok_or_else(||bad())?.clone();
         let excluded=fragile_state.map_or_else(Vec::new,|state|state.projectile_excluded());
@@ -416,8 +423,7 @@ impl World{
             let mut fire=actors[target].fire.clone();fire.lose_loaded_for_detonation()?;actors[target].fire=fire;
             let crew=actors[target].alive();
             self.record_damage(&mut actors,target,attacker,shot,self.tick,0,input.health_before,crew,true,true)?;
-            let flight=if self.turret_jolt{rack::Flight::jolt(event,self.turret_launch(&actors,&event)?)?}else{rack::Flight::new(event)};
-            self.turret_flights.push(flight);self.ammo_detonation=Some(ledger);Ok(event)
+            self.detach_turret(&actors,event)?;self.ammo_detonation=Some(ledger);Ok(event)
         })();
         self.actors=actors;result
     }

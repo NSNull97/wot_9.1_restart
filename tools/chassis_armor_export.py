@@ -204,6 +204,51 @@ def chassis_component(src, model_path, effective, kinds_by_label):
                 visual_bounds=visual_bounds, mesh_bounds=m["bounds"], excluded_degenerate_triangle_ids=excluded), members
 
 
+def chassis_source(src, v, chassis, common, kinds_by_label):
+    """(hull_position, component, members) of one chassis of one vehicle; Refused/KeyError on an unusable source."""
+    vf = src.xml(v["source"])
+    label = "/chassis[1]/" + chassis + "[1]"
+    model = vf.get(label + "/hitTester[1]/collisionModel[1]")
+    refuse_if(model is None, "CHASSIS_SOURCE_UNRESOLVED", label + " hitTester")
+    hull_position = profiles.vector(vf[label + "/hullPosition[1]"], 3, "hull position")
+    effective = local_tracks(vf, chassis, common)
+    component, members = chassis_component(src, model, effective, kinds_by_label)
+    return hull_position, component, members
+
+
+PART_SCHEMA = "chassis-armor-part.v1"
+
+
+def chassis_part(src, catalog, vehicle_id, chassis, common, kinds_by_label):
+    """CONTENT-0 3.3: the chassis armour of any chassis module of a vehicle, without a build identity:
+    (raw part, None) or (None, [refusal, detail]). The stock chassis part has the stock bundle's component."""
+    v = catalog.vehicles[vehicle_id]
+    try:
+        hull_position, component, members = chassis_source(src, v, chassis, common, kinds_by_label)
+    except Refused as refusal:
+        return None, [refusal.code, refusal.detail]
+    except KeyError as error:
+        return None, ["CHASSIS_SOURCE_UNSUPPORTED", ("missing " + str(error))[:160]]
+    raw = profiles.canonical(dict(schema=PART_SCHEMA, vehicle_id=vehicle_id, chassis=chassis, hull_position=hull_position,
+                                  members=dict(sorted(members.items())), component=component)) + b"\n"
+    require(len(raw) <= MAX_BUNDLE, vehicle_id + ": chassis part size bound")
+    return raw, None
+
+
+def context(src):
+    """(common tracks, material kinds by label) of the pinned client sources."""
+    for rel, expected in materials.FILE_PINS.items():
+        if rel.startswith("res/"):
+            require(profiles.pin(src.file(rel)) == expected, "material source pin differs: " + rel)
+    kinds_raw = src.member(materials.MISC_REL, materials.KINDS_MEMBER)
+    require(src.packages[materials.MISC_REL] == materials.PACKAGE_PINS[materials.MISC_REL], "misc package pin differs")
+    require(kinds_raw is not None and profiles.pin(kinds_raw) == materials.MEMBER_PINS[materials.KINDS_KEY], "material kinds pin differs")
+    mapping = materials._kind_mapping(decode(kinds_raw, max_bytes=profiles.MAX_MEMBER))
+    damage_kinds = damage_kind_loader(src.file(materials.LOADER_REL))
+    common = common_tracks(decode(src.file(materials.COMMON_REL), max_bytes=profiles.MAX_MEMBER), mapping, damage_kinds)
+    return common, {**materials.EXPECTED_KINDS, **{name: mapping[name] for name in TRACKS}}
+
+
 def vehicle_row(src, catalog, identity, vehicle_id, common, kinds_by_label):
     v = catalog.vehicles[vehicle_id]
     chassis = v["defaults"]["chassis"].split(":")[-1]
@@ -211,13 +256,7 @@ def vehicle_row(src, catalog, identity, vehicle_id, common, kinds_by_label):
                identity=identity, status="generated", refusal=None, detail=None)
     raw = None
     try:
-        vf = src.xml(v["source"])
-        label = "/chassis[1]/" + chassis + "[1]"
-        model = vf.get(label + "/hitTester[1]/collisionModel[1]")
-        refuse_if(model is None, "CHASSIS_SOURCE_UNRESOLVED", label + " hitTester")
-        hull_position = profiles.vector(vf[label + "/hullPosition[1]"], 3, "hull position")
-        effective = local_tracks(vf, chassis, common)
-        component, members = chassis_component(src, model, effective, kinds_by_label)
+        hull_position, component, members = chassis_source(src, v, chassis, common, kinds_by_label)
         bundle = dict(schema=BUNDLE_SCHEMA, vehicle_id=vehicle_id, classification="VERIFIED_STATIC_ORIGINAL_717",
                       identity=identity, chassis=chassis, hull_position=hull_position,
                       members=dict(sorted(members.items())), component=component, battle_admission=False)
@@ -242,16 +281,7 @@ def build(original):
     src = profiles.Sources(original)
     catalog = profiles.load_catalog(src.root)
     require(catalog.sha256 == profiles.CATALOG_SHA256, "research catalogue differs")
-    for rel, expected in materials.FILE_PINS.items():
-        if rel.startswith("res/"):
-            require(profiles.pin(src.file(rel)) == expected, "material source pin differs: " + rel)
-    kinds_raw = src.member(materials.MISC_REL, materials.KINDS_MEMBER)
-    require(src.packages[materials.MISC_REL] == materials.PACKAGE_PINS[materials.MISC_REL], "misc package pin differs")
-    require(kinds_raw is not None and profiles.pin(kinds_raw) == materials.MEMBER_PINS[materials.KINDS_KEY], "material kinds pin differs")
-    mapping = materials._kind_mapping(decode(kinds_raw, max_bytes=profiles.MAX_MEMBER))
-    damage_kinds = damage_kind_loader(src.file(materials.LOADER_REL))
-    common = common_tracks(decode(src.file(materials.COMMON_REL), max_bytes=profiles.MAX_MEMBER), mapping, damage_kinds)
-    kinds_by_label = {**materials.EXPECTED_KINDS, **{name: mapping[name] for name in TRACKS}}
+    common, kinds_by_label = context(src)
     identities = {r["vehicle_id"]: r["identity"] for r in json.loads(PROFILES_TABLE.read_bytes())["vehicles"]}
     require(set(identities) == set(catalog.vehicles), "battle profile table does not cover the catalogue")
     rows, bundles = [], {}

@@ -72,7 +72,8 @@ fn wide_pitch_generated_profiles_are_supported_and_quantize_over_absolute(){
         let absolute=kind.source_aim().unwrap().envelope.absolute();let basic=kind.aim();
         assert_eq!(wire_pitch_range(kind).unwrap(),(absolute.min,absolute.max),"{}",entry.label);
         assert!(absolute.min<=basic.min_pitch&&basic.max_pitch<=absolute.max,"{}",entry.label);
-        if (absolute.min,absolute.max)!=(basic.min_pitch,basic.max_pitch){wide.push(entry.label.as_str());}
+        // CONTENT-0 3.3: every build is checked above; the pinned list names the stock builds.
+        if entry.stock&&(absolute.min,absolute.max)!=(basic.min_pitch,basic.max_pitch){wide.push(entry.label.as_str());}
     }
     wide.sort_unstable();
     // main and test_lab share the generated rows since the CONTENT-0 main transfer (owner 12.11).
@@ -88,7 +89,10 @@ fn wide_pitch_generated_profiles_are_supported_and_quantize_over_absolute(){
 fn wide_pitch_controller_keeps_sector_clamp_and_wire_round_trips_through_client_decoder(){
     let registry=crate::gateway091::shared::generated_vehicles::registry().unwrap();
     let mut checked=0;
+    // CONTENT-0 3.3: the envelope and the aim are the turret x gun pair's; each distinct pair once.
+    let mut pairs=std::collections::BTreeSet::new();
     for entry in registry.entries(){
+        if !pairs.insert((entry.vehicle_id.as_str(),entry.parts[1].as_str(),entry.parts[2].as_str(),format!("{:?}{:?}",entry.source_aim,entry.aim))){continue;}
         let kind=VehicleKind::Generated(entry.id);let envelope=kind.source_aim().unwrap().envelope;
         let absolute=envelope.absolute();let basic=kind.aim();
         if (absolute.min,absolute.max)==(basic.min_pitch,basic.max_pitch){continue;}

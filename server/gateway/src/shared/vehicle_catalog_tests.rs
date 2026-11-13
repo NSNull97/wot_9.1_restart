@@ -121,6 +121,35 @@ fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
         assert!(!v2::catalog_generated_kind_in(true,label),"{label}");}
 }
 
+/// CONTENT-0 3.3/4 (stand -22: T18 and M18 Hellcat builds never left the queue): a build's frozen loadout carries
+/// its own label, descriptor, health and gun, with the writer's shells of its turret x gun pair.
+#[test] fn content0_build_loadouts_parse_with_their_pair_shells() {
+    use crate::gateway091::shared::generated_vehicles as g;
+    let registry=g::registry().unwrap();
+    let admitted=|e:&g::Entry|VEHICLES.iter().any(|v|v.vehicle_id==e.vehicle_id&&v.battle_admission!=Admission::None&&v.legacy_inventory.is_none());
+    let stock_of=|e:&g::Entry|g::entry(registry.by_vehicle(&e.vehicle_id).unwrap());
+    let same=|e:&g::Entry|e.descriptor[10..14]==stock_of(e).descriptor[10..14];
+    let pick=|want_same:bool|registry.entries().iter().find(|e|!e.stock&&admitted(e)&&same(e)==want_same).expect("build");
+    for (build,mount) in [(pick(true),format!("{}-stock",stock_of(pick(true)).label)),
+                          (pick(false),format!("{}@{}",stock_of(pick(false)).label,pick(false).dispersion_key.split_once('@').unwrap().1))] {
+        let real=build.gun.shots.iter().take_while(|s|!s.is_absent()).count();
+        let crew:Vec<String>=(0..build.crew.len()).map(|i|format!("{ACCOUNT}:crew-{i}")).collect();
+        let ammo=|prefix:&str|->Vec<Value>{(0..real).map(|i|serde_json::json!({"shell_definition_id":format!("shell:{prefix}-{}",build.suffixes[i]),
+            "shell_compact_id":build.gun.shots[i].compact_descr,"family":build.gun.shots[i].family.source_name(),"count":if i==0{1}else{0}})).collect()};
+        let value=|prefix:&str|serde_json::json!({"kind":build.label,"descriptor_hex":build.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":7,"vehicle_inventory_id":format!("{ACCOUNT}:p09e-vehicle:7"),"max_hp":build.max_hp,"crew_ids":crew,
+            "capacity":build.gun.capacity,"ammunition":ammo(prefix),"initial_shell_compact_id":build.gun.shots[0].compact_descr});
+        let sha=|v:&Value|format!("{:x}",Sha256::digest(serde_json::to_vec(v).unwrap()));
+        let good=value(&mount);
+        let f=v2::parse_frozen_with(&good,ACCOUNT,&sha(&good),true).unwrap_or_else(|e|panic!("{} {mount}: {e}",build.label));
+        assert_eq!((f.kind.label(),f.max_hp,f.capacity),(build.label.as_str(),build.max_hp,build.gun.capacity));
+        assert!(v2::parse_frozen_with(&good,ACCOUNT,&sha(&good),false).is_err(),"legacy mode never admits a build");
+        let other=if mount.contains('@'){format!("{}-stock",stock_of(build).label)}else{format!("{}@x/y",stock_of(build).label)};
+        let wrong=value(&other);assert!(v2::parse_frozen_with(&wrong,ACCOUNT,&sha(&wrong),true).is_err(),"{other}");
+        assert!(v2::catalog_identity_in(VEHICLES,&build.label,1).is_err(),"base inventory");
+    }
+}
+
 #[test] fn battle_admission_is_a_data_field() {
     // Turning one entry's data to `none` closes it without a code change.
     let mut table=VEHICLES.to_vec();

@@ -159,8 +159,12 @@ impl Link {
             if their!=build {return Err(lost("build mismatch"));}
             // The worker takes its anchor on receipt: instants differ by the transit time only.
             let anchor=Instant::now();
-            write_frame(&mut stream,HELLO,&bw_wire::encode(&(build.to_owned(),settings.catalog_v1),anchor,&mut arcs)?,deadline)?;
-            let _:String=bw_wire::decode(&read_frame(&mut stream,READY,Some(deadline))?,anchor,&mut arcs)?;
+            let resources=super::super::build_resources::bound();
+            write_frame(&mut stream,HELLO,&bw_wire::encode(&(build.to_owned(),settings.catalog_v1,resources),anchor,&mut arcs)?,deadline)?;
+            // READY follows the worker's registry check (CONTENT-0 4: a profile per build): it waits under the
+            // startup timeout like the first step; accept and AUTH stay under the handshake deadline.
+            let ready=deadline.max(Instant::now()+settings.startup_timeout);
+            let _:String=bw_wire::decode(&read_frame(&mut stream,READY,Some(ready))?,anchor,&mut arcs)?;
             Ok((stream,anchor))
         })();
         match connected {
@@ -290,8 +294,9 @@ pub(super) fn step_all(arenas:&mut [arena::Arena],commands:&[Option<arena::Comma
 
 /// The worker process: `sr-gateway bw01-battle-worker PORT`, token on stdin.
 pub fn run(port:u16)->io::Result<()> {
-    // Ids decoded from the gateway are checked against this process's registry.
-    super::super::generated_vehicles::registry()?;
+    // Ids decoded from the gateway are checked against this process's registry. CONTENT-0 3.3: verifying
+    // the 12 196-entry registry runs beside the build hash and is joined before READY (the gateway waits for READY under its startup timeout).
+    let registry=std::thread::spawn(||super::super::generated_vehicles::registry().map(|_|()));
     let build=build_sha256()?;
     let mut hex=String::new();io::stdin().take(TOKEN as u64*2+1).read_to_string(&mut hex)?;
     if hex.len()!=TOKEN*2 {return Err(lost("token"));}
@@ -301,10 +306,13 @@ pub fn run(port:u16)->io::Result<()> {
     let mut arcs=Arcs::new(true);let deadline=Instant::now()+HANDSHAKE;
     write_frame(&mut s,AUTH,&bw_wire::encode(&(token,build.to_owned()),Instant::now(),&mut arcs)?,deadline)?;
     let hello=read_frame(&mut s,HELLO,Some(deadline))?;let anchor=Instant::now();
-    let (their,catalog_v1):(String,bool)=bw_wire::decode(&hello,anchor,&mut arcs)?;
+    let (their,catalog_v1,resources):(String,bool,Option<(std::path::PathBuf,std::path::PathBuf)>)=bw_wire::decode(&hello,anchor,&mut arcs)?;
     if their!=build {return Err(lost("build mismatch"));}
     if catalog_v1 {crate::profile13_v2091::enable_catalog_v1()?;}
-    write_frame(&mut s,READY,&bw_wire::encode(&build.to_owned(),anchor,&mut arcs)?,deadline)?;
+    // CONTENT-0 4: the build resource directory the gateway bound (same local-root/reparse checks here).
+    if let Some((root,dir))=resources {super::super::build_resources::configure(&root,&dir)?;}
+    registry.join().map_err(|_|lost("registry thread"))??;
+    write_frame(&mut s,READY,&bw_wire::encode(&build.to_owned(),anchor,&mut arcs)?,Instant::now()+HANDSHAKE)?;
     let mut runtime:Option<IntegratedRuntime>=None;
     loop {
         // The gateway may leave an idle arena unstepped for long; EOF ends the worker.

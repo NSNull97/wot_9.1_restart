@@ -100,6 +100,19 @@ impl Kind{
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
 struct Capability{native:i32,kind:Option<Kind>}
+/// CONTENT-0 4: a generated vehicle may carry another turret x gun pair; its shells and capacity are those of a
+/// build of the same vehicle type in the registry. A bounded shape check only: the writer checks the mounted pair.
+pub(crate) fn pair_ammo_layout(type_cd:u32,r:&crate::ammo_service091::Request)->io::Result<Option<[crate::ammo_service091::ShellCount;3]>>{
+    let registry=crate::gateway091::shared::generated_vehicles::registry()?;
+    let mut tried=Vec::new();
+    for e in registry.entries().iter().filter(|e|e.type_compact_id==type_cd) {
+        let pair=([0,1,2].map(|i|if e.gun.shots[i].is_absent() {0} else {e.gun.shots[i].compact_descr as i32}),u32::from(e.gun.capacity));
+        if tried.contains(&pair) {continue;}
+        if let Ok(layout)=r.layout_for_catalog(pair.0,pair.1,5) {return Ok(Some(layout));}
+        tried.push(pair);
+    }
+    Ok(None)
+}
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Binding{account:String,database:i32,pub revision:u64,state_sha:String,capabilities:Vec<Capability>,capacity:i64}
 pub enum Request{Ammo(crate::ammo_service091::Request),Crew(crate::crew_service091::Request),Transfer(crate::crew_transfer091::Request),Barracks(crate::crew_barracks091::Request),
@@ -167,7 +180,11 @@ impl Binding{
         // This is a bounded source shape, never a whole-assembly admission or
         // mounted-gun ownership proof. A legal chassis upgrade must not prevent
         // unloading. The writer independently checks actual owned turret/gun.
-        let (shells,capacity)=self.kind(r.vehicle_inventory_id() as i64)?.ammo();r.layout_for_catalog(shells,capacity,5)
+        let kind=self.kind(r.vehicle_inventory_id() as i64)?;
+        let (shells,capacity)=kind.ammo();
+        let stock=r.layout_for_catalog(shells,capacity,5);
+        if stock.is_ok()||!kind.generated() {return stock;}
+        Ok(pair_ammo_layout(kind.type_cd() as u32,r)?.ok_or_else(||bad("unsupported pair ammo layout"))?)
     }
     pub fn recruit(&self,r:crate::crew_service091::Request)->io::Result<()>{
         let roles=self.kind(r.vehicle_inventory_id as i64)?.primary_roles();

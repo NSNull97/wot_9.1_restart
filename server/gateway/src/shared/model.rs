@@ -534,6 +534,9 @@ impl World {
         self.ammo_detonation.as_ref().map_or(&[],super::ammo_detonation::Ledger::events)
     }
     pub fn turret_flights(&self)->&[super::ammo_detonation::Flight]{&self.turret_flights}
+    pub(super) fn has_detached_turret(&self,slot:usize)->bool{
+        self.turret_flights.iter().any(|flight|flight.event().target()==slot)
+    }
     /// TURRET-01: set by the battle-scene runtime before any detonation, so
     /// every later rack event launches a Jolt body instead of the legacy point.
     pub fn enable_turret_jolt(&mut self)->io::Result<()>{
@@ -654,6 +657,15 @@ impl World {
             geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new().into(), ap_test_lab: false, impacts: Vec::new().into(),
             terrain: None, terrain_contacts: Vec::new().into(), ram_damage_events:Vec::new().into(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS],bots:None })
+    }
+    /// CONTENT-0 3.3: a non-stock build seats with its own geometry (parts, its chassis armour), derived
+    /// from the stock geometry its vehicle's template row bound; a stock or closed kind is unchanged.
+    fn ensure_build_geometry(&mut self,kind:VehicleKind)->io::Result<()> {
+        if !super::build_resources::is_build(kind)||self.generated_geometries.contains_key(&kind.index()) {return Ok(());}
+        let stock=super::build_resources::stock_of(kind).ok_or_else(bad)?;
+        let bundle=self.generated_geometries.get(&stock.index()).cloned().ok_or_else(bad)?;
+        let built=super::build_resources::geometry(kind,&bundle)?;
+        self.bind_geometry(built)
     }
     pub fn bind_geometry(&mut self, bundle: Arc<geometry::Bundle>) -> io::Result<()> {
         let kind=bundle.vehicle_kind();let index=kind.index();
@@ -1119,6 +1131,7 @@ impl World {
             if fire.typed().is_none_or(|state|state.mount()!=kind.mount()){return Err(bad());}fire
         }else{fire::State::with_mounted_loadout(ammo,kind.reload_seconds(),kind.ammo_limit())?};
         if self.mixed_profiles {
+            self.ensure_build_geometry(kind)?;
             let mut trace=self.impact.clone();trace.bind_actor(slot,kind)?;
             let mut fragiles=self.fragiles.clone();
             if let Some(state)=&mut fragiles {state.bind_ammo_capacity(kind.ammo_limit())?;}
