@@ -116,10 +116,10 @@ class PoolStore(ResultsStore):
             self.mounts[p.assembly_id] = Mount(p.assembly_id, p.vehicle_id, p.vehicle_id.split(":")[-1], p.type_compact_id,
                 modules["turret"].split(":")[-1], catalog.modules[modules["turret"]]["native_compact_id"],
                 modules["gun"].split(":")[-1], catalog.modules[modules["gun"]]["native_compact_id"], p.capacity, tuple(shells))
-        # CONTENT-0 4 (catalog mode): one mount per other turret x gun pair of a generated stock kind, from the pinned
+        # CONTENT-0 (catalog mode): one mount per other turret x gun pair from the pinned
         # build table (capacity and ordered shells of the client's turret/gun XML); `self.pair_mount` maps
         # (vehicle, turret, gun) -> mount ID for every pair, the stock pair included.
-        self.pair_mount, pair_shells, pair_vehicles = {}, [], set()
+        self.pair_mount, pair_shells, pair_vehicles = {}, {}, set()
         for p in self.registry.profiles.values():
             if not p.assembly_kind and p.assembly_id in self.mounts:
                 m = dict(p.modules); self.pair_mount[(p.vehicle_id, m["turret"], m["gun"])] = p.assembly_id
@@ -129,7 +129,7 @@ class PoolStore(ResultsStore):
             from p04m_stock_registry import pair_name
             for (vehicle_id, turret, gun), source in sorted(content0_builds.mounts().items()):
                 stock = self.registry.by_vehicle.get(vehicle_id)
-                if stock is None or stock.kind in PINS:
+                if stock is None:
                     continue
                 pair_vehicles.add(vehicle_id)
                 if (vehicle_id, turret, gun) in self.pair_mount:
@@ -138,12 +138,14 @@ class PoolStore(ResultsStore):
                 shells = []
                 for suffix, name, shell_kind, item_id, cd, _ in source["shells"]:
                     key = "shell:" + assembly + "-" + suffix
-                    self.shells[key] = Shell(key, name, shell_kind, item_id, cd); shells.append(key); pair_shells.append(key)
+                    self.shells[key] = Shell(key, name, shell_kind, item_id, cd)
+                    shells.append(key)
+                    pair_shells[key] = stock.kind in PINS
                 self.mounts[assembly] = Mount(assembly, vehicle_id, vehicle_id.split(":")[-1], stock.type_compact_id,
                     turret.split(":")[-1], catalog.modules[turret]["native_compact_id"], gun.split(":")[-1],
                     catalog.modules[gun]["native_compact_id"], source["capacity"], tuple(shells))
                 self.pair_mount[(vehicle_id, turret, gun)] = assembly
-        # Vehicles whose every turret x gun pair has a mount (generated kinds): their shells unload on a gun change.
+        # Vehicles whose every turret x gun pair has a mount: their shells unload on a gun change.
         self.pair_vehicles = frozenset(pair_vehicles)
         # The ammo catalog hash pinned by the gateway covers the legacy mounts only;
         # BATTLE-ANY generated mounts are bound by the activated catalog hash.
@@ -166,9 +168,10 @@ class PoolStore(ResultsStore):
             for suffix, *_ in rows:
                 key = "shell:" + assembly + "-" + suffix
                 rank.setdefault(key, (order.get(kind, len(order)), key))
-        # CONTENT-0 4: shells of the other pairs come after every stock shell, so existing depot keys never move.
-        for key in pair_shells:
-            rank.setdefault(key, (len(order) + 1, key))
+        # Pair shells follow stock shells. Pairs added for the old closed kinds also follow
+        # existing pairs, preserving the established depot key for their shared compact IDs.
+        for key, formerly_closed in pair_shells.items():
+            rank.setdefault(key, (len(order) + 1 + formerly_closed, key))
         first = {}
         for key, shell in self.shells.items():
             cd = shell.native_compact_id
@@ -415,8 +418,10 @@ class PoolStore(ResultsStore):
                 (floor, account, key)).rowcount == 1, "CORRUPT_STORE")
 
     def mount_id_of(self, owned):
-        """CONTENT-0 4: the mount of an owned vehicle's current turret x gun pair; a pair outside the build table
-        (legacy kinds) keeps the stock mount, whose shells stay unloaded and hidden."""
+        """The mount of an owned vehicle's current turret x gun pair.
+
+        A pair outside the build table keeps the stock mount; its shells stay unloaded and hidden.
+        """
         p = self.registry.by_vehicle[owned["vehicle_id"]]
         return self.pair_mount.get((owned["vehicle_id"], owned["modules"]["turret"], owned["modules"]["gun"]), p.assembly_id)
 
@@ -440,8 +445,8 @@ class PoolStore(ResultsStore):
     def _auto_unload(self, profile):
         """CONTENT-0 4: the #717 client installs a gun while shells are loaded and then tries to load the default
         layout (`gui/shared/gui_items/processors/module.pyc` tryToLoadDefaultShellsLayout), so the old gun's shells
-        leave the vehicle: they return to the shared depot (INFERRED from the client). Vehicles of generated kinds only
-        (every turret x gun pair has a mount); a legacy kind keeps UNLOAD_AMMUNITION_REQUIRED."""
+        leave the vehicle: they return to the shared depot (INFERRED from the client). This applies to vehicles
+        whose every turret x gun pair has a mount. The closed catalogue still requires explicit unloading."""
         if not self.pool_active() or "pool" not in profile: return frozenset()
         return frozenset(r["vehicle_inventory_id"] for r in profile["research"]["vehicles"] if r["vehicle_id"] in self.pair_vehicles)
 
@@ -1033,8 +1038,15 @@ class PoolStore(ResultsStore):
 
     def service(self, request, *, authenticated_account_id):
         native = request.get("layout", [None, None])[1] if type(request) is dict and type(request.get("layout")) is list and len(request["layout"]) > 1 else None
-        if not self.pool_active() or type(native) is not int or native in (1, 2):
+        if not self.pool_active() or type(native) is not int or native == 2:
             return super().service(request, authenticated_account_id=authenticated_account_id)
+        if native == 1:
+            # The original P09D writer and replies remain valid for the stock pair.
+            # An upgraded MS-1 needs a pool mount, just like any other catalogue vehicle.
+            require(request.get("account_id") == authenticated_account_id == self.pool_account, "FOREIGN_ACCOUNT")
+            owned = next((r for r in self._research(self.pool_account)["vehicles"] if r["native_id"] == native), None)
+            if owned is None or self.mount_id_of(owned) == "ms1-stock":
+                return super().service(request, authenticated_account_id=authenticated_account_id)
         return self._guarded(self._pool_service, request, authenticated_account_id=authenticated_account_id)
 
     def _pool_service(self, request, *, authenticated_account_id):

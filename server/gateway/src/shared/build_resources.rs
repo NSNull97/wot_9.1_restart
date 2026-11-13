@@ -41,10 +41,14 @@ pub fn bound()->Option<(PathBuf,PathBuf)>{SOURCE.get().map(|s|(s.root.clone(),s.
 
 /// A non-stock generated build (stock kinds and the closed kinds are not builds).
 pub fn is_build(kind:VehicleKind)->bool{kind.generated().is_some_and(|e|!e.stock)}
-/// The stock entry of a build's vehicle (None: the vehicle's stock build is refused or legacy).
+/// The stock template of a build's vehicle (None if the stock build is refused).
 pub fn stock_of(kind:VehicleKind)->Option<VehicleKind> {
     let e=kind.generated().filter(|e|!e.stock)?;
-    generated::registry().ok()?.by_vehicle(&e.vehicle_id).map(VehicleKind::Generated)
+    let stock=generated::registry().ok()?.by_vehicle(&e.vehicle_id).map(VehicleKind::Generated);
+    stock.or_else(|| {
+        VehicleKind::from_vehicle_compact_id(e.type_compact_id)
+            .filter(|kind| e.vehicle_id.strip_prefix("vehicle:")==Some(kind.name()))
+    })
 }
 
 /// Geometry of a build: its three parts, its chassis track armour (when the stock row has track armour)
@@ -64,8 +68,15 @@ pub fn geometry(kind:VehicleKind,stock:&Bundle)->io::Result<Arc<Bundle>> {
         bundle=bundle.with_chassis(Arc::new(chassis))?;
     }
     if let Some(volumes)=stock.module_volumes_arc() {
-        let s_e=stock_kind.generated().ok_or_else(||bad("stock entry"))?;
-        if e.parts[1]==s_e.parts[1]&&e.pivots[1..]==s_e.pivots[1..] {bundle=bundle.with_module_volumes(volumes)?;}
+        let same_turret=match stock_kind.generated() {
+            Some(entry)=>e.parts[1]==entry.parts[1]&&e.pivots[1..]==entry.pivots[1..],
+            None=>{
+                let stock_parts=stock.spotting_parts();
+                e.descriptor.get(10..12)==stock_kind.descriptor().get(10..12)
+                    &&e.pivots[1..]==[stock_parts.turret,stock_parts.gun]
+            }
+        };
+        if same_turret {bundle=bundle.with_module_volumes(volumes)?;}
         else {
             // CONTENT-0 4: the skins mark only the stock turret model; the hull volumes (same hull) still bind,
             // the other turret's modules and seats stay on their LAB boxes.

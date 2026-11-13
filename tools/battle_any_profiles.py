@@ -846,7 +846,7 @@ def runtime_facts(v, tables, modules, row):
         seats.append(dict(seat=index, extra_index=CREW_EXTRAS[roles[0]][n], roles=list(roles),
                           role_bits=sum(ROLE_BITS[r] for r in roles)))
     kind = kind_label(row)
-    if kind in LEGACY_SUFFIXES:
+    if kind in LEGACY_SUFFIXES and all(modules[role] == v["defaults"][role] for role in ("turret", "gun")):
         suffixes = list(LEGACY_SUFFIXES[kind])
     else:
         suffixes = []
@@ -935,10 +935,6 @@ def vehicle_builds(catalog, tables, builds, chassis_armor=None):
         entry = dict(modules=m, status=row["status"], refusal=row["refusal"], detail=row["detail"],
                      descriptor_hex=row["identity"]["descriptor_hex"], module_compact_ids=row["identity"]["module_compact_ids"],
                      max_hp=row["identity"]["max_hp"], mass_kg=row["identity"]["mass_kg"], stock=stock)
-        if row["status"] == "generated" and kind in LEGACY_SUFFIXES and not stock:
-            # The five legacy kinds (MS-1, IS-7, T-26, T-34, T-34-85) fight through their hand-closed runtime arms;
-            # their other builds wait until those kinds move to the generated path (explicit, not stock-substituted).
-            entry.update(status="refused", refusal="LEGACY_KIND_BUILD_UNSUPPORTED", detail=kind)
         if entry["status"] == "generated":
             label = build_label(kind, row, stock)
             require(len(label) <= MAX_BUILD_LABEL, vehicle_id + ": build label bound")

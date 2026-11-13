@@ -13,6 +13,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "tools"))
 from tests import test_p09e_research_store as previous
+import catalog_v1
 from p04m_pool_store import PoolStore
 from p04m_stock_registry import DEFINITION_SHA256
 from p04m_pool_crew import decode
@@ -377,7 +378,8 @@ class PoolStoreTests(unittest.TestCase):
         state = projection.state(self.profile(), self.store.layouts(self.account))
         self.assertEqual(state["inventory"][1]["shells"][3], [1034, 160, 1290, 0, 1546, 0])
         capability = next(r for r in self.store.registry.capabilities(self.profile()) if r["native_inventory_id"] == 3)
-        self.assertEqual((capability["kind"], capability["assembly_id"], capability["admission"]), ("t26", None, False))
+        assembly = "t26-stock" if catalog_v1.active() else None
+        self.assertEqual((capability["kind"], capability["assembly_id"], capability["admission"]), ("t26", assembly, False))
         self.store.service(self.ammo_request(3, [0, 0, 0]), authenticated_account_id=self.account)
         self.assertEqual(self.profile()["depot"][self.store.depot_key["shell:t26-stock-ap"]], 160)
         self.store.service(self.ammo_request(3, [160, 0, 0]), authenticated_account_id=self.account)
@@ -391,12 +393,20 @@ class PoolStoreTests(unittest.TestCase):
         self.act("research", {"vehicle_id": edge["vehicle_id"], "unlock_index": edge["native_index"]})
         self.act("buy_module", {"module_id": gun, "count": 1})
         payload = {"vehicle_inventory_id": owned["vehicle_inventory_id"], "modules": [gun]}
-        self.reject("UNLOAD_AMMUNITION_REQUIRED", lambda: self.act("install", payload))
-        self.store.service(self.ammo_request(3, [0, 0, 0]), authenticated_account_id=self.account)
-        self.act("install", payload)
-        self.reject("AMMUNITION_CONFIGURATION_UNSUPPORTED", lambda: self.store.service(self.ammo_request(3, [1, 0, 0]), authenticated_account_id=self.account))
-        state = PoolProjectionSource(source, self.store).state(self.profile(), self.store.layouts(self.account))
-        self.assertEqual(state["inventory"][1]["shells"][3], [])
+        if catalog_v1.active():
+            self.act("install", payload)
+            mount_id = self.store.mount_id_of(next(r for r in self.profile()["research"]["vehicles"] if r["native_id"] == 3))
+            self.assertNotEqual(mount_id, "t26-stock")
+            layout = [v for shell in self.store.mounts[mount_id].shell_ids for v in (self.store.shells[shell].native_compact_id, 0)]
+            state = PoolProjectionSource(source, self.store).state(self.profile(), self.store.layouts(self.account))
+            self.assertEqual(state["inventory"][1]["shells"][3], layout)
+        else:
+            self.reject("UNLOAD_AMMUNITION_REQUIRED", lambda: self.act("install", payload))
+            self.store.service(self.ammo_request(3, [0, 0, 0]), authenticated_account_id=self.account)
+            self.act("install", payload)
+            self.reject("AMMUNITION_CONFIGURATION_UNSUPPORTED", lambda: self.store.service(self.ammo_request(3, [1, 0, 0]), authenticated_account_id=self.account))
+            state = PoolProjectionSource(source, self.store).state(self.profile(), self.store.layouts(self.account))
+            self.assertEqual(state["inventory"][1]["shells"][3], [])
         self.assertEqual(self.profile()["depot"][self.store.depot_key["shell:t26-stock-ap"]], 160)
 
 
