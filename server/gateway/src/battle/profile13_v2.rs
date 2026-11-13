@@ -159,6 +159,7 @@ fn legacy_identity(label:&str,native:u64)->io::Result<Identity>{
 /// The zero-economy policy itself stays enforced by the Python writer.
 fn catalog_identity(label:&str,native:u64)->io::Result<Identity>{catalog_identity_in(catalog::VEHICLES,label,native)}
 pub(crate) fn catalog_identity_in(table:&[catalog::Vehicle],label:&str,native:u64)->io::Result<Identity>{
+    if !table.iter().any(|e|e.kind==label) {return build_identity_in(table,label,native);}
     let entry=table.iter().find(|e|e.kind==label).filter(|e|e.battle_admission!=Admission::None)
         .ok_or_else(||bad("owner acceptance required/unknown kind"))?;
     // Closed kinds by label; BATTLE-ANY rows through the verified generated registry.
@@ -175,6 +176,34 @@ pub(crate) fn catalog_identity_in(table:&[catalog::Vehicle],label:&str,native:u6
     let suffix=match entry.legacy_inventory{Some((n,s)) if native==u64::from(n)=>s.to_string(),
         None if (3..=i32::MAX as u64).contains(&native)=>format!("p09e-vehicle:{native}"),_=>return Err(bad("stock/source/ownership"))};
     Ok((kind,mount,suffix,std::array::from_fn(|i|shells.get(i).map_or("",|s|s.suffix))))
+}
+/// CONTENT-0 3.3/4: a non-stock build (`<kind>--<hash>`) of a catalogue vehicle. Admission is its stock row's;
+/// the battle profile is the build's own registry entry (descriptor, health, gun); never a legacy-inventory kind.
+fn build_identity_in(table:&[catalog::Vehicle],label:&str,native:u64)->io::Result<Identity>{
+    let unknown=||bad("owner acceptance required/unknown kind");
+    let kind=VehicleKind::from_owned_label(label).filter(|k|VehicleKind::from_label(label).is_none()&&k.is_generated()).ok_or_else(unknown)?;
+    let build=kind.generated().filter(|e|!e.stock).ok_or_else(unknown)?;
+    let stock=build_stock(build)?;
+    table.iter().find(|e|e.kind==stock.label).filter(|e|e.battle_admission!=Admission::None&&e.legacy_inventory.is_none()).ok_or_else(unknown)?;
+    device_profile(kind).ok_or_else(||bad("device profile"))?;
+    if !(3..=i32::MAX as u64).contains(&native) {return Err(bad("stock/source/ownership"));}
+    Ok((kind,kind.mount(),format!("p09e-vehicle:{native}"),std::array::from_fn(|i|build.suffixes[i].as_str())))
+}
+fn build_stock(build:&'static crate::gateway091::shared::generated_vehicles::Entry)->io::Result<&'static crate::gateway091::shared::generated_vehicles::Entry>{
+    let registry=crate::gateway091::shared::generated_vehicles::registry()?;
+    registry.by_vehicle(&build.vehicle_id).map(crate::gateway091::shared::generated_vehicles::entry).filter(|e|e.stock)
+        .ok_or_else(||bad("build without its stock entry"))
+}
+/// The writer's mount of a frozen kind's shells (`shell:<mount>-<suffix>`): `<kind>-stock`, and for a build its
+/// stock kind with `-stock` when the build keeps the stock turret x gun (descriptor bytes 10..14), else
+/// `<stock kind>@<turret>/<gun>` (CONTENT-0 4, the pair row of `dispersion_key`).
+fn shell_mount(kind:VehicleKind)->io::Result<String>{
+    let Some(build)=kind.generated().filter(|e|!e.stock) else {return Ok(format!("{}-stock",kind.label()));};
+    let stock=build_stock(build)?;
+    if build.descriptor.len()<14||stock.descriptor.len()<14 {return Err(bad("build descriptor"));}
+    if build.descriptor[10..14]==stock.descriptor[10..14] {return Ok(format!("{}-stock",stock.label));}
+    let pair=build.dispersion_key.split_once('@').map(|(_,pair)|pair).filter(|pair|!pair.is_empty()).ok_or_else(||bad("build pair"))?;
+    Ok(format!("{}@{pair}",stock.label))
 }
 /// SPG-02: the number of the gun's real (not absent) shell cells; real cells come first.
 pub(crate) fn real_shots(p:&source::GunProfile)->usize{p.shots.iter().take_while(|s|!s.is_absent()).count()}
@@ -197,12 +226,13 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     for row in crew{let s=row.as_str().ok_or_else(||bad("crew ID"))?;
         if!id(s)||!s.starts_with(&format!("{account}:"))||s.len()<=account.len()+1||crew_ids.iter().any(|x|x==s){return Err(bad("crew owner/unique"));}crew_ids.push(s.to_owned());}
     if crew_ids.len()!=crew_count{return Err(bad("crew seats"));}
+    let mount_key=shell_mount(kind)?;
     let a=v["ammunition"].as_array().ok_or_else(||bad("ammo"))?;if a.len()!=real_shots(&p){return Err(bad("stack count"));}
     let mut stacks=Vec::new();
     for(i,row)in a.iter().enumerate(){keys(row,&["shell_definition_id","shell_compact_id","family","count"])?;let s=p.shots[i];
         let count=u16::try_from(number(row,"count")?).map_err(|_|bad("count bound"))?;
         if number(row,"shell_compact_id")?!=u64::from(s.compact_descr)||text(row,"family")?!=s.family.source_name()
-            ||text(row,"shell_definition_id")?!=format!("shell:{}-stock-{}",kind.label(),suffixes[i])||count>p.capacity{return Err(bad("source shell/order/count"));}
+            ||text(row,"shell_definition_id")?!=format!("shell:{}-{}",mount_key,suffixes[i])||count>p.capacity{return Err(bad("source shell/order/count"));}
         stacks.push(Stack{shell_definition_id:text(row,"shell_definition_id")?.into(),shell_compact_id:s.compact_descr,family:s.family,count});}
     while stacks.len()<3{stacks.push(absent_stack(&p.shots[stacks.len()]));}
     let ammunition:[Stack;3]=stacks.try_into().map_err(|_|bad("stacks"))?;
