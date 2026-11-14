@@ -15,6 +15,8 @@ import client_trace_source  # noqa: E402
 
 def trusted_functions(names, namespace):
     namespace.setdefault('_settings', {})
+    # Extracted definitions do not execute sr_interactive's module initializer.
+    namespace.setdefault('_profile13_fight_scenario', None)
     # R7: profile_calls lives in native_call_trace.py and reads host stubs via _host.
     found = client_trace_source.nodes(names)
     client_trace_source.bind_host(namespace)

@@ -69,7 +69,8 @@ class Handler(unittest.TestCase):
         instance = domain.Domain.__new__(domain.Domain)
         instance.contexts = {account: object() for account in accounts}
         instance.native_ids = dict(accounts)
-        instance.config = type("Config", (), {"database": database, "accounts": {a: {"late": False} for a in accounts}})()
+        instance.config = type("Config", (), {"database": database, "accounts": {a: {"late": False} for a in accounts},
+                                               "camouflage_v1": False})()
         instance.rate = type("Rate", (), {"take": lambda self: True})()
         instance.lanes = {account: domain.AccountLane() for account in accounts}
         import threading
