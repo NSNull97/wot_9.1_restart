@@ -51,6 +51,18 @@ pub fn stock_of(kind:VehicleKind)->Option<VehicleKind> {
     })
 }
 
+/// A stand may carry only a subset of the embedded builds. Check that a bot
+/// can select this one before seating it. The normal loaders verify the pins.
+pub fn installed(kind: VehicleKind, needs_chassis: bool) -> bool {
+    let Some(entry) = kind.generated().filter(|entry| !entry.stock) else { return false; };
+    let (Ok(source), Some(pins)) = (source(), entry.part_sha256.as_ref()) else { return false; };
+    let parts = source.dir.join("parts");
+    let has_part = |pin: &String| parts.join(format!("{pin}.json")).is_file();
+    source.dir.join(format!("{}-qualified-profile.json", entry.label)).is_file()
+        && pins.iter().all(&has_part)
+        && (!needs_chassis || entry.chassis_armor_sha256.as_ref().is_some_and(has_part))
+}
+
 /// Geometry of a build: its three parts, its chassis track armour (when the stock row has track armour)
 /// and the stock module volumes only when the build keeps the stock turret.
 pub fn geometry(kind:VehicleKind,stock:&Bundle)->io::Result<Arc<Bundle>> {

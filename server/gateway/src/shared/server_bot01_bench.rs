@@ -20,6 +20,50 @@ pub(super) fn children(pid:u32)->Vec<u32> {
 }
 fn alive(pid:u32)->bool {sample(&[pid]).contains_key(&pid)}
 
+/// BATTLE-ANY bot roster with a synthetic owner and real pinned Jolt resources.
+#[cfg(feature = "test_lab")]
+#[test]
+#[ignore]
+fn bot_build_loadout_starts_in_real_jolt_scene() {
+    use super::super::{build_resources, profile13_templates, spotting};
+    let manifest = PathBuf::from(env("BOT01_BENCH_MANIFEST").expect("BOT01_BENCH_MANIFEST"));
+    let root = PathBuf::from(env("BOT01_BENCH_LOCAL_ROOT").expect("BOT01_BENCH_LOCAL_ROOT"));
+    let resources = profile13_templates::load(&root, &manifest).unwrap();
+    let now = Instant::now();
+    let id = 0x5eed_b071_0002;
+    let stock = VehicleKind::Ms1;
+    let mut template = BattleTemplate::from_shared_policy(&resources, 6, id, now, None, false).unwrap();
+    template.world.enable_mixed_ammo().unwrap();
+    template.world.enable_original_spotting(spotting::Rules::selected().unwrap()).unwrap();
+    let kinds = vec![stock];
+    template.world.enable_bots(model::bots::Plan { human_places: 1, seed: 1, kinds: kinds.clone() }).unwrap();
+    let mut arena = arena::Arena::from_template(0, &template, id, now).unwrap();
+    arena.world.set_match_roster(1, kinds, (1, 1)).unwrap();
+    let (owner, _) = model::tests::profile13_loadout(stock, 0, stock.ammo_limit());
+    assert_eq!(arena.world.attach_native_stand_in(owner, 1, stock).unwrap(), 0);
+    assert_eq!(arena.world.fill_bots().unwrap(), 5);
+    let builds = arena.world.actors.iter().filter(|actor| build_resources::is_build(actor.vehicle_kind())).collect::<Vec<_>>();
+    assert!(!builds.is_empty());
+    for actor in &builds {
+        let kind = actor.vehicle_kind();
+        assert!(actor.bot.is_some());
+        assert_eq!(build_resources::stock_of(kind), Some(stock));
+        assert_eq!(actor.fire.typed().unwrap().mount(), kind.mount());
+        assert_eq!(arena.world.geometry_for(kind).unwrap().vehicle_kind(), kind);
+    }
+    let builds = builds.iter().map(|actor| actor.vehicle_kind().label()).collect::<Vec<_>>();
+    let startup = Instant::now();
+    let mut start = true;
+    while !arena.native_ready() {
+        assert!(startup.elapsed() < Duration::from_secs(120), "Jolt ready deadline");
+        let event = step(&mut arena, arena::Command::Step { now: Instant::now(), start });
+        start = false;
+        assert!(matches!(event, arena::Event::Stepped), "{event:?}");
+        thread::sleep(Duration::from_millis(5));
+    }
+    println!("BOT_BUILD_REAL_JOLT map={} battle={id} builds={builds:?} native_ready=true", arena.world.map.asset());
+}
+
 #[test]
 #[ignore]
 fn bot01_bench_real_scene(){
