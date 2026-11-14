@@ -506,6 +506,16 @@ impl Session {
         c.damage_cursor=world.damage_events.len();c.ram_cursor=world.ram_damage_events.len();c.device_cursor=world.device_events.len();
         c.tracer_started = tracer_flags();
         c.tracer_stopped = tracer_flags();
+        let actor = world.owned(slot, self.id)?;
+        let crew_parameters = actor.owned_v2.as_ref().and_then(|frozen| {
+            let levels = frozen.crew_qualification.as_deref()?;
+            let armament = actor.fire.typed()?;
+            Some((levels, armament.base_reload_seconds(), actor.aiming_spec().aiming_time))
+        });
+        if let Some((levels, reload, aiming)) = crew_parameters {
+            println!("CONTENT0_CREW_BATTLE battle={} slot={slot} kind={} qualification={levels:?} devices={:?} consumables={:?} reload_seconds={reload:.3} aiming_seconds={aiming:.3} view_metres={:.3}",
+                world.id, actor.vehicle_kind().label(), actor.optional_devices(), actor.hud_consumables(), actor.view_range()?);
+        }
         *self = next;
         println!("SHARED_ENTRY battle={} session={} slot={slot} avatar={} vehicle={} assignment={} inventory_reserved={}",
             world.id,self.id,wire::avatar_id(slot)?,wire::vehicle_id(slot)?,
@@ -864,7 +874,7 @@ impl Session {
                 if c.phase != Phase::Entities || !c.creations[c.slot].is_some_and(|(_, ack)| ack) { return Err(bad()); }
                 let sequence = self.tx.enqueue_body_tracked(&wire::binding(world, c.slot, now)?)?;
                 c.binding = Some((sequence, false)); c.phase = Phase::Driving;
-                c.consumables_sent=world.actors[c.slot].consumables;
+                c.consumables_sent=world.actors[c.slot].hud_consumables();
                 // Loading/reconnecting a scene is not a replay of prior gun effects.
                 c.shot_cursor = world.latest_shot();
                 c.impact_cursor = world.impacts.len();

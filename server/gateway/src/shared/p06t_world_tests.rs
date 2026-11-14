@@ -92,6 +92,80 @@ fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
 }
 
 #[test]
+fn content0_s5_crew_boosters_change_reload_aim_and_view_and_food_is_consumed_on_battle_start() {
+    let now = Instant::now();
+    let (owner, base_frozen) = actual_frozen_ap_zero();
+    let configured = |devices, food, levels| {
+        let mut value = base_frozen.value();
+        value["artefacts"] = serde_json::json!({"optional_devices":devices,"consumables":[food,0,0]});
+        value["crew_qualification"] = serde_json::json!(levels);
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let frozen = v2::parse_frozen(&value, &owner.account, &digest).unwrap();
+        let mut world = base(now, low_ground());
+        world.enable_lifecycle(super::super::lifecycle::Rules {
+            prebattle_ms: 1000, ..super::super::lifecycle::Rules::prohorovka()
+        }).unwrap();
+        world.enable_original_spotting(super::super::spotting::Rules::selected().unwrap()).unwrap();
+        world.attach_owned_v2(owner.clone(), 1, &frozen).unwrap();
+        lab_attach(&mut world, VehicleKind::Ms1, 1, [5,5,5]);
+        start(&mut world, now);
+        world
+    };
+    let mut boosted = configured([4601,1529,0], 3067, [100,100]);
+    let mut baseline = configured([0,1529,0], 0, [100,100]);
+    let vents = configured([4601,1529,0], 0, [100,100]);
+    let food = configured([0,1529,0], 3067, [100,100]);
+    let rookie = configured([0,1529,0], 0, [50,50]);
+    let rookie_boosted = configured([4601,1529,0], 3067, [50,50]);
+    let a = &boosted.actors[0];
+    let base = &baseline.actors[0];
+    let expected = (0.5 + 115.*0.00375)/0.875;
+    assert!((a.crew_performance(Actor::COMMANDER) - expected).abs()<1e-12);
+    // The MS-1 commander doubles as the gunner and loader and has no self command bonus.
+    assert!((a.fire.typed().unwrap().base_reload_seconds() - base.fire.typed().unwrap().base_reload_seconds()/expected as f32).abs()<1e-6);
+    assert!((a.aiming_spec().aiming_time - base.aiming_spec().aiming_time/expected as f32).abs()<1e-6);
+    assert!((a.view_range().unwrap() - base.view_range().unwrap()*expected as f32).abs()<1e-4);
+    for world in [&vents, &food] {
+        let partial = &world.actors[0];
+        assert!(base.view_range().unwrap() < partial.view_range().unwrap());
+        assert!(partial.view_range().unwrap() < a.view_range().unwrap());
+    }
+    assert!(rookie.actors[0].view_range().unwrap() < rookie_boosted.actors[0].view_range().unwrap());
+    assert!(rookie_boosted.actors[0].view_range().unwrap() < base.view_range().unwrap());
+    assert_eq!(a.equipment_mass(), 100.);
+    let view = a.view_range().unwrap();
+    let reload = a.fire.typed().unwrap().base_reload_seconds();
+    let mut cancelled = boosted.clone();
+    cancelled.detach(2).unwrap();
+    cancelled.advance_lifecycle(now).unwrap();
+    assert_eq!(cancelled.actors[0].consumables, [3067,0,0]);
+    boosted.advance_lifecycle(now).unwrap();
+    boosted.advance_lifecycle(now + Duration::from_millis(999)).unwrap();
+    assert_eq!(boosted.actors[0].consumables, [3067,0,0]);
+    boosted.advance_lifecycle(now + Duration::from_millis(1000)).unwrap();
+    boosted.advance_lifecycle(now + Duration::from_millis(1100)).unwrap();
+    assert_eq!(boosted.actors[0].consumables, [0;3]);
+    assert_eq!(boosted.actors[0].hud_consumables(), [3067,0,0]);
+    assert_eq!(boosted.actors[0].view_range().unwrap(), view);
+    assert_eq!(boosted.actors[0].fire.typed().unwrap().base_reload_seconds(), reload);
+    let terminal: serde_json::Value = serde_json::from_str(&boosted.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(terminal["consumables_used"], serde_json::json!([0]));
+    let fired_at = now + Duration::from_millis(1100);
+    let outcomes = boosted.apply(0, 1, &[Command::Armament(arm::Command::Shoot)], fired_at).unwrap();
+    assert!(matches!(outcomes.as_slice(), [fire::Outcome::Typed(arm::Outcome::Shot { .. })]));
+    let actual_reload = boosted.actors[0].fire.reload_until().unwrap().duration_since(fired_at).as_secs_f32();
+    assert!((actual_reload - reload).abs()<1e-6);
+
+    let distance = (view + baseline.actors[0].view_range().unwrap()) / 2.;
+    for world in [&mut boosted, &mut baseline] {
+        world.actors[1].position = [distance, 0., 0.];
+        world.refresh_original_spotting(fired_at).unwrap();
+    }
+    assert!(boosted.desired_visibility(0).unwrap()[1]);
+    assert!(!baseline.desired_visibility(0).unwrap()[1]);
+}
+
+#[test]
 fn content0_s5_weighted_equipment_changes_server_aim_reload_and_repair(){
     use crate::p06t_device_caps::Device;
     use crate::p06t_lab_proxy::Target;

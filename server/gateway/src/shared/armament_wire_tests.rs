@@ -9,6 +9,8 @@ fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
     assert_eq!(hex(w::equipment_row(1275,1).unwrap()),"1344fb0400000100000000");
     assert_eq!(hex(w::equipment_row(1275,0).unwrap()),"1344fb0400000000000000");
     assert_eq!(hex(w::equipment_row(0,0).unwrap()),"1344000000000000000000");
+    assert_eq!(hex(w::equipment_row(3067,0).unwrap()),"1344fb0b00000000000000");
+    assert_eq!(hex(w::equipment_row(3067,1).unwrap()),"1344fb0b00000100000000");
     assert!(w::equipment_row(0,1).is_err());
     assert!(w::equipment_row(2570,1).is_err());
     assert!(w::equipment_row(251,2).is_err());
@@ -77,7 +79,7 @@ fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
 #[test]fn p06t_literal_reload_start_end_keep_original_float32_order(){
     assert_eq!(hex(w::reload(1002,2.,60.).unwrap()),"1346ea0300000000004000007042");
     assert_eq!(hex(w::reload(1002,0.,60.).unwrap()),"1346ea0300000000000000007042");
-    assert!(w::reload(1002,240.,240.).is_ok());assert!(w::reload(1002,480.,480.).is_ok());assert!(w::reload(1002,0.,481.).is_err());
+    assert!(w::reload(1002,240.,240.).is_ok());assert!(w::reload(1002,960.,960.).is_ok());assert!(w::reload(1002,0.,961.).is_err());
     for(left,base)in [(f32::NAN,60.),(61.,60.),(-1.,60.),(0.,0.),(0.,f32::INFINITY)]{assert!(w::reload(1002,left,base).is_err());}
     assert!(w::reload(0,0.,60.).is_err());
 }

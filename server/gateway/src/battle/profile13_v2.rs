@@ -101,13 +101,14 @@ impl crate::bw_wire::Wire for Stack {
 // end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Frozen{pub kind:VehicleKind,pub mount:source::Mount,pub descriptor:Vec<u8>,pub native_inventory_id:u32,
-    pub vehicle_inventory_id:String,pub max_hp:i16,pub crew_ids:Vec<String>,pub capacity:u16,pub ammunition:[Stack;3],
+    pub vehicle_inventory_id:String,pub max_hp:i16,pub crew_ids:Vec<String>,pub crew_qualification:Option<Vec<u8>>,
+    pub capacity:u16,pub ammunition:[Stack;3],
     pub optional_devices:[u16;3],pub consumables:[u16;3],
     pub initial_shell_compact_id:u16,pub sha256:String}
 // BW-01 wire codec (tools/bw01_wire_gen.py): Frozen
 impl crate::bw_wire::Wire for Frozen {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,mount,descriptor,native_inventory_id,vehicle_inventory_id,max_hp,crew_ids,capacity,ammunition,optional_devices,consumables,initial_shell_compact_id,sha256}=self;W::put(kind,bw_o);W::put(mount,bw_o);W::put(descriptor,bw_o);W::put(native_inventory_id,bw_o);W::put(vehicle_inventory_id,bw_o);W::put(max_hp,bw_o);W::put(crew_ids,bw_o);W::put(capacity,bw_o);W::put(ammunition,bw_o);W::put(optional_devices,bw_o);W::put(consumables,bw_o);W::put(initial_shell_compact_id,bw_o);W::put(sha256,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,mount:W::get(bw_i)?,descriptor:W::get(bw_i)?,native_inventory_id:W::get(bw_i)?,vehicle_inventory_id:W::get(bw_i)?,max_hp:W::get(bw_i)?,crew_ids:W::get(bw_i)?,capacity:W::get(bw_i)?,ammunition:W::get(bw_i)?,optional_devices:W::get(bw_i)?,consumables:W::get(bw_i)?,initial_shell_compact_id:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,mount,descriptor,native_inventory_id,vehicle_inventory_id,max_hp,crew_ids,crew_qualification,capacity,ammunition,optional_devices,consumables,initial_shell_compact_id,sha256}=self;W::put(kind,bw_o);W::put(mount,bw_o);W::put(descriptor,bw_o);W::put(native_inventory_id,bw_o);W::put(vehicle_inventory_id,bw_o);W::put(max_hp,bw_o);W::put(crew_ids,bw_o);W::put(crew_qualification,bw_o);W::put(capacity,bw_o);W::put(ammunition,bw_o);W::put(optional_devices,bw_o);W::put(consumables,bw_o);W::put(initial_shell_compact_id,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,mount:W::get(bw_i)?,descriptor:W::get(bw_i)?,native_inventory_id:W::get(bw_i)?,vehicle_inventory_id:W::get(bw_i)?,max_hp:W::get(bw_i)?,crew_ids:W::get(bw_i)?,crew_qualification:W::get(bw_i)?,capacity:W::get(bw_i)?,ammunition:W::get(bw_i)?,optional_devices:W::get(bw_i)?,consumables:W::get(bw_i)?,initial_shell_compact_id:W::get(bw_i)?,sha256:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.count)}
@@ -119,6 +120,7 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
         if self.optional_devices!=[0;3] || self.consumables!=[0;3] {
             v["artefacts"]=serde_json::json!({"optional_devices":self.optional_devices,"consumables":self.consumables});
         }
+        if let Some(levels)=&self.crew_qualification { v["crew_qualification"]=serde_json::json!(levels); }
         v
     }
     pub fn validate_owned(&self,account:&str)->io::Result<()>{
@@ -128,20 +130,31 @@ pub(crate) const COATED_OPTICS:u16=1529;
 pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
 
 // CONTENT-0 #717 optional_devices.xml. Values are extra kg on the mounted vehicle.
-const OPTIONAL_DEVICE_MASS:[(u16,u16);7]=[(249,100),(COATED_OPTICS,0),(5625,200),(5881,400),
-    (6137,300),(6393,500),(6649,100)];
+const OPTIONAL_DEVICE_MASS:[(u16,u16);10]=[(249,100),(COATED_OPTICS,0),(4601,100),(4857,150),
+    (5113,200),(5625,200),(5881,400),(6137,300),(6393,500),(6649,100)];
+const VENTILATION:[u16;3]=[4601,4857,5113];
+const RAMMERS:[u16;4]=[5625,5881,6137,6393];
+// CONTENT-0 #717 equipments.xml. Indexed by the native nation order.
+const CREW_FOOD:[u16;7]=[3067,2555,25851,4091,3579,4603,4859];
+const ACTIVE_CONSUMABLES:[u16;6]=[251,507,763,1019,1275,1531];
+
+pub(crate) fn ventilation_bonus(ids:[u16;3])->u8 {
+    if ids.iter().any(|id|VENTILATION.contains(id)) { 5 } else { 0 }
+}
+
+pub(crate) fn is_crew_food(id:u16)->bool { CREW_FOOD.contains(&id) }
 
 pub(crate) fn equipment_mass(ids:[u16;3])->f32 {
     ids.iter().filter_map(|id|OPTIONAL_DEVICE_MASS.iter().find(|(cd,_)|cd==id))
         .map(|(_,mass)|f32::from(*mass)).sum()
 }
 
-fn artefact_slots(v:&Value,supported:&[u16])->io::Result<[u16;3]> {
+fn artefact_slots(v:&Value,supported:impl Fn(u16)->bool)->io::Result<[u16;3]> {
     let slots=v.as_array().filter(|rows|rows.len()==3).ok_or_else(||bad("artefact slots"))?;
     let mut ids=[0;3];
     for (index,value) in slots.iter().enumerate() {
         let id=value.as_u64().and_then(|n|u16::try_from(n).ok()).ok_or_else(||bad("artefact compact ID"))?;
-        if id!=0 && (!supported.contains(&id) || ids[..index].contains(&id)) {
+        if id!=0 && (!supported(id) || ids[..index].contains(&id)) {
             return Err(bad("unsupported or duplicate artefact"));
         }
         ids[index]=id;
@@ -251,17 +264,26 @@ pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>
 pub(crate) fn legacy_identity_for_tests(label:&str,native:u64)->io::Result<Identity>{legacy_identity(label,native)}
 pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_v1:bool)->io::Result<Frozen>{
     let mut fields=vec!["kind","descriptor_hex","native_inventory_id","vehicle_inventory_id","max_hp","crew_ids","capacity","ammunition","initial_shell_compact_id"];
+    if v.get("crew_qualification").is_some() { fields.push("crew_qualification"); }
     let (optional_devices,consumables)=if let Some(artefacts)=v.get("artefacts") {
         fields.push("artefacts");
         keys(artefacts,&["optional_devices","consumables"])?;
-        let devices=artefact_slots(&artefacts["optional_devices"],&OPTIONAL_DEVICE_MASS.map(|(id,_)|id))?;
-        let consumables=artefact_slots(&artefacts["consumables"],&[251,507,763,1019,1275,1531])?;
+        let devices=artefact_slots(&artefacts["optional_devices"],|id|OPTIONAL_DEVICE_MASS.iter().any(|row|row.0==id))?;
+        let consumables=artefact_slots(&artefacts["consumables"],|id|ACTIVE_CONSUMABLES.contains(&id)||is_crew_food(id))?;
         if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
+        if devices.iter().filter(|id|VENTILATION.contains(id)).count()>1
+            ||devices.iter().filter(|id|RAMMERS.contains(id)).count()>1 {
+            return Err(bad("incompatible equipment classes"));
+        }
         (devices,consumables)
     } else {([0;3],[0;3])};
     keys(v,&fields)?;
     let native=number(v,"native_inventory_id")?;
     let(kind,mount,suffix,suffixes)=if catalog_v1{catalog_identity(text(v,"kind")?,native)?}else{legacy_identity(text(v,"kind")?,native)?};
+    let nation=((kind.vehicle_compact_id()>>4)&15) as usize;
+    if consumables.iter().copied().any(|id|is_crew_food(id)&&CREW_FOOD.get(nation)!=Some(&id)) {
+        return Err(bad("food nation"));
+    }
     let crew_count=device_profile(kind).ok_or_else(||bad("device profile"))?.crew().len();
     let p=source::profile(mount);let descriptor=kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>();
     if!uuid(account)||text(v,"vehicle_inventory_id")?!=format!("{account}:{suffix}")
@@ -273,6 +295,15 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     for row in crew{let s=row.as_str().ok_or_else(||bad("crew ID"))?;
         if!id(s)||!s.starts_with(&format!("{account}:"))||s.len()<=account.len()+1||crew_ids.iter().any(|x|x==s){return Err(bad("crew owner/unique"));}crew_ids.push(s.to_owned());}
     if crew_ids.len()!=crew_count{return Err(bad("crew seats"));}
+    let crew_qualification=v.get("crew_qualification").map(|value| {
+        let levels=value.as_array().filter(|rows|rows.len()==crew_count).ok_or_else(||bad("crew qualification seats"))?;
+        levels.iter().map(|level|level.as_u64().filter(|n|(25..=100).contains(n))
+            .map(|n|n as u8).ok_or_else(||bad("crew qualification level"))).collect::<io::Result<Vec<_>>>()
+    }).transpose()?;
+    if crew_qualification.is_none()
+        && (ventilation_bonus(optional_devices)>0||consumables.iter().copied().any(is_crew_food)) {
+        return Err(bad("crew boosters require frozen qualification"));
+    }
     let mount_key=shell_mount(kind)?;
     let a=v["ammunition"].as_array().ok_or_else(||bad("ammo"))?;if a.len()!=real_shots(&p){return Err(bad("stack count"));}
     let mut stacks=Vec::new();
@@ -287,7 +318,7 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     let first=ammunition.iter().find(|r|r.count>0).ok_or_else(||bad("empty loadout"))?.shell_compact_id;
     if total>p.capacity||number(v,"initial_shell_compact_id")?!=u64::from(first)||digest(v)?!=expected_sha{return Err(bad("capacity/initial/digest"));}
     Ok(Frozen{kind,mount,descriptor:kind.descriptor().to_vec(),native_inventory_id:native as u32,vehicle_inventory_id:text(v,"vehicle_inventory_id")?.into(),
-        max_hp:kind.max_health(),crew_ids,capacity:p.capacity,ammunition,optional_devices,consumables,
+        max_hp:kind.max_health(),crew_ids,crew_qualification,capacity:p.capacity,ammunition,optional_devices,consumables,
         initial_shell_compact_id:first,sha256:expected_sha.into()})
 }
 
@@ -533,6 +564,42 @@ mod tests{
             "ammunition":(0..3).map(|i|serde_json::json!({"shell_definition_id":format!("shell:{}-stock-{}",kind.label(),suffixes[i]),
                 "shell_compact_id":p.shots[i].compact_descr,"family":p.shots[i].family.source_name(),"count":if i==0{10}else{0}})).collect::<Vec<_>>(),
             "initial_shell_compact_id":p.shots[0].compact_descr})
+    }
+    #[test]
+    fn content0_s5_crew_qualification_and_boosters_are_bound_to_frozen_roster() {
+        let account="12345678-1234-4234-8234-123456789abc";
+        let mut value=pool_frozen(account,VehicleKind::T34,source::Mount::T34Stock,4,["ap","heat","he"]);
+        let legacy=parse_frozen_with(&value,account,&digest(&value).unwrap(),false).unwrap();
+        assert_eq!(legacy.crew_qualification,None);
+        assert_eq!(legacy.value(),value);
+
+        value["crew_qualification"]=serde_json::json!([25,50,63,100]);
+        value["artefacts"]=serde_json::json!({"optional_devices":[4857,5625,0],"consumables":[0,3067,0]});
+        let hash=digest(&value).unwrap();
+        let parsed=parse_frozen_with(&value,account,&hash,false).unwrap();
+        assert_eq!(parsed.crew_qualification,Some(vec![25,50,63,100]));
+        assert_eq!(ventilation_bonus(parsed.optional_devices),5);
+        assert_eq!(equipment_mass(parsed.optional_devices),350.);
+        assert_eq!(parsed.value(),value);
+        let anchor=std::time::Instant::now();
+        let encoded=crate::bw_wire::encode(&parsed,anchor,&mut crate::bw_wire::Arcs::new(false)).unwrap();
+        let decoded:Frozen=crate::bw_wire::decode(&encoded,anchor,&mut crate::bw_wire::Arcs::new(true)).unwrap();
+        assert_eq!(parsed,decoded);
+
+        for bad in [serde_json::json!([25,50,63]),serde_json::json!([24,50,63,100]),
+            serde_json::json!([25,50,63,101]),serde_json::json!([true,50,63,100]),Value::Null] {
+            let mut wrong=value.clone();wrong["crew_qualification"]=bad;
+            assert!(parse_frozen_with(&wrong,account,&digest(&wrong).unwrap(),false).is_err());
+        }
+        for (key,invalid) in [("optional_devices",[4601,4857,0]),("optional_devices",[5625,5881,0]),
+            ("consumables",[3067,2555,0]),("consumables",[0,2555,0])] {
+            let mut wrong=value.clone();wrong["artefacts"][key]=serde_json::json!(invalid);
+            assert!(parse_frozen_with(&wrong,account,&digest(&wrong).unwrap(),false).is_err());
+        }
+        let mut wrong=value.clone();wrong["crew_qualification"][0]=75.into();
+        assert!(parse_frozen_with(&wrong,account,&hash,false).is_err());
+        let mut wrong=value.clone();wrong.as_object_mut().unwrap().remove("crew_qualification");
+        assert!(parse_frozen_with(&wrong,account,&digest(&wrong).unwrap(),false).is_err());
     }
     #[test]fn purchased_pool_kinds_parse_only_on_their_own_inventory_and_source_shell_order(){
         // Owner full stand 2026-10-20: a bought T-26/T-34/T-34-85 is a p09e

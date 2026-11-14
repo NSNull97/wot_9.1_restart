@@ -28,17 +28,27 @@ MAX_MANIFEST = 32768
 MANIFEST_SHA256 = "2c38786202ef015ae0e3a645719b869fe1e01421b7ec9521e2af93332f4b76af"
 SLOT_COUNT = 3
 
+VENTILATION_BONUS = {
+    4601: "improvedVentilation_class1",
+    4857: "improvedVentilation_class2",
+    5113: "improvedVentilation_class3",
+}
+CREW_FOOD = {
+    2555: "chocolate", 3067: "ration", 3579: "hotCoffee", 4091: "ration_china",
+    4603: "ration_uk", 4859: "ration_japan", 25851: "cocacola",
+}
+
 # Authoritative runtime effect families backed by the battle command path.
 DEVICE_EFFECTS = {
     249: "toolbox", 1529: "coatedOptics", 5625: "mediumCaliberTankRammer",
     5881: "largeCaliberTankRammer", 6137: "mediumCaliberHowitzerRammer",
     6393: "largeCaliberHowitzerRammer", 6649: "enhancedAimDrives",
-}
+} | VENTILATION_BONUS
 CONSUMABLE_EFFECTS = {
     251: "handExtinguishers", 507: "autoExtinguishers",
     763: "smallMedkit", 1019: "largeMedkit",
     1275: "smallRepairkit", 1531: "largeRepairkit",
-}
+} | CREW_FOOD
 SUPPORTED_ITEMS = DEVICE_EFFECTS | CONSUMABLE_EFFECTS
 
 

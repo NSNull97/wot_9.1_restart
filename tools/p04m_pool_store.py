@@ -1230,7 +1230,8 @@ class PoolStore(ResultsStore):
             if "artefacts" in profile and equipment:
                 from content0_equipment_store import plan_maintenance, projection_parts, save_state
 
-                after = plan_maintenance(profile, native_id, equipment, allow_purchase=allow_purchase)
+                after = plan_maintenance(profile, native_id, equipment, allow_purchase=allow_purchase,
+                                         catalog=self.catalog)
                 if after is not None:
                     proof = self._maintenance_proof(profile, owned, equipment, allow_purchase)
                     parts = projection_parts(profile["artefacts"], after, profile["research"])

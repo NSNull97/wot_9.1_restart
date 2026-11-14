@@ -114,6 +114,10 @@ impl crate::bw_wire::Wire for Actor {
 // end BW-01 wire codec
 
 impl Actor {
+    const COMMANDER: u8 = 1;
+    const GUNNER: u8 = 2;
+    const LOADER: u8 = 8;
+
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
 
     pub fn optional_devices(&self)->[u16;3] {
@@ -124,12 +128,54 @@ impl Actor {
         crate::profile13_v2091::equipment_mass(self.optional_devices())
     }
 
-    fn view_range(&self)->io::Result<f32> {
+    /// Ratio to the same role in a fully trained, unboosted crew. The pinned
+    /// client establishes qualification additions. The transfer curve is the
+    /// CONTENT-0 period reconstruction documented in the equipment audit.
+    fn crew_performance(&self, role: u8) -> f64 {
+        use crate::profile13_v2091::{is_crew_food, ventilation_bonus};
+        let Some(loadout) = &self.owned_v2 else { return 1.; };
+        let Some(state) = &self.devices else { return 1.; };
+        let Some(levels) = loadout.crew_qualification.as_deref() else { return 1.; };
+        let seats = state.profile().crew();
+        let bonus = u16::from(ventilation_bonus(loadout.optional_devices))
+            + if loadout.consumables.into_iter().any(is_crew_food) { 10 } else { 0 };
+        let command_bonus = seats.iter().zip(levels).zip(state.crew())
+            .find(|((seat, _), _)| seat.roles & Self::COMMANDER != 0)
+            .filter(|(_, alive)| **alive)
+            .map_or(0, |((_, level), _)| (u16::from(*level) + bonus + 5) / 10);
+        let (effective, baseline, count) = seats.iter().enumerate().filter(|(_, seat)| seat.roles & role != 0)
+            .fold((0u16, 0u16, 0u16), |(effective, baseline, count), (index, seat)| {
+                let (command, baseline_command) = if seat.roles & Self::COMMANDER != 0 { (0, 0) } else { (command_bonus, 10) };
+                (effective + u16::from(levels[index]) + bonus + command, baseline + 100 + baseline_command, count + 1)
+            });
+        let offset = f64::from(count) * 0.5;
+        if count == 0 { return 1.; }
+        (offset + f64::from(effective)*0.00375) / (offset + f64::from(baseline)*0.00375)
+    }
+
+    fn consume_crew_food(&mut self) {
+        for slot in &mut self.consumables {
+            if crate::profile13_v2091::is_crew_food(*slot) { *slot = 0; }
+        }
+    }
+
+    /// A ration remains active in the HUD for the battle. The current slots
+    /// record the spend independently for durable settlement.
+    pub(super) fn hud_consumables(&self) -> [u16; 3] {
+        self.owned_v2.as_ref().map_or(self.consumables, |loadout| {
+            std::array::from_fn(|index| {
+                let item = loadout.consumables[index];
+                if crate::profile13_v2091::is_crew_food(item) { item } else { self.consumables[index] }
+            })
+        })
+    }
+
+    pub(super) fn view_range(&self)->io::Result<f32> {
         use crate::profile13_v2091::{COATED_OPTICS,COATED_OPTICS_VIEW_FACTOR};
         let damage=self.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
         if !(0. ..=1.).contains(&damage){return Err(bad());}
         let optics=if self.optional_devices().contains(&COATED_OPTICS){COATED_OPTICS_VIEW_FACTOR}else{1.};
-        Ok(self.vehicle_kind().view_range()*optics*damage)
+        Ok(self.vehicle_kind().view_range()*optics*damage*self.crew_performance(Self::COMMANDER) as f32)
     }
 
     pub(super) fn aiming_spec(&self)->super::vehicle_profile::AimSpec {
@@ -137,6 +183,7 @@ impl Actor {
         if self.optional_devices().contains(&crate::p06t_device_state::GUN_LAYING_DRIVE) {
             spec.aiming_time*=crate::p06t_device_state::GUN_LAYING_DRIVE_FACTOR;
         }
+        spec.aiming_time /= self.crew_performance(Self::GUNNER) as f32;
         spec
     }
 
@@ -146,7 +193,7 @@ impl Actor {
             let damage=f64::from(devices.capabilities().reload_scale);
             let scale=self.optional_devices().into_iter().filter(|id|RAMMERS.contains(id))
                 .fold(damage,|scale,_|scale*RAMMER_FACTOR);
-            self.fire.adjust_reload_scale(scale,now)?;
+            self.fire.adjust_reload_scale(scale/self.crew_performance(Self::LOADER),now)?;
         }
         Ok(())
     }
@@ -908,6 +955,7 @@ impl World {
     }
     pub fn advance_lifecycle(&mut self, now: Instant) -> io::Result<bool> {
         if self.lifecycle.is_none() || self.started.is_none() { return Ok(false); }
+        let was_battle = self.lifecycle.as_ref().is_some_and(|state| state.allows_actions());
         let elapsed = self.lifecycle_ms(now)?;
         let members = self.actors.iter().enumerate().map(|(slot, actor)| {
             let damage=if self.mixed_ammo {self.damage_events.iter().filter(|i|i.target==slot&&(i.health_after<i.health_before||i.lethal())).map(|i|i.attacker).collect::<Vec<_>>()}
@@ -937,6 +985,8 @@ impl World {
         }else{self.lifecycle.as_mut().ok_or_else(|| bad())?.advance(elapsed, &members)?};
         if !self.lifecycle.as_ref().ok_or_else(|| bad())?.allows_actions() {
             for actor in &mut self.actors { actor.input = Input::STOP; }
+        } else if !was_battle {
+            for actor in &mut self.actors { actor.consume_crew_food(); }
         }
         if self.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()){
             for actor in &mut self.actors{if let Some(devices)=&mut actor.devices{devices.freeze();}}
@@ -1197,6 +1247,9 @@ impl World {
         if self.started.is_some() || self.actors.len() != self.expected_actors || now < self.last
             || self.team_plan.is_some()&&self.lifecycle.is_none() { return Err(bad()); }
         if self.ap_test_lab {for actor in &self.actors {self.geometry_for(actor.vehicle_kind())?;}}
+        if self.lifecycle.is_none() {
+            for actor in &mut self.actors { actor.consume_crew_food(); }
+        }
         self.started = Some(now); self.last = now; Ok(())
     }
     /// Integrated map-drive owns the initial lane placement. Rebase happens

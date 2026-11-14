@@ -299,6 +299,67 @@ class AmmoLossStoreTests(unittest.TestCase):
         frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
         self.assertEqual(frozen["artefacts"]["optional_devices"], [6649, 0, 0])
 
+    def test_ventilation_and_rations_use_source_filters_and_settle_frozen_food(self):
+        from content0_equipment_catalog import CREW_FOOD, VENTILATION_BONUS, live_items
+        from p09e_research_service import existing_service
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        items = live_items()
+        self.assertEqual([items[cd].weight_grams for cd in VENTILATION_BONUS], [100_000, 150_000, 200_000])
+        for vehicle in self.store.catalog.vehicles.values():
+            self.assertLessEqual(sum(items[cd].compatible(vehicle) for cd in VENTILATION_BONUS), 1)
+            self.assertEqual(sum(items[cd].compatible(vehicle) for cd in CREW_FOOD), 1)
+
+        def equip(label, command, arguments, *, rejected=False):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=f"crew-equipment:{label}", expected_revision=self.profile()["revision"], wire_revision=1,
+                command=command, arguments=arguments)
+            before = self.state() if rejected else None
+            result = native_service(self.store, request, authenticated_account_id=account)
+            self.assertEqual(result["status"], "rejected" if rejected else "researched")
+            if rejected:
+                self.assertEqual(self.state(), before)
+
+        equip("wrong-vent-class", 308, [5, 5113, 1, 0, 0, 0], rejected=True)
+        equip("vent-class-one", 308, [5, 4601, 1, 0, 0, 0])
+        equip("wrong-food-direct", 308, [5, 2555, 1, 1, 0, 0], rejected=True)
+        equip("food-depot", 302, [5, 2555, 1, 0])
+        equip("wrong-food-depot", 104, [1, 0, 2555, 0], rejected=True)
+
+        def fill(cd, label):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=f"crew-maintenance:{label}", expected_revision=self.profile()["revision"], wire_revision=1,
+                layout=[5, 1, 6, 2570, 12, 2826, 14, 3082, 16, 6, 0, 0, -cd, 1, 0, 0])
+            return existing_service(self.store, "service", request, authenticated_account_id=account)
+
+        before = self.state()
+        self.assertEqual(fill(2555, "wrong-nation")["result_code"], -10)
+        self.assertEqual(self.state(), before)
+        self.assertEqual(fill(3067, "ussr-ration")["result_code"], 0)
+
+        self.send(self.request("run_open"))
+        receipt = self.send(self.request("admit"))["reservation"]
+        loadout = receipt["frozen"]["loadout"]
+        self.assertEqual(loadout["artefacts"], {"optional_devices": [4601, 0, 0], "consumables": [0, 3067, 0]})
+        initial = [row["count"] for row in loadout["ammunition"]]
+        finish = self.finish(receipt, fired=(0, 0, 0), lost=(0, 0, 0), remaining=initial, event=False)
+        terminal = dict(json.loads(finish["terminal_state_json"]), consumables_used=[1])
+        finish["terminal_state_json"] = canonical(terminal).decode("ascii")
+        cancelled = dict(finish, reason="cancelled", terminal_hp=loadout["max_hp"])
+        del cancelled["results_json"]
+        self.reject("INVALID_RESULT", lambda: self.send(cancelled))
+        reply = self.send(finish)
+        self.assertEqual(reply["reservation"]["result"]["terminal_state"]["consumables_used"], [1])
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][loadout["vehicle_inventory_id"]],
+            {"devices": [4601, 0, 0], "consumables": [0, 0, 0], "layout": [0, 3067, 0]})
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"2555": 1})
+        self.assertEqual(self.send(finish), dict(reply, replayed=True))
+        self.assertEqual(self.query()["status"], "found")
+
     def test_activation_is_additive_and_wrong_old_active_contract_is_refused(self):
         old = {r[0]: [tuple(v) for v in self.store.connection.execute('SELECT * FROM "'+r[0]+'"')] for r in self.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.activate()

@@ -61,13 +61,14 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         body.extend(native::reload(wire::vehicle_id(c.slot)?,state.remaining_seconds(now),state.base_reload_seconds())?);
         outbox.push_back(body);c.armament_sent=Some(key);
     }
-    if c.consumables_sent!=owner.consumables {
+    let hud_consumables = owner.hud_consumables();
+    if c.consumables_sent!=hud_consumables {
         let mut body=Vec::new();
-        for (before,after) in c.consumables_sent.into_iter().zip(owner.consumables){
+        for (before,after) in c.consumables_sent.into_iter().zip(hud_consumables){
             if before!=0&&after==0 {body.extend(native::equipment_row(before,0)?);}
         }
         if !body.is_empty(){outbox.push_back(body);}
-        c.consumables_sent=owner.consumables;
+        c.consumables_sent=hud_consumables;
     }
     owner_snapshot(c,outbox,world)?;
     for event in world.damage_events.iter().skip(c.damage_cursor){

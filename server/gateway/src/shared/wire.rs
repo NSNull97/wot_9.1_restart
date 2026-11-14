@@ -465,7 +465,7 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
         b.extend(crate::armament_wire091::ammo_snapshot(typed.mount(),typed.counts(),
             typed.current().compact_descr,typed.next().compact_descr,typed.clip())?);
         if let Some(frozen)=a.owned_v2.as_ref().filter(|f|f.consumables!=[0;3]) {
-            for (cd,remaining) in frozen.consumables.into_iter().zip(a.consumables){
+            for (cd,remaining) in frozen.consumables.into_iter().zip(a.hud_consumables()){
                 b.extend(crate::armament_wire091::equipment_row(cd,u16::from(remaining!=0))?);
             }
         }

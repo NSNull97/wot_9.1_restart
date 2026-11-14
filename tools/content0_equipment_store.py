@@ -57,6 +57,14 @@ def validate_installed_devices(catalog, owned, slots):
         require(definition["mass_grams"] + weight <= definition["max_load_grams"], "CHASSIS_OVERLOAD")
 
 
+def validate_installed_consumables(catalog, vehicle_id, slots):
+    desired = _slots(slots, EQUIPMENT)
+    if any(desired):
+        vehicle = catalog.vehicles[vehicle_id]
+        require(all(live_items()[cd].compatible(vehicle) for cd in desired if cd), "ARTEFACT_INCOMPATIBLE")
+    return desired
+
+
 def _validate_state(state, owned_ids=None):
     require(type(state) is dict and set(state) == {"catalog_sha256", "depot", "vehicles"}
             and state["catalog_sha256"] == MANIFEST_SHA256
@@ -176,7 +184,7 @@ def _owned(research, native_id):
     return vehicle
 
 
-def plan_maintenance(aggregate, native_id, equipment_layout, *, allow_purchase):
+def plan_maintenance(aggregate, native_id, equipment_layout, *, allow_purchase, catalog=None):
     """Honor #717 CMD108's optional six-int consumable sub-layout atomically."""
     if not equipment_layout:
         return None
@@ -190,6 +198,8 @@ def plan_maintenance(aggregate, native_id, equipment_layout, *, allow_purchase):
         return None
     _validate_state(before)
     vehicle = _owned(aggregate["research"], native_id)
+    if catalog is not None:
+        desired = validate_installed_consumables(catalog, vehicle["vehicle_id"], desired)
     after = deepcopy(before)
     _consumables(after, vehicle["vehicle_inventory_id"], desired, allow_purchase=allow_purchase)
     return after if after != before else None
@@ -208,7 +218,8 @@ def _plan(before, catalog, owned, command, args, *, allow_purchase):
         _, _, cd, slot, paid = args
         _device(after, catalog, owned, cd, slot, paid, buy=False, allow_purchase=allow_purchase)
     elif command == 104:
-        _consumables(after, target, args[1:], allow_purchase=False)
+        desired = validate_installed_consumables(catalog, owned["vehicle_id"], args[1:])
+        _consumables(after, target, desired, allow_purchase=False)
     elif command == 308:
         _, cd, _, slot, paid, _ = args
         require(allow_purchase, "PURCHASE_UNSUPPORTED")
@@ -221,6 +232,7 @@ def _plan(before, catalog, owned, command, args, *, allow_purchase):
             desired = row["consumables"].copy()
             require(desired[slot] != cd, "ARTEFACT_NO_CHANGE")
             desired[slot] = cd
+            desired = validate_installed_consumables(catalog, owned["vehicle_id"], desired)
             _stock(after, cd, 1)
             _consumables(after, target, desired, allow_purchase=False)
     else:

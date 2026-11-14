@@ -103,3 +103,115 @@ slice. The mass check uses integer grams and the existing module catalogue.
 For example, the stock MS-1 has 199 kg reserve, allowing either a toolbox or
 laying drive. The two together require an upgraded suspension. The IS-7 takes
 the large tank rammer and enhanced laying drive on its stock suspension.
+
+## Ventilation and rations
+
+VERIFIED against the pinned `optional_devices.xml` and `equipments.xml`.
+Ventilation uses `StaticAdditiveDevice` on `miscAttrs/crewLevelIncrease`.
+The three filters below had 87, 120 and 95 matches respectively across the 374
+entries in the seven native vehicle lists, with no overlapping classes.
+
+| Source subtype | Compact ID | Qualification | Added mass | Included tags (any) | Excluded tags (any) |
+| --- | ---: | ---: | ---: | --- | --- |
+| `improvedVentilation_class1` | 4601 | +5 | 100 kg | `lightTank improvedVentilation_class1_user` | `noImprovedVentilation` |
+| `improvedVentilation_class2` | 4857 | +5 | 150 kg | `mediumTank mediumAT-SPG improvedVentilation_class2_user` | `noImprovedVentilation lightTankArtefacts_User` |
+| `improvedVentilation_class3` | 5113 | +5 | 200 kg | `heavyTank heavyAT-SPG improvedVentilation_class3_user` | `noImprovedVentilation` |
+
+Each ration is a zero-mass consumable tagged `stimulator`, filtered to its
+source nation. `Stimulator._readConfig` reads `crewLevelIncrease` at offsets
+0–24 in `common/items/artefacts.pyc` (SHA-256 `aedbfc161d7f0b2b78f376540811a0b4113736757982d03bceb4e6f4cccac49c`).
+
+| Source subtype | Compact ID | Nation | Qualification |
+| --- | ---: | --- | ---: |
+| `chocolate` | 2555 | Germany | +10 |
+| `ration` | 3067 | USSR | +10 |
+| `hotCoffee` | 3579 | France | +10 |
+| `ration_china` | 4091 | China | +10 |
+| `ration_uk` | 4603 | UK | +10 |
+| `ration_japan` | 4859 | Japan | +10 |
+| `cocacola` | 25851 | USA | +10 |
+
+All seven `*/always` strings in pinned `res/text/lc_messages/artefacts.mo`
+(SHA-256 `87e24105b2794fa64363ee72ff0554e38173c94c4df1be485c83a2a94f690c8a`)
+describe a +10 bonus and one-battle use. Each `*/onUse` text is empty.
+`PlayerAvatar.onEquipmentButtonPressed` exits at offsets 126–158 for a
+`stimulator` or `fuel` tag, before sending `ACTIVATE_EQUIPMENT`, in
+`client/avatar.pyc` (SHA-256 `c13cd58a4c5d766dfd3c5f47ae7be50c962aee6c7f8cf25b4341322381f21e0e`).
+The official 9.0 manual shows Extra Combat Rations active for the course of
+the battle (p. 26). It also says automatic and battle-long consumables are
+displayed without an item count (p. 30). [Wargaming 9.0 manual](https://worldoftanks.eu/dcont/fb/document/world_of_tanks_oyun_klavuzu_tr_web_9_0.pdf#page=30)
+
+The exact original server tick and HUD packet values are UNKNOWN. The project
+projects the bonus during setup and applies it automatically in combat. It
+records one spent slot when combat begins and clears that slot at settlement.
+A reservation canceled before combat does not consume a ration. The battle
+HUD keeps the loaded ration icon while the effect lasts. A quantity of zero
+would show its spent state:
+`BattleConsumablesPanel.swf` (SHA-256 `a425cf4f53f867f1f86cb2b3f2de1741a541dee05916d2b567d11d578a641fb7`)
+sets renderer `quantity` at expanded body offsets 16839–16882. In
+`BattleArtefactButtons.swf` (SHA-256 `a42fc15f29f1b0db8efbf6e7344ab3103bc0ad9715d102166e894ae406c1ccaf`),
+zero quantity calls `setEmpty(true)` at offsets 165747–165789 or 166614–166655
+on initialization. The icon remains visible at 166756–166805 and receives a
+color transform at 184591–184813. The automatic slot class has an empty
+`handleClick` at 187466. The icon presentation and settlement state are tracked
+independently by the project.
+
+### Crew qualification and combat calibration
+
+VERIFIED in the original garage bytecode. `Vehicle._calcCrewBonuses` in
+`client/gui/shared/gui_items/vehicle.pyc` (`ec78e36…`) sums ration effects at
+offsets 19–72 and reads ventilation at 73–92. It rounds the commander's
+trained qualification including ventilation at 336–380, then adds food and any
+fully trained crew-wide Brotherhood bonus before dividing by 10 and rounding
+at 390–434. `Tankman.realRoleLevel` in `client/gui/shared/gui_items/tankman.pyc`
+(`07645906…`) suppresses the commander's self-bonus at offsets 43–73 and sums
+qualification and bonuses at 139–158. `TankmanDescr.efficiencyOnVehicle` in
+`common/items/tankmen.pyc` (`74f914b1…`) supplies the training factor and
+ventilation addition at offsets 39–151. For a fully trained separate-seat crew
+with no perks, both items give commander 115 and other crew 127; the original
+GUI rounds 11.5 to 12. See [the P04B crew audit](P04B_CREW_EQUIPMENT_SNAPSHOT.md).
+
+INFERRED combat calibration. The static scan of 1,081 `common` and `client`
+`.pyc` files parsed all files and found no implementation tying the effective
+qualification to gun timing or spotting distance. The scan checked relevant
+attribute names and the candidate curve constants. It cannot rule out an
+equivalent expression or implementation in the unavailable original server.
+The period Wargaming manual links the gunner to aiming speed, the loader to
+reload and the commander to sight. A 2012 player report compared the public
+curve against in-game reload timer results across training levels and bonuses.
+Neither establishes the original server formula for all three characteristics
+on this specific build. [Wargaming 9.0 manual, p. 58](https://worldoftanks.eu/dcont/fb/document/world_of_tanks_oyun_klavuzu_tr_web_9_0.pdf#page=58) ·
+[2012 primary measurement report](https://whrl.pl/RdcrrN)
+
+The stand uses `Q(level) = 0.5 + 0.00375 × level`, normalized to the fully
+trained healthy reference for the mounted seats (100 for the commander, 110
+for a separate crew member receiving the commander's bonus). The gunner and
+loader time factors are `Q(reference) / Q(effective)`, and the commander's range
+factor is `Q(effective) / Q(reference)`. This calibration preserves the previous
+stand's effective timings at the project reference; the source XML values alone
+cannot establish the historical reference. Rammer, gun laying drive and coated
+optics compose with their respective factors. Existing wounded-crew and
+damaged-module penalties still apply through the established damage paths.
+These checks concern mounted qualification and rations/ventilation; the wider
+combat effect of perks and other role-dependent parameters has separate scope.
+
+### KV-1S test configuration
+
+The pinned `res/scripts/item_defs/vehicles/ussr/kv-1s.xml` (SHA-256
+`16cd67ba2f6297c74ee101d4edb819badbf9b76177f00cb9340ae4b315221994`) gives
+the KV1S_mod_43 turret 330 m view range (320 m for KV1S_mod_42) and a separate
+seat for each role. The 122 mm D-25T on that turret has 16.0 s reload and
+3.4 s nominal aiming time. The `ussr-KV-1s--84818961` assembly weighs 43,970 kg;
+its KV-1s_bis chassis limit is 48,200 kg. Rammer, gun laying drive and class 3
+ventilation bring mass to 44,670 kg with 3,530 kg reserve.
+
+Calculated stand expectations for a healthy, correctly trained 100% crew with
+rammer and gun laying drive retained, no perk bonus and no optics. These values
+are test expectations and do not represent measurements from a native battle.
+
+| Additional equipment and consumable | Commander / gunner / loader | Full reload | Nominal aim time | View range |
+| --- | ---: | ---: | ---: | ---: |
+| None | 100 / 110 / 110 | 14.40 s | 3.094 s | 330.0 m |
+| Class 3 ventilation | 105 / 116 / 116 | 14.05 s | 3.020 s | 337.1 m |
+| Soviet ration | 110 / 121 / 121 | 13.78 s | 2.960 s | 344.1 m |
+| Class 3 ventilation and Soviet ration | 115 / 127 / 127 | 13.46 s | 2.892 s | 351.2 m |
