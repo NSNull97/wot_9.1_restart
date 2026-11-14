@@ -403,6 +403,75 @@ def stand_stopped(stand):
             raise ValueError(f'{kind} has a live receipt; stop the stand first')
 
 
+def bind_ground_strength(args):
+    """Attach an exported ground map to the current map in every worker pool."""
+    local = (LOCAL / 'stands').resolve(strict=True).parent
+    stand = Path(args.stand).resolve(strict=True)
+    if not stand.is_relative_to(local / 'stands'):
+        raise ValueError('stand must be below this checkout local/stands')
+    stand_stopped(stand)
+    if (stand / 'domain-process.json').exists():
+        raise ValueError('domain has a live receipt; stop it first')
+    import sys
+    sys.path.insert(0, str(ROOT / 'tools'))
+    from ground_strength import verify_header
+
+    def pinned(path, digest, limit):
+        path = Path(path)
+        resolved = path.resolve(strict=True)
+        if not resolved.is_relative_to(local) or resolved.stat().st_size > limit:
+            raise ValueError(f'linked, oversized or foreign ground resource: {path}')
+        if any(part.is_symlink() or (hasattr(part, 'is_junction') and part.is_junction()) for part in (path, *path.parents)):
+            raise ValueError(f'linked ground resource: {path}')
+        with resolved.open('rb') as stream:
+            raw = stream.read(limit + 1)
+        if len(raw) > limit or hashlib.sha256(raw).hexdigest() != digest:
+            raise ValueError(f'ground resource pin differs: {path}')
+        return raw
+
+    manifest_path = stand / 'battle-profiles.json'
+    manifest = json.loads(manifest_path.read_bytes())
+    sidecar = Path(args.ground_strength).resolve(strict=True)
+    if not sidecar.is_relative_to(local) or not 0 < sidecar.stat().st_size <= 8 * 1024 * 1024:
+        raise ValueError('ground sidecar must be a bounded local file')
+    ground_raw = sidecar.read_bytes()
+    asset, terrain_sha = verify_header(ground_raw)
+    if asset != manifest['map']:
+        raise ValueError('ground sidecar uses another battle map')
+    ground = {'path': str(sidecar), 'sha256': hashlib.sha256(ground_raw).hexdigest()}
+    output = stand / 'ground-strength-configs'
+    backup = stand / 'battle-profiles.before-ground-strength.json'
+    if output.exists() or backup.exists():
+        raise ValueError('ground strength is already prepared for this stand')
+    output.mkdir()
+    for index, row in enumerate(manifest['profiles']):
+        pool = json.loads(pinned(row['pool']['path'], row['pool']['sha256'], 16384))
+        entries = [m for m in pool['maps'] if m['asset'] == asset]
+        if len(entries) != 1:
+            raise ValueError('pool must contain the active map exactly once')
+        entry = entries[0]
+        config = json.loads(pinned(entry['config'], entry['config_sha256'], 16384))
+        if config['version'] != 3 or config['map'] != asset or config['terrain']['sha256'] != terrain_sha or 'ground_strength' in config:
+            raise ValueError('ground sidecar does not match the pinned worker config')
+        config['ground_strength'] = ground
+        for kind, value in (('config', config), ('pool', pool)):
+            raw = json.dumps(value, separators=(',', ':'), sort_keys=True).encode('ascii')
+            path = output / f'{index}-{kind}.json'
+            path.write_bytes(raw)
+            digest = hashlib.sha256(raw).hexdigest()
+            if kind == 'config':
+                entry.update(config=str(path), config_sha256=digest)
+            else:
+                row['pool'] = {'path': str(path), 'sha256': digest}
+    with backup.open('xb') as saved:
+        saved.write(manifest_path.read_bytes())
+    next_manifest = output / 'battle-profiles.json'
+    next_manifest.write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
+    next_manifest.replace(manifest_path)
+    print(json.dumps({'status': 'PASS_GROUND_STRENGTH_BOUND', 'map': asset, 'kinds': len(manifest['profiles']),
+                      'ground_strength': ground, 'rollback': str(backup)}))
+
+
 def battle_map(args):
     """MAPS-01: switch a stopped stand's profile-13 battle to another registry map.
 
@@ -709,11 +778,12 @@ def battle_any(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'economy', 'artefacts', 'provision', 'map', 'crew-contract', 'domain', 'battle-any'))
+    parser.add_argument('command', choices=('prepare', 'economy', 'artefacts', 'provision', 'map', 'crew-contract', 'domain', 'battle-any', 'ground-strength'))
     parser.add_argument('--version', type=int, choices=(1, 2), help='crew-contract: target pool crew contract (2 = lifetime 192)')
     parser.add_argument('--package', help='map: tools/map_package.py package directory of the new battle map')
     parser.add_argument('--catalog', help='map: v7 destructible catalog manifest of that map')
     parser.add_argument('--team', default='team1', choices=('team1', 'team2'), help='map: ctf base used as test_lab spawn')
+    parser.add_argument('--ground-strength', help='ground-strength: exported sidecar for the active battle map')
     parser.add_argument('--source-stand', help='latest actual stand directory (read-only)')
     parser.add_argument('--physics', help='physics build dir below local/build')
     parser.add_argument('--gateway', help='sr-gateway.exe from a recorded build')
@@ -736,6 +806,10 @@ def main():
         if not (args.stand and args.package and args.catalog):
             parser.error('map requires --stand, --package and --catalog')
         battle_map(args)
+    elif args.command == 'ground-strength':
+        if not (args.stand and args.ground_strength):
+            parser.error('ground-strength requires --stand and --ground-strength')
+        bind_ground_strength(args)
     elif args.command == 'crew-contract':
         if not (args.stand and args.version):
             parser.error('crew-contract requires --stand and --version')

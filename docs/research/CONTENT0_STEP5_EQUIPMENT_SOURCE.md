@@ -46,10 +46,10 @@ final `00`. Coated optics raw item ID is 5 and compact ID is 1529.
   confirmation behavior.
 - The catalogue records source vehicle filters. Source duplicate restrictions
   are enforced at the store.
-- Four unsupported fuel items, `lendLeaseOil`, `gasoline100`, `gasoline105` and
-  `qualityOil`, have the separate nested `incompatibleTags/installed=fuel` rule in
-  the pinned source. The current catalogue receipt omits this nested equipment
-  conflict. It requires a versioned receipt extension if those items are enabled.
+- Four fuel items, `lendLeaseOil`, `gasoline100`, `gasoline105` and `qualityOil`,
+  have the nested `incompatibleTags/installed=fuel` rule. The source builder
+  checks it and the live catalogue enforces it. The original v1 artefact
+  digest remains valid for stored inventories and command ledgers.
 - Separate current and preferred consumable slots let settlement clear only
   units used while retaining the maintenance selection. Unloading returns unused
   consumables to shared stock. Destroying a non-removable device clears it,
@@ -486,3 +486,107 @@ driven round are **NOT_RUN**. Before deploying, retain a scoped game database
 snapshot and the previous gateway and worker. Roll back the generated pins,
 worker, gateway and Domain together with the pre-test snapshot when a new
 overweight assembly or suspension is already present in the database.
+
+## Fuel and removed RPM limiter
+
+**VERIFIED #717** — `equipments.xml` defines Lend-Lease oil (`1787`),
+100-octane gasoline (`2043`), 105-octane gasoline (`2299`) and quality oil
+(`4347`). Oils give +5% engine power. Gasoline gives +5% or +10% to engine
+power and turret traverse. Both gasoline items require the fitted engine's
+`gasoline` tag and the listed nations. The nested conflict is common to
+all four fuel items. The generated manifest contains 244 gasoline engine
+IDs from the pinned research inputs. The separate grouser manifest contains
+22 compatible vehicle IDs. The gateway checks the same IDs independently
+from the frozen exact descriptor, in addition to the garage store checks.
+
+The RPM limiter (`3323`) is a reusable trigger for USSR and China. Source
+XML specifies +10% power and 1.5 engine HP/s. The native `Avatar` trigger
+sends low word `12` and an explicit on/off high word. The own-vehicle
+damage codes for critical and destroyed engine at unrestricted RPM are 24
+and 25. The server applies wear in fixed-point time, including fractional
+carry across switches. The native HUD and rejoin behavior of this projection
+still need a game-client check. Historical server rounding is unknown.
+
+**PROJECT** — passive fuel lasts through the battle and the existing
+terminal settlement spends its slot once. Prebattle cancellation preserves
+it. The regulator is never spent, and the terminal validators reject a
+settlement that tries to spend it. A different fuel or a module change from
+gasoline to diesel is rejected while it violates the fitted loadout. No
+new persistent catalogue hash or save migration is required.
+
+**PASS** — real SQLite tests on the pinned fixture checked T18 diesel versus
+gasoline, double fuel refusal, compatible remount and unchanged state on
+refusal. They also checked oil settlement, replay and rejection of regulator
+spending. See `local/evidence/content0-s5/fuel-fitment-r4.log` and
+`fuel-settlement.log`. The focused gateway `content0_s5` run passed 28
+tests. One of its two local-fixture tests was then run explicitly against
+the real worker and passed. See `fuel-ground-final-rust.log` and
+`fuel-ground-ipc7.log`. The full gate and native-client battle wait for
+the combined step 5/5a candidate.
+
+## Ground strength and grouser effects
+
+**VERIFIED #717** — all three registered map packages contain a
+`terrain2/dominantTextures` entry for every outdoor terrain tile. Each entry
+holds a compressed byte grid. The lower nibble is the texture index and the
+upper nibble holds authored ground strength. `constants.pyc` SHA‑256
+`1c07c2e6a956dcfef95c4020954b4ca39efd77844d328cded935307a6515eebd`
+gives `NONE=0`, `FIRM=1`, `MEDIUM=2`, `SOFT=3`, `SLOPE=4`, `DEATH_ZONE=5`.
+The [BigWorld file-format guide](https://howarduong.github.io/github.io/doc/html/file_grammar_guide/ch07.html)
+documents the dominant texture container. The
+[BigWorld 14.4.1 engine-family source](https://github.com/v2v3v4/BigWorld-Engine-14.4.1/blob/master/programming/bigworld/lib/terrain/dominant_texture_map.cpp#L140-L158)
+corroborates the two nibble fields and the nearest-texel X/Z lookup. The
+source material table also assigns default ground classes to texture names.
+Those defaults and the authored map codes can differ on the same texel, so
+the exporter uses the authored codes. The original server's support averaging
+and treatment of the special terrain codes remain unknown.
+
+**PROJECT** — the `ground_strength` reference in map configs points to a
+bounded local export pinned by SHA‑256 and bound to the exact terrain manifest
+and registered map. Shared IPC7 manifest v5 opens this asset with the same pin
+for every actor. The worker samples world X/Z at the previous Jolt step's
+terrain contacts. It averages over grounded wheel
+supports. Nonterrain supports, unclassified and special cells use the hard
+resistance profile. Those fallback rules do not add slope or death-zone
+behavior. `grousers` contributes 1,000 kg and changes the original
+medium/soft coefficients by ×0.952/×0.909. Resistance scales both the existing
+rolling force and the PHYS‑01 yaw limit. Old scenes without an authored map
+keep the hard profile. Map geometry and projectile contacts are unchanged.
+
+**PASS** — all three runtime maps exported 144 tiles each into
+`D:/WoT_9.1_Server/local/evidence/20261114-content0-ground-strength-01`.
+With equal mass and actual ground contact positions on Malinovka, fit versus
+no fit gives identical firm-ground traces. After three seconds, medium-ground
+speed increases from 4.500 to 4.568 m/s and yaw from 0.3567 to 0.3747 rad/s.
+On soft ground these change from 3.883 to 4.057 m/s and 0.2434 to 0.2677 rad/s.
+The same worker path applies bounded fuel/limiter power through the Jolt
+drivetrain. At +10% the three-second speed is 5.422 m/s versus 5.106 m/s, and
+disabling power at 1.5 s gives 5.229 m/s. See
+`worker-final-comparisons.json` and `worker-rejections.json` in that directory.
+The worker also rejects mismatched map pins, over-ceiling power and grouser
+flags without 1,000 kg of equipment. On a legacy manifest v4 without a ground
+asset, all 31 sampled worker frames match the previous build byte for byte.
+Native-client play remains **NOT_RUN**.
+
+Rebuild movement source data with `python -B -X utf8 tools/phys01_characteristics.py build`
+after changing the build registry. At this handoff its 14,397 rows include
+the previously missing suspension assemblies. The lab worker settles and
+moves the added KV‑1/U‑11 assembly `ussr-KV1--037b4a69`, with evidence
+`suspension-kv1-u11-malinovka.stdout.jsonl`. The numerical physics profile
+and Jolt DLL pins for the existing inertia qualification are unchanged.
+
+Export with `python -B -X utf8 tools/ground_strength.py export --original <original>
+--terrain <pinned terrain manifest> --out <fresh local file>` and build the
+worker with `python -B -X utf8 server/build.py physics --test-lab --out <local output>`.
+Bind the sidecar with `python -B -X utf8 tools/full_test_stand.py ground-strength
+--stand <stopped stand> --ground-strength <sidecar>` from the checkout that
+owns the stand. A copied Malinovka manifest passed pin checks on 361 pools.
+Scene startup requires this binding when a seated tank mounts grousers.
+For rollback restore `battle-profiles.before-ground-strength.json` plus the
+previous matched gateway and worker. The running stands were left intact.
+
+The Rust v5 adapter launched the final worker on the pinned Malinovka scene,
+checked both 30-step runs and compared physical speed at 100% and 110% power.
+See `local/evidence/content0-s5/fuel-ground-ipc7.log`. The test is an explicit
+local fixture run using `WOT091_MOTION_TEST_ROOT`, `WOT091_MOTION_TEST_SCENE`
+and `WOT091_MOTION_TEST_WORKER` with `--ignored`.

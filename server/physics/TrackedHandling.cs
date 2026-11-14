@@ -64,7 +64,7 @@ internal sealed class TrackedHandling
     private const float ReversalBrakeSpeed = .5f;
     private const float MotorRampPerSecond = 4f;
     public const float GearSwitchTime = .15f, ClutchReleaseTime = .1f, GearSwitchLatency = .2f;
-    private readonly float width, maximumYaw, halfMass, radius;
+    private readonly float width, baseMaximumYaw, halfMass, radius;
     private readonly bool poweredTurnLoss, intentReversalBrake;
     private readonly WheelSettingsTV[] wheels;
     private readonly float[] lateral, longitudinal;
@@ -115,7 +115,7 @@ internal sealed class TrackedHandling
             !float.IsFinite(maxYawRate) || maxYawRate < .05f || maxYawRate > 2 ||
             !float.IsFinite(massKg) || massKg < 1000 || massKg > 200000 || supportWheels.Length is not (6 or 10))
             throw new InvalidDataException("tracked handling geometry/yaw/mass/support bounds");
-        width = trackWidth; maximumYaw = maxYawRate; wheels = supportWheels;
+        width = trackWidth; baseMaximumYaw = maxYawRate; wheels = supportWheels;
         poweredTurnLoss = enablePoweredTurnLoss;
         intentReversalBrake = enableIntentReversalBrake;
         halfMass = massKg / 2; radius = wheels[0].Radius;
@@ -133,14 +133,17 @@ internal sealed class TrackedHandling
     }
 
     public void Apply(TrackedVehicleController controller, float signedSpeed, float actualYawRate,
-        int throttle, int steer, bool brake, float forwardLimit, float reverseLimit, float deltaTime)
+        int throttle, int steer, bool brake, float forwardLimit, float reverseLimit, float deltaTime,
+        float yawScale = 1f, float motorScale = 1f)
     {
         if (!float.IsFinite(signedSpeed) || !float.IsFinite(actualYawRate) ||
             !float.IsFinite(deltaTime) || deltaTime <= 0 || deltaTime > .1f ||
             throttle < -1 || throttle > 1 || steer < -1 || steer > 1 ||
             !float.IsFinite(forwardLimit) || forwardLimit <= 0 ||
-            !float.IsFinite(reverseLimit) || reverseLimit <= 0 || (brake && (throttle != 0 || steer != 0)))
+            !float.IsFinite(reverseLimit) || reverseLimit <= 0 || (brake && (throttle != 0 || steer != 0)) ||
+            !float.IsFinite(yawScale) || yawScale <= 0 || !float.IsFinite(motorScale) || motorScale <= 0 || motorScale > 1)
             throw new InvalidDataException("tracked handling command bounds");
+        float maximumYaw = baseMaximumYaw * yawScale;
 
         // Only validated raw throttle changes express a new direction intent.
         // Repeated held commands, governor cuts and gravity are not key edges.
@@ -333,7 +336,7 @@ internal sealed class TrackedHandling
         // Braking and a released throttle never leave a queued driving torque.
         // Nonzero requests otherwise enter over a bounded quarter-second ramp.
         motorInput = brakeInput > 0 || motor == 0 ? 0 : Approach(motorInput, motor, MotorRampPerSecond * deltaTime);
-        controller.SetDriverInput(motorInput, left, right, brakeInput);
+        controller.SetDriverInput(motorInput * motorScale, left, right, brakeInput);
     }
 
     // Track speed change for a retarding force halfMass*deceleration at the

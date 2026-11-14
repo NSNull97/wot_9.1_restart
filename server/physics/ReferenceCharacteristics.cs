@@ -9,17 +9,19 @@ namespace MapDrive;
 internal static class ReferenceCharacteristics
 {
     public const float ForwardFriction = .07f; // FORWARD_FRICTION
-    // The imported maps carry no ground kind yet, so every map counts as hard ground: on it the hull traverse
-    // equals the chassis rotationSpeed shown by the client. 0 hard, 1 medium, 2 soft.
-    public const int GroundKind = 0;
     // Owner decision 2026-11-10: every vehicle pivots around its centre for now; whether vehicles with
     // rotationIsAroundCenter=false must turn around a held track is decided after a check in the modern game.
     public const bool HonourRotationIsAroundCenter = false;
     public sealed record Row(float[] TerrainResistance, bool RotationIsAroundCenter)
     {
         // rotationSpeedLimit = power / (rotationEnergy * terrainResistance): the traverse falls with the ground.
-        public float YawScale => TerrainResistance[0] / TerrainResistance[GroundKind];
-        public float Resistance => ForwardFriction * TerrainResistance[GroundKind];
+        public float YawScale(float resistance) => TerrainResistance[0] / resistance;
+        public float Resistance(int ground, bool grousers) => TerrainResistance[ground] * (grousers ? ground switch
+        {
+            1 => .952f,
+            2 => .909f,
+            _ => 1f
+        } : 1f);
     }
     static readonly Lazy<Dictionary<string, Row>> Rows = new(Read);
     static Dictionary<string, Row> Read()

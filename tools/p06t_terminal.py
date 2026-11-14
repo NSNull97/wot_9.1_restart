@@ -14,7 +14,7 @@ from p09d_ammo_store import require,sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p08b_battle_store import _integer, MAX_PARTICIPANTS
-from content0_equipment_catalog import (CO2_FUEL_TANK, CYCLONE_FILTER, ENHANCED_SUSPENSIONS,
+from content0_equipment_catalog import (CO2_FUEL_TANK, CYCLONE_FILTER, ENHANCED_SUSPENSIONS, RPM_LIMITER,
                                        SUSPENSION_TRACK_HEALTH_PERCENT, WET_AMMO_RACKS)
 
 POLICY_SCHEMA="p06t-terminal-policy.v1"
@@ -101,7 +101,7 @@ class TerminalPolicy:
             slots=value["consumables_used"]
             fitted=frozen.get("artefacts",{}).get("consumables",[0,0,0])
             require(type(slots) is list and 1<=len(slots)<=3
-                and all(type(slot) is int and 0<=slot<3 and fitted[slot] for slot in slots)
+                and all(type(slot) is int and 0<=slot<3 and fitted[slot] not in (0, RPM_LIMITER) for slot in slots)
                 and slots==sorted(set(slots)), "INVALID_TERMINAL_STATE")
         require(set(value)-{"consumables_used"}==FIELDS and value["policy_revision"]==self.document["policy_revision"]
             and frozen["kind"] in self.document["profiles"] and type(value["crew_active"])is bool,"INVALID_TERMINAL_STATE")

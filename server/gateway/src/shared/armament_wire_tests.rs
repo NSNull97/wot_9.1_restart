@@ -11,6 +11,12 @@ fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
     assert_eq!(hex(w::equipment_row(0,0).unwrap()),"1344000000000000000000");
     assert_eq!(hex(w::equipment_row(3067,0).unwrap()),"1344fb0b00000000000000");
     assert_eq!(hex(w::equipment_row(3067,1).unwrap()),"1344fb0b00000100000000");
+    assert_eq!(w::command(&[0x8d,5,0,16,12,0,1,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:12,extra:1}));
+    assert_eq!(w::command(&[0x8d,5,0,16,12,0,0,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:12,extra:0}));
+    assert_eq!(hex(w::equipment_row(2299,1).unwrap()),"1344fb0800000100000000");
+    assert_eq!(hex(w::equipment_row_with_trigger(3323,1,true).unwrap()),"1344fb0c0000010000ffff");
+    assert!(w::equipment_row_with_trigger(3323,0,true).is_err());
+    assert!(w::equipment_row_with_trigger(2299,1,true).is_err());
     assert!(w::equipment_row(0,1).is_err());
     assert!(w::equipment_row(2570,1).is_err());
     assert!(w::equipment_row(251,2).is_err());

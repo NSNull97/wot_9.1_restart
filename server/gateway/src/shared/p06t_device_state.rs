@@ -280,6 +280,18 @@ impl State {
             }
         } Ok(())
     }
+    /// CONTENT-0 regulator wear is an owner module event. It plays the normal
+    /// engine damaged/destroyed state and cannot ignite or damage vehicle HP.
+    pub(super) fn apply_rpm_limiter_damage(&mut self,amount:u16,at_ms:u64,owner:u8,h:Health)->io::Result<Vec<Transition>> {
+        self.validate_context(at_ms,h)?;
+        if amount==0 || self.frozen || h.terminal || h.hp==0 || !self.crew_active() {return Ok(Vec::new());}
+        let mut next=self.clone();
+        let mut out=Vec::new();
+        next.device(&mut out,Device::Engine,amount,at_ms,Cause{shot:0,attacker_slot:owner},false)?;
+        next.observed_ms=Some(at_ms);
+        *self=next;
+        Ok(out)
+    }
     /// A repaired module comes back damaged (#717 DEVICE_REPAIRED_TO_CRITICAL, code 18): it is at its
     /// source maxRegenHealth, below maxHealth. INFERRED from the client codes; the historical server
     /// timer and full-repair rule are UNKNOWN (LAB).

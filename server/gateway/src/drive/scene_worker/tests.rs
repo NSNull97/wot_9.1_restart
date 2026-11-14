@@ -1,6 +1,43 @@
 use super::*;
+
+#[test]
+#[ignore = "requires a local #717 map export and a built Jolt worker"]
+fn content0_s5_real_motion_worker_accepts_ground_and_power_v5() {
+    let root=PathBuf::from(std::env::var_os("WOT091_MOTION_TEST_ROOT").expect("owned local root"));
+    let path=PathBuf::from(std::env::var_os("WOT091_MOTION_TEST_SCENE").expect("pinned v5 scene"));
+    let artifacts=PathBuf::from(std::env::var_os("WOT091_MOTION_TEST_WORKER").expect("worker artifacts"));
+    let manifest=fs::read(&path).unwrap();
+    let spec=Arc::new(SceneSpec::load(&root,&path,&digest(&manifest)).unwrap());
+    assert_eq!(spec.actors.len(),1);
+    assert_eq!(spec.actors[0].engine_power_ceiling_basis_points,11000);
+    let scene=Scene::new(&spec,&[]).unwrap();
+    let drive=|power| {
+        let mut worker=Worker::launch(Artifacts::load(&artifacts).unwrap(),spec.clone(),19,scene.clone(),Instant::now()).unwrap();
+        let await_frame=|worker:&mut Worker| {
+            let deadline=Instant::now()+START_TIMEOUT;
+            loop {
+                if let Some(frame)=worker.poll(Instant::now()).unwrap(){return frame;}
+                assert!(Instant::now()<deadline);
+                thread::sleep(Duration::from_millis(1));
+            }
+        };
+        assert_eq!(await_frame(&mut worker).sequence,0);
+        let input=Input{throttle:1,steer:0,brake:false,speed_percent:100,engine_power_basis_points:power};
+        let mut last=0.;
+        for seq in 1..=30 {
+            assert_eq!(worker.advance(&[input],Instant::now()).unwrap(),seq);
+            let frame=await_frame(&mut worker);
+            assert_eq!(frame.sequence,seq);
+            last=frame.actors[0].pose.speed;
+        }
+        worker.shutdown().unwrap();
+        last
+    };
+    assert!(drive(11000)>drive(10000));
+}
+
 fn spec(n:usize)->SceneSpec{SceneSpec{local_root:PathBuf::new(),manifest_path:PathBuf::new(),manifest_sha256:"c".repeat(64),map:"05_prohorovka".into(),
-    actors:(0..n).map(|slot|ActorSpec{slot,kind:if slot%2==0{Kind::Ms1}else{Kind::Is7},config_sha256:format!("{:064x}",slot+1),spawn:[0.,1.5,0.],yaw:0.,equipment_mass_kg:0.}).collect(),
+    actors:(0..n).map(|slot|ActorSpec{slot,kind:if slot%2==0{Kind::Ms1}else{Kind::Is7},config_sha256:format!("{:064x}",slot+1),spawn:[0.,1.5,0.],yaw:0.,equipment_mass_kg:0.,grousers:false,engine_power_ceiling_basis_points:10000}).collect(),
     catalog_sha256:ZERO.into(),catalog_ids:BTreeSet::new(),pins:Vec::new(),column_ids:BTreeSet::new()}}
 fn good(s:&SceneSpec,seq:u32)->Value{json!({"version":7,"event":if seq==0{"ready"}else{"state"},"generation":9,"manifest_sha256":s.manifest_sha256,"catalog_sha256":ZERO,
     "seq":seq,"tick":180+seq*6,"settle_ticks":180,"map":"05_prohorovka","scene_version":0,"scene_sha256":Scene::new(s,&[]).unwrap().sha256,
@@ -29,10 +66,23 @@ fn good(s:&SceneSpec,seq:u32)->Value{json!({"version":7,"event":if seq==0{"ready
 #[test]fn duplicate_keys_and_oversized_or_deep_json_fail_before_value(){let raw=br#"{"x":{"y":1,"y":2}}"#;assert!(parse(raw,MAX_OUTPUT).is_err());
     assert!(parse(&vec![b' ';MAX_OUTPUT+1],MAX_OUTPUT).is_err());let mut raw="0".to_string();for _ in 0..14{raw=format!("[{raw}]");}assert!(parse(raw.as_bytes(),MAX_OUTPUT).is_err());}
 #[test]fn controls_are_exact_complete_batch_and_partial_cruise_is_not_a_brake(){let s=spec(6);let scene=Scene::new(&s,&[]).unwrap();let mut inputs=vec![Input::STOP;6];
-    inputs[0]=Input{throttle:1,steer:1,brake:false,speed_percent:25};inputs[1]=Input{throttle:-1,steer:0,brake:false,speed_percent:50};
+    inputs[0]=Input{throttle:1,steer:1,brake:false,speed_percent:25,engine_power_basis_points:10_000};inputs[1]=Input{throttle:-1,steer:0,brake:false,speed_percent:50,engine_power_basis_points:10_000};
     let encoded=advance_request(&s,9,&scene,1,&inputs).unwrap();let v=parse(encoded.trim_ascii_end(),MAX_INPUT).unwrap();assert_eq!(v["inputs"][1]["speed_percent"],50);
     assert!(advance_request(&s,9,&scene,1,&inputs[..5]).is_err());for change in 0..4{let mut inputs=inputs.clone();match change{0=>inputs[5].throttle=2,1=>inputs[1].speed_percent=25,
         2=>inputs[0].brake=true,3=>inputs[0].speed_percent=75,_=>unreachable!()}assert!(advance_request(&s,9,&scene,1,&inputs).is_err());}}
+#[test]fn content0_s5_ipc_actor_power_modifier_is_exact_and_omitted_at_baseline(){
+    let mut spec=spec(2);spec.actors[1].engine_power_ceiling_basis_points=11_550;
+    let scene=Scene::new(&spec,&[]).unwrap();let mut inputs=[Input::STOP;2];
+    inputs[1].throttle=1;inputs[1].brake=false;
+    inputs[1].engine_power_basis_points=11550;
+    let row=parse(advance_request(&spec,9,&scene,1,&inputs).unwrap().trim_ascii_end(), MAX_INPUT).unwrap();
+    assert!(row["inputs"][0].get("engine_power_basis_points").is_none());
+    assert_eq!(row["inputs"][1]["engine_power_basis_points"],11550);
+    inputs[1].engine_power_basis_points=11_500;
+    assert!(advance_request(&spec,9,&scene,1,&inputs).is_err());
+    inputs[1].engine_power_basis_points=12_100;
+    assert!(advance_request(&spec,9,&scene,1,&inputs).is_err());
+}
 #[test]fn cumulative_scene_hash_and_empty_scene_match_checked_csharp_contract(){let s=spec(2);assert_eq!(Scene::new(&s,&[]).unwrap().sha256,digest(b"wot091-empty-battle-scene-v1\0"));
     assert!(Scene::new(&s,&[1]).is_err());let mut c=s.clone();c.catalog_sha256="b".repeat(64);c.catalog_ids=[1,3,5].into_iter().collect();
     assert_eq!(Scene::new(&c,&[]).unwrap().sha256,"3b4d76b3e9b6266fea62459b5d9d2567819a9851fc9abdc2c59640f8e089f81f");

@@ -60,6 +60,7 @@ class Ground:
 
 def derived_config(template, package, directory, arena, team, local):
     t = dict(template)
+    t.pop('ground_strength', None)
     base = arena['gameplay_types']['ctf']['team_bases'][team][0]
     x, z = base['xz']
     ground = Ground(directory)

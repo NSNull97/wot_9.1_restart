@@ -275,7 +275,11 @@ internal static class BattleScene
         }
         try
         {
-            foreach (var actor in manifest.Actors) { var tank = new BattleTank(world, actor, manifest.Catalog); tanks.Add(tank); tankIds.Add(tank.Body.ID.ID, tank); }
+            foreach (var actor in manifest.Actors)
+            {
+                var tank = new BattleTank(world, actor, manifest.Catalog, manifest.Ground, terrainId);
+                tanks.Add(tank); tankIds.Add(tank.Body.ID.ID, tank);
+            }
             Advance(tanks.Select(_ => BattleSceneInput.Control.Stop).ToArray(), 180);
             foreach (var tank in tanks) tank.CheckSettled();
             diagnostics?.Write(0, tick, tanks.Select(t => t.Metrics(BattleSceneInput.Control.Stop)).ToArray(), [], 0);

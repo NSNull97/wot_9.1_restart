@@ -44,13 +44,22 @@ pub fn command(record:&[u8])->io::Result<Option<Intent>>{
 
 /// The same #717 callback presents consumables; zero CD occupies an empty slot.
 pub fn equipment_row(compact:u16,quantity:u16)->io::Result<Vec<u8>>{
-    use crate::p06t_device_state::Consumable;
-    if quantity>1||compact==0&&quantity!=0||compact!=0&&Consumable::from_compact(compact).is_none()
-        &&!crate::profile13_v2091::is_crew_food(compact){
+    equipment_row_with_trigger(compact,quantity,false)
+}
+
+pub(crate) fn equipment_row_with_trigger(compact:u16,quantity:u16,trigger_on:bool)->io::Result<Vec<u8>>{
+    use crate::profile13_v2091::{is_supported_consumable,RPM_LIMITER};
+    if quantity>1 || compact==0 && quantity!=0 || compact!=0 && !is_supported_consumable(compact)
+        || trigger_on && (compact!=RPM_LIMITER || quantity!=1){
         return Err(bad("equipment row compact/quantity"));
     }
     let mut body=vec![0x13,0x44];body.extend(i32::from(compact).to_le_bytes());body.extend(quantity.to_le_bytes());
-    body.extend([0,0,0]);Ok(body)
+    // #717 already latches a trigger on the click. At creation any nonzero
+    // time restores its latch; negative time keeps onEquipmentButtonPressed
+    // enabled (positive time would make it a cooldown).
+    body.push(0);
+    body.extend(if trigger_on {-1i16} else {0}.to_le_bytes());
+    Ok(body)
 }
 
 /// #717 Avatar.updateVehicleOptionalDeviceStatus takes the raw item ID, not its compact ID.

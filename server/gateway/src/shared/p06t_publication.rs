@@ -73,6 +73,13 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         if !body.is_empty(){outbox.push_back(body);}
         c.consumables_sent=hud_consumables;
     }
+    if hud_consumables.contains(&crate::profile13_v2091::RPM_LIMITER) {
+        let active=owner.rpm_limiter_active();
+        if c.rpm_limiter_sent!=Some(active) {
+            outbox.push_back(native::equipment_row_with_trigger(crate::profile13_v2091::RPM_LIMITER,1,active)?);
+            c.rpm_limiter_sent=Some(active);
+        }
+    }
     if let Some(active) = owner.stereoscope_status().filter(|active| Some(*active) != c.stereoscope_sent) {
         outbox.push_back(native::stereoscope_status(active));
         c.stereoscope_sent = Some(active);
@@ -115,6 +122,11 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     for(target,event)in world.device_events.iter().skip(c.device_cursor){
         if *target==c.slot&&c.visible()[c.slot]{
             let notification=match event.change{
+                // Native #717 DAMAGE_INFO_CODES[24/25] distinguish regulator
+                // wear from incoming fire. Shot 0 is our owner-only event.
+                Change::Device{device:crate::p06t_device_caps::Device::Engine,extra_index,before_condition,
+                    after_condition,repair:false,..} if event.cause.shot==0 && !event.from_fire && before_condition!=after_condition=>
+                    match after_condition{Condition::Critical=>Some((24,extra_index)),Condition::Destroyed=>Some((25,extra_index)),Condition::Normal=>None},
                 Change::Device{extra_index,before_condition,after_condition,repair,..} if before_condition!=after_condition=>
                     if repair {match after_condition{
                         Condition::Critical=>Some((18,extra_index)),Condition::Normal=>Some((19,extra_index)),Condition::Destroyed=>None}

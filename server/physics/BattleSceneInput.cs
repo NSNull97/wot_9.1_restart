@@ -10,31 +10,46 @@ internal static class BattleSceneInput
     public const string Policy = "p05c-shared-scene-v1";
     public static readonly string EmptyCatalogHash = new('0', 64);
     public static readonly string EmptySceneHash = CheckedInput.Hash("wot091-empty-battle-scene-v1\0"u8.ToArray());
-    public sealed record Control(int Throttle, int Steer, bool Brake, int SpeedPercent)
+    public const int BaseEnginePower = 10000;
+    public sealed record Control(int Throttle, int Steer, bool Brake, int SpeedPercent, int EnginePower = BaseEnginePower)
     {
         public static readonly Control Stop = new(0, 0, true, 100);
     }
     public sealed record Actor(int Slot, string Kind, string ConfigHash, JsonElement Config,
-        AngularBodyBinding Binding, Vector3 Spawn, float Yaw);
-    public sealed record Manifest(string Hash, string Map, Actor[] Actors, CheckedInput.CatalogSpec? Catalog);
+        AngularBodyBinding Binding, Vector3 Spawn, float Yaw, bool Grousers = false, int EnginePowerCeiling = BaseEnginePower);
+    public sealed record Manifest(string Hash, string Map, Actor[] Actors, CheckedInput.CatalogSpec? Catalog,
+        GroundStrengthMap? Ground = null);
+
+    static int EnginePower(JsonElement value)
+    {
+        int basisPoints = value.GetInt32();
+        if (basisPoints is not (BaseEnginePower or 10500 or 11000 or 11550 or 12100))
+            throw new InvalidDataException("battle scene engine power");
+        return basisPoints;
+    }
 
     public static Manifest Load(string root, string path, string hash)
     {
         using var doc = CheckedInput.Json(CheckedInput.FileBytes(CheckedInput.Owned(root, path), 32768, hash));
         var m = doc.RootElement;
-        CheckedInput.Fields(m, "version", "profile", "policy", "map", "catalog", "actors");
-        string map = m.GetProperty("map").GetString()!;
         int version=m.GetProperty("version").GetInt32();
-        if (version is not (1 or 2 or 3 or 4) || m.GetProperty("profile").GetString() != "test_lab" ||
+        string[] fields = ["version", "profile", "policy", "map", "catalog", "actors"];
+        CheckedInput.Fields(m, version == 5 ? [..fields, "ground"] : fields);
+        string map = m.GetProperty("map").GetString()!;
+        if (version is not (1 or 2 or 3 or 4 or 5) || m.GetProperty("profile").GetString() != "test_lab" ||
             m.GetProperty("policy").GetString() != Policy || !CheckedInput.IsRegisteredMap(map))
             throw new InvalidDataException("battle scene policy/map");
+        bool hasGround = version == 5 && m.GetProperty("ground").ValueKind != JsonValueKind.Null;
+        var groundRef = hasGround ? m.GetProperty("ground") : default;
+        if (hasGround) CheckedInput.Fields(groundRef, "path", "sha256");
         var rows = m.GetProperty("actors");
         if (rows.ValueKind != JsonValueKind.Array || rows.GetArrayLength() is < 1 or > MaxActors)
             throw new InvalidDataException("battle scene actor count");
         var actors = new List<Actor>();
         foreach (var row in rows.EnumerateArray())
         {
-            if(version==4)CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw","equipment_mass_kg");
+            if(version==5)CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw","equipment_mass_kg","grousers","engine_power_ceiling_basis_points");
+            else if(version==4)CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw","equipment_mass_kg");
             else if(version==1)CheckedInput.Fields(row, "slot", "kind", "config", "spawn_origin", "spawn_yaw");
             else CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw");
             if (row.GetProperty("slot").GetInt32() != actors.Count) throw new InvalidDataException("ordered contiguous actor slots");
@@ -43,10 +58,19 @@ internal static class BattleSceneInput
             using var config = CheckedInput.Json(CheckedInput.FileBytes(CheckedInput.Owned(root,
                 reference.GetProperty("path").GetString()!), 16384, configHash));
             var c = config.RootElement;
-            CheckedInput.Fields(c, "version", "profile", "map", "terrain", "obstacles", "spawn_origin", "spawn_yaw",
+            string[] configFields = ["version", "profile", "map", "terrain", "obstacles", "spawn_origin", "spawn_yaw",
                 "body_half_extents", "body_center_offset", "wheel_points", "mass_kg", "max_forward_mps", "max_reverse_mps",
                 "engine_max_torque_nm", "wheel_radius", "suspension_min", "suspension_max", "track_max_brake_torque", "bounds_xz",
-                "longitudinal_friction", "lateral_friction", "stationary_steering_ratio", "handling");
+                "longitudinal_friction", "lateral_friction", "stationary_steering_ratio", "handling"];
+            CheckedInput.Fields(c, hasGround ? [..configFields, "ground_strength"] : configFields);
+            if (hasGround)
+            {
+                var actorGround = c.GetProperty("ground_strength");
+                CheckedInput.Fields(actorGround, "path", "sha256");
+                if (actorGround.GetProperty("path").GetString() != groundRef.GetProperty("path").GetString() ||
+                    actorGround.GetProperty("sha256").GetString() != groundRef.GetProperty("sha256").GetString())
+                    throw new InvalidDataException("battle scene actor ground identity");
+            }
             string kind = row.GetProperty("kind").GetString()!;
             AngularBodyBinding binding;
             if(version>=2&&row.GetProperty("source_profile").ValueKind!=JsonValueKind.Null)
@@ -72,8 +96,13 @@ internal static class BattleSceneInput
             else binding=AngularBodyBinding.Select(c); // Existing v1 projections are unchanged.
             if (c.GetProperty("map").GetString() != map || kind != binding.Kind)
                 throw new InvalidDataException("battle actor kind/config map");
-            if (version == 4)
-                binding = binding.WithEquipmentMass(CheckedInput.Number(row.GetProperty("equipment_mass_kg"), 0, AngularBodyBinding.MaxEquipmentMassKg));
+            float equipmentMass = version >= 4
+                ? CheckedInput.Number(row.GetProperty("equipment_mass_kg"), 0, AngularBodyBinding.MaxEquipmentMassKg) : 0;
+            if (version >= 4) binding = binding.WithEquipmentMass(equipmentMass);
+            bool grousers = version == 5 && row.GetProperty("grousers").GetBoolean();
+            int enginePower = version == 5 ? EnginePower(row.GetProperty("engine_power_ceiling_basis_points")) : BaseEnginePower;
+            if (grousers && (!hasGround || equipmentMass < 1000))
+                throw new InvalidDataException("battle scene grousers require ground and installed mass");
             foreach (string key in new[] { "terrain", "obstacles" })
             {
                 CheckedInput.Fields(c.GetProperty(key), "path", "sha256");
@@ -97,7 +126,7 @@ internal static class BattleSceneInput
             foreach (var previous in actors)
                 if (HorizontalOverlap(spawn, yaw, binding.HalfExtents, previous.Spawn, previous.Yaw, previous.Binding.HalfExtents))
                     throw new InvalidDataException("initial battle hulls overlap");
-            actors.Add(new(actors.Count, kind, configHash, c.Clone(), binding, spawn, yaw));
+            actors.Add(new(actors.Count, kind, configHash, c.Clone(), binding, spawn, yaw, grousers, enginePower));
         }
         CheckedInput.CatalogSpec? catalog = null;
         if (m.GetProperty("catalog").ValueKind != JsonValueKind.Null)
@@ -107,7 +136,9 @@ internal static class BattleSceneInput
                 reference.GetProperty("sha256").GetString()!, map, actors[0].Config.GetProperty("obstacles"));
             if (catalog.Version != 8) throw new InvalidDataException("IPC7 requires existing angular catalog8");
         }
-        return new(hash, map, actors.ToArray(), catalog);
+        var ground = hasGround ? GroundStrengthMap.Load(root, groundRef, map,
+            actors[0].Config.GetProperty("terrain").GetProperty("sha256").GetString()!) : null;
+        return new(hash, map, actors.ToArray(), catalog, ground);
     }
 
     static bool HorizontalOverlap(Vector3 a, float ay, Vector3 ah, Vector3 b, float by, Vector3 bh)
@@ -170,13 +201,18 @@ internal static class BattleSceneInput
         var controls = new List<Control>();
         foreach (var row in rows.EnumerateArray())
         {
-            CheckedInput.Fields(row, "slot", "throttle", "steer", "brake", "speed_percent");
+            string[] fields = ["slot", "throttle", "steer", "brake", "speed_percent"];
+            bool hasPower = row.TryGetProperty("engine_power_basis_points", out var power);
+            CheckedInput.Fields(row, hasPower ? [..fields, "engine_power_basis_points"] : fields);
             int throttle = row.GetProperty("throttle").GetInt32(), steer = row.GetProperty("steer").GetInt32(), speed = row.GetProperty("speed_percent").GetInt32();
             bool brake = row.GetProperty("brake").GetBoolean();
+            int enginePower = hasPower ? EnginePower(power) : BaseEnginePower;
             if (row.GetProperty("slot").GetInt32() != controls.Count || throttle is < -1 or > 1 || steer is < -1 or > 1 ||
                 brake && (throttle != 0 || steer != 0) || !(speed == 100 || speed == 50 && !brake && throttle != 0 || speed == 25 && !brake && throttle == 1))
                 throw new InvalidDataException("IPC7 bounded actor control");
-            controls.Add(new(throttle, steer, brake, speed));
+            if ((hasPower && enginePower == BaseEnginePower) || enginePower > manifest.Actors[controls.Count].EnginePowerCeiling)
+                throw new InvalidDataException("IPC7 engine power outside actor ceiling");
+            controls.Add(new(throttle, steer, brake, speed, enginePower));
         }
         return controls.ToArray();
     }

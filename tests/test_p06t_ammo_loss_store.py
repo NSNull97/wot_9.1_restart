@@ -606,6 +606,33 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.assertEqual(self.send(finish), dict(reply, replayed=True))
         self.assertEqual(self.query()["status"], "found")
 
+    def test_fuel_is_spent_at_settlement_and_limiter_is_retained(self):
+        from content0_equipment_catalog import RPM_LIMITER
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        for slot, item in enumerate((1787, RPM_LIMITER)):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=f"fuel-setup:{slot}", expected_revision=self.profile()["revision"], wire_revision=1,
+                command=308, arguments=[5, item, 1, slot, 0, 0])
+            self.assertEqual(native_service(self.store, request, authenticated_account_id=account)["status"], "researched")
+        self.send(self.request("run_open"))
+        receipt = self.send(self.request("admit"))["reservation"]
+        loadout = receipt["frozen"]["loadout"]
+        initial = [row["count"] for row in loadout["ammunition"]]
+        finish = self.finish(receipt, fired=(0, 0, 0), lost=(0, 0, 0), remaining=initial, event=False)
+        terminal = json.loads(finish["terminal_state_json"])
+        forged = dict(finish, terminal_state_json=canonical(dict(terminal, consumables_used=[1])).decode("ascii"))
+        self.reject("INVALID_TERMINAL_STATE", lambda: self.send(forged))
+        finish["terminal_state_json"] = canonical(dict(terminal, consumables_used=[0])).decode("ascii")
+        reply = self.send(finish)
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][loadout["vehicle_inventory_id"]],
+            {"devices": [0, 0, 0], "consumables": [0, RPM_LIMITER, 0], "layout": [1787, RPM_LIMITER, 0]})
+        self.assertEqual(self.send(finish), dict(reply, replayed=True))
+
     def test_activation_is_additive_and_wrong_old_active_contract_is_refused(self):
         old = {r[0]: [tuple(v) for v in self.store.connection.execute('SELECT * FROM "'+r[0]+'"')] for r in self.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.activate()

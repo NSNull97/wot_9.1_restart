@@ -26,6 +26,9 @@ SOURCE_BUILD = "v.0.9.1 #717 RU"
 MANIFEST = Path(__file__).resolve().parents[1] / "config/catalog/artefacts.v1.json"
 MAX_MANIFEST = 32768
 MANIFEST_SHA256 = "2c38786202ef015ae0e3a645719b869fe1e01421b7ec9521e2af93332f4b76af"
+GASOLINE_MANIFEST = MANIFEST.with_name("gasoline_engine_ids.v1.json")
+GASOLINE_MANIFEST_SHA256 = "d67e3353e6a866f274c5f358d1ba9c759ee3d48dd34dd59a1d666804c99a67f2"
+GROUSER_MANIFEST = MANIFEST.with_name("grouser_vehicle_ids.v1.json")
 SLOT_COUNT = 3
 
 VENTILATION_BONUS = {
@@ -37,6 +40,10 @@ CREW_FOOD = {
     2555: "chocolate", 3067: "ration", 3579: "hotCoffee", 4091: "ration_china",
     4603: "ration_uk", 4859: "ration_japan", 25851: "cocacola",
 }
+FUELS = {
+    1787: "lendLeaseOil", 2043: "gasoline100", 2299: "gasoline105", 4347: "qualityOil",
+}
+RPM_LIMITER = 3323
 WET_AMMO_RACKS = {6905: "wetCombatPack_class1", 7161: "wetCombatPack_class2"}
 CO2_FUEL_TANK = 7417
 CYCLONE_FILTER = 7673
@@ -65,12 +72,14 @@ DEVICE_EFFECTS = {
     6393: "largeCaliberHowitzerRammer", 6649: "enhancedAimDrives",
     CO2_FUEL_TANK: "carbonDioxide", CYCLONE_FILTER: "filterCyclone",
     7929: "aimingStabilizer_Mk1", 8185: "aimingStabilizer_Mk2",
+    5369: "grousers",
 } | VENTILATION_BONUS | WET_AMMO_RACKS | SPALL_LINERS | ENHANCED_SUSPENSIONS
 CONSUMABLE_EFFECTS = {
     251: "handExtinguishers", 507: "autoExtinguishers",
     763: "smallMedkit", 1019: "largeMedkit",
     1275: "smallRepairkit", 1531: "largeRepairkit",
-} | CREW_FOOD
+    RPM_LIMITER: "removedRpmLimiter",
+} | CREW_FOOD | FUELS
 SUPPORTED_ITEMS = DEVICE_EFFECTS | CONSUMABLE_EFFECTS
 
 
@@ -80,6 +89,28 @@ def canonical(value):
 
 def _criteria(node):
     return {key: _criteria(value) if children(value) else scalar(value) for key, value in children(node)}
+
+
+def build_fitment_manifests(original_root):
+    from tools.p09e_research_catalog import PIN_PATH, _build_catalog
+
+    pins = json.loads(read(PIN_PATH, 256 * 1024))["sources"]
+    engine_tags = {}
+    catalog = _build_catalog(Path(original_root).resolve(strict=True), pins, engine_tags=engine_tags)
+    return {
+        GASOLINE_MANIFEST: canonical(sorted(cd for cd, tags in engine_tags.items() if "gasoline" in tags)),
+        GROUSER_MANIFEST: canonical(sorted(row["native_compact_id"] for row in catalog.vehicles.values()
+                                          if "grousers_user" in row["tags"])),
+    }
+
+
+@lru_cache(maxsize=1)
+def gasoline_engine_ids():
+    ids = json.loads(read(GASOLINE_MANIFEST, 16384, GASOLINE_MANIFEST_SHA256))
+    if (type(ids) is not list or not ids or any(type(cd) is not int or not 0 < cd < 2**24 or cd & 15 != 5 for cd in ids)
+            or sorted(set(ids)) != ids):
+        raise ValueError("invalid gasoline engine manifest")
+    return frozenset(ids)
 
 
 def build(original_root):
@@ -96,12 +127,16 @@ def build(original_root):
             price = child(node, "price")
             script = child(node, "script")
             compact_id = (item_id << 8) | 0xf0 | kind
+            incompatible = child(node, "incompatibleTags", "")
+            if compact_id in FUELS and (_criteria(incompatible) != {"installed": "fuel"}
+                                        or scalar(child(node, "tags")) != "fuel"):
+                raise ValueError("fuel installed conflict differs from #717 source")
             items.append({
                 "compact_id": compact_id, "kind": kind, "source_id": item_id, "source_name": source_name,
                 "price": {"currency": "gold" if child(price, "gold") is not None else "credits", "amount": scalar(price)},
                 "removable": scalar(child(node, "removable", True)),
                 "tags": scalar(child(node, "tags", "")).split(),
-                "incompatible_tags": scalar(child(node, "incompatibleTags", "")).split(),
+                "incompatible_tags": scalar(incompatible).split(),
                 "filters": [[mode, _criteria(entry)] for mode, entry in children(child(node, "vehicleFilter"))],
                 "script": scalar(script), "effect": _criteria(script),
             })
@@ -118,20 +153,26 @@ class VehicleFilter:
     tags: frozenset[str]
     min_level: int
     max_level: int
+    engine_tags: frozenset[str]
 
-    def matches(self, vehicle):
+    def matches(self, vehicle, engine_tags):
         return (not self.nations or vehicle["nation"] in self.nations) and (
-            not self.tags or not self.tags.isdisjoint(vehicle["tags"])) and self.min_level <= vehicle["tier"] <= self.max_level
+            not self.tags or not self.tags.isdisjoint(vehicle["tags"])) and (
+            not self.engine_tags or not self.engine_tags.isdisjoint(engine_tags)) and self.min_level <= vehicle["tier"] <= self.max_level
 
 
 def _vehicle_filter(mode, entry):
-    if mode not in ("include", "exclude") or set(entry) - {"nations", "vehicle"}:
+    if mode not in ("include", "exclude") or set(entry) - {"nations", "vehicle", "engine"}:
         raise ValueError("unsupported restriction on live artefact")
     vehicle = entry.get("vehicle", {})
     if set(vehicle) - {"tags", "minLevel", "maxLevel"}:
         raise ValueError("unsupported vehicle filter on live artefact")
+    engine = entry.get("engine")
+    if engine is not None and engine != {"tags": "gasoline"}:
+        raise ValueError("unsupported engine filter on live artefact")
     return VehicleFilter(mode == "exclude", frozenset(entry.get("nations", "").split()),
-                         frozenset(vehicle.get("tags", "").split()), vehicle.get("minLevel", 0), vehicle.get("maxLevel", 255))
+                         frozenset(vehicle.get("tags", "").split()), vehicle.get("minLevel", 0),
+                         vehicle.get("maxLevel", 255), frozenset(engine["tags"].split() if engine else ()))
 
 
 @dataclass(frozen=True)
@@ -145,11 +186,11 @@ class LiveItem:
     weight_percent: int
     filters: tuple[VehicleFilter, ...]
 
-    def compatible(self, vehicle):
-        if any(row.exclude and row.matches(vehicle) for row in self.filters):
+    def compatible(self, vehicle, engine_tags=()):
+        if any(row.exclude and row.matches(vehicle, engine_tags) for row in self.filters):
             return False
         inclusions = [row for row in self.filters if not row.exclude]
-        return not inclusions or any(row.matches(vehicle) for row in inclusions)
+        return not inclusions or any(row.matches(vehicle, engine_tags) for row in inclusions)
 
 
 @lru_cache(maxsize=1)
@@ -173,8 +214,11 @@ def live_items():
                                        or effect.get("chassisHealthFactor") != "1.2"
                                        or effect.get("vehicleByChassisDamageFactor") != "0.5")):
                 raise ValueError("unsupported identity or weight on live artefact")
+            # v1 persists the canonical hash in save files. The source builder
+            # checks the nested installed tag without changing that receipt.
+            conflicts = (*row["incompatible_tags"], "fuel") if cd in FUELS else row["incompatible_tags"]
             result[cd] = LiveItem(cd, row["kind"], row["removable"],
-                                  frozenset(row["tags"]), frozenset(row["incompatible_tags"]), weight * 1000,
+                                  frozenset(row["tags"]), frozenset(conflicts), weight * 1000,
                                   int(fraction == "0.01"),
                                   tuple(_vehicle_filter(mode, entry) for mode, entry in row["filters"]))
     if set(result) != set(SUPPORTED_ITEMS):
@@ -192,10 +236,15 @@ def main():
     parser.add_argument("--client", required=True)
     args = parser.parse_args()
     raw = canonical(build(args.client))
+    fitment = build_fitment_manifests(args.client)
     if args.operation == "build":
         MANIFEST.write_bytes(raw)
+        for path, content in fitment.items():
+            path.write_bytes(content)
     elif raw != read(MANIFEST, MAX_MANIFEST, MANIFEST_SHA256):
         raise SystemExit("artefact catalogue differs from pinned client sources")
+    elif any(content != read(path, 16384) for path, content in fitment.items()):
+        raise SystemExit("equipment fitment manifests differ from pinned client sources")
     print(sha256(raw).hexdigest())
 
 

@@ -19,6 +19,7 @@ pub const START_TIMEOUT:Duration=Duration::from_secs(120);
 pub const REPLY_TIMEOUT:Duration=Duration::from_millis(500);
 pub const STEP:Duration=Duration::from_millis(100);
 pub const POLICY:&str="p05c-shared-scene-v1";
+const MAX_GROUND_STRENGTH:usize=8*1024*1024;
 const ZERO:&str="0000000000000000000000000000000000000000000000000000000000000000";
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,format!("shared scene IPC7: {reason}"))}
 fn digest(bytes:&[u8])->String{format!("{:x}",Sha256::digest(bytes))}
@@ -112,7 +113,7 @@ impl Kind{
         Self::WtE100128=>include_bytes!("worker/p06t-wt-e100-128-qualified-profile.json"),Self::Fv215b183=>include_bytes!("worker/p06t-fv215b-183-qualified-profile.json")}}
 }
 #[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32,
-    pub equipment_mass_kg:f32}
+    pub equipment_mass_kg:f32,pub grousers:bool,pub engine_power_ceiling_basis_points:u16}
 impl ActorSpec {
     pub(crate) fn physical_profile(&self)->io::Result<crate::gateway091::shared::ram_proof::Profile> {
         crate::gateway091::shared::ram_proof::Profile::for_equipment(self.kind.extended_vehicle(),self.equipment_mass_kg)
@@ -126,13 +127,22 @@ impl ActorSpec {
 }
 impl SceneSpec{
     pub fn load(root:&Path,path:&Path,sha:&str)->io::Result<Self>{let manifest_path=owned(root,path)?;let raw=read(&manifest_path,MAX_INPUT,sha)?;let m=parse(&raw,MAX_INPUT)?;
-        keys(&m,&["version","profile","policy","map","catalog","actors"])?;
         let version=uint(&m["version"])?;
-        let map=string(&m,"map")?;if !matches!(version,1|2|3|4)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
+        if version==5{keys(&m,&["version","profile","policy","map","catalog","actors","ground"])?;}
+        else{keys(&m,&["version","profile","policy","map","catalog","actors"])?;}
+        let map=string(&m,"map")?;if !(1..=5).contains(&version)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
         let rows=array(&m["actors"],MAX_ACTORS)?;if rows.is_empty(){return Err(bad("empty roster"));}
         let mut actors=Vec::new();let mut pins=vec![(manifest_path.clone(),sha.to_string(),MAX_INPUT)];let mut geometry=None;
+        if version==5&&!m["ground"].is_null() {
+            let ground=&m["ground"];keys(ground,&["path","sha256"])?;
+            let path=owned(root,Path::new(string(ground,"path")?))?;
+            let sha=string(ground,"sha256")?;
+            read(&path,MAX_GROUND_STRENGTH,sha)?;
+            pins.push((path,sha.into(),MAX_GROUND_STRENGTH));
+        }
         for row in rows{let mut generated_source:Option<Vec<u8>>=None;
-            if version==4 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile","equipment_mass_kg"])?;}
+            if version==5 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile","equipment_mass_kg","grousers","engine_power_ceiling_basis_points"])?;}
+            else if version==4 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile","equipment_mass_kg"])?;}
             else if version>=2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
             else {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw"])?;}
             if uint(&row["slot"])?!=actors.len()as u64{return Err(bad("ordered actor slots"));}
@@ -150,9 +160,14 @@ impl SceneSpec{
             }else if version>=2&&!row["source_profile"].is_null(){return Err(bad("legacy actor source profile must be null"));}
             let r=&row["config"];keys(r,&["path","sha256"])?;let path=owned(root,Path::new(string(r,"path")?))?;let hash=string(r,"sha256")?;
             let c=parse(&read(&path,16384,hash)?,16384)?;
-            keys(&c,&["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents","body_center_offset","wheel_points",
+            let mut config_keys=vec!["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents","body_center_offset","wheel_points",
                 "mass_kg","max_forward_mps","max_reverse_mps","engine_max_torque_nm","wheel_radius","suspension_min","suspension_max","track_max_brake_torque",
-                "bounds_xz","longitudinal_friction","lateral_friction","stationary_steering_ratio","handling"])?;
+                "bounds_xz","longitudinal_friction","lateral_friction","stationary_steering_ratio","handling"];
+            if version==5&&!m["ground"].is_null() {
+                config_keys.push("ground_strength");
+                if c["ground_strength"]!=m["ground"]{return Err(bad("mixed ground strength reference"));}
+            }
+            keys(&c,&config_keys)?;
             let source_bytes=match kind{Kind::Generated(_)=>generated_source.take().ok_or_else(||bad("generated source profile"))?,_=>kind.source().to_vec()};
             if uint(&c["version"])?!=3||string(&c,"profile")?!="test_lab"||string(&c,"map")?!=map||digest(&source_bytes)!=kind.profile_sha(){return Err(bad("source config identity"));}
             let source=parse(&source_bytes,16384)?;
@@ -164,8 +179,13 @@ impl SceneSpec{
                 read(&p,8*1024*1024,sha)?;pins.push((p,sha.into(),8*1024*1024));}
             let spawn=vector::<3>(&row["spawn_origin"],1000.)?;let yaw=number(&row["spawn_yaw"],std::f32::consts::PI)?;let b=vector::<4>(&c["bounds_xz"],1000.)?;
             if b[2]-b[0]<100.||b[3]-b[1]<100.||spawn[0]<b[0]+5.||spawn[0]>b[2]-5.||spawn[2]<b[1]+5.||spawn[2]>b[3]-5.{return Err(bad("spawn/bounds"));}
-            let equipment_mass_kg=if version==4 {number(&row["equipment_mass_kg"],5000.)?}else{0.};
-            let actor=ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw,equipment_mass_kg};
+            let equipment_mass_kg=if version>=4 {number(&row["equipment_mass_kg"],5000.)?}else{0.};
+            let grousers=if version==5 {row["grousers"].as_bool().ok_or_else(||bad("grouser flag"))?}else{false};
+            if grousers&&(equipment_mass_kg<1000.||m["ground"].is_null()){return Err(bad("grouser ground or mass"));}
+            let ceiling=if version==5 {uint(&row["engine_power_ceiling_basis_points"])?}else{10000};
+            if !matches!(ceiling,10000|10500|11000|11550|12100){return Err(bad("engine power ceiling"));}
+            let actor=ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw,equipment_mass_kg,grousers,
+                engine_power_ceiling_basis_points:ceiling as u16};
             actor.physical_profile()?;
             pins.push((path,hash.into(),16384));actors.push(actor);
         }
@@ -195,17 +215,25 @@ impl Scene{
             h.update((ids.len()as u32).to_le_bytes());for id in ids{h.update(id.to_le_bytes());}format!("{:x}",h.finalize())};Ok(Self{ids:ids.to_vec(),sha256})}
     pub fn version(&self)->u32{self.ids.len()as u32}
 }
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub struct Input{pub throttle:i8,pub steer:i8,pub brake:bool,pub speed_percent:u8}
-impl Input{pub const STOP:Self=Self{throttle:0,steer:0,brake:true,speed_percent:100};
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub struct Input{pub throttle:i8,pub steer:i8,pub brake:bool,pub speed_percent:u8,
+    pub engine_power_basis_points:u16}
+impl Input{pub const STOP:Self=Self{throttle:0,steer:0,brake:true,speed_percent:100,engine_power_basis_points:10_000};
     fn valid(self)->bool{(-1..=1).contains(&self.throttle)&&(-1..=1).contains(&self.steer)&&(!self.brake||(self.throttle==0&&self.steer==0))&&
-        (self.speed_percent==100||self.speed_percent==50&&!self.brake&&self.throttle!=0||self.speed_percent==25&&!self.brake&&self.throttle==1)}}
+        (self.speed_percent==100||self.speed_percent==50&&!self.brake&&self.throttle!=0||self.speed_percent==25&&!self.brake&&self.throttle==1)
+        &&matches!(self.engine_power_basis_points,10_000|10_500|11_000|11_550|12_100)}}
 fn header(spec:&SceneSpec,generation:u32)->Value{json!({"version":7,"generation":generation,"manifest_sha256":spec.manifest_sha256,"catalog_sha256":spec.catalog_sha256})}
 fn scene_request(spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32,op:&str)->Value{let mut v=header(spec,generation);let o=v.as_object_mut().unwrap();
     o.extend([("op".into(),op.into()),("advance_seq".into(),seq.into()),("scene_version".into(),scene.version().into()),("removed_object_ids".into(),json!(scene.ids)),("scene_sha256".into(),scene.sha256.clone().into())]);v}
 pub fn advance_request(spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32,inputs:&[Input])->io::Result<Vec<u8>>{
-    if generation==0||!(1..=36000).contains(&seq)||inputs.len()!=spec.actors.len()||inputs.iter().any(|i|!i.valid()){return Err(bad("batch inputs/sequence"));}
+    if generation==0||!(1..=36000).contains(&seq)||inputs.len()!=spec.actors.len()
+        ||inputs.iter().zip(&spec.actors).any(|(input,actor)|!input.valid()
+            ||input.engine_power_basis_points>actor.engine_power_ceiling_basis_points){return Err(bad("batch inputs/sequence"));}
     let mut v=header(spec,generation);v["op"]="advance".into();v["seq"]=seq.into();v["ticks"]=6.into();v["scene_version"]=scene.version().into();v["scene_sha256"]=scene.sha256.clone().into();
-    v["inputs"]=json!(inputs.iter().enumerate().map(|(slot,i)|json!({"slot":slot,"throttle":i.throttle,"steer":i.steer,"brake":i.brake,"speed_percent":i.speed_percent})).collect::<Vec<_>>());line(&v)}
+    v["inputs"]=json!(inputs.iter().enumerate().map(|(slot,i)| {
+        let mut row=json!({"slot":slot,"throttle":i.throttle,"steer":i.steer,"brake":i.brake,"speed_percent":i.speed_percent});
+        if i.engine_power_basis_points!=10_000 {row["engine_power_basis_points"]=i.engine_power_basis_points.into();}
+        row
+    }).collect::<Vec<_>>());line(&v)}
 /// TURRET-01 detached turret body: born joint pose (yaw/pitch/roll), launch
 /// velocities, support points in the joint frame, dead vehicles as obstacles.
 #[derive(Clone,Debug,PartialEq)]pub struct TurretBody{pub slot:usize,pub position:[f32;3],pub direction:[f32;3],pub linear_velocity:[f32;3],

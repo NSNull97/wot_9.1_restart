@@ -129,6 +129,7 @@ impl World {
             if let Some(state)=actor.devices.as_mut(){
                 transitions.extend(state.advance_fire(at_ms,health)?.into_iter().map(|event|(slot,event)));
             }
+            transitions.extend(actor.advance_rpm_limiter(at_ms,slot as u8,health)?.into_iter().map(|event|(slot,event)));
         }
         transitions.sort_by_key(|(slot,event)|(event.at_ms,*slot,event.sequence));
         for (slot,event)in transitions {

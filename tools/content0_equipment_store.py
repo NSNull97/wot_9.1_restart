@@ -5,7 +5,7 @@ from collections import Counter
 from copy import deepcopy
 import struct
 
-from content0_equipment_catalog import ENHANCED_SUSPENSIONS, MANIFEST_SHA256, SLOT_COUNT, live_items
+from content0_equipment_catalog import ENHANCED_SUSPENSIONS, MANIFEST_SHA256, RPM_LIMITER, SLOT_COUNT, gasoline_engine_ids, live_items
 from destructible_catalog import json_value
 from p09d_ammo_store import require, sha
 from p09d_ammo_projection import canonical
@@ -59,11 +59,13 @@ def validate_installed_devices(catalog, owned, slots):
     require(100 * (base + weight) + base * weight_percent <= 100 * definition["max_load_grams"], "CHASSIS_OVERLOAD")
 
 
-def validate_installed_consumables(catalog, vehicle_id, slots):
+def validate_installed_consumables(catalog, owned, slots):
     desired = _slots(slots, EQUIPMENT)
     if any(desired):
-        vehicle = catalog.vehicles[vehicle_id]
-        require(all(live_items()[cd].compatible(vehicle) for cd in desired if cd), "ARTEFACT_INCOMPATIBLE")
+        vehicle = catalog.vehicles[owned["vehicle_id"]]
+        engine = catalog.modules[owned["modules"]["engine"]]["native_compact_id"]
+        tags = ("gasoline",) if engine in gasoline_engine_ids() else ()
+        require(all(live_items()[cd].compatible(vehicle, tags) for cd in desired if cd), "ARTEFACT_INCOMPATIBLE")
     return desired
 
 
@@ -117,7 +119,8 @@ def battle_loadout(connection, account, vehicle_inventory_id):
 def consume_battle(connection, account, vehicle_inventory_id, original_consumables, used_slots):
     original = _slots(original_consumables, EQUIPMENT)
     require(type(used_slots) in (list, tuple)
-            and all(type(slot) is int and 0 <= slot < SLOT_COUNT and original[slot] for slot in used_slots)
+            and all(type(slot) is int and 0 <= slot < SLOT_COUNT and original[slot] not in (0, RPM_LIMITER)
+                    for slot in used_slots)
             and len(set(used_slots)) == len(used_slots), "ARTEFACT_SLOT_INVALID")
     state = read_state(connection, account)
     row = (state["vehicles"].get(vehicle_inventory_id) if state is not None else None) or _empty_vehicle()
@@ -201,7 +204,7 @@ def plan_maintenance(aggregate, native_id, equipment_layout, *, allow_purchase, 
     _validate_state(before)
     vehicle = _owned(aggregate["research"], native_id)
     if catalog is not None:
-        desired = validate_installed_consumables(catalog, vehicle["vehicle_id"], desired)
+        desired = validate_installed_consumables(catalog, vehicle, desired)
     after = deepcopy(before)
     _consumables(after, vehicle["vehicle_inventory_id"], desired, allow_purchase=allow_purchase)
     return after if after != before else None
@@ -220,7 +223,7 @@ def _plan(before, catalog, owned, command, args, *, allow_purchase):
         _, _, cd, slot, paid = args
         _device(after, catalog, owned, cd, slot, paid, buy=False, allow_purchase=allow_purchase)
     elif command == 104:
-        desired = validate_installed_consumables(catalog, owned["vehicle_id"], args[1:])
+        desired = validate_installed_consumables(catalog, owned, args[1:])
         _consumables(after, target, desired, allow_purchase=False)
     elif command == 308:
         _, cd, _, slot, paid, _ = args
@@ -234,7 +237,7 @@ def _plan(before, catalog, owned, command, args, *, allow_purchase):
             desired = row["consumables"].copy()
             require(desired[slot] != cd, "ARTEFACT_NO_CHANGE")
             desired[slot] = cd
-            desired = validate_installed_consumables(catalog, owned["vehicle_id"], desired)
+            desired = validate_installed_consumables(catalog, owned, desired)
             _stock(after, cd, 1)
             _consumables(after, target, desired, allow_purchase=False)
     else:

@@ -63,6 +63,24 @@ fn fresh_bodies(s:&Session,now:Instant)->Vec<u8> {
 }
 
 #[test]
+fn content0_s5_rpm_wear_uses_original_owner_engine_notifications() {
+    let now=Instant::now();
+    let (mut session,mut world)=fixture(now);
+    let engine=world.actors[0].devices.as_mut().unwrap();
+    let health=Health{hp:90,max_hp:90,terminal:false};
+    let mut wear=engine.apply_rpm_limiter_damage(13,100,0,health).unwrap();
+    wear.extend(engine.apply_rpm_limiter_damage(12,200,0,health).unwrap());
+    world.device_events.extend(wear.into_iter().map(|event|(0,event)));
+    let c=session.shared.as_mut().unwrap();
+    publish(c,&mut session.outbox,&world,now).unwrap();
+    let own=wire::vehicle_id(0).unwrap();
+    for code in [24,25] {
+        let packet=native::damage_info(own,code,26,0).unwrap();
+        assert!(c.private_pending.iter().any(|body|body.targets==vec![(0,0)]&&contains(&body.body,&packet)));
+    }
+}
+
+#[test]
 fn p06t_private_rapid_hide_reveal_without_leave_republishes_crew_and_fire() {
     let now=Instant::now();let(mut s,mut world)=fixture(now);
     let(state,_)=fuel_damage(true);world.actors[1].devices=Some(state);

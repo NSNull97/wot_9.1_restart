@@ -27,8 +27,10 @@ internal sealed class BattleTank : IDisposable
     readonly Vector3 center;
     readonly float forwardLimit, reverseLimit;
     public Vector3 PreVelocity;
-    readonly float contactGrip, rollingResistance;
+    readonly float contactGrip;
     readonly ReferenceCharacteristics.Row? characteristics;
+    readonly GroundStrengthMap? ground;
+    readonly BodyID terrainBody;
     const float OverspeedGain = 4f, OverspeedMaxDeceleration = 8f; // project values, 1/s and m/s^2
     // PHYS-01 stage A: set by the scene after each step; a hull-to-hull contact lowers this vehicle's grip from the next substep.
     public bool HullContact;
@@ -37,8 +39,9 @@ internal sealed class BattleTank : IDisposable
     public bool WallTouch;
     // The wire contract carries six supports: front, middle and rear of each side, whatever the physical count.
     private readonly int[] reported;
-    public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog)
-        : this(system, source, catalog, true, true) { }
+    public BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
+        GroundStrengthMap? ground = null, BodyID terrainBody = default)
+        : this(system, source, catalog, true, true, true, ground, terrainBody) { }
     // The explicit policy seam also compares baseline/candidate in one actual
     // Jolt build. Network/shared callers always use the three-argument form.
     internal BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
@@ -49,9 +52,10 @@ internal sealed class BattleTank : IDisposable
         : this(system, source, catalog, enablePoweredTurnLoss, enableIntentReversalBrake, true) { }
     // PHYS-01 stage A: referenceTraction=false keeps the former Jolt gearbox for a same-build comparison.
     internal BattleTank(PhysicsSystem system, BattleSceneInput.Actor source, CheckedInput.CatalogSpec? catalog,
-        bool enablePoweredTurnLoss, bool enableIntentReversalBrake, bool referenceTraction)
+        bool enablePoweredTurnLoss, bool enableIntentReversalBrake, bool referenceTraction,
+        GroundStrengthMap? ground = null, BodyID terrainBody = default)
     {
-        world = system; Source = source;
+        world = system; Source = source; this.ground = ground; this.terrainBody = terrainBody;
         var c = source.Config;
         float N(string key, float min, float max) => CheckedInput.Number(c.GetProperty(key), min, max);
         center = CheckedInput.Vector(c.GetProperty("body_center_offset"), -5, 5);
@@ -118,6 +122,10 @@ internal sealed class BattleTank : IDisposable
             differential = ReferenceTraction.Configure(ref engine, transmission, engine.MaxTorque * powerScale, radius,
                 MathF.Max(forwardLimit, reverseLimit), ReferenceTraction.TrackShare);
         }
+        // Jolt's runtime engine exposes GetTorque but no MaxTorque setter.
+        // Reserve the highest authorized setup torque, then request only its
+        // current fraction from the driver below. The stock source pin stays intact.
+        engine.MaxTorque *= source.EnginePowerCeiling / (float)BattleSceneInput.BaseEnginePower;
         settings.Engine = engine;
         transmission.SwitchTime = TrackedHandling.GearSwitchTime; transmission.ClutchReleaseTime = TrackedHandling.ClutchReleaseTime;
         transmission.SwitchLatency = TrackedHandling.GearSwitchLatency; settings.Transmission = transmission;
@@ -152,7 +160,6 @@ internal sealed class BattleTank : IDisposable
         {
             characteristics = ReferenceCharacteristics.For(source.Kind);
             handling.PivotAroundTrack = ReferenceCharacteristics.HonourRotationIsAroundCenter && !characteristics.RotationIsAroundCenter;
-            rollingResistance = characteristics.Resistance * mass * 9.81f * ReferenceBody.GravityFactor;
         }
         contactGrip = referenceTraction ? ReferenceTraction.ContactCohesion / ReferenceTraction.Cohesion : 1;
         handling.VerifyWheelSettings(Constraint);
@@ -193,27 +200,48 @@ internal sealed class BattleTank : IDisposable
         // a hull that drives keeps COHESION, otherwise equal vehicles could never move each other.
         handling.GripScale = HullContact && input.Brake ? contactGrip : 1;
         handling.HullBlocked = WallTouch; WallTouch = false;
-        if (characteristics != null) ApplyResistance(forward, input);
+        float yawScale = characteristics == null ? 1f : ApplyResistance(forward, input, characteristics);
         handling.Apply(controller, Vector3.Dot(PreVelocity, forward), Vector3.Dot(Body.GetAngularVelocity(), up),
-            input.Throttle, input.Steer, input.Brake, forwardLimit * input.SpeedPercent / 100, reverseLimit * input.SpeedPercent / 100, 1f / 60);
+            input.Throttle, input.Steer, input.Brake, forwardLimit * input.SpeedPercent / 100, reverseLimit * input.SpeedPercent / 100, 1f / 60,
+            yawScale, input.EnginePower / (float)Source.EnginePowerCeiling);
     }
     // PHYS-01 stage D. Rolling resistance FORWARD_FRICTION * terrainResistance * weight on the supports that
     // touch the ground (the product is an INFERRED reading of the client parameters), and a resistance that
     // grows with the excess over the speed limit, so a slope cannot carry the vehicle far past it.
-    void ApplyResistance(Vector3 forward, BattleSceneInput.Control input)
+    float ApplyResistance(Vector3 forward, BattleSceneInput.Control input, ReferenceCharacteristics.Row properties)
     {
-        int grounded = 0; for (int i = 0; i < wheels.Length; i++) if (Constraint.GetWheel(i).HasContact) grounded++;
-        if (grounded == 0) return;
+        int grounded = 0;
+        float resistanceSum = 0f;
+        for (int i = 0; i < wheels.Length; i++)
+        {
+            var wheel = Constraint.GetWheel(i);
+            if (!wheel.HasContact) continue;
+            grounded++;
+            if (ground != null)
+            {
+                // For a wheel supported by an obstacle, use the hard profile
+                // rather than the terrain underneath that object.
+                var contact = wheel.ContactPosition;
+                int index = wheel.ContactBodyID == terrainBody ? ground.ResistanceIndex(contact.X, contact.Z) : 0;
+                resistanceSum += properties.Resistance(index, Source.Grousers);
+            }
+        }
+        if (grounded == 0) return 1f;
         float speed = Vector3.Dot(PreVelocity, forward), magnitude = MathF.Abs(speed);
         float mass = Source.Binding.MassKg;
+        float resistance = ground == null ? properties.Resistance(0, false) : resistanceSum / grounded;
+        float rollingResistance = ReferenceCharacteristics.ForwardFriction * resistance * mass * 9.81f * ReferenceBody.GravityFactor;
         float limit = (speed < 0 ? reverseLimit : forwardLimit) * input.SpeedPercent / 100;
         float force = rollingResistance * grounded / wheels.Length * Math.Clamp(magnitude / .5f, 0, 1);
         if (magnitude > limit) force += mass * MathF.Min(OverspeedGain * (magnitude - limit), OverspeedMaxDeceleration);
         // Never more than what stops the forward motion within this step.
         force = MathF.Min(force, mass * magnitude * 60);
-        if (force <= 0) return;
-        var push = forward * (-MathF.Sign(speed) * force);
-        world.BodyInterface.AddForce(Body.ID, in push);
+        if (force > 0)
+        {
+            var push = forward * (-MathF.Sign(speed) * force);
+            world.BodyInterface.AddForce(Body.ID, in push);
+        }
+        return ground == null ? 1f : properties.YawScale(resistance);
     }
     // Contact hold is a bounded server-side traction policy.  When a forward
     // command is active and this hull is pushing another hull, a solver impulse

@@ -21,7 +21,7 @@ from game_profile_tx import TransactionError
 from p04m_pool_projection import PoolProjectionSource
 from p08b_battle_projection import BattleProjectionSource
 from p08b_battle_service import battle_service
-from p09e_native_commands import NativeRequest, domain_request
+from p09e_native_commands import NativeRequest, domain_request, is_artefact_request
 from p09e_research_projection import SHOP_REVISION, delta_tree, descriptor, update_delta
 from p09e_research_service import native_service
 from p09e_research_store import ECONOMY_POLICY
@@ -63,10 +63,13 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(self.state(), before)
         request = self.native_request(command, arguments)
         with self.assertRaises(TransactionError) as caught:
-            domain = domain_request(NativeRequest(1, command, tuple(arguments)), catalog=self.catalog,
-                aggregate=self.profile(), account_id=self.account, command_key=request["command_key"],
-                expected_revision=request["expected_revision"], shop_revision=SHOP_REVISION)
-            self.store.execute(domain, authenticated_account_id=self.account)
+            selected = NativeRequest(1, command, tuple(arguments))
+            if is_artefact_request(selected):
+                self.store.artefacts_service(request, authenticated_account_id=self.account)
+            else:
+                domain = domain_request(selected, catalog=self.catalog, aggregate=self.profile(), account_id=self.account,
+                    command_key=request["command_key"], expected_revision=request["expected_revision"], shop_revision=SHOP_REVISION)
+                self.store.execute(domain, authenticated_account_id=self.account)
         self.assertEqual(caught.exception.code, code)
         self.assertEqual(self.state(), before)
 
@@ -294,6 +297,32 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(self.owned(vehicle)["modules"], baseline)
         self.assertEqual(native_service(self.store, mount, authenticated_account_id=self.account), dict(response, replayed=True))
         self.assertEqual(self.owned(vehicle)["modules"], baseline)
+
+    def test_fuel_requires_the_installed_engine_and_one_fuel_slot(self):
+        from p06t_ammo_loss_store import AmmoLossStore
+
+        self.store.close()
+        self.store = AmmoLossStore(self.database, self.catalog, account_id=self.account,
+            shell_catalog=mixed.SHELL_SOURCE, terminal_policy=mixed.TERMINAL_POLICY)
+        self.store.activate_loss(account_id=self.account, authenticated_account_id=self.account,
+                                 expected_revision=self.profile()["revision"], native_database_id=self.native_id)
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=self.account)
+        vehicle = "vehicle:usa:T18"
+        self.store.grant_vehicle(account_id=self.account, vehicle_id=vehicle)
+        native = self.owned(vehicle)["native_id"]
+        diesel = self.owned(vehicle)["modules"]["engine"]
+        gasoline = "module:usa:engine:Continental_W-670"
+        self.refused("ARTEFACT_INCOMPATIBLE", 308, (SHOP_REVISION, 2043, native, 0, 0, 0))
+        self.research(vehicle, gasoline)
+        self.buy(gasoline)
+        self.accepted(101, (native, self.cd(gasoline), 0))
+        self.accepted(308, (SHOP_REVISION, 2043, native, 0, 0, 0))
+        self.refused("ARTEFACT_CONFLICT", 308, (SHOP_REVISION, 2299, native, 1, 0, 0))
+        self.refused("ARTEFACT_INCOMPATIBLE", 101, (native, self.cd(diesel), 0))
+        self.accepted(104, (native, 0, 0, 0))
+        self.accepted(101, (native, self.cd(diesel), 0))
+        self.assertEqual(self.owned(vehicle)["modules"]["engine"], diesel)
 
     def test_ms1_nonstock_chassis_and_engine_admit_with_the_starter_inventory_id(self):
         for index in (0, 2, 3): self.accepted(201, (3329, index, 0))

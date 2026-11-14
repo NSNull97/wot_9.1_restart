@@ -68,6 +68,75 @@ fn aim_at(world:&mut World,slot:usize,point:[f32;3],base:Instant) {
 fn current(world:&World,slot:usize)->source::Shell {world.actors[slot].fire.typed().unwrap().current()}
 
 #[test]
+fn content0_s5_fuel_and_regulator_use_frozen_loadout_and_are_authoritative() {
+    use crate::p06t_device_caps::Device;
+    let now=Instant::now();
+    let (owner,base_frozen)=actual_frozen_ap_zero();
+    let mut value=base_frozen.value();
+    value["artefacts"]=serde_json::json!({"optional_devices":[0,0,0],"consumables":[1787,v2::RPM_LIMITER,0]});
+    let parse=|value:&serde_json::Value| {
+        let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(value).unwrap()));
+        v2::parse_frozen(value,&owner.account,&digest)
+    };
+    let frozen=parse(&value).unwrap();
+    for id in [2043u16,2299,4347] {
+        let mut invalid=value.clone();
+        invalid["artefacts"]["consumables"][0]=id.into();
+        assert!(parse(&invalid).is_err(),"wrong nation {id}");
+    }
+    let mut invalid=value.clone();
+    invalid["artefacts"]["optional_devices"][0]=v2::GROUSERS.into();
+    assert!(parse(&invalid).is_err(),"MS-1 lacks the source grousers tag");
+    let mut world=base(now,low_ground());
+    world.enable_lifecycle(super::super::lifecycle::Rules {
+        prebattle_ms:1000,..super::super::lifecycle::Rules::prohorovka()
+    }).unwrap();
+    world.attach_owned_v2(owner,1,&frozen).unwrap();
+    lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);
+    start(&mut world,now);
+    let on=Command::ActivateEquipment{item:v2::RPM_LIMITER_ITEM,extra:1};
+    let off=Command::ActivateEquipment{item:v2::RPM_LIMITER_ITEM,extra:0};
+    let at=|ms|now+Duration::from_millis(ms);
+    let engine_hp=|w:&World|w.actors[0].devices.as_ref().unwrap().health()[Device::Engine as usize];
+    let stock_hp=engine_hp(&world);
+    world.advance_lifecycle(now).unwrap();
+    world.apply(0,1,&[on],at(100)).unwrap();
+    assert!(!world.actors[0].rpm_limiter_active());
+    assert_eq!(world.actors[0].engine_power_ceiling_basis_points(),11550);
+    assert!(World::cancelled_terminal_state(&frozen).unwrap().find("consumables_used").is_none());
+    world.advance_lifecycle(at(1000)).unwrap();
+    world.advance(at(1000)).unwrap();
+    assert_eq!(world.actors[0].engine_power_basis_points(),10500);
+    assert_eq!(world.actors[0].consumables,[0,v2::RPM_LIMITER,0]);
+    assert_eq!(world.actors[0].hud_consumables(),[1787,v2::RPM_LIMITER,0]);
+    world.apply(0,1,&[Command::ActivateEquipment{item:v2::RPM_LIMITER_ITEM,extra:2}],at(1000)).unwrap();
+    assert!(!world.actors[0].rpm_limiter_active());
+    world.apply(0,1,&[on],at(1000)).unwrap();
+    assert_eq!(world.actors[0].engine_power_basis_points(),11550);
+    world.advance(at(1500)).unwrap();
+    world.apply(0,1,&[on],at(1500)).unwrap();
+    world.advance(at(2000)).unwrap();
+    assert_eq!(engine_hp(&world),stock_hp-1);
+    world.apply(0,1,&[off],at(2000)).unwrap();
+    world.advance(at(3000)).unwrap();
+    assert_eq!(engine_hp(&world),stock_hp-1);
+    assert_eq!(world.actors[0].engine_power_basis_points(),10500);
+    world.apply(0,1,&[on],at(3000)).unwrap();
+    world.advance(at(4000)).unwrap();
+    assert_eq!(engine_hp(&world),stock_hp-3);
+    for second in 5..=19 {world.advance(at(second*1000)).unwrap();}
+    assert_eq!(engine_hp(&world),0);
+    assert!(!world.actors[0].rpm_limiter_active());
+    assert_eq!(world.actors[0].health,90);
+    assert!(!world.actors[0].devices.as_ref().unwrap().fire_active());
+    let mut terminal:serde_json::Value=serde_json::from_str(&world.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(terminal["consumables_used"],serde_json::json!([0]));
+    v2::validate_terminal_json(&terminal.to_string(),&frozen,90).unwrap();
+    terminal["consumables_used"]=serde_json::json!([0,1]);
+    assert!(v2::validate_terminal_json(&terminal.to_string(),&frozen,90).is_err());
+}
+
+#[test]
 fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
     let now=Instant::now();
     let (owner,base_frozen)=actual_frozen_ap_zero();

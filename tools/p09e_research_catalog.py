@@ -191,7 +191,7 @@ def _load_catalog(original_root, manifest_path, cache_dir):
     return result
 
 
-def _build_catalog(root, source_pins):
+def _build_catalog(root, source_pins, *, engine_tags=None):
     cache, sources, total = {}, {}, 0
 
     def source(relative):
@@ -266,6 +266,10 @@ def _build_catalog(root, source_pins):
                     require(modules[module_id] == row, "conflicting global module facts: " + module_id)
                 else:
                     modules[module_id] = row
+                if kind == "engine" and engine_tags is not None:
+                    tags = frozenset(scalar(child(base, "tags", "")).split())
+                    require(engine_tags.setdefault(row["native_compact_id"], tags) == tags,
+                            "conflicting global engine tags: " + module_id)
                 if module_id not in compatible.setdefault(kind, []): compatible[kind].append(module_id)
                 masses[module_id] = base_mass
                 if row["max_load_grams"] is not None: loads[module_id] = row["max_load_grams"]

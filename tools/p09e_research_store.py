@@ -657,10 +657,12 @@ class ResearchStore(NativeBarracksRecruitmentStore):
                     suspension = next((cd for cd in fitted["devices"] if cd in ENHANCED_SUSPENSIONS), None)
             after, details = plan(self.catalog, before, request["operation"], request["payload"], account_id=account, reserved=reserved, loaded=loaded,
                                   zero_gold=self.zero_economy(account), suspension=suspension)
-            if fitted and any(fitted["devices"]):
-                from content0_equipment_store import validate_installed_devices
+            if fitted:
+                from content0_equipment_store import validate_installed_consumables, validate_installed_devices
                 selected = next(row for row in after["vehicles"] if row["vehicle_inventory_id"] == inventory)
-                validate_installed_devices(self.catalog, selected, fitted["devices"])
+                if any(fitted["devices"]):
+                    validate_installed_devices(self.catalog, selected, fitted["devices"])
+                validate_installed_consumables(self.catalog, selected, fitted["consumables"])
             new_ids = {r["vehicle_inventory_id"] for r in after["vehicles"]} - {r["vehicle_inventory_id"] for r in before["vehicles"]}
             for vehicle_id in new_ids:
                 c.execute("INSERT INTO game_vehicle VALUES (?,?,'available',NULL)", (account, vehicle_id))

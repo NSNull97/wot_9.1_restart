@@ -106,6 +106,8 @@ def generate(local_root, templates, source_pool, qualified_dir, bundles_dir, kin
             # of that map (accepted or MAPS-01 derived); only physics/handling change.
             base = json.loads(read(inside(local, Path(source["config"])), 16384, source["config_sha256"]))
             config = {k: base[k] for k in ("version", "profile", "map", "terrain", "obstacles", "spawn_origin", "spawn_yaw", "bounds_xz")}
+            if "ground_strength" in base:
+                config["ground_strength"] = base["ground_strength"]
             config.update(profile["definition"]["physics"], handling=profile["definition"]["handling"])
             name = source["asset"] + "-" + kind + "-config.json"
             objects[name] = encoded(config)

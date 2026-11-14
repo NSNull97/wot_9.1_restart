@@ -2398,6 +2398,16 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     if !c.correction { return Ok(()); }
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
     if next_world.mixed_ammo() {
+        let owner=&next_world.actors[slot];
+        if owner.hud_consumables().contains(&crate::profile13_v2091::RPM_LIMITER)
+            && commands.iter().rev().find_map(|command|match command {
+                model::Command::ActivateEquipment{item,extra} if *item==crate::profile13_v2091::RPM_LIMITER_ITEM&&*extra<=1 => Some(*extra==1),
+                _=>None,
+            }).is_some_and(|requested|!requested||!owner.rpm_limiter_active()) {
+            // The original trigger flips its latch before sending. Reconcile
+            // a denied attempt during the countdown or with a ruined engine.
+            next.shared.as_mut().ok_or_else(model::bad)?.rpm_limiter_sent=None;
+        }
         // #717 locks an extinguisher button locally on click. A valid, still
         // mounted extinguisher with no fire to stop reconciles the local flag.
         use crate::p06t_device_state::Consumable;

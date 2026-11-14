@@ -102,7 +102,7 @@ fn p04m_actual_three_new_and_all_five_six_actor_batches_pass_original_scalar_fra
         let mut actor_frames=ready.actors.len();let mut receipts=0;let mut witnesses=0;let mut acks=0;
         let mut seen=BTreeSet::new();let mut rejected=0;
         for seq in 1..=150 {
-            let inputs=vec![Input{throttle:1,steer:0,brake:false,speed_percent:100};kinds.len()];
+            let inputs=vec![Input{throttle:1,steer:0,brake:false,speed_percent:100,engine_power_basis_points:10_000};kinds.len()];
             assert_eq!(worker.advance(&inputs,Instant::now()).unwrap(),seq);
             let frame=wait_frame(&mut worker);assert_eq!(worker.process_id(),pid);
             assert_eq!(frame.sequence,seq);assert_eq!(frame.tick,180+seq*6);assert_eq!(frame.actors.len(),kinds.len());

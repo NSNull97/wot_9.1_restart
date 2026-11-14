@@ -18,7 +18,7 @@ fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Inp
     if tick<1000 || !(-1..=1).contains(&input.throttle)||!(-1..=1).contains(&input.steer)
         || !crate::map_drive_worker091::partial_cruise_valid(input.throttle,false,input.speed_percent) {return Err(model::bad());}
     let Some(devices)=&actor.devices else {return Ok(Input {throttle:input.throttle,steer:input.steer,
-        brake:input.throttle==0&&input.steer==0,speed_percent:input.speed_percent});};
+        brake:input.throttle==0&&input.steer==0,speed_percent:input.speed_percent,engine_power_basis_points:10_000});};
     if devices.profile().index()!=actor.vehicle_kind().index() {return Err(model::bad());}
     let caps=devices.capabilities();caps.validate()?;
     let mut throttle=if caps.drive_scale>0. {input.throttle}else{0};
@@ -38,7 +38,8 @@ fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Inp
     // stutter (owner battle 2026-11-04).
     // A vehicle that cannot move at all (destroyed track/engine) stays braked.
     let immobile=caps.drive_scale<=0.&&caps.steer_scale<=0.;
-    Ok(Input {throttle,steer,brake:throttle==0&&steer==0&&(immobile||input.throttle==0&&input.steer==0),speed_percent:speed})
+    Ok(Input {throttle,steer,brake:throttle==0&&steer==0&&(immobile||input.throttle==0&&input.steer==0),speed_percent:speed,
+        engine_power_basis_points:actor.engine_power_basis_points()})
 }
 
 /// One scene step: advances every actor's hull turn, then quantizes the inputs for the worker.
@@ -159,10 +160,10 @@ impl BatchRuntime {
     /// One actor row at an explicit server-chosen pose (LAB lane or SPAWN-15 spot).
     fn actor_manifest_placed(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,roster:usize,origin:[f32;3],yaw:f32)->io::Result<serde_json::Value> {
         let bound=Self::slot_bound(roster);
-        if slot>=bound || !matches!(version,1|2|3|4) || version==1&&kind.index()>=2
-            ||kind.is_extended()&&(!matches!(version,3|4)||resources.version!=4||resources.maps.len()!=7)
+        if slot>=bound || !(1..=5).contains(&version) || version==1&&kind.index()>=2
+            ||kind.is_extended()&&(!matches!(version,3|4|5)||resources.version!=4||resources.maps.len()!=7)
             ||version==3&&(resources.version!=4||resources.maps.len()!=7)
-            ||kind.is_generated()&&(!matches!(version,2|4)||resources.version!=5) {return Err(model::bad());}
+            ||kind.is_generated()&&(!matches!(version,2|4|5)||resources.version!=5) {return Err(model::bad());}
         let row_slot=resources.slot(resources.template_kind(kind)).ok_or_else(||model::bad())?;
         let stock_map=resources.maps.get(row_slot).ok_or_else(||model::bad())?;
         // CONTENT-0 3.3: a non-stock build uses its own config (stock config + build physics) and qualified profile.
@@ -196,7 +197,12 @@ impl BatchRuntime {
         if world.extended_lab()&&self.resources.version!=4||!world.extended_lab()&&world.actors.iter().any(|a|a.vehicle_kind().is_extended()) {
             return Err(model::bad());
         }
-        let version=if world.actors.iter().any(|actor|actor.equipment_mass()>0.){4}
+        let ground=self.resources.maps.first().ok_or_else(model::bad)?.ground_strength()?;
+        if ground.is_none()&&world.actors.iter().any(|a|a.optional_devices().contains(&crate::profile13_v2091::GROUSERS)) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"grousers require a pinned ground-strength map"));
+        }
+        let version=if ground.is_some()||world.actors.iter().any(|a|a.engine_power_ceiling_basis_points()>10000){5}
+            else if world.actors.iter().any(|actor|actor.equipment_mass()>0.){4}
             else if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
         // TURRET-01: this battle has a scene worker, so detached turrets are Jolt bodies.
         world.enable_turret_jolt()?;
@@ -212,12 +218,17 @@ impl BatchRuntime {
                 let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
                 Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())?
             };
-            if version==4 {row["equipment_mass_kg"]=actor.equipment_mass().into();}
+            if version>=4 {row["equipment_mass_kg"]=actor.equipment_mass().into();}
+            if version==5 {
+                row["grousers"]=actor.optional_devices().contains(&crate::profile13_v2091::GROUSERS).into();
+                row["engine_power_ceiling_basis_points"]=actor.engine_power_ceiling_basis_points().into();
+            }
             Ok(row)
         })
             .collect::<io::Result<Vec<_>>>()?;
-        let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
+        let mut manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
             "map":world.map.asset(),"catalog":{"path":Self::physical_path(self.catalog.path()),"sha256":self.catalog.sha256()},"actors":rows});
+        if version==5 {manifest["ground"]=ground.unwrap_or(serde_json::Value::Null);}
         let raw=serde_json::to_vec(&manifest).map_err(|_|model::bad())?;
         if raw.len()>scene_worker::MAX_INPUT{return Err(model::bad());}
         let directory=self.resources.root.join("test-runs/p05c-scenes");
@@ -259,7 +270,9 @@ impl BatchRuntime {
             let selected=spec.actors.get(actor.slot).ok_or_else(||model::bad())?;
             let seated=world.actors.get(actor.slot).ok_or_else(||model::bad())?;
             if selected.equipment_mass_kg.to_bits()!=seated.equipment_mass().to_bits()
-                ||selected.kind.extended_vehicle()!=seated.vehicle_kind(){return Err(model::bad());}
+                ||selected.kind.extended_vehicle()!=seated.vehicle_kind()
+                ||selected.grousers!=seated.optional_devices().contains(&crate::profile13_v2091::GROUSERS)
+                ||selected.engine_power_ceiling_basis_points!=seated.engine_power_ceiling_basis_points(){return Err(model::bad());}
             let rows=actor.proof["object_contacts"].as_array().ok_or_else(||model::bad())?;
             let vec3=|v:&serde_json::Value|->io::Result<[f32;3]>{let a=v.as_array().filter(|a|a.len()==3).ok_or_else(||model::bad())?;
                 let mut out=[0.;3];for(i,n)in a.iter().enumerate(){out[i]=n.as_f64().filter(|x|x.is_finite()).ok_or_else(||model::bad())? as f32;}Ok(out)};

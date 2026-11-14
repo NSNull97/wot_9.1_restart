@@ -9,7 +9,7 @@ use crate::battle091::profile13::{Context,FinishReason,Reservation as LegacyRese
 use crate::gateway091::shared::{vehicle_profile::VehicleKind,lifecycle_wire::{MAX_MIXED_RESULT_SHOTS,Results}};
 use crate::p06t_shells091 as source;
 use crate::gateway091::shared::vehicle_catalog::{self as catalog,Admission};
-use std::sync::atomic::{AtomicBool,Ordering};
+use std::sync::{OnceLock,atomic::{AtomicBool,Ordering}};
 
 pub const POLICY_SHA256:&str="71fddc60e36780a4be2eb4dfcfa1709791e23edf1a69d074940024404b37e0d5";
 pub const TERMINAL_MANIFEST_SHA256:&str="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717";
@@ -131,20 +131,74 @@ use crate::p06t_device_caps::{CO2_FUEL_TANK, CYCLONE_FILTER, ENHANCED_SUSPENSION
 pub(crate) const COATED_OPTICS:u16=1529;
 pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
 pub(crate) const STEREOSCOPE:u16=1273;
+pub(crate) const GROUSERS:u16=5369;
 pub(crate) const VERTICAL_STABILIZERS:[u16;2]=[7929,8185];
 pub(crate) const SPALL_LINERS: [u16; 4] = [505, 761, 1017, 11001];
 
 // CONTENT-0 #717 optional_devices.xml. Values are extra kg on the mounted vehicle.
-const OPTIONAL_DEVICE_MASS:[(u16,u16);21]=[(249,100),(STEREOSCOPE,50),(COATED_OPTICS,0),(4601,100),(4857,150),
+const OPTIONAL_DEVICE_MASS:[(u16,u16);22]=[(249,100),(STEREOSCOPE,50),(COATED_OPTICS,0),(4601,100),(4857,150),
     (5113,200),(5625,200),(5881,400),(6137,300),(6393,500),(6649,100),
     (WET_AMMO_RACKS[0],0),(WET_AMMO_RACKS[1],0),(CO2_FUEL_TANK,50),(CYCLONE_FILTER,10),
     (VERTICAL_STABILIZERS[0],100),(VERTICAL_STABILIZERS[1],200),
-    (SPALL_LINERS[0],250),(SPALL_LINERS[1],500),(SPALL_LINERS[2],1000),(SPALL_LINERS[3],1500)];
+    (SPALL_LINERS[0],250),(SPALL_LINERS[1],500),(SPALL_LINERS[2],1000),(SPALL_LINERS[3],1500),(GROUSERS,1000)];
 const VENTILATION:[u16;3]=[4601,4857,5113];
 const RAMMERS:[u16;4]=[5625,5881,6137,6393];
 // CONTENT-0 #717 equipments.xml. Indexed by the native nation order.
 const CREW_FOOD:[u16;7]=[3067,2555,25851,4091,3579,4603,4859];
 const ACTIVE_CONSUMABLES:[u16;6]=[251,507,763,1019,1275,1531];
+const FUEL:[u16;4]=[1787,2043,2299,4347];
+pub(crate) const RPM_LIMITER:u16=3323;
+pub(crate) const RPM_LIMITER_ITEM:u16=RPM_LIMITER>>8;
+
+pub(crate) fn is_fuel(id:u16)->bool { FUEL.contains(&id) }
+pub(crate) fn is_passive_consumable(id:u16)->bool { is_crew_food(id)||is_fuel(id) }
+pub(crate) fn is_supported_consumable(id:u16)->bool {
+    ACTIVE_CONSUMABLES.contains(&id)||is_passive_consumable(id)||id==RPM_LIMITER
+}
+
+/// The equipped fuel's source percentages for power and traverse, respectively.
+pub(crate) fn fuel_factors(ids:[u16;3])->(u16,u16) {
+    match ids.into_iter().find(|id|is_fuel(*id)) {
+        Some(2043)=>(105,105), Some(2299)=>(110,110), Some(1787|4347)=>(105,100), _=>(100,100),
+    }
+}
+
+fn exact_catalog_member(catalog:&'static [u8], index:&OnceLock<Option<Vec<u32>>>, id:u32)->io::Result<bool> {
+    let ids=index.get_or_init(|| serde_json::from_slice::<Vec<u32>>(catalog).ok()
+        .filter(|rows| !rows.is_empty() && rows.windows(2).all(|pair|pair[0]<pair[1])))
+        .as_ref().ok_or_else(||bad("equipment source member index"))?;
+    Ok(ids.binary_search(&id).is_ok())
+}
+
+fn validate_motion_artefacts(kind:VehicleKind,devices:[u16;3],consumables:[u16;3],nation:usize)->io::Result<()> {
+    static GASOLINE_ENGINES:OnceLock<Option<Vec<u32>>>=OnceLock::new();
+    static GROUSER_VEHICLES:OnceLock<Option<Vec<u32>>>=OnceLock::new();
+    if devices.contains(&GROUSERS) && !exact_catalog_member(
+        include_bytes!("../../../../config/catalog/grouser_vehicle_ids.v1.json"),&GROUSER_VEHICLES,kind.vehicle_compact_id())? {
+        return Err(bad("grousers vehicle"));
+    }
+    let mut fuel_seen=false;
+    for id in consumables {
+        if id==RPM_LIMITER && !matches!(nation,0|3) {return Err(bad("rpm limiter nation"));}
+        if !is_fuel(id) {continue;}
+        if fuel_seen {return Err(bad("incompatible fuel consumables"));}
+        fuel_seen=true;
+        match id {
+            1787 if nation!=0=>return Err(bad("lend-lease oil nation")),
+            4347 if !matches!(nation,3|6)=>return Err(bad("quality oil nation")),
+            2043|2299=>{
+                let raw=kind.descriptor().get(4..6).and_then(|bytes|bytes.try_into().ok()).ok_or_else(||bad("engine descriptor"))?;
+                let engine=u32::from(u16::from_le_bytes(raw))<<8 | (nation as u32)<<4 | 5;
+                if !matches!(nation,1|2|4|5)||!exact_catalog_member(
+                    include_bytes!("../../../../config/catalog/gasoline_engine_ids.v1.json"),&GASOLINE_ENGINES,engine)? {
+                    return Err(bad("gasoline requires compatible engine"));
+                }
+            },
+            _=>{},
+        }
+    }
+    Ok(())
+}
 
 pub(crate) fn ventilation_bonus(ids:[u16;3])->u8 {
     if ids.iter().any(|id|VENTILATION.contains(id)) { 5 } else { 0 }
@@ -285,7 +339,7 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
         keys(artefacts,&["optional_devices","consumables"])?;
         let devices=artefact_slots(&artefacts["optional_devices"],|id|OPTIONAL_DEVICE_MASS.iter().any(|row|row.0==id)
             ||ENHANCED_SUSPENSIONS.contains(&id))?;
-        let consumables=artefact_slots(&artefacts["consumables"],|id|ACTIVE_CONSUMABLES.contains(&id)||is_crew_food(id))?;
+        let consumables=artefact_slots(&artefacts["consumables"],is_supported_consumable)?;
         if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
         if [&VENTILATION[..],&RAMMERS[..],&VERTICAL_STABILIZERS[..],&WET_AMMO_RACKS[..],&SPALL_LINERS[..],&ENHANCED_SUSPENSIONS[..]].into_iter()
             .any(|family| devices.iter().filter(|id|family.contains(id)).count()>1) {
@@ -303,6 +357,7 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     if consumables.iter().copied().any(|id|is_crew_food(id)&&CREW_FOOD.get(nation)!=Some(&id)) {
         return Err(bad("food nation"));
     }
+    validate_motion_artefacts(kind,optional_devices,consumables,nation)?;
     let crew_count=device_profile(kind).ok_or_else(||bad("device profile"))?.crew().len();
     let p=source::profile(mount);let descriptor=kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>();
     if!uuid(account)||text(v,"vehicle_inventory_id")?!=format!("{account}:{suffix}")
@@ -420,7 +475,7 @@ pub(crate) fn terminal_consumables(v:&Value)->io::Result<Vec<usize>> {
     Ok(used)
 }
 fn terminal_state(v:&Value,f:&Frozen,hp:i16)->io::Result<TerminalState>{
-    if terminal_consumables(v)?.iter().any(|slot|f.consumables[*slot]==0) {
+    if terminal_consumables(v)?.iter().any(|slot|matches!(f.consumables[*slot],0|RPM_LIMITER)) {
         return Err(bad("used consumable ownership"));
     }
     if serde_json::to_vec(v).map_err(|_|bad("terminal JSON"))?.len()>8192||text(v,"policy_revision")?!="test_lab.p06t.devices-proxy-fire.v1"{return Err(bad("terminal pinned policy"));}
@@ -530,6 +585,18 @@ mod tests{
                 remaining_ammunition:v["remaining_ammunition"].as_array().unwrap().iter().map(|r|Remaining{shell_compact_id:r["shell_compact_id"].as_u64().unwrap()as u16,count:r["count"].as_u64().unwrap()as u16}).collect::<Vec<_>>().try_into().unwrap(),
                 terminal_state_json:v["terminal_state_json"].as_str().unwrap().into(),reason:match v["reason"].as_str().unwrap(){"battle_finished"=>FinishReason::BattleFinished,_=>panic!("export reason")},
                 results_json:v.get("results_json").map(|s|s.as_str().unwrap().into())},_=>panic!("export operation")}
+    }
+    #[test]fn content0_s5_fuel_checks_the_native_engine_and_grousers_check_the_vehicle(){
+        let kind=|label|VehicleKind::Generated(crate::gateway091::shared::generated_vehicles::registry().unwrap().by_label(label).unwrap());
+        let gasoline=kind("france-AMX50_Foch");
+        let diesel=kind("france-AMX38");
+        assert!(validate_motion_artefacts(gasoline,[0;3],[2043,0,0],4).is_ok());
+        assert!(validate_motion_artefacts(gasoline,[0;3],[2299,0,0],4).is_ok());
+        assert!(validate_motion_artefacts(diesel,[0;3],[2043,0,0],4).is_err());
+        assert!(validate_motion_artefacts(gasoline,[0;3],[2043,2299,0],4).is_err());
+        assert!(validate_motion_artefacts(gasoline,[0;3],[RPM_LIMITER,0,0],4).is_err());
+        assert!(validate_motion_artefacts(kind("germany-DW_II"),[GROUSERS,0,0],[0;3],1).is_ok());
+        assert_eq!(equipment_mass([GROUSERS,0,0],10000.),1000.);
     }
     #[test]fn mixed_result_shot_budget_survives_profile13_finish_encoding(){
         let all=vectors();

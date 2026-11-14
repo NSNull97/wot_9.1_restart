@@ -99,6 +99,9 @@ pub struct Actor {
     pub devices:Option<crate::p06t_device_state::State>,
     /// Frozen at owned admission; an activated slot is cleared for this battle.
     pub(super) consumables:[u16;3],
+    /// Last observed simulation time while the regulator is enabled, fractional
+    /// engine damage numerator (1 HP = 2000 units at 3 units per millisecond).
+    rpm_limiter: (Option<u64>, u16),
     /// Anchor pose, first observed still instant and committed armed status.
     stereoscope_rest: Option<([f32; 3], [f32; 3], Instant, bool)>,
     /// BOT-01: server bot ordinal; such an actor has no Session and no account.
@@ -110,8 +113,8 @@ pub struct Actor {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Actor
 impl crate::bw_wire::Wire for Actor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,stereoscope_rest,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(stereoscope_rest,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,stereoscope_rest:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,rpm_limiter,stereoscope_rest,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(rpm_limiter,bw_o);W::put(stereoscope_rest,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,rpm_limiter:W::get(bw_i)?,stereoscope_rest:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -155,21 +158,69 @@ impl Actor {
         (offset + f64::from(effective)*0.00375) / (offset + f64::from(baseline)*0.00375)
     }
 
-    fn consume_crew_food(&mut self) {
+    fn consume_passive_equipment(&mut self) {
         for slot in &mut self.consumables {
-            if crate::profile13_v2091::is_crew_food(*slot) { *slot = 0; }
+            if crate::profile13_v2091::is_passive_consumable(*slot) { *slot = 0; }
         }
     }
 
-    /// A ration remains active in the HUD for the battle. The current slots
+    /// Battle-long consumables keep their icons. The current slots
     /// record the spend independently for durable settlement.
     pub(super) fn hud_consumables(&self) -> [u16; 3] {
         self.owned_v2.as_ref().map_or(self.consumables, |loadout| {
             std::array::from_fn(|index| {
                 let item = loadout.consumables[index];
-                if crate::profile13_v2091::is_crew_food(item) { item } else { self.consumables[index] }
+                if crate::profile13_v2091::is_passive_consumable(item) { item } else { self.consumables[index] }
             })
         })
+    }
+
+    fn fuel_factors(&self) -> (u16,u16) {
+        self.owned_v2.as_ref().map_or((100,100),|loadout|crate::profile13_v2091::fuel_factors(loadout.consumables))
+    }
+
+    pub(super) fn rpm_limiter_active(&self) -> bool {
+        use crate::p06t_device_caps::Device;
+        self.rpm_limiter.0.is_some() && self.alive() && self.devices.as_ref().is_some_and(|state|
+            !state.frozen() && state.health()[Device::Engine as usize]>0)
+    }
+
+    pub(super) fn engine_power_basis_points(&self) -> u16 {
+        self.fuel_factors().0 * if self.rpm_limiter_active() {110} else {100}
+    }
+
+    pub(super) fn engine_power_ceiling_basis_points(&self) -> u16 {
+        self.fuel_factors().0 * if self.consumables.contains(&crate::profile13_v2091::RPM_LIMITER) {110} else {100}
+    }
+
+    fn turret_fuel_factor(&self)->f32 { f32::from(self.fuel_factors().1)/100. }
+
+    fn set_rpm_limiter(&mut self,enabled:bool,at_ms:u64) {
+        use crate::p06t_device_caps::Device;
+        if enabled && self.consumables.contains(&crate::profile13_v2091::RPM_LIMITER)
+            && self.devices.as_ref().is_some_and(|state|state.health()[Device::Engine as usize]>0) {
+            if self.rpm_limiter.0.is_none() { self.rpm_limiter.0=Some(at_ms); }
+        } else if !enabled { self.rpm_limiter.0=None; }
+    }
+
+    pub(super) fn advance_rpm_limiter(&mut self,at_ms:u64,owner:u8,h:crate::p06t_device_state::Health)
+        ->io::Result<Vec<crate::p06t_device_state::Transition>> {
+        use crate::p06t_device_caps::Device;
+        let Some(last)=self.rpm_limiter.0 else {return Ok(Vec::new());};
+        let state=self.devices.as_mut().ok_or_else(bad)?;
+        let elapsed=at_ms.checked_sub(last).ok_or_else(bad)?;
+        let mut events=Vec::new();
+        if !state.frozen() && !h.terminal && h.hp>0 && state.crew_active()
+            && state.health()[Device::Engine as usize]>0 {
+            let numerator=elapsed.checked_mul(3).and_then(|n|n.checked_add(u64::from(self.rpm_limiter.1))).ok_or_else(bad)?;
+            let amount=u16::try_from(numerator/2000).map_err(|_|bad())?;
+            events=state.apply_rpm_limiter_damage(amount,at_ms,owner,h)?;
+            self.rpm_limiter=(Some(at_ms),(numerator%2000)as u16);
+        }
+        if state.frozen() || h.terminal || h.hp==0 || !state.crew_active() || state.health()[Device::Engine as usize]==0 {
+            self.rpm_limiter=(None,0);
+        }
+        Ok(events)
     }
 
     pub(super) fn view_range(&self)->io::Result<f32> {
@@ -214,6 +265,7 @@ impl Actor {
 
     pub(super) fn aiming_spec(&self)->super::vehicle_profile::AimSpec {
         let mut spec=self.vehicle_kind().aim();
+        spec.yaw_rate*=self.turret_fuel_factor();
         if self.optional_devices().contains(&crate::p06t_device_state::GUN_LAYING_DRIVE) {
             spec.aiming_time*=crate::p06t_device_state::GUN_LAYING_DRIVE_FACTOR;
         }
@@ -1042,7 +1094,7 @@ impl World {
         if !self.lifecycle.as_ref().ok_or_else(|| bad())?.allows_actions() {
             for actor in &mut self.actors { actor.input = Input::STOP; }
         } else if !was_battle {
-            for actor in &mut self.actors { actor.consume_crew_food(); }
+            for actor in &mut self.actors { actor.consume_passive_equipment(); }
         }
         if self.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()){
             for actor in &mut self.actors{if let Some(devices)=&mut actor.devices{devices.freeze();}}
@@ -1299,7 +1351,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             autorotation: true, hull_follow: 0, position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],stereoscope_rest:None,bot:None });
+            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],rpm_limiter:(None,0),stereoscope_rest:None,bot:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -1307,7 +1359,7 @@ impl World {
             || self.team_plan.is_some()&&self.lifecycle.is_none() { return Err(bad()); }
         if self.ap_test_lab {for actor in &self.actors {self.geometry_for(actor.vehicle_kind())?;}}
         if self.lifecycle.is_none() {
-            for actor in &mut self.actors { actor.consume_crew_food(); }
+            for actor in &mut self.actors { actor.consume_passive_equipment(); }
         }
         self.started = Some(now); self.last = now; Ok(())
     }
@@ -1433,8 +1485,10 @@ impl World {
                 Command::Aim(intent) => next.aim.set(*intent)?,
                 Command::Autorotation(enabled) => next.autorotation = *enabled,
                 Command::ActivateEquipment{item,extra}=>{
-                    if let Some(kind)=crate::p06t_device_state::Consumable::from_item(*item){
-                        let at_ms=u64::from(self.tick.checked_sub(1000).ok_or_else(bad)?)*100;
+                    let at_ms=u64::from(self.tick.checked_sub(1000).ok_or_else(bad)?)*100;
+                    if *item==crate::profile13_v2091::RPM_LIMITER_ITEM && *extra<=1 {
+                        next.set_rpm_limiter(*extra==1,at_ms);
+                    } else if let Some(kind)=crate::p06t_device_state::Consumable::from_item(*item){
                         let transitions=next.use_consumable(kind,*extra,at_ms,slot as u8)?;
                         if !transitions.is_empty(){
                             next.refresh_reload_scale(now)?;
@@ -1631,7 +1685,8 @@ impl World {
                 if a.alive() {
                     if let Some(armament)=a.fire.typed(){
                         let caps=a.devices.as_ref().ok_or_else(||bad())?.capabilities();
-                        a.aim.advance_pose_for_selected(a.vehicle_kind,a.position,a.direction,dt,armament.current(),caps)?;
+                        let turret_factor=a.turret_fuel_factor();
+                        a.aim.advance_pose_for_selected_with_fuel(a.vehicle_kind,a.position,a.direction,dt,armament.current(),caps,turret_factor)?;
                     }else{a.aim.advance_pose_for(a.vehicle_kind,a.position,a.direction,dt)?;}
                     if layered_circle {
                         let spec=a.aiming_spec();

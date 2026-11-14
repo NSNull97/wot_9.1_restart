@@ -469,7 +469,8 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
         // callback uses the client's next slot index.
         if let Some(frozen)=a.owned_v2.as_ref().filter(|f|f.consumables!=[0;3]||a.stereoscope_status().is_some()) {
             for (cd,remaining) in frozen.consumables.into_iter().zip(a.hud_consumables()){
-                b.extend(crate::armament_wire091::equipment_row(cd,u16::from(remaining!=0))?);
+                let trigger_on=cd==crate::profile13_v2091::RPM_LIMITER&&a.rpm_limiter_active();
+                b.extend(crate::armament_wire091::equipment_row_with_trigger(cd,u16::from(remaining!=0),trigger_on)?);
             }
         }
         b.extend(crate::armament_wire091::reload(vehicle_id(own)?,typed.remaining_seconds(now),typed.base_reload_seconds())?);

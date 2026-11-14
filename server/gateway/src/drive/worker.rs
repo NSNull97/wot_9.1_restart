@@ -153,6 +153,11 @@ impl crate::bw_wire::Wire for MapSpec {
 }
 // end BW-01 wire codec
 impl MapSpec {
+    pub(crate) fn ground_strength(&self)->io::Result<Option<Value>> {
+        let raw=read(&self.config,16384)?;
+        if format!("{:x}",Sha256::digest(&raw))!=self.config_sha256{return Err(bad());}
+        Ok(json(&raw,16384)?.get("ground_strength").cloned())
+    }
     fn load(root:&Path,v:&Value,config_version:u64)->io::Result<Self>{
         fields(v,&["asset","arena_type_id","config","config_sha256"])?;
         let asset=text(v,"asset")?;let id=uint(&v["arena_type_id"])?;
@@ -165,6 +170,13 @@ impl MapSpec {
             "wheel_radius","suspension_min","suspension_max","track_max_brake_torque","bounds_xz"];
         if config_version>=2 {names.extend(["longitudinal_friction","lateral_friction","stationary_steering_ratio"]);}
         if config_version==3 {names.push("handling");}
+        if c.get("ground_strength").is_some() {
+            names.push("ground_strength");
+            let ground=&c["ground_strength"];
+            fields(ground,&["path","sha256"])?;
+            hash_text(text(ground,"sha256")?)?;
+            owned(root,Path::new(text(ground,"path")?))?;
+        }
         fields(&c,&names)?;
         if !(1..=3).contains(&config_version) || uint(&c["version"])?!=config_version || text(&c,"profile")?!="test_lab" || text(&c,"map")?!=asset{return Err(bad());}
         for k in ["terrain","obstacles"]{fields(&c[k],&["path","sha256"])?;hash_text(text(&c[k],"sha256")?)?;owned(root,Path::new(text(&c[k],"path")?))?;}
