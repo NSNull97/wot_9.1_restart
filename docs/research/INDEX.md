@@ -82,6 +82,8 @@
 
 ## P02 вход, шлюз, ангар
 
+- [HANGAR_717_LATENCY.md](HANGAR_717_LATENCY.md) — задержка ангара: candidate, native до/после для семи действий и проверка состояния; полный Python-gate NOT_RUN
+
 - [P02_ACCOUNT_READY.md](P02_ACCOUNT_READY.md) — P02 — минимальный Account: lifecycle и начальная синхронизация
 - [P02_ACCOUNT_SWITCH.md](P02_ACCOUNT_SWITCH.md) — P02 — смена двух аккаунтов в одном клиентском процессе
 - [P02_ARENA_ENTRY.md](P02_ARENA_ENTRY.md) — Native Account → Avatar → собственная локальная арена

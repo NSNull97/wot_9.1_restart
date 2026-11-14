@@ -106,6 +106,11 @@ def profile_calls(frame, phase, value):
     global _profile_call_id
     if phase not in ('call', 'return'):
         return
+    if (_host._settings.get('trace_native_calls') is True
+            and frame.f_code.co_filename == 'scripts/client/Account.py'
+            and frame.f_code.co_name in ('__doCmd', '_update', 'onCmdResponse', 'onCmdResponseExt')):
+        import hangar_latency_trace
+        hangar_latency_trace.observe(frame, phase, _host.record)
     if _host._settings.get('enable_barracks_recruitment') is True:
         observer = getattr(sys.modules.get('p04k_crew_ui'), 'observe_profile', None)
         if observer is not None:
