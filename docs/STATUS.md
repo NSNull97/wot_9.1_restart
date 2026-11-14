@@ -5,12 +5,14 @@
 Отдельный worktree от `56dbca8f`: проектные маскировка, растительность,
 масксеть, разделение ассиста и закрытая диагностика. Один нативный бой дал
 командный засвет, но визуальная приёмка старого макета FAIL; исправленный
-макет, сухие сценарии и проверка владельца — NOT_RUN. На `6b2cb95a` полный
-Python gate — FAIL (18 FAIL, 168 ERROR, 118 SKIP); Rust `test_lab` — FAIL
-(172 FAIL, включая несовместимость старых тестовых векторов и среды). Причины
-и границы сравнения сохранены в `local/evidence/20261115-s5a-fullgate-6b2cb95-01/`
-и `local/build/server/s5a-gate-final-01/`. Ошибки тестовых окружений исправлены,
-полный gate следующего head требует повторного прогона;
+макет, сухие сценарии и проверка владельца — NOT_RUN. На `ace6f413` полный
+Python gate — FAIL (16 FAIL, 107 ERROR, 118 SKIP); обычный Rust gate — FAIL
+(2093 PASS, 100 FAIL, 26 ignored); web Domain — 12 PASS. Причины и границы
+сравнения сохранены в `local/evidence/20261115-s5a-fullgate-ace6f413-01/`
+и `local/build/server/s5a-gate-ordinary-audit-01/`. Впоследствии обнаружен и
+исправлен Windows `WouldBlock` в guard: delayed nonce воспроизводился до
+исправления; связь с отказом native login не доказана. Для head с исправлением
+нужны новые gate и нативная проверка;
 [граница источников и стенда](research/CONTENT0_S5A_CAMOUFLAGE.md),
 [план](plans/CONTENT0_S5A_CAMOUFLAGE.md).
 
