@@ -458,7 +458,23 @@ impl Worker{
         if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)|Pending::Turret(_,t)=>(*t,REPLY_TIMEOUT)};
             let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
             let elapsed=received.map_or(elapsed,|received|received.min(now).saturating_duration_since(start));
-            if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
+            if elapsed>limit {
+                let sequence = match pending { Pending::Advance(sequence, _) => *sequence, _ => self.seq };
+                let elapsed_us = elapsed.as_micros();
+                let limit_us = limit.as_micros();
+                if let Some(sink) = &self.diagnostics {
+                    sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),
+                        "kind":pending.kind(),"sequence":sequence,"reply_received":received.is_some(),
+                        "elapsed_us":elapsed_us,"limit_us":limit_us,"status":"FAIL_CLOSED"}));
+                }
+                self.diag_process("worker_deadline_sample", now);
+                // The battle worker forwards this error to the gateway even when
+                // the optional cadence trace has already reached its size limit.
+                return Err(io::Error::new(io::ErrorKind::TimedOut, format!(
+                    "shared scene worker deadline kind={} seq={} generation={} pid={} elapsed_us={elapsed_us} limit_us={limit_us} reply_received={}",
+                    pending.kind(), sequence, self.generation, self.child.id(), received.is_some())));
+            }
+        }
         Ok(())
     }
     fn poll_inner(&mut self,now:Instant)->io::Result<Option<Frame>>{

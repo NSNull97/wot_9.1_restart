@@ -36,6 +36,8 @@ fn content0_s5_weighted_stand_starts_with_actual_body_binding() {
     world.start(now).unwrap();
     let mut runtime=BatchRuntime::new(rows[0].shared.clone().unwrap(),rows[0].catalog.1.clone());
     runtime.start(&mut world,now).unwrap();
+    // The logical step instant is held fixed while the actual child starts.
+    // Polling IPC against that instant could predate the worker's Ready receipt.
     spin(&mut runtime,&mut world,now,|r,_|r.ready_for_native());
     let spec=runtime.spec.as_ref().unwrap();
     assert_eq!(spec.actors.iter().map(|actor|actor.physical_profile().unwrap().mass()).collect::<Vec<_>>(),[4791.,69121.9]);

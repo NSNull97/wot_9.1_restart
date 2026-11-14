@@ -874,7 +874,7 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {
             world.advance(now)?;
             // TURRET-01: a detonation that ended the battle still gets its body.
-            if let Some(batch)=runtime.as_mut().and_then(|r|r.batch.as_mut()) {batch.turrets_after_outcome(world,now)?;}
+            if let Some(batch)=runtime.as_mut().and_then(|r|r.batch.as_mut()) {batch.turrets_after_outcome(world)?;}
         }
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}

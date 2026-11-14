@@ -82,14 +82,14 @@ impl BatchRuntime {
     /// One body request when the worker is idle. Returns true if sent; the
     /// next advance then waits for its reply (the debris world never steps
     /// the battle world).
-    fn launch_turret(&mut self,world:&World,now:Instant)->io::Result<bool>{
+    fn launch_turret(&mut self,world:&World)->io::Result<bool>{
         let Some(runtime)=self.runtime.as_mut()else{return Ok(false);};
         if runtime.pending()||!runtime.ready(){return Ok(false);}
         let Some(slot)=world.pending_turret_launches().first().copied()else{return Ok(false);};
         let r=world.turret_launch_request(slot)?;
         let body=TurretBody{slot,position:r.joint.position,direction:r.joint.direction,linear_velocity:r.launch.linear_velocity,
             angular_velocity:r.launch.angular_velocity,turret_points:r.turret_points,gun_points:r.gun_points,wreck_slots:r.wreck_slots};
-        runtime.launch_turret(&body,now)?;
+        runtime.launch_turret(&body)?;
         let event=world.turret_flights().iter().find(|f|f.event().target()==slot).ok_or_else(||model::bad())?.event();
         println!("TURRET01_LAUNCH battle={} slot={} shot={} attacker={} tick={} joint={:?} linear={:?} angular={:?} rng_draws={:?} turret_points={} gun_points={} wrecks={:?} policy={}",
             world.id,slot,event.shot(),event.attacker(),event.tick(),r.joint,r.launch.linear_velocity,r.launch.angular_velocity,r.launch.draws,
@@ -107,22 +107,22 @@ impl BatchRuntime {
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         let deadline=Instant::now()+Duration::from_secs(5);
         // End-of-test evidence only: a battle frame still in flight is dropped.
-        while runtime.pending(){let _=runtime.poll(Instant::now())?;
+        while runtime.pending(){let _=runtime.poll()?;
             if Instant::now()>deadline{return Err(model::bad());}std::thread::sleep(Duration::from_millis(1));}
-        runtime.launch_turret(&body,Instant::now())?;
-        loop{runtime.poll(Instant::now())?;if let Some(t)=runtime.take_turret(){return Ok(t);}
+        runtime.launch_turret(&body)?;
+        loop{runtime.poll()?;if let Some(t)=runtime.take_turret(){return Ok(t);}
             if Instant::now()>deadline{return Err(model::bad());}std::thread::sleep(Duration::from_millis(1));}
     }
     /// After the frozen outcome the battle world is no longer advanced, but a
     /// detonation that ended the battle still needs its body. A pending battle
     /// advance reply is consumed and discarded here (the outcome is frozen).
-    pub(super) fn turrets_after_outcome(&mut self,world:&mut World,now:Instant)->io::Result<()>{
+    pub(super) fn turrets_after_outcome(&mut self,world:&mut World)->io::Result<()>{
         let Some(runtime)=self.runtime.as_mut()else{return Ok(());};
         if world.pending_turret_launches().is_empty(){return Ok(());}
-        if runtime.pending()&&runtime.poll(now)?.is_some(){
+        if runtime.pending()&&runtime.poll()?.is_some(){
             println!("TURRET01_OUTCOME_FRAME_DISCARDED battle={} reason=outcome_frozen",world.id);
         }
-        self.install_turret(world)?;self.launch_turret(world,now)?;Ok(())
+        self.install_turret(world)?;self.launch_turret(world)?;Ok(())
     }
     pub(super) fn failure_snapshot(&self)->serde_json::Value{serde_json::json!({
         "process_id":self.runtime.as_ref().map(|r|r.process_id()),"startup":self.startup.is_some(),"settled":self.settled,
@@ -236,7 +236,7 @@ impl BatchRuntime {
             let result=(||{fs::create_dir_all(&directory)?;use std::io::Write;let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&path)?;file.write_all(&raw)?;file.sync_all()?;let spec=Arc::new(SceneSpec::load(&resources.root,&path,&sha)?);
                 // The dispatcher clock owns this epoch. The background job
                 // must not introduce a newer clock than the current loop turn.
-                let scene=Scene::new(&spec,&[])?;let runtime=Runtime::launch(resources.artifacts.clone(),spec.clone(),generation,scene,now)?;
+                let scene=Scene::new(&spec,&[])?;let runtime=Runtime::launch(resources.artifacts.clone(),spec.clone(),generation,scene)?;
                 Ok((spec,runtime))})();let _=tx.send(result);
         })?;
         self.startup=Some(rx);self.started_at=Some(now);
@@ -288,7 +288,7 @@ impl BatchRuntime {
                 Err(mpsc::TryRecvError::Disconnected)=>return Err(model::bad())}
         }
         let Some(runtime)=&mut self.runtime else{return Err(model::bad());};
-        let frame=if self.held.is_some(){self.held.take()}else{runtime.poll(now)?};
+        let frame=if self.held.is_some(){self.held.take()}else{runtime.poll()?};
         self.install_turret(world)?;
         if self.staged.is_some(){
             if frame.is_some(){return Err(model::bad());}
@@ -333,12 +333,12 @@ impl BatchRuntime {
             if candidate.scene_version()!=world.scene_version()||frame.prepared {
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;let ids=candidate.fragiles.as_ref().ok_or_else(||model::bad())?.removed_ids();
                 if frame.prepared_ids.iter().any(|id|ids.binary_search(id).is_err())||frame.prepared&&candidate.scene_version()==world.scene_version(){return Err(model::bad());}
-                let scene=Scene::new(spec,&ids)?;self.runtime.as_mut().unwrap().sync_removed(scene,now)?;self.staged=Some(candidate);return Ok(());
+                let scene=Scene::new(spec,&ids)?;self.runtime.as_mut().unwrap().sync_removed(scene)?;self.staged=Some(candidate);return Ok(());
             }
             *world=candidate;
         }
         if !self.settled||world.tick==1000&&world.actors.iter().any(|a|a.session.is_some()&&!a.ready){return Ok(());}
-        if self.launch_turret(world,now)?{return Ok(());}
+        if self.launch_turret(world)?{return Ok(());}
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         if runtime.pending(){return Ok(());}
         let started=world.started.ok_or_else(||model::bad())?;
@@ -350,7 +350,7 @@ impl BatchRuntime {
         if let Some(deadline)=deadline{
             let allows_actions=world.lifecycle.as_ref().is_none_or(|s|s.allows_actions());
             let inputs=scene_inputs(world,allows_actions)?;
-            let seq=runtime.advance(&inputs,now)?;self.dispatched=Some(deadline);
+            let seq=runtime.advance(&inputs)?;self.dispatched=Some(deadline);
             println!("P05C_SCENE_INPUT battle={} seq={} actors={} physical_sessions={:?} inputs={:?} world_tick={} devices_policy={}",
                 world.id,seq,inputs.len(),self.sessions,inputs,world.tick,
                 if world.extended_lab(){crate::p06t_device_state::POLICY_V2}else if world.actors.iter().any(|a|a.devices.is_some()){crate::p06t_device_state::POLICY}else{"legacy"});

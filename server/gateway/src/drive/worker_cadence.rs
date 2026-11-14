@@ -21,6 +21,8 @@ const SCHEMA: u64 = 1;
 const SCOPE: &str = "p05c-stab-worker-cadence-v1";
 const MAX_EVENTS: usize = 4096;
 const MAX_BYTES: usize = 512 * 1024;
+const FAILURE_EVENT_RESERVE: usize = 8;
+const FAILURE_BYTE_RESERVE: usize = 4096;
 pub(crate) const MAX_STDERR_BYTES: usize = 4096;
 pub(crate) const MAX_STDERR_PREFIX: usize = 512;
 static FILE_NONCE: AtomicU64 = AtomicU64::new(0);
@@ -74,6 +76,8 @@ impl Sink {
 
     pub fn record(&self, mut value: Value) {
         let Some(obj) = value.as_object_mut() else { return; };
+        let failure = matches!(obj.get("event").and_then(Value::as_str),
+            Some("worker_deadline" | "worker_deadline_sample" | "worker_event_failed" | "worker_event_failed_sample"));
         obj.insert("schema".into(), json!(SCHEMA));
         obj.insert("scope".into(), json!(SCOPE));
         let Ok(mut raw) = serde_json::to_vec(&value) else { return; };
@@ -82,7 +86,9 @@ impl Sink {
         }
         raw.push(b'\n');
         let Ok(mut state) = self.state.lock() else { return; };
-        if state.events >= MAX_EVENTS.saturating_sub(1) || state.bytes.saturating_add(raw.len()) > MAX_BYTES {
+        if failure && (state.events >= MAX_EVENTS || state.bytes.saturating_add(raw.len()) > MAX_BYTES) { return; }
+        if !failure && (state.truncated || state.events >= MAX_EVENTS - FAILURE_EVENT_RESERVE
+            || state.bytes.saturating_add(raw.len()) > MAX_BYTES - FAILURE_BYTE_RESERVE) {
             if !state.truncated {
                 let marker = serde_json::to_vec(&json!({"schema":SCHEMA,"scope":SCOPE,"event":"diagnostic_truncated","max_events":MAX_EVENTS,"max_bytes":MAX_BYTES})).unwrap_or_default();
                 let mut marker = marker;
@@ -211,5 +217,19 @@ mod tests {
         assert_eq!(text.matches("FAIL_CLOSED").count(), 2);
         assert!(!text.contains("\"status\":\"PASS\""));
         let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn cadence_preserves_the_timeout_after_the_normal_byte_budget_is_full() {
+        let dir = temp_dir();
+        let sink = Sink::from_dir(&dir, "test", 12).unwrap();
+        for _ in 0..600 { sink.record(json!({"event":"worker_reply","padding":"a".repeat(1000)})); }
+        sink.record(json!({"event":"worker_deadline","sequence":1027,"elapsed_us":501000}));
+        sink.record_process("worker_deadline_sample", Instant::now(), 42, Some(10));
+        let records = fs::read_to_string(sink.path()).unwrap();
+        assert!(records.len() <= MAX_BYTES);
+        assert!(records.contains("diagnostic_truncated"));
+        assert!(records.contains("\"sequence\":1027"));
+        assert!(records.lines().last().unwrap().contains("worker_deadline_sample"));
     }
 }
