@@ -58,12 +58,36 @@ class ResearchCapabilityTests(unittest.TestCase):
 
     def test_shop_offered_artefacts_keep_original_slot_and_removal_paths(self):
         self.activate({1529, 763}.__contains__)
-        allowed = [("1529", 2, None, False), ("1529", 2, "1529", True), ("763", 1, "251", False)]
+        allowed = [("1529", 2, None, False), ("763", 1, "251", False), ("763", 1, None, True)]
         rejected = [("507", 0, None, False), ("1529", 3, None, False), ("763", 0, "1529", False)]
         for args in allowed + rejected:
             self.Panel().setVehicleModule(*args)
         self.assertEqual(self.mutations, allowed)
         self.assertEqual(len(self.notices), len(rejected))
+
+    def test_demount_uses_physical_slot_and_preserves_original_removal_choice(self):
+        self.activate({1529, 5113}.__contains__)
+        vehicle = SimpleNamespace(optDevices=[None, SimpleNamespace(intCD=5113), SimpleNamespace(intCD=1529)])
+        current = SimpleNamespace(g_currentVehicle=SimpleNamespace(item=vehicle))
+        with patch.dict(sys.modules, {"CurrentVehicle": current}):
+            self.Panel().setVehicleModule("1529", 0, "1529", True)
+            self.Panel().setVehicleModule("5113", 0, None, True)
+        self.assertEqual(self.mutations, [("1529", 2, "1529", True), ("5113", 1, None, True)])
+        self.assertEqual(self.notices, [])
+        callback = next(fields for event, fields in self.records if event == "artefact_callback")
+        self.assertEqual((callback["requested_slot"], callback["slot"]), (0, 2))
+
+    def test_demount_rejects_missing_or_ambiguous_mounted_item(self):
+        self.activate({1529}.__contains__)
+        optics = SimpleNamespace(intCD=1529)
+        current = SimpleNamespace(g_currentVehicle=SimpleNamespace(item=None))
+        with patch.dict(sys.modules, {"CurrentVehicle": current}):
+            for vehicle in (None, SimpleNamespace(optDevices=[None, None, None]),
+                            SimpleNamespace(optDevices=[optics, None, optics])):
+                current.g_currentVehicle.item = vehicle
+                self.Panel().setVehicleModule("1529", 0, "1529", True)
+        self.assertEqual(self.mutations, [])
+        self.assertEqual(self.notices, [(prior.POLICY.DEMOUNT_NOTICE, self.Messages.SM_TYPE.Warning)] * 3)
 
     def test_optin_does_not_weaken_original_binding_audit(self):
         with self.assertRaisesRegex(RuntimeError, "wrapper mismatch"):

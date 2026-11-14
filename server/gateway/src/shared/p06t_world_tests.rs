@@ -72,7 +72,7 @@ fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
     let now=Instant::now();
     let (owner,base_frozen)=actual_frozen_ap_zero();
     let mut authored=base_frozen.value();
-    authored["artefacts"]=serde_json::json!({"optional_devices":[0,1529,0],"consumables":[0,0,0]});
+    authored["artefacts"]=serde_json::json!({"optional_devices":[1273,0,1529],"consumables":[0,0,0]});
     let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&authored).unwrap()));
     let frozen=v2::parse_frozen(&authored,&owner.account,&digest).unwrap();
     let mut world=base(now,low_ground());
@@ -80,12 +80,12 @@ fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
     lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);
     start(&mut world,now);
     let actor=&world.actors[slot];
-    assert_eq!(actor.optional_devices(),[0,1529,0]);
+    assert_eq!(actor.optional_devices(),[1273,0,1529]);
     assert_eq!(actor.view_range().unwrap(),VehicleKind::Ms1.view_range()*1.1);
     assert_eq!(world.actors[1].view_range().unwrap(),VehicleKind::Ms1.view_range());
     let mut expected=VehicleKind::Ms1.descriptor().to_vec();
-    *expected.last_mut().unwrap()=0b010;
-    expected.extend([5,0]);
+    *expected.last_mut().unwrap()=0b101;
+    expected.extend([5,0,4,0]);
     for packet in [super::super::wire::create_vehicle(&world,slot).unwrap(),super::super::wire::roster(&world,slot).unwrap()] {
         assert!(packet.windows(expected.len()).any(|row|row==expected));
     }

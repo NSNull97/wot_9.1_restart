@@ -182,6 +182,29 @@ fn single_gateway_stall_rebases_onto_grid_and_longer_stall_still_fails_closed() 
 }
 
 #[test]
+fn integrated_battle_recovers_the_maximum_drive_gap_without_ending_the_round() {
+    let start = Instant::now();
+    let mut f = fixture(start);
+    let rules = super::super::lifecycle::Rules { prebattle_ms: 1_000,
+        ..super::super::lifecycle::Rules::prohorovka() };
+    f.world.lifecycle = Some(super::super::lifecycle::State::new(rules).unwrap());
+    f.world.advance_lifecycle(start).unwrap();
+    let opened = start + Duration::from_secs(1);
+    f.world.advance_lifecycle(opened).unwrap();
+    f.dispatch(opened);
+    // Healthy replies were already available when the gateway loop stalled.
+    f.pair(opened + Duration::from_millis(1), 1);
+    let mut runtime = Some(f.runtime);
+    let recovery = opened + MAX_STALL + drive::STEP;
+    advance_battle(&mut f.world, &mut runtime, recovery, false).unwrap();
+    let state = f.world.lifecycle.as_ref().unwrap();
+    assert!(state.allows_actions());
+    assert_eq!(state.elapsed_battle_ms(), 5_100);
+    assert_eq!(runtime.as_ref().unwrap().dispatched, [Some(recovery); 2]);
+    assert!(f.peers.iter().all(|peer| peer.request()["seq"] == 2));
+}
+
+#[test]
 fn scene_ack_pause_rebases_deadlines_and_retains_same_bucket_source() {
     let start=Instant::now();let mut f=fixture(start);f.dispatch(start);
     let at=start+Duration::from_millis(90);let mut frame=f.frame(0,1);

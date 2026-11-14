@@ -885,7 +885,16 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         // A candidate scene owns an atomic World clone. Do not advance the
         // lifecycle outside it and then overwrite a frozen outcome on ACK.
         let lifecycle_span=super::step_profile::span(super::step_profile::Part::Lifecycle);
-        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
+        let lifecycle_changed = match runtime.as_ref() {
+            Some(r) if r.blocked() => false,
+            // The drive scheduler can recover up to MAX_STALL after the next
+            // grid deadline. A pending IPC reply can defer that resync until the
+            // next loop, so allow the same wall-clock bound here independently.
+            Some(_) => world.advance_lifecycle_with_gap_bound(now,
+                (MAX_STALL + crate::map_drive_worker091::STEP).as_millis() as u64)?,
+            None => world.advance_lifecycle(now)?,
+        };
+        if lifecycle_changed {
             println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
                 world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
         }

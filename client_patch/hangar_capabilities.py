@@ -24,7 +24,8 @@ except NameError:
 MODULE_CALLBACK_SHA256 = '02f79342b691d6c512bd441feb8d9239cf820f9044269f9f040f151ad9a09377'
 PROCESS_WRAPPER_SHA256 = '3814ec7ed28deee153a088aa3def670d9cbce6ecc2bdd286e85165a2f3c9f701'
 RESEARCH_MODULE_TYPES = (2, 3, 4, 5, 7)
-ARTEFACT_TYPES = (9, 11)
+OPTIONAL_DEVICE_TYPE = 9
+ARTEFACT_TYPES = (OPTIONAL_DEVICE_TYPE, 11)
 
 AUDITED_SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.py'
 AUDITED_PYC_SHA256 = '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'
@@ -34,6 +35,7 @@ NOTICE = (u'Смена модулей, покупка и снятие обору
 # server; this notice names what is still unavailable there.
 RESEARCH_NOTICE = (u'Снятие модулей, оборудование и снаряжение пока недоступны в тестовом стенде. '
                    u'Ходовую, двигатель, радиостанцию, башню и орудие можно установить со Склада.')
+DEMOUNT_NOTICE = u'Это оборудование не найдено в комплектации выбранной машины.'
 EMPTY_TOOLTIP = (u'{HEADER}Недоступно в тестовом стенде{/HEADER}'
                  u'{BODY}Каталог оборудования и снаряжения пока не подключён. '
                  u'Покупка и установка недоступны.{/BODY}')
@@ -80,6 +82,18 @@ def _shop_offers_artefact(compact):
     # provide a UI capability. The server still authorizes selection.
     from gui.shared import g_itemsCache
     return g_itemsCache.items.shop.getPrices().get(compact) == (0, 0)
+
+
+def _mounted_optional_device_slot(compact):
+    from CurrentVehicle import g_currentVehicle
+    vehicle = g_currentVehicle.item
+    if vehicle is None:
+        return None
+    slots = vehicle.optDevices
+    if not isinstance(slots, (list, tuple)) or len(slots) != 3:
+        return None
+    matches = [index for index, item in enumerate(slots) if item is not None and item.intCD == compact]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _default_step_callback():
@@ -188,18 +202,26 @@ class _ModuleChangeGuard(object):
                 guard.record('research_module_callback', original_mutation_called=True,
                              module_compact_id=_module_cd(newId), authority='server', native_acceptance='NOT_RUN')
                 return guard.original(panel, newId, slotIdx, oldId, isRemove)
+            notice = guard.notice
+            compact = _module_cd(newId)
             if (guard.allow_research and artefact_offered is not None
-                    and _artefact_selection(newId, slotIdx, oldId, isRemove) and artefact_offered(_module_cd(newId))):
-                guard.record('artefact_callback', original_mutation_called=True,
-                             item_compact_id=_module_cd(newId), slot=slotIdx, remove=isRemove)
-                return guard.original(panel, newId, slotIdx, oldId, isRemove)
+                    and _artefact_selection(newId, slotIdx, oldId, isRemove) and artefact_offered(compact)):
+                slot = slotIdx
+                if isRemove and compact & 15 == OPTIONAL_DEVICE_TYPE:
+                    # #717 may pass the dropdown slot. CMD102 removes by physical slot alone.
+                    slot = _mounted_optional_device_slot(compact)
+                guard.record('artefact_callback', original_mutation_called=slot is not None,
+                             item_compact_id=compact, slot=slot, requested_slot=slotIdx, remove=isRemove)
+                if slot is not None:
+                    return guard.original(panel, newId, slot, oldId, isRemove)
+                notice = DEMOUNT_NOTICE
             action = 'remove' if isRemove else 'install_or_purchase'
             guard.record('capability_denied', capability='module_changes',
                          action=action, origin='project_test_service_policy',
                          original_mutation_called=False)
             if guard.messages.g_instance is None:
                 raise RuntimeError('original SystemMessages is unavailable for module denial')
-            guard.messages.pushMessage(guard.notice, type=guard.messages.SM_TYPE.Warning)
+            guard.messages.pushMessage(notice, type=guard.messages.SM_TYPE.Warning)
             guard.record('capability_notice', capability='module_changes',
                          phase='return', channel='original_SystemMessages_Warning')
 

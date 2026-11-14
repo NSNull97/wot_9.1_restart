@@ -7,6 +7,9 @@ EVENT = 'project_stereoscope_sound'
 EVENT_PATH = '/SCP/notifications_FX/scope_enabled'
 DEVICE_ID = 4
 FADE_SECONDS = 0.5
+# The 29,064-frame donor is 605.5 ms. The legacy event can discard its
+# handle at the end of that clip, including while a fade is queued.
+CLIP_SECONDS = 29064 / 48000.0
 AVATAR_CONTRACT = (
     'scripts/client/Avatar.py', 'updateVehicleOptionalDeviceStatus', 1260,
     ('self', 'deviceID', 'isOn'),
@@ -23,17 +26,20 @@ def validate_settings(settings):
 
 
 class Cue(object):
-    def __init__(self, play, fade):
+    def __init__(self, play, fade, clock):
         self.play = play
         self.fade = fade
+        self.clock = clock
         self.arena = None
         self.active = False
         self.sound = None
+        self.sound_ends = 0.0
 
     def stop(self):
         if self.sound is not None:
             sound, self.sound = self.sound, None
-            sound.stop()
+            if self.clock() < self.sound_ends:
+                sound.stop()
 
     def update(self, arena, active, muted):
         if arena != self.arena:
@@ -45,11 +51,13 @@ class Cue(object):
         if not active:
             if self.sound is not None:
                 sound, self.sound = self.sound, None
-                self.fade(sound)
+                if self.clock() < self.sound_ends:
+                    self.fade(sound, self.sound_ends)
             return 'deactivated'
         if muted:
             return 'muted'
         self.sound = self.play(EVENT_PATH)
+        self.sound_ends = self.clock() + CLIP_SECONDS
         return 'played' if self.sound is not None else 'fmod_returned_none'
 
 
@@ -70,12 +78,15 @@ def install(record):
     def play(path):
         return SoundGroups.g_instance.FMODplaySound(path)
 
-    def fade(sound):
+    def fade(sound, sound_ends):
         started, volume = BigWorld.time(), sound.volume
 
         def step():
             try:
-                elapsed = BigWorld.time() - started
+                now = BigWorld.time()
+                if now >= sound_ends:
+                    return
+                elapsed = now - started
                 if 0 <= elapsed < FADE_SECONDS:
                     sound.volume = volume * (1 - elapsed / FADE_SECONDS)
                     BigWorld.callback(0.05, step)
@@ -86,7 +97,7 @@ def install(record):
 
         BigWorld.callback(0.05, step)
 
-    cue = Cue(play, fade)
+    cue = Cue(play, fade, BigWorld.time)
 
     def updateVehicleOptionalDeviceStatus(self, deviceID, isOn):
         result = original(self, deviceID, isOn)

@@ -6,6 +6,7 @@ cannot select another account, source path, policy, catalogue or database.
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import json
 from pathlib import Path
 import sys
@@ -94,7 +95,7 @@ def native_service(store, request, *, authenticated_account_id):
         domain = domain_request(selected, catalog=store.catalog, aggregate=aggregate,
             account_id=authenticated_account_id, command_key=request["command_key"],
             expected_revision=request["expected_revision"], shop_revision=SHOP_REVISION)
-        def project(before, after, result):
+        def project(before, after, result, *, historical_device_order=False):
             value = dict(response)
             value["revision"] = result["revision"]
             if result["operation"] == "buy_vehicle_equipped":
@@ -107,11 +108,12 @@ def native_service(store, request, *, authenticated_account_id):
                 layouts = store.pair_layouts(after) if pool else None
                 depot = {store.depot_cd[key]: n for key, n in after["depot"].items() if before["depot"].get(key) != n} if pool else None
                 updates = [update_delta(store.catalog, before["research"], after["research"], request["wire_revision"], layouts, depot,
-                                        artefacts=after.get("artefacts"))]
+                                        artefacts=after.get("artefacts"), historical_device_order=historical_device_order)]
             value["update_hex"] = updates[0].hex()
             return value
         return store.execute(domain, authenticated_account_id=authenticated_account_id,
-            native_binding=sha(canonical(request)), prepare_response=project)
+            native_binding=sha(canonical(request)), prepare_response=project,
+            prepare_historical_response=partial(project, historical_device_order=True))
     except TransactionError as error:
         if error.code not in REJECTIONS: raise
         current = store.read_profile(authenticated_account_id)

@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), 'client_patch'))
-from project_stereoscope_sound import Cue, EVENT_PATH, validate_settings
+from project_stereoscope_sound import CLIP_SECONDS, Cue, EVENT_PATH, validate_settings
 
 
 class Sound(object):
@@ -17,6 +17,7 @@ class Sound(object):
 class StereoscopeSoundTests(unittest.TestCase):
     def setUp(self):
         self.sounds = []
+        self.now = 0.0
 
         def play(event):
             self.assertEqual(event, EVENT_PATH)
@@ -24,7 +25,7 @@ class StereoscopeSoundTests(unittest.TestCase):
             self.sounds.append(sound)
             return sound
 
-        self.cue = Cue(play, Sound.stop)
+        self.cue = Cue(play, lambda sound, end: sound.stop(), lambda: self.now)
 
     def test_first_false_is_silent_and_each_activation_plays_once(self):
         self.assertEqual(self.cue.update(12, False, False), 'unchanged')
@@ -49,3 +50,13 @@ class StereoscopeSoundTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate_settings({'stereoscope_sound': True})
         self.assertTrue(validate_settings({'stereoscope_sound': True, 'enable_p06t_mixed_ammo': True}))
+
+    def test_an_expired_cue_is_left_alone_on_deactivation_and_cleanup(self):
+        self.cue.update(12, True, False)
+        self.now = CLIP_SECONDS
+        self.assertEqual(self.cue.update(12, False, False), 'deactivated')
+        self.assertEqual(self.sounds[0].stops, 0)
+        self.cue.update(12, True, False)
+        self.now += 1.0
+        self.cue.stop()
+        self.assertEqual(self.sounds[1].stops, 0)

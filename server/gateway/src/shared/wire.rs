@@ -71,7 +71,8 @@ fn equipped_descriptor(b:&mut Vec<u8>,a:&Actor)->io::Result<()> {
     if flags!=0 {return Err(model::bad());}
     let mut equipped=base.to_vec();
     equipped.push(ids.iter().fold(0,|mask,id|(mask<<1)|u8::from(*id!=0)));
-    for id in ids.into_iter().filter(|id|*id!=0) {
+    // #717 reads the low mask bit (last slot) and consumes the first word.
+    for id in ids.into_iter().rev().filter(|id|*id!=0) {
         equipped.extend((id>>8).to_le_bytes());
     }
     string(b,&equipped)

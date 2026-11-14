@@ -250,6 +250,10 @@ class AmmoLossStoreTests(unittest.TestCase):
         for slot, suffix in enumerate(("040500", "020500", "010500")):
             devices = [1529 if index == slot else 0 for index in range(3)]
             self.assertEqual(installed_descriptor(plain, devices), plain[:-1] + bytes.fromhex(suffix))
+        for devices, suffix in (([1273, 5113, 1529], "07050013000400"),
+                                ([1273, 0, 1529], "0505000400"),
+                                ([0, 5113, 1529], "0305001300")):
+            self.assertEqual(installed_descriptor(plain, devices), plain[:-1] + bytes.fromhex(suffix))
 
         def request(command, args, label):
             return dict(account_id=account, native_database_id=self.fx.native_id, command_key="artefacts:" + label,
@@ -283,6 +287,94 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.assertEqual(self.profile()["artefacts"]["depot"], {"763": 2})
         self.assertEqual(self.profile()["artefacts"]["vehicles"], {})
         self.assertEqual(apply(buy), dict(bought, replayed=True))
+
+    def test_historical_optdev_reply_replays_with_corrected_descriptor(self):
+        from unittest.mock import patch
+        from content0_equipment_store import projection_updates
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+
+        def install(cd, slot):
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key="optdev-" + str(cd),
+                        expected_revision=self.profile()["revision"], wire_revision=1, command=308,
+                        arguments=[5, cd, 1, slot, 0, 0])
+
+        native_service(self.store, install(1529, 2), authenticated_account_id=account)
+        request = install(1273, 0)
+
+        def historical_updates(*args, **kwargs):
+            return projection_updates(*args, **kwargs, historical_device_order=True)
+
+        with patch("content0_equipment_store.projection_updates", historical_updates):
+            saved = native_service(self.store, request, authenticated_account_id=account)
+        self.assertEqual(saved["status"], "researched")
+        self.assertIn("0504000500", saved["update_hex"])
+        before = self.profile()
+        replay = native_service(self.store, request, authenticated_account_id=account)
+        self.assertEqual(replay, dict(saved, replayed=True,
+                                     update_hex=saved["update_hex"].replace("0504000500", "0505000400", 1)))
+        self.assertEqual(self.profile(), before)
+
+        from content0_equipment_store import installed_descriptor
+        source = BattleProjectionSource(self.fx.source.bundle.root, self.fx.catalog)
+        root = Path(self.fx.temp.name) / "optdev-fixtures"
+
+        def old_descriptor(plain, slots):
+            return installed_descriptor(plain, slots, historical_device_order=True)
+
+        with patch("p04m_pool_projection.installed_descriptor", old_descriptor):
+            previous_fixture = Path(self.store.publish(source, account, root)["fixture_dir"])
+        # Recreate the old revision directory name to exercise collision-free publication.
+        unchanged = previous_fixture.with_name(previous_fixture.name.removesuffix("-optdev2"))
+        previous_fixture.rename(unchanged)
+        published = Path(self.store.publish(source, account, root)["fixture_dir"])
+        self.assertEqual(published, previous_fixture)
+        self.assertIn(bytes.fromhex("0504000500"), (unchanged / "state.bin").read_bytes())
+        self.assertIn(bytes.fromhex("0505000400"), (published / "state.bin").read_bytes())
+        self.assertEqual(self.store.publish(source, account, root)["fixture_dir"], str(published))
+
+    def test_historical_research_reply_replays_with_corrected_descriptor(self):
+        from unittest.mock import patch
+        from p09e_research_projection import update_delta
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+
+        def request(command, args, key):
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key=key,
+                        expected_revision=self.profile()["revision"], wire_revision=1, command=command, arguments=args)
+
+        def execute(request):
+            return native_service(self.store, request, authenticated_account_id=account)
+
+        for slot, cd in ((0, 1273), (2, 1529)):
+            self.assertEqual(execute(request(308, [5, cd, 1, slot, 0, 0], f"fitted-{cd}"))["status"], "researched")
+        chassis = "module:ussr:chassis:T-18Bis"
+        upgrade = next(row for row in self.store.catalog.unlocks if row["vehicle_id"] == "vehicle:ussr:MS-1"
+                       and row["item_id"] == chassis)
+        native = self.store.catalog.vehicles["vehicle:ussr:MS-1"]["native_compact_id"]
+        self.assertEqual(execute(request(201, [native, upgrade["native_index"], 0], "unlock"))["status"], "researched")
+        upgrade_cd = self.store.catalog.modules[chassis]["native_compact_id"]
+        change = request(308, [5, upgrade_cd, 1, 0, 0, 0], "change-chassis")
+
+        def old_delta(*args, **kwargs):
+            return update_delta(*args, **dict(kwargs, historical_device_order=True))
+
+        with patch("p09e_research_service.update_delta", old_delta):
+            saved = execute(change)
+        self.assertEqual(saved["status"], "researched")
+        self.assertIn("0504000500", saved["update_hex"])
+        before = self.profile()
+        self.assertEqual(execute(change), dict(saved, replayed=True,
+                                              update_hex=saved["update_hex"].replace("0504000500", "0505000400", 1)))
+        self.assertEqual(self.profile(), before)
 
     def test_weighted_equipment_checks_source_filter_and_preserves_full_chassis_load(self):
         from collections import Counter

@@ -337,5 +337,60 @@ bootstrap records are in `runtime/native-18648-1794658096157.jsonl` under
 Prepare uses the normal native client options plus `--stereoscope-sample` and
 the extracted WAV path. The usual `interactive_client.py rollback --out`
 uses the installation ledger to remove the two audio files and restore
-the prior client configuration. Native HUD and audibility in battle and the
-full card gate remain NOT_RUN.
+the prior client configuration. The owner confirmed the HUD and sound in
+battle `30671350172957520`. Client trace lines 510 and 555 show 3.110 s from
+the inactive callback to `played`. Later lines 974, 1200, 1263 and 1310 show
+deactivation and reactivation. The native cue handle had already expired on
+some deactivations. The client now limits its fade to the clip's playback time.
+
+## Demount slot and lifecycle stall
+
+OBSERVED in the same session, the Flash callback sent compact ID `1529` and
+zero-based slot `0` for a removal. The authoritative loadout was
+`[1273, 5113, 1529]`. Request `228` returned `-10` at revision `811`.
+The original `AmmunitionPanel.setVehicleModule` passes the slot to
+`OptDeviceInstaller._request`. The resulting CMD102 carries zero as the item
+on removal, so the server can only address the slot. The project callback
+resolves the selected compact ID in the native `Vehicle.optDevices` list
+and passes the matching physical slot to the original handler. It preserves
+the native preservation/destroy choice. A missing or ambiguous item warns
+the player before any removal request is sent.
+
+The first retest still removed the rammer instead of the requested optics.
+The optional-device list itself was decoded from reversed descriptor words.
+In #717 `VehicleDescr.makeCompactDescr` offsets 230–285 shift the mask left
+and prepend each nonempty device word. The decoder reads from the end of the
+slot list and consumes the first remaining word. `[1273, 5113, 1529]` must
+produce suffix `07 05 00 13 00 04 00`. Both hangar and battle serializers
+now use that order. Server slots and stock are stored independently of wire
+bytes. The wrong removals at revisions 814 and 816 returned the tube and
+rammer respectively to the depot. Neither item was lost.
+Current multi-device snapshots publish beside older immutable snapshots under
+`p09d-rREV-optdev2`. The equipment and research journals still validate
+historical digests and return current wire encoding on replay. On the stand,
+the refreshed fixture for revision 816 contains bits `03` and words `05 00 13 00`
+for authoritative slots `[0, 5113, 1529]`. The local verification receipt is
+`local/evidence/content0-s5/demount-native-fixture.json`.
+
+The gateway recorded an isolated 2146.8 ms loop gap and a drive resync with
+2114 ms lag and 21 skipped frames, followed by `world_step` failure
+`battle lifecycle: clock/membership bound`. The owner still had 867 HP.
+The gateway persisted `BattleFailure` in revision `813` and reused the channel
+to return to the hangar. The lifecycle's 1000 ms normal step bound conflicted
+with the drive scheduler's allowed recovery window. The integrated lifecycle
+now accepts up to 5100 ms of elapsed wall time with no capture credit across
+the unobserved interval. The ordinary 1000 ms limit is unchanged. The source of the
+machine pause itself is unknown. The relevant gateway lines are 28435–28443
+and 28516–28522, with the equipped loadout at line 21285.
+
+Rebuilt the gateway with `cargo build --locked --offline --release --features
+test_lab --manifest-path server/gateway/Cargo.toml`. Targeted Rust and SQLite
+logs sit under `local/evidence/content0-s5/` with the deployment receipt
+`demount-lifecycle-deploy.json`. The stand restart uses `domain.ps1` and
+`services.ps1`; the previous gateway path is in `services.before-demount-lifecycle.ps1`.
+The client uses the normal installer and the `install-demount-fix` rollback ledger.
+The owner confirmed native demount on the updated stand. Client trace
+`native-42252-1794659900340.jsonl` line 191 records item `1529`, slot `2`.
+Gateway `gateway-20261114-173738.stdout.log` line 603 commits revision 818.
+SQLite has slots `[0, 5113, 0]` and one `1529` in the depot. A complete battle
+on the updated gateway remains NOT_RUN.

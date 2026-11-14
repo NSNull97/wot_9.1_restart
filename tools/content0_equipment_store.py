@@ -242,15 +242,16 @@ def _plan(before, catalog, owned, command, args, *, allow_purchase):
     return after
 
 
-def installed_descriptor(plain, slots):
+def installed_descriptor(plain, slots, *, historical_device_order=False):
     devices = _slots(slots, OPTDEV)
     require(type(plain) is bytes and len(plain) >= 15 and plain[-1] == 0, "CORRUPT_ARTEFACT_STORE")
-    # #717 shifts left before visiting each slot and writes device.id[1].
+    # #717 shifts the mask left per slot and prepends each LE device.id[1].
     mask = sum(1 << (SLOT_COUNT - 1 - slot) for slot, cd in enumerate(devices) if cd)
-    return plain[:-1] + bytes((mask,)) + b"".join(struct.pack("<H", cd >> 8) for cd in devices if cd)
+    words = devices if historical_device_order else reversed(devices)
+    return plain[:-1] + bytes((mask,)) + b"".join(struct.pack("<H", cd >> 8) for cd in words if cd)
 
 
-def projection_parts(before, after, research, *, catalog=None):
+def projection_parts(before, after, research, *, catalog=None, historical_device_order=False):
     from p09e_research_projection import descriptor
     if before is None or after is None:
         return []
@@ -266,7 +267,8 @@ def projection_parts(before, after, research, *, catalog=None):
         changed = {}
         if previous["devices"] != current["devices"]:
             require(catalog is not None, "CORRUPT_ARTEFACT_STORE")
-            changed["compDescr"] = {native: installed_descriptor(descriptor(catalog, vehicle), current["devices"])}
+            changed["compDescr"] = {native: installed_descriptor(descriptor(catalog, vehicle), current["devices"],
+                                                                 historical_device_order=historical_device_order)}
         if previous["consumables"] != current["consumables"]:
             changed["eqs"] = {native: current["consumables"]}
         if previous["layout"] != current["layout"]:
@@ -276,10 +278,11 @@ def projection_parts(before, after, research, *, catalog=None):
     return parts
 
 
-def projection_updates(before, after, research, wire_revision, *, catalog=None):
+def projection_updates(before, after, research, wire_revision, *, catalog=None, historical_device_order=False):
     from p09e_research_projection import chained_updates
     first = {"prevRev": wire_revision, "rev": wire_revision + 1}
-    return chained_updates(first, projection_parts(before, after, research, catalog=catalog), wire_revision, 4)
+    parts = projection_parts(before, after, research, catalog=catalog, historical_device_order=historical_device_order)
+    return chained_updates(first, parts, wire_revision, 4)
 
 
 def activate(store, account):
@@ -349,8 +352,8 @@ def service(store, request, *, authenticated_account_id):
             native = args[1] if command == 102 else args[0] if command == 104 else args[2] if command == 308 else None
             owned = _owned(aggregate["research"], native) if native is not None else None
         after = _plan(before, store.catalog, owned, command, args, allow_purchase=allow_purchase)
-        updates = projection_updates(before, after, {"vehicles": [owned] if owned else []}, request["wire_revision"],
-                                     catalog=store.catalog)
+        research = {"vehicles": [owned] if owned else []}
+        updates = projection_updates(before, after, research, request["wire_revision"], catalog=store.catalog)
         response = {"status": "researched", "account_id": account, "native_database_id": request["native_database_id"],
                     "command_key": key, "revision": request["expected_revision"] + 1,
                     "wire_revision": request["wire_revision"] + len(updates),
@@ -360,6 +363,16 @@ def service(store, request, *, authenticated_account_id):
         expected = {"before": before, "after_sha256": sha(canonical(after)), "owned": owned,
                     "allow_purchase": allow_purchase, "response": response}
         if replay:
+            if expected != proof:
+                # Historical ledgers hashed the old wire bytes. Reproduce that proof before returning corrected bytes.
+                old_updates = projection_updates(before, after, research, request["wire_revision"],
+                                                 catalog=store.catalog, historical_device_order=True)
+                old_response = dict(response, update_hex=old_updates[0].hex(),
+                                    wire_revision=request["wire_revision"] + len(old_updates))
+                old_response.pop("extra_update_hex", None)
+                if len(old_updates) > 1:
+                    old_response["extra_update_hex"] = [raw.hex() for raw in old_updates[1:]]
+                expected = dict(expected, response=old_response)
             require(expected == proof, "CORRUPT_ARTEFACT_STORE")
             connection.commit()
             return dict(response, replayed=True)

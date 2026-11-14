@@ -999,6 +999,10 @@ impl World {
         now.checked_duration_since(start).ok_or_else(|| bad())?.as_millis().try_into().map_err(|_| bad())
     }
     pub fn advance_lifecycle(&mut self, now: Instant) -> io::Result<bool> {
+        self.advance_lifecycle_with_gap_bound(now, super::lifecycle::MAX_STEP_MS)
+    }
+
+    pub(super) fn advance_lifecycle_with_gap_bound(&mut self, now: Instant, max_gap_ms: u64) -> io::Result<bool> {
         if self.lifecycle.is_none() || self.started.is_none() { return Ok(false); }
         let was_battle = self.lifecycle.as_ref().is_some_and(|state| state.allows_actions());
         let elapsed = self.lifecycle_ms(now)?;
@@ -1012,12 +1016,19 @@ impl World {
                 alive: actor.alive(), position: actor.position, damage_epoch: epoch,
                 last_damager })
         }).collect::<io::Result<Vec<_>>>()?;
+        let advance = |life: &mut super::lifecycle::State| {
+            if max_gap_ms == super::lifecycle::MAX_STEP_MS {
+                life.advance(elapsed, &members)
+            } else {
+                life.advance_with_gap_bound(elapsed, &members, max_gap_ms)
+            }
+        };
         let changed = if let Some(old)=&self.result_spots {
             // A failed late LOS must leave lifecycle, journal and actor state
             // untouched. Stage only the small lifecycle and <=6 records;
             // cloning the whole World/Trace here would be unnecessary work.
             let mut life=self.lifecycle.as_ref().ok_or_else(||bad())?.clone();
-            let changed=life.advance(elapsed,&members)?;
+            let changed=advance(&mut life)?;
             let next=if life.allows_actions(){
                 let observers=members.iter().map(|member|result_spots::Member{
                     team:member.team,present:member.present,ready:member.ready,alive:member.alive}).collect::<Vec<_>>();
@@ -1027,7 +1038,7 @@ impl World {
             self.lifecycle=Some(life);
             if let Some(next)=next{self.result_spots=Some(next);self.result_spot_tick=Some(self.tick);}
             changed
-        }else{self.lifecycle.as_mut().ok_or_else(|| bad())?.advance(elapsed, &members)?};
+        }else{advance(self.lifecycle.as_mut().ok_or_else(|| bad())?)?};
         if !self.lifecycle.as_ref().ok_or_else(|| bad())?.allows_actions() {
             for actor in &mut self.actors { actor.input = Input::STOP; }
         } else if !was_battle {

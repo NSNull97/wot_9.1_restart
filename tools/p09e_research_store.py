@@ -607,10 +607,13 @@ class ResearchStore(NativeBarracksRecruitmentStore):
                    "expected_revision": profile["revision"], "operation": "grant_vehicle", "payload": {"vehicle_id": vehicle_id}}
         return self.execute(request, authenticated_account_id=account_id, stand_grant=True)
 
-    def execute(self, request, *, authenticated_account_id, prepare_response=None, native_binding=None, stand_grant=False):
+    def execute(self, request, *, authenticated_account_id, prepare_response=None, prepare_historical_response=None,
+                native_binding=None, stand_grant=False):
         request = validate_request(request, authenticated_account_id, stand_grant=stand_grant)
         require((prepare_response is None and native_binding is None) or
                 (callable(prepare_response) and type(native_binding) is str and re.fullmatch(r"[0-9a-f]{64}", native_binding)), "INVALID_NATIVE_PROJECTION")
+        require(prepare_historical_response is None or callable(prepare_response) and callable(prepare_historical_response),
+                "INVALID_NATIVE_PROJECTION")
         self.initialize()
         account, key = request["account_id"], request["command_key"]
         command = SCHEMA + ":" + request["operation"]
@@ -622,7 +625,8 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             ledger = c.execute("SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?", (account, key)).fetchone()
             if ledger is not None:
                 require(ledger["command_type"] == command and ledger["payload_sha256"] == payload_sha, "DUPLICATE_PAYLOAD_MISMATCH")
-                result = self._replay(ledger, request, profile, prepare_response=prepare_response)
+                result = self._replay(ledger, request, profile, prepare_response=prepare_response,
+                                      prepare_historical_response=prepare_historical_response)
                 c.commit()
                 return result
             revision = profile["revision"]
@@ -705,7 +709,7 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         value["vehicles"].sort(key=lambda r: r["vehicle_id"])
         return value
 
-    def _replay(self, row, request, profile, *, prepare_response=None):
+    def _replay(self, row, request, profile, *, prepare_response=None, prepare_historical_response=None):
         journal = _json(row["result_json"])
         require(sha(row["result_json"].encode("ascii")) == row["p09c_result_sha256"], "CORRUPT_STORE")
         legacy = journal.get("schema") == SCHEMA
@@ -738,7 +742,10 @@ class ResearchStore(NativeBarracksRecruitmentStore):
                 require(equipment is None or self._equipment_plan(before, after, request["payload"]) == equipment, "CORRUPT_STORE")
                 final = self._expected_aggregate(before, after, destination, equipment)
                 native = prepare_response(before, final, response)
-                require(type(native) is dict and native == journal["native_response"] and native.get("replayed") is False, "CORRUPT_STORE")
+                require(type(native) is dict and native.get("replayed") is False, "CORRUPT_STORE")
+                if native != journal["native_response"]:
+                    require(prepare_historical_response is not None
+                            and prepare_historical_response(before, final, response) == journal["native_response"], "CORRUPT_STORE")
                 response = native
             else:
                 require(journal["native_before" if legacy else "native_context"] is None and journal["native_response"] is None, "CORRUPT_STORE")
