@@ -156,6 +156,7 @@ class OwnerHoldStore(LossLateResultsStore):
         f=frozen['loss_frozen']['loadout'];state=result['terminal_state']
         if kind=='pristine_cancel':
             require(meta==dict(source_link=None,departure=None,finalization={'kind':'pristine_cancel'})and state['roster_size']==0 and state['crew_active']
+                and 'consumables_used' not in state
                 and all(r['alive']for r in state['crew'])and all(r['health']==r['max_health']for r in state['devices'])
                 and state['fire']==dict(active=False,ticks=0,damage=0)and state['death']==dict(reason=-1,killer_slot=None,tick=0),'INVALID_RESULT');return
         require(type(link)is dict and set(link)==LINK,'INVALID_SOURCE_LINK')

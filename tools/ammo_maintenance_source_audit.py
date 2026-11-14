@@ -25,8 +25,12 @@ PINS = {
     'client/account_helpers/AccountSyncData.pyc': (6770, '8032c14629301d79056e4b5a0bf24c60f86023199bc762b3845860c6ca16dffd'),
     'common/AccountCommands.pyc': (5534, 'ba439d8badead15bba4f28708c1822630c1d58fe4699bd07d76d99db345dc2fe'),
     'client/gui/shared/gui_items/processors/vehicle.pyc': (21686, 'c2e6e1896bd3f71ab41ae89de70528a74268c7e67fe677d8bb498dc8b9c7bff2'),
+    'client/gui/shared/gui_items/processors/module.pyc': (21142, '9ed4b67e45be92c5ff525fc3cbd407f4b2c662c2b5eb9d82db47fb5070ed5bd9'),
+    'client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.pyc': (11651, '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'),
+    'client/gui/Scaleform/daapi/view/lobby/techtree/Research.pyc': (11198, '47552efa023264e9c63ec0307288be48d470fb79ef1ad36477bd9537aaf32f9f'),
     'client/gui/Scaleform/daapi/view/lobby/hangar/TechnicalMaintenance.pyc': (16962, '11933820a86f74bebc5caae8f11a47d887bab911e517f51c2e1d17c094a2259d'),
     'client/gui/Scaleform/daapi/view/meta/TechnicalMaintenanceMeta.pyc': (3293, '7761c496e571c57f3a982a6c7808460a68d1ec5374e3b3e8d721ef09b2967e4f'),
+    'common/adisp.pyc': (6035, '1617360ad43af170406e3a755da38f1e823f219a1579d5730d85729740318f23'),
     'entity_defs/account.def': (None, '883ec72e77675600f245e0f0aea8837e35c2c4bb9e7a5c5d70f3656d9d076674'),
 }
 OPCODE_SHA = 'acfe212847ecb81ca28bdab976a3caacff3568b45a9e8ca78d6957f9f3ef4884'
@@ -34,7 +38,9 @@ SELECT = ('setAndFillLayouts', '__setAndFillLayouts_onShopSynced', 'synchronize'
           'fillVehicle', '__setVehicleLayouts', 'setRefillSettings', 'repair',
           'populateTechnicalMaintenance', '_populate', 'as_setDataS',
           'VehicleLayoutProcessor._request', 'VehicleLayoutProcessor._successHandler',
-          'VehicleLayoutProcessor._errorHandler', 'PlayerAccount.update',
+          'VehicleLayoutProcessor._errorHandler', 'VehicleLayoutProcessor.getShellsLayoutPrice',
+          'tryToLoadDefaultShellsLayout', 'AmmunitionPanel.setVehicleModule', 'Research.buyAndInstallItem',
+          'process.wrapper', 'async.wrapper', 'PlayerAccount.update',
           'PlayerAccount._update', 'onCmdResponseExt', '_doCmdIntArr',
           '__sendSyncRequest', '__onSyncResponse')
 
@@ -84,6 +90,10 @@ def audit_sources(original_root: Path | str, opcode_file: Path | str) -> dict:
             'request': {'command': 108, 'method': 'doCmdIntArr', 'message_id': 151,
                         'shape': '[shopRev, vehicleInventoryId, shellIntCount, signedShellId/count pairs, equipmentIntCount, equipmentId/count pairs]',
                         'shop_revision_is_not_account_revision': True},
+            'default_layout': {'callers': ['AmmunitionPanel.setVehicleModule', 'Research.buyAndInstallItem'],
+                               'original_check': 'defaultCount > inventoryCount',
+                               'request': 'VehicleLayoutProcessor(vehicle, defaultLayout).request()',
+                               'equipment_section': 'omitted'},
             'response': {'method': 'onCmdResponseExt', 'message_id': 77,
                          'success_result': 0, 'no_purchase_context': {},
                          'does_not_update_inventory': True},

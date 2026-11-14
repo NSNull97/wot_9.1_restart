@@ -83,7 +83,13 @@ class TerminalPolicy:
     def validate(self,raw,*,frozen,terminal_hp,results=None):
         require(type(raw)is str and len(raw.encode("utf8"))<=8192,"INVALID_TERMINAL_STATE")
         value=_json(raw)
-        require(set(value)==FIELDS and value["policy_revision"]==self.document["policy_revision"]
+        if "consumables_used" in value:
+            slots=value["consumables_used"]
+            fitted=frozen.get("artefacts",{}).get("consumables",[0,0,0])
+            require(type(slots) is list and 1<=len(slots)<=3
+                and all(type(slot) is int and 0<=slot<3 and fitted[slot] for slot in slots)
+                and slots==sorted(set(slots)), "INVALID_TERMINAL_STATE")
+        require(set(value)-{"consumables_used"}==FIELDS and value["policy_revision"]==self.document["policy_revision"]
             and frozen["kind"] in self.document["profiles"] and type(value["crew_active"])is bool,"INVALID_TERMINAL_STATE")
         profile=self.document["profiles"][frozen["kind"]]
         require(frozen["max_hp"]==profile["max_hp"] and len(frozen["crew_ids"])==profile["crew_count"],"INVALID_TERMINAL_STATE")

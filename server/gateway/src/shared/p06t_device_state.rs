@@ -96,6 +96,15 @@ impl crate::bw_wire::Wire for Transition {
 // end BW-01 wire codec
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub struct Health {pub hp:u16,pub max_hp:u16,pub terminal:bool}
+/// The six once-per-battle consumables wired to the damage model in #717.
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub enum Consumable {HandExtinguisher,AutoExtinguisher,SmallMedkit,LargeMedkit,SmallRepairkit,LargeRepairkit}
+impl Consumable {
+    pub const ALL:[Self;6]=[Self::HandExtinguisher,Self::AutoExtinguisher,Self::SmallMedkit,Self::LargeMedkit,Self::SmallRepairkit,Self::LargeRepairkit];
+    pub fn compact(self)->u16 {251+256*self as u16}
+    pub fn from_item(item:u16)->Option<Self> {Self::ALL.get(usize::from(item)).copied()}
+    pub fn from_compact(compact:u16)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.compact()==compact)}
+}
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Capabilities {
     pub crew_active:bool,pub can_fire:bool,pub drive_scale:f32,pub steer_scale:f32,
@@ -126,11 +135,15 @@ pub struct State {
     fire_ticks:u32,proposed_fire_damage:u32,
     /// SHELL-04 classic module rules (layered law); false keeps the LAB rules.
     classic:bool,
+    /// #717 equipment XML: the mounted automatic extinguisher's passive factor.
+    fire_starting_chance_factor:f64,
+    /// #717 large repair kit: +10% speed on the server's module repair timer.
+    module_repair_delay_ms:u64,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): State
 impl crate::bw_wire::Wire for State {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage,classic}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);W::put(classic,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?,classic:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage,classic,fire_starting_chance_factor,module_repair_delay_ms}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);W::put(classic,bw_o);W::put(fire_starting_chance_factor,bw_o);W::put(module_repair_delay_ms,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?,classic:W::get(bw_i)?,fire_starting_chance_factor:W::get(bw_i)?,module_repair_delay_ms:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl State {
@@ -151,7 +164,8 @@ impl State {
         }
         Ok(Self {profile,policy,health:profile.caps().map(|c|c.max),
             crew:std::array::from_fn(|i|i<seats.len()),fire:None,repair_due:[None;9],repair_cause:[None;9],
-            observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0,classic:false})
+            observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0,classic:false,
+            fire_starting_chance_factor:1.,module_repair_delay_ms:MODULE_REPAIR_DELAY_MS})
     }
     pub fn profile(&self)->Profile {self.profile}
     /// SHELL-04: classic module rules before any hit (a later switch would rewrite history).
@@ -160,6 +174,12 @@ impl State {
         self.classic=true;Ok(())
     }
     pub fn classic(&self)->bool {self.classic}
+    pub fn configure_consumables(&mut self,slots:[u16;3]){
+        if slots.contains(&Consumable::AutoExtinguisher.compact()){self.fire_starting_chance_factor=0.9;}
+        if slots.contains(&Consumable::LargeRepairkit.compact()){
+            self.module_repair_delay_ms=(MODULE_REPAIR_DELAY_MS*10).div_ceil(11);
+        }
+    }
     /// TURPHYS-01 test_lab turret test: a passive test bot's ammo bay starts at 1 HP (before any
     /// hit), so the first penetrating hit that reaches it destroys it and the real rack path runs.
     pub fn weaken_ammo_bay_for_turret_test(&mut self)->io::Result<()> {
@@ -212,7 +232,7 @@ impl State {
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
                 before_condition:self.condition_of(index,before),after_condition:self.condition_of(index,after),repair:false})?;
             if after==0 && device.repairable() {
-                self.repair_due[index]=Some(at.checked_add(MODULE_REPAIR_DELAY_MS).ok_or_else(||bad("module repair clock overflow"))?);
+                self.repair_due[index]=Some(at.checked_add(self.module_repair_delay_ms).ok_or_else(||bad("module repair clock overflow"))?);
                 self.repair_cause[index]=Some(cause);
             }
         } Ok(())
@@ -234,13 +254,54 @@ impl State {
         }
         Ok(())
     }
+    /// Shot 0 identifies an owner's repair/heal. A fire stop retains the
+    /// ignition cause so the damage feed can sum the burn that just ended.
+    pub fn restore(&mut self,kind:Consumable,extra:u16,at:u64,owner:u8,h:Health)->io::Result<Vec<Transition>> {
+        self.validate_context(at,h)?;
+        if self.frozen||h.terminal||h.hp==0||!self.crew_active(){return Ok(Vec::new());}
+        let cause=Cause{shot:0,attacker_slot:owner};let mut next=self.clone();let mut events=Vec::new();
+        match kind {
+            Consumable::HandExtinguisher|Consumable::AutoExtinguisher if extra==1=>{
+                if let Some(fire)=next.fire.take(){
+                    next.emit(&mut events,at,fire.cause,false,Change::Fire{before_active:true,after_active:false})?;
+                    next.defer_repairs_after_fire(at)?;
+                }
+            },
+            Consumable::SmallMedkit|Consumable::LargeMedkit=>{
+                let all=kind==Consumable::LargeMedkit;
+                for (seat,source) in next.profile.crew().iter().enumerate(){
+                    if !next.crew[seat]&&(if all{extra==1}else{u16::from(source.extra)==extra}){
+                        next.crew[seat]=true;
+                        next.emit(&mut events,at,cause,false,Change::Crew{seat:seat as u8,extra_index:source.extra,
+                            before_active:false,after_active:true})?;
+                    }
+                }
+            },
+            Consumable::SmallRepairkit|Consumable::LargeRepairkit=>{
+                let all=kind==Consumable::LargeRepairkit;
+                let eligible=|d:Device| next.condition_of(d as usize,next.health[d as usize])!=Condition::Normal;
+                if all&&(extra!=1||!Device::ALL.into_iter().any(eligible)){return Ok(events);}
+                for device in Device::ALL{
+                    let index=device as usize;let before=next.health[index];let after=next.profile.caps()[index].max;
+                    let before_condition=next.condition_of(index,before);
+                    if before==after||!all&&(extra!=u16::from(device.extra())||before_condition==Condition::Normal){continue;}
+                    next.health[index]=after;next.repair_due[index]=None;next.repair_cause[index]=None;
+                    next.emit(&mut events,at,cause,false,Change::Device{device,extra_index:device.extra(),max_health:after,
+                        before,after,before_condition,after_condition:Condition::Normal,repair:true})?;
+                }
+            },
+            _=>{},
+        }
+        if !events.is_empty(){next.observed_ms=Some(at);*self=next;}
+        Ok(events)
+    }
     /// A module destroyed by the fire is not repaired at the same instant as
     /// the last fire tick.  The native client starts a separate repair clock
     /// after the fire has stopped; when a coarse server advance catches up all
     /// ticks in one call, keep that boundary explicit instead of restoring the
     /// engine/fuel tank immediately in the same transaction.
     fn defer_repairs_after_fire(&mut self,at:u64)->io::Result<()> {
-        let due=at.checked_add(MODULE_REPAIR_DELAY_MS)
+        let due=at.checked_add(self.module_repair_delay_ms)
             .ok_or_else(||bad("module post-fire repair clock overflow"))?;
         for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
@@ -314,7 +375,7 @@ impl State {
                     let amount=amounts.map_or(hit.shell.device_damage,|a|a[index]);
                     next.device(&mut out,device,amount,now,hit.cause,false)?;
                     let ignition=(device==Device::Engine&&hit.shell.device_damage>=MIN_FIRE_STARTING_DAMAGE
-                        &&hit.ignition_roll<next.profile.engine_fire_chance())
+                        &&hit.ignition_roll<next.profile.engine_fire_chance()*next.fire_starting_chance_factor)
                         || (device==Device::FuelTank&&next.health[device as usize]==0);
                     if ignition {next.start_fire(&mut out,now,hit.cause)?;}
                 },

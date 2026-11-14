@@ -66,9 +66,9 @@ pub(crate) fn project_module_facts(world:&World)->io::Result<Vec<super::lifecycl
     let mut facts=Vec::new();
     for (target,event) in &world.device_events {
         let (extra_index,critical,fire)=match event.change {
-            crate::p06t_device_state::Change::Device{device,extra_index,before_condition,after_condition,..}=>
+            crate::p06t_device_state::Change::Device{device,extra_index,before_condition,after_condition,repair,..}=>
                 if extra_index!=device.extra(){return Err(model::bad());}
-                else {(extra_index,before_condition!=after_condition&&!event.from_fire,false)},
+                else {(extra_index,before_condition!=after_condition&&!event.from_fire&&!repair,false)},
             crate::p06t_device_state::Change::Crew{extra_index,before_active:true,after_active:false,..}=> (extra_index,true,false),
             crate::p06t_device_state::Change::Fire{before_active:false,after_active:true,..}=>(4,false,true),
             _=>(0,false,false),

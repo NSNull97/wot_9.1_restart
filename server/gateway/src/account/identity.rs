@@ -818,9 +818,12 @@ impl Config {
             Request::Skill(r)=>{if !self.crew_progression{return Err(invalid("crew progression is not enabled"));}pool.learn(r)?;("/internal/native/crew-learn","learned",r.layout().to_vec(),None)},
         };
         let body=pool.service_request(key,revision,wire,&layout)?;
-        let (http,bytes)=self.post(path,&body,Duration::from_secs(20))?;
+        let (http,bytes)=if status=="serviced" {
+            self.post_with_budget(path,&body,Duration::from_secs(20),MAX_RESEARCH_REPLY,MAX_RESEARCH_REPLY+4096)?
+        } else {self.post(path,&body,Duration::from_secs(20))?};
         if http!=200{return Err(invalid("P04M writer HTTP failure; recover by fresh login"));}
         if let Some(r)=barracks{barracks_reply_bound(&bytes,profile,key,revision,wire,r,Some(pool))}
+        else if status=="serviced" {chained_service_reply(&bytes,profile,key,revision,wire,status)}
         else{service_reply(&bytes,profile,key,revision,wire,status)}
     }
 
@@ -977,6 +980,9 @@ fn delta_hex(hex:&str)->io::Result<Vec<u8>> {
     crate::ammo_service091::update_body(&delta)?;Ok(delta)
 }
 fn research_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->io::Result<AmmoReply> {
+    chained_service_reply(bytes,profile,key,expected,wire,"researched")
+}
+fn chained_service_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64,success_status:&str)->io::Result<AmmoReply> {
     if bytes.len()>MAX_RESEARCH_REPLY {return Err(invalid("research reply size"));}
     let Bounded::<REQUEST_FIELDS>(mut value)=serde_json::from_slice(bytes).map_err(|_|invalid("invalid bounded JSON object"))?;
     let extra=match value.remove("extra_update_hex") {
@@ -991,12 +997,12 @@ fn research_reply(bytes:&[u8],profile:&Profile,key:&str,expected:u64,wire:i64)->
     if chained>0 {
         // Only a success may chain; the shared check below then sees the first diff's cursor.
         let last=wire.checked_add(1+chained).ok_or_else(||invalid("research chain cursor"))?;
-        if text(&value,"status")?!="researched" || value["wire_revision"].as_i64()!=Some(last) || last>=i64::from(i32::MAX) {
+        if text(&value,"status")?!=success_status || value["wire_revision"].as_i64()!=Some(last) || last>=i64::from(i32::MAX) {
             return Err(invalid("research chain cursor/status"));
         }
         value.insert("wire_revision".to_owned(),Value::from(wire+1));
     }
-    let mut reply=service_reply_value(value,profile,key,expected,wire,"researched")?;
+    let mut reply=service_reply_value(value,profile,key,expected,wire,success_status)?;
     reply.wire_revision+=chained;reply.extra_updates=extra;Ok(reply)
 }
 

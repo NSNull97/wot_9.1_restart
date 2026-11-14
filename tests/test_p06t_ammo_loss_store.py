@@ -12,6 +12,7 @@ from p06t_ammo_loss_store import AmmoLossStore, CONTRACT, POLICY_SHA256, validat
 from p06t_mixed_store import MixedAmmoStore
 from p08b_battle_projection import BattleProjectionSource
 from p09d_ammo_projection import canonical
+from p09e_research_service import native_service
 from game_profile_tx import TransactionError
 
 
@@ -94,6 +95,156 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.fx.store.close()
         self.fx.store = self.factory()
         self.assertEqual(json.loads(self.query()["results_json"]), stats)
+
+    def test_equipment_freeze_and_consumable_settlement_are_bound_to_the_reservation(self):
+        from p09e_research_store import ECONOMY_POLICY
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        def equipment(key, cd, slot):
+            result = native_service(self.store, dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=key, expected_revision=self.profile()["revision"], wire_revision=1,
+                command=308, arguments=[5, cd, 1, slot, 0, 0]), authenticated_account_id=account)
+            self.assertEqual(result["status"], "researched")
+        equipment("equipment-optics", 1529, 1)
+        equipment("equipment-medkit", 763, 0)
+        equipment("equipment-repair", 1275, 2)
+        self.send(self.request("run_open"))
+        receipt = self.send(self.request("admit"))["reservation"]
+        frozen = receipt["frozen"]["loadout"]
+        self.assertEqual(frozen["artefacts"], {"optional_devices": [0,1529,0], "consumables": [763,0,1275]})
+        initial = [r["count"] for r in frozen["ammunition"]]
+        finish = self.finish(receipt, fired=(0,0,0), lost=(0,0,0), remaining=initial, event=False, natural=False)
+        terminal = json.loads(finish["terminal_state_json"])
+        finish["terminal_state_json"] = canonical(dict(terminal, consumables_used=[1])).decode("ascii")
+        self.reject("INVALID_TERMINAL_STATE", lambda:self.send(finish))
+        finish["terminal_state_json"] = canonical(dict(terminal, consumables_used=[0])).decode("ascii")
+        self.store.failpoint = "after_mixed_result"
+        before = self.state()
+        with self.assertRaises(TransactionError): self.send(finish)
+        self.assertEqual(self.state(), before)
+        self.store.failpoint = None
+        result = self.send(finish)
+        self.assertEqual(result["reservation"]["result"]["terminal_state"]["consumables_used"], [0])
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][frozen["vehicle_inventory_id"]],
+            {"devices": [0,1529,0], "consumables": [0,0,1275], "layout": [763,0,1275]})
+        self.assertEqual(self.send(finish), dict(result, replayed=True))
+
+    def test_native_maintenance_buys_shells_and_consumables_atomically(self):
+        from p09e_research_service import existing_service
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        previous.previous.PoolStoreTests.seed_owned_test_depot(self.fx, "ms1", (0, 0, 0))
+        vehicle = next(row["vehicle_inventory_id"] for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)
+
+        def request(layout, wire_revision=1):
+            revision = self.profile()["revision"]
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key="maintenance:" + str(revision),
+                expected_revision=revision, wire_revision=wire_revision, layout=layout)
+
+        def apply(value):
+            return existing_service(self.store, "service", value, authenticated_account_id=account)
+
+        combined = request([5, 1, 6, 2570, 52, 2826, 16, 3082, 18, 6, -1275, 1, 763, 1, 251, 1])
+        for point in ("after_ammo_update", "after_maintenance_update", "before_commit"):
+            self.store.failpoint = point
+            self.reject("INJECTED_FAILURE", lambda: apply(combined))
+        self.store.failpoint = None
+        response = apply(combined)
+        updates = [response["update_hex"], *response.get("extra_update_hex", [])]
+        self.assertEqual(response["wire_revision"], combined["wire_revision"] + len(updates))
+        self.assertTrue(all(len(bytes.fromhex(raw)) <= 240 for raw in updates))
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][vehicle]["consumables"], [1275, 763, 251])
+        self.assertEqual(self.store.layouts(account)[1][1::2], [52, 16, 18])
+        invalid = request([5, 1, 6, 2570, 60, 2826, 10, 3082, 10, 6, 1275, 1, 1275, 1, 0, 0])
+        before = self.state()
+        self.assertEqual(apply(invalid)["result_code"], -10)
+        self.assertEqual(self.state(), before)
+        refill = request([5, 1, 6, 2570, 45, 2826, 15, 3082, 15, 0])
+        apply(refill)
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][vehicle]["consumables"], [1275, 763, 251])
+        clear_same_key = dict(refill, layout=refill["layout"][:-1] + [6] + [0] * 6)
+        self.reject("DUPLICATE_PAYLOAD_MISMATCH", lambda: apply(clear_same_key))
+        apply(request([5, 1, 0, 6, 0, 0, 0, 0, 0, 0]))
+        self.assertEqual(self.store.layouts(account)[1][1::2], [45, 15, 15])
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"1275": 1, "251": 1, "763": 1})
+        before = self.state()
+        self.assertEqual(apply(combined), dict(response, replayed=True))
+        self.assertEqual(self.state(), before)
+
+        from content0_equipment_store import save_state
+
+        values = self.profile()
+        artefacts = values["artefacts"]
+        artefacts["vehicles"][vehicle] = {"devices": [0, 0, 0], "consumables": [1275, 763, 251], "layout": [1275, 763, 251]}
+        artefacts["depot"] = {str(cd): 999_999 for cd in (1275, 763, 251, 1531, 1019, 507)}
+        previous.previous.PoolStoreTests.seed_owned_test_depot(self.fx, "ms1", (999_999, 999_999, 999_999))
+        conn = self.store.connection
+        conn.execute("BEGIN IMMEDIATE")
+        save_state(conn, account, artefacts)
+        before = conn.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()[0]
+        self.store._save_crew_projection(account, values["revision"], before)
+        conn.commit()
+
+        staged = request([5, 1, 6, 2570, 52, 2826, 16, 3082, 18, 6, 1531, 1, 1019, 1, 507, 1], wire_revision=65_536)
+        response = apply(staged)
+        self.assertTrue(response["extra_update_hex"], "large native deltas require more than one update")
+        self.assertEqual(response["wire_revision"], staged["wire_revision"] + 1 + len(response["extra_update_hex"]))
+        self.assertEqual(apply(staged), dict(response, replayed=True))
+
+    def test_native_shop_buy_install_demount_and_remove_keep_stock_and_replay(self):
+        from p09e_research_store import ECONOMY_POLICY
+        from content0_equipment_store import battle_loadout, installed_descriptor
+        from p09e_research_projection import descriptor
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        vehicle = next(row for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)
+        vehicle_id = vehicle["vehicle_inventory_id"]
+        plain = descriptor(self.store.catalog, vehicle)
+        for slot, suffix in enumerate(("040500", "020500", "010500")):
+            devices = [1529 if index == slot else 0 for index in range(3)]
+            self.assertEqual(installed_descriptor(plain, devices), plain[:-1] + bytes.fromhex(suffix))
+
+        def request(command, args, label):
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key="artefacts:" + label,
+                expected_revision=self.profile()["revision"], wire_revision=1, command=command, arguments=args)
+
+        def apply(value, status="researched"):
+            result = native_service(self.store, value, authenticated_account_id=account)
+            self.assertEqual(result["status"], status)
+            return result
+
+        buy = request(302, [5, 1529, 1, 0], "buy")
+        bought = apply(buy)
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"1529": 1})
+        install = request(102, [5, 1, 1529, 2, 0], "install")
+        self.store.failpoint = "after_artefact_state"
+        self.reject("INJECTED_FAILURE", lambda: apply(install))
+        self.store.failpoint = None
+        apply(install)
+        self.assertEqual(battle_loadout(self.store.connection, account, vehicle_id), ((0, 0, 1529), (0, 0, 0)))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {})
+        apply(request(308, [5, 1529, 1, 1, 0, 0], "duplicate"), "rejected")
+        apply(request(102, [5, 1, 0, 2, 1], "demount"))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"1529": 1})
+        apply(request(102, [5, 1, 1529, 0, 0], "remount"))
+        apply(request(102, [5, 1, 0, 0, 0], "destroy"))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {})
+        apply(request(302, [5, 763, 2, 0], "buy-kits"))
+        apply(request(104, [1, 0, 763, 0], "mount-kit"))
+        self.assertEqual(battle_loadout(self.store.connection, account, vehicle_id), ((0, 0, 0), (0, 763, 0)))
+        apply(request(104, [1, 0, 0, 0], "remove-kit"))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"763": 2})
+        self.assertEqual(self.profile()["artefacts"]["vehicles"], {})
+        self.assertEqual(apply(buy), dict(bought, replayed=True))
 
     def test_activation_is_additive_and_wrong_old_active_contract_is_refused(self):
         old = {r[0]: [tuple(v) for v in self.store.connection.execute('SELECT * FROM "'+r[0]+'"')] for r in self.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}

@@ -16,7 +16,8 @@ pub const SHOP_REVISION:i64=5;
 pub const MAX_STATE_BYTES:usize=32768;
 pub const MAX_SHOP_BYTES:usize=32768;
 pub const MAX_STATE_NODES:usize=32768;
-pub const COMMANDS:[i16;5]=[101,201,301,302,308];
+const LEGACY_COMMANDS:[i16;5]=[101,201,301,302,308];
+pub const COMMANDS:[i16;7]=[101,102,104,201,301,302,308];
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -35,8 +36,9 @@ impl Request {
                     arguments.push(i32::from_le_bytes(raw.try_into().map_err(|_|invalid("research int32"))?) as i64);
                 }
             },
-            (0x97,308,32)=>{
-                if payload[4..8]!=6u32.to_le_bytes() {return Err(invalid("research array count"));}
+            (0x97,102,28)|(0x97,104,24)|(0x97,308,32)=>{
+                let count = ((payload.len()-8)/4) as u32;
+                if payload[4..8]!=count.to_le_bytes() {return Err(invalid("research array count"));}
                 for raw in payload[8..].chunks_exact(4) {
                     arguments.push(i32::from_le_bytes(raw.try_into().map_err(|_|invalid("research array argument"))?) as i64);
                 }
@@ -51,19 +53,25 @@ impl Request {
         let ok=self.id>0 && match (self.command,self.arguments.as_slice()) {
             (201,[vehicle,index,zero])=>positive(*vehicle) && (0..4096).contains(index) && *zero==0,
             (101,[vehicle,module,gun])=>positive(*vehicle) && positive(*module) && nonnegative(*gun),
+            (102,[shop,vehicle,device,slot,paid])=>*shop==SHOP_REVISION && positive(*vehicle)
+                && (0..=i64::from(u16::MAX)).contains(device) && (0..3).contains(slot) && matches!(paid,0|1),
+            (104,[vehicle,first,second,third])=>positive(*vehicle)
+                && [first,second,third].iter().all(|id|(0..=i64::from(u16::MAX)).contains(id)),
             // BUY_VEHICLE_FLAG none 0 / crew 1 / shells 16; tariff -1 without crew, else the
             // tankmanCost row 0..2 (CONTENT-0 courses/school/academy). Anything else: unavailable.
             (301,[shop,vehicle,flags,tariff])=>*shop==SHOP_REVISION && positive(*vehicle)
                 && matches!(*flags,0|1|16|17) && if *flags&1==1 {(0..=2).contains(tariff)} else {*tariff==-1},
             (302,[shop,module,count,gold])=>*shop==SHOP_REVISION && positive(*module) && (1..=100).contains(count) && *gold==0,
-            (308,[shop,module,vehicle,slot,paid,gun])=>*shop==SHOP_REVISION && positive(*module) && positive(*vehicle)
-                && *slot==0 && *paid==0 && nonnegative(*gun),
+            (308,[shop,item,vehicle,slot,paid,gun])=>*shop==SHOP_REVISION && positive(*item) && positive(*vehicle)
+                && nonnegative(*gun) && if matches!(item & 0x0f,9|11) {
+                    (0..3).contains(slot) && matches!(paid,0|1) && *gun==0
+                } else {*slot==0 && *paid==0},
             _=>false,
         };
         if !ok {return Err(invalid("unsupported research options"));}Ok(())
     }
     pub fn vehicle_hint(&self)->i64 {
-        match self.command {101|201=>self.arguments.first().copied().unwrap_or(0),301=>self.arguments.get(1).copied().unwrap_or(0),
+        match self.command {101|104|201=>self.arguments.first().copied().unwrap_or(0),102|301=>self.arguments.get(1).copied().unwrap_or(0),
             308=>self.arguments.get(2).copied().unwrap_or(0),_=>0}
     }
 }
@@ -117,7 +125,8 @@ fn metadata_bytes(raw:&[u8],state:&[u8],shop:&[u8],account:&str,database:i32,rev
     if v["version"].as_u64()!=Some(1) || v["account_id"].as_str()!=Some(account) || v["native_database_id"].as_i64()!=Some(database as i64)
         || !(9..=i32::MAX as u64).contains(&revision) || v["revision"].as_u64()!=Some(revision) || wire!=1
         || v["wire_revision"].as_i64()!=Some(wire) || v["policy_sha256"].as_str()!=Some(POLICY_SHA256)
-        || v["commands"]!=serde_json::json!(COMMANDS) || v["battle"].as_bool()!=Some(false)
+        || ![serde_json::json!(LEGACY_COMMANDS),serde_json::json!(COMMANDS)].contains(&v["commands"])
+        || v["battle"].as_bool()!=Some(false)
         || catalog!=CATALOG_SHA256
         || v["state_sha256"].as_str()!=Some(format!("{:x}",Sha256::digest(state)).as_str())
         || v["shop_sha256"].as_str()!=Some(format!("{:x}",Sha256::digest(shop)).as_str()) {
@@ -133,9 +142,10 @@ mod tests {
     use super::*;
     fn packet(command:i16)->(u8,Vec<u8>) {
         let (method,args):(u8,Vec<i64>)=match command {101=>(0x8e,vec![1,6658,0]),201=>(0x8e,vec![3329,1,0]),
+            102=>(0x97,vec![SHOP_REVISION,1,1529,2,0]),104=>(0x97,vec![1,251,0,1275]),
             301=>(0x90,vec![SHOP_REVISION,1,0,-1]),302=>(0x90,vec![SHOP_REVISION,6658,1,0]),308=>(0x97,vec![SHOP_REVISION,6658,1,0,0,0]),_=>unreachable!()};
         let mut bytes=226i16.to_le_bytes().to_vec();bytes.extend(command.to_le_bytes());
-        if method==0x97 {bytes.extend(6u32.to_le_bytes());for a in args {bytes.extend((a as i32).to_le_bytes());}}
+        if method==0x97 {bytes.extend((args.len() as u32).to_le_bytes());for a in args {bytes.extend((a as i32).to_le_bytes());}}
         else {bytes.extend(args[0].to_le_bytes());for a in &args[1..] {bytes.extend((*a as i32).to_le_bytes());}}
         (method,bytes)
     }

@@ -41,6 +41,7 @@ impl TerminalLoss{
             }
         }else if self.lost_ammunition.iter().any(|a|a.count!=0){return Err(bad("lost ammunition without detonation"));}
         if self.reason==FinishReason::Cancelled&&(self.loss_event.is_some()||self.terminal_hp!=f.max_hp
+            ||state.raw.get("consumables_used").is_some()
             ||self.fired_ammunition.iter().chain(&self.lost_ammunition).any(|a|a.count!=0)){return Err(bad("loss queue cancellation must be pristine"));}
         if let Some(raw)=&self.results_json{
             let stats=super::super::lifecycle_wire::Results::from_json_p06t(raw)?;

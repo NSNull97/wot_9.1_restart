@@ -21,6 +21,7 @@ from p09d_ammo_projection import canonical
 from p08b_battle_projection import BattleProjectionSource
 from p04m_pool_projection import PoolProjectionSource
 from p09d_ammo_store import sha
+from p09e_research_store import ECONOMY_POLICY
 from game_profile_tx import TransactionError
 
 
@@ -237,6 +238,44 @@ class PoolStoreTests(unittest.TestCase):
         self.store.battle(self.battle_request("run_open"), authenticated_account_id=self.account)
         self.reject("BATTLE_PROFILE_UNSUPPORTED", lambda: self.store.battle(self.battle_request("admit", native_inventory_id=3,
             battle_id="788fa1bf-8a21-4bdb-84de-a63310e390a3:1"), authenticated_account_id=self.account))
+
+    def test_zero_economy_explicit_ammo_load_uses_owned_rounds_and_purchases_only_shortfall(self):
+        self.activate_pool(); self.buy_t26()
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=100, policy=ECONOMY_POLICY)
+        money = self.public()["resources"]
+        for native, kind in ((1, "ms1"), (3, "t26")):
+            with self.subTest(kind=kind):
+                self.store.service(self.ammo_request(native, [0, 0, 0]), authenticated_account_id=self.account)
+                self.seed_owned_test_depot(kind, (0, 2, 9))
+                request = self.ammo_request(native, [10, 8, 5])
+                self.store.failpoint = "before_commit"
+                self.reject("INJECTED_FAILURE", lambda: self.store.service(request, authenticated_account_id=self.account))
+                self.store.failpoint = None
+                response = self.store.service(request, authenticated_account_id=self.account)
+                mount = self.store.mounts[kind + "-stock"]
+                self.assertEqual(self.store.layouts(self.account)[native][1::2], [10, 8, 5])
+                self.assertEqual([self.profile()["depot"][self.store.depot_key[key]] for key in mount.shell_ids], [0, 0, 4])
+                self.assertEqual(self.public()["resources"], money)
+                raw = self.store.connection.execute("SELECT result_json FROM game_command_ledger WHERE account_id=? AND command_id=?",
+                    (self.account, request["command_key"])).fetchone()[0]
+                proof = json.loads(raw)
+                purchased = proof["purchase"]["quantities"] if native == 1 else proof["purchased"]
+                self.assertEqual(purchased, {mount.shell_ids[0]: 10, mount.shell_ids[1]: 6})
+                self.store.service(self.ammo_request(native, [5, 8, 5]), authenticated_account_id=self.account)
+                self.assertEqual(self.profile()["depot"][self.store.depot_key[mount.shell_ids[0]]], 5)
+                before = self.state()
+                self.assertEqual(self.store.service(request, authenticated_account_id=self.account), dict(response, replayed=True))
+                # Older gateways normalized an absent consumables section before writing the receipt.
+                omitted = dict(request, layout=request["layout"][:9] + [0])
+                self.assertEqual(self.store.service(omitted, authenticated_account_id=self.account), dict(response, replayed=True))
+                self.assertEqual(self.state(), before)
+
+        projected = PoolProjectionSource(BattleProjectionSource(self.source.bundle.root, self.catalog), self.store)
+        items = projected.shop()["items"]
+        for shell in set(self.store.depot_cd.values()):
+            self.assertEqual(items["itemPrices"][shell], (0, 0))
+            self.assertIn(shell, items["notInShopItems"])
+        self.assertLessEqual(len(projected.fixture_files(self.public(), self.profile(), self.store.layouts(self.account))["shop.bin"]), 32768)
 
     def test_actual_projection_owner_source_payloads_and_locked_legacy_reservation(self):
         self.activate_pool(); self.buy_t26()

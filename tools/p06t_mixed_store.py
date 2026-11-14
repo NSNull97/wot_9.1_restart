@@ -17,6 +17,7 @@ from p04m_stock_registry import mixed_admission
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST
 from p08c_battle_results import results_value
 from destructible_catalog import json_value, no_links
+from content0_equipment_store import battle_loadout, consume_battle
 
 # CONTENT-0 2.6: one stack of a vehicle's load (gateway model.rs MAX_AMMO_PER_ACTOR); M2 light carries 1800.
 MAX_STACK = 2048
@@ -238,9 +239,13 @@ class MixedAmmoStore(PoolStore):
             family=self.shells[key].kind, count=ammo["loaded"][key]) for key in mount.shell_ids]
         require(all(type(r["count"]) is int and 0 <= r["count"] <= p.capacity for r in rows), "CORRUPT_STORE")
         require(1 <= sum(r["count"] for r in rows) <= p.capacity, "AMMUNITION_EMPTY")
-        return dict(kind=p.kind, descriptor_hex=p.descriptor_hex, native_inventory_id=native, vehicle_inventory_id=vehicle["vehicle_id"],
+        frozen = dict(kind=p.kind, descriptor_hex=p.descriptor_hex, native_inventory_id=native, vehicle_inventory_id=vehicle["vehicle_id"],
             max_hp=p.max_hp, crew_ids=[r["crew_id"] for r in members], capacity=p.capacity,
             ammunition=rows, initial_shell_compact_id=next(r["shell_compact_id"] for r in rows if r["count"]))
+        devices, consumables = battle_loadout(self.connection, aggregate["account_id"], vehicle["vehicle_id"])
+        if any(devices) or any(consumables):
+            frozen["artefacts"] = {"optional_devices": list(devices), "consumables": list(consumables)}
+        return frozen
 
     def _active_mixed(self, account):
         if not self._mixed_tables(): return []
@@ -260,8 +265,19 @@ class MixedAmmoStore(PoolStore):
     def _mixed_reservation(self, row):
         require(row is not None, "RESERVATION_MISMATCH")
         f = _json(row["frozen_json"])
+        fields = {"kind", "descriptor_hex", "native_inventory_id", "vehicle_inventory_id", "max_hp", "crew_ids", "capacity", "ammunition", "initial_shell_compact_id"}
+        if "artefacts" in f:
+            fields.add("artefacts")
+            items = f["artefacts"]
+            require(type(items) is dict and set(items) == {"optional_devices", "consumables"}, "CORRUPT_STORE")
+            for key, supported in (("optional_devices", {1529}), ("consumables", {251, 507, 763, 1019, 1275, 1531})):
+                slots = items[key]
+                require(type(slots) is list and len(slots) == 3 and all(type(cd) is int and (cd == 0 or cd in supported) for cd in slots), "CORRUPT_STORE")
+                equipped = [cd for cd in slots if cd]
+                require(len(equipped) == len(set(equipped)), "CORRUPT_STORE")
+            require(any(items["optional_devices"]) or any(items["consumables"]), "CORRUPT_STORE")
         require(len(row["frozen_json"]) <= 4096 and sha(canonical(f)) == row["frozen_sha256"]
-            and set(f) == {"kind", "descriptor_hex", "native_inventory_id", "vehicle_inventory_id", "max_hp", "crew_ids", "capacity", "ammunition", "initial_shell_compact_id"}, "CORRUPT_STORE")
+            and set(f) == fields, "CORRUPT_STORE")
         p = self.registry.profiles.get(f["kind"])
         require(p is not None and mixed_admission(p.kind, lambda: self.zero_economy(row["account_id"])) and f["descriptor_hex"] == p.descriptor_hex and f["max_hp"] == p.max_hp
             and type(f["max_hp"]) is int and type(f["capacity"]) is int and f["capacity"] == p.capacity
@@ -302,6 +318,7 @@ class MixedAmmoStore(PoolStore):
             or (not abort and type(hp) is int and 0 <= hp <= frozen["max_hp"] and reason in REASONS), "INVALID_RESULT")
         if abort:require(terminal_state is None,"INVALID_RESULT")
         else:terminal_state=self.terminal_policy.validate(canonical(terminal_state).decode("ascii"),frozen=frozen,terminal_hp=hp)
+        if reason == "cancelled":require("consumables_used" not in terminal_state,"INVALID_RESULT")
         return dict(reason=reason, remaining_ammunition=remaining,
             consumed_ammunition=[dict(shell_compact_id=b["shell_compact_id"], count=b["count"]-a["count"]) for a,b in zip(remaining, original)],
             terminal_hp=hp, destroyed=None if abort else hp == 0 or not terminal_state["crew_active"], repaired_hp=frozen["max_hp"], credits=0, xp=0,terminal_state=terminal_state)
@@ -311,6 +328,8 @@ class MixedAmmoStore(PoolStore):
         remaining = [dict(shell_compact_id=r["shell_compact_id"], count=r["count"]) for r in f["ammunition"]] if abort else request["remaining_ammunition"]
         result = self._terminal(f, remaining, None if abort else request["terminal_hp"], "aborted_restart" if abort else request["reason"],
             terminal_state=None if abort else _json(request["terminal_state_json"]),abort=abort)
+        if not abort and "consumables_used" in result["terminal_state"]:
+            consume_battle(c, account, row["vehicle_inventory_id"], f["artefacts"]["consumables"], result["terminal_state"]["consumables_used"])
         layout = self.layouts(account)[row["native_inventory_id"]]
         counts = {r["shell_compact_id"]: r["count"] for r in remaining}
         loaded = {r["shell_definition_id"]: counts[r["shell_compact_id"]] for r in f["ammunition"]}

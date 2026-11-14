@@ -22,7 +22,7 @@ pub fn effect_index(shell:Shell)->io::Result<u8>{
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Setting{Current,Next}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Intent{Select(Setting,u16),ReloadPartialClip}
+pub enum Intent{Select(Setting,u16),ReloadPartialClip,ActivateEquipment{item:u16,extra:u16}}
 /// One complete original Base VAR2 method. Transport framing stays elsewhere.
 /// Source now proves partial reload sends code17/value0. No free replenishment.
 pub fn command(record:&[u8])->io::Result<Option<Intent>>{
@@ -36,9 +36,20 @@ pub fn command(record:&[u8])->io::Result<Option<Intent>>{
             // current/next; this is not a transport/channel failure.
             Ok(Some(Intent::Select(if record[3]==0{Setting::Current}else{Setting::Next},cd)))},
         17 if value==0=>Ok(Some(Intent::ReloadPartialClip)),
-        2|16=>Ok(None), // retained handlers own these original settings
+        16=>Ok(Some(Intent::ActivateEquipment{item:value as u16,extra:(value as u32>>16) as u16})),
+        2=>Ok(None), // retained handler owns autorotation
         _=>Err(bad("P06T unsupported original setting/value")),
     }
+}
+
+/// The same #717 callback presents consumables; zero CD occupies an empty slot.
+pub fn equipment_row(compact:u16,quantity:u16)->io::Result<Vec<u8>>{
+    use crate::p06t_device_state::Consumable;
+    if quantity>1||compact==0&&quantity!=0||compact!=0&&Consumable::from_compact(compact).is_none(){
+        return Err(bad("equipment row compact/quantity"));
+    }
+    let mut body=vec![0x13,0x44];body.extend(i32::from(compact).to_le_bytes());body.extend(quantity.to_le_bytes());
+    body.extend([0,0,0]);Ok(body)
 }
 
 fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact&&!s.is_absent()).ok_or_else(||bad("P06T shell not mounted"))}

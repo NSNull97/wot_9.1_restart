@@ -218,7 +218,8 @@ fn fire_of(w:&mut World,attacker:usize,shot:u32,ticks:&[u16],end:bool) {
     add(&mut w,false,device::Change::Fire{before_active:false,after_active:true});
     for amount in [107u16,107,107] {add(&mut w,true,device::Change::VehicleDamage{amount});}
     assert_eq!(feed(&mut s,&mut w,now),vec![],"a burning own vehicle is no row yet");
-    add(&mut w,true,device::Change::Fire{before_active:true,after_active:false});
+    // A consumable stops the fire and preserves the igniter's cause without a fire tick.
+    add(&mut w,false,device::Change::Fire{before_active:true,after_active:false});
     assert_eq!(feed(&mut s,&mut w,now),vec![Row{kind:FeedKind::FireReceived as u8,value:Some(321),vehicle:id(1)}]);
 }
 

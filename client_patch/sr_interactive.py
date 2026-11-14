@@ -338,7 +338,8 @@ def init(*args):
                              enable_research_service=_settings.get('enable_research_service') is True)
         if _settings.get('enable_p09d_ammo_service') is True:
             import p09d_ammo_ui
-            p09d_ammo_ui.init(record, enabled=True)
+            p09d_ammo_ui.init(record, enabled=True, module_reload=_settings.get('enable_catalog_v1') is True
+                             and _settings.get('enable_research_service') is True)
         if (_settings.get('enable_map_drive') is True
                 or _settings.get('enable_profile13_battle') is True):
             import map_drive_client

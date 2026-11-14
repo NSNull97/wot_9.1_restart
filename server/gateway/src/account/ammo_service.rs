@@ -1,6 +1,6 @@
 //! P09D opt-in #717 native ammunition service boundary.
 //!
-//! Only the measured 16-INT32 CMD108 envelope is parsed. Account identity,
+//! Only source-bound CMD108 layout envelopes are parsed. Account identity,
 //! ownership, mounted descriptors, revision and stock stay authoritative in the
 //! authenticated persistence adapter. This module has no storage side effects.
 use std::{collections::BTreeMap,fs::File,io::{self,Read},path::Path};
@@ -92,7 +92,7 @@ fn metadata_with_policy(directory:&Path,account_id:&str,database_id:i32,research
 #[derive(Debug,Clone,Copy,PartialEq,Eq)]
 pub struct ShellCount {
     /// Signed original compact ID: negative means the native credits currency
-    /// preference. Neither sign authorizes a purchase; only owned depot is used.
+    /// preference. The server selects the funding policy independently.
     pub compact_id:i32,
     pub count:u32,
 }
@@ -110,8 +110,8 @@ impl Request {
         // SPG-02: a gun with n shells sends 10+2n arguments (12, 14 or 16); the rest of the array stays 0.
         // CONTENT-0 4: after a gun install the #717 client loads the default shells layout with no equipment
         // layout (`processors/vehicle.pyc` tryToLoadDefaultShellsLayout -> `Inventory.setAndFillLayouts(inv, shells,
-        // None)`, which appends a single 0): 4+2n arguments (6, 8 or 10). Equipment is then left as it is; this
-        // command only ever carries an empty equipment layout here, so the request is read as that layout.
+        // None)`, which appends a single 0): 4+2n arguments (6, 8 or 10). Preserve this omission
+        // independently from a six-zero equipment layout that clears all three slots.
         if ![32,40,48,56,64,72].contains(&payload.len()) {return Err(invalid("ammo command payload length"));}
         let id=i16::from_le_bytes([payload[0],payload[1]]);
         if id<=0 || payload[2..4]!=108i16.to_le_bytes()
@@ -122,16 +122,34 @@ impl Request {
         for (target,bytes) in arguments.iter_mut().zip(payload[8..].chunks_exact(4)) {
             *target=i32::from_le_bytes(bytes.try_into().map_err(|_|invalid("ammo argument"))?);
         }
-        if payload.len()<=48 {
+        if payload.len()<=48 && !(payload.len()==48 && arguments[2]==0 && arguments[3]==6) {
             let k=(payload.len()-8)/4-4;
             if arguments[2]!=k as i32 || arguments[3+k]!=0 {return Err(invalid("ammo shells-only layout"));}
-            arguments[3+k]=6;
+        } else if matches!(arguments[2],0|2|4|6) && arguments[3+arguments[2] as usize]==6 {
+            let count=3+arguments[2] as usize;
+            if payload.len()!=8+4*(count+7) {
+                return Err(invalid("ammo combined layout width"));
+            }
         }
         Ok(Self{id,arguments})
     }
 
-    /// The arguments the client sent: 10 + 2n for a layout of n shells, else all 16.
-    pub fn sent(&self)->&[i32] {match self.arguments[2]{2|4=>&self.arguments[..10+self.arguments[2] as usize],_=>&self.arguments[..]}}
+    pub fn sent(&self)->&[i32] {
+        let k=self.arguments[2];
+        if matches!(k,0|2|4|6) {
+            let count=3+k as usize;
+            match self.arguments[count] {
+                0 if self.arguments[count+1..].iter().all(|value|*value==0)=>&self.arguments[..count+1],
+                6=>&self.arguments[..count+7],
+                _=>&self.arguments,
+            }
+        } else {&self.arguments}
+    }
+    pub(crate) fn legacy_arguments(&self)->[i32;16] {
+        let mut args=self.arguments;
+        if args[2]==6 && args[9]==0 && args[10..]==[0;6] {args[9]=6;}
+        args
+    }
     pub fn shop_revision(&self)->i32 {self.arguments[0]}
     pub fn vehicle_inventory_id(&self)->i32 {self.arguments[1]}
 
@@ -139,7 +157,7 @@ impl Request {
     /// installed gun. The persistence adapter must check those independently.
     pub fn layout(&self)->io::Result<[ShellCount;3]> {
         if self.id<=0 || self.shop_revision()<0 || self.arguments[2]!=6
-            || self.arguments[9]!=6 || self.arguments[10..]!=[0;6] {
+            || !matches!(self.arguments[9],0|6) || self.arguments[10..]!=[0;6] {
             return Err(invalid("unsupported ammo service layout"));
         }
         let (compatible,capacity)=match self.vehicle_inventory_id() {
@@ -155,9 +173,26 @@ impl Request {
     pub(crate) fn layout_for_catalog(&self,compatible:[i32;3],capacity:u32,shop:i32)->io::Result<[ShellCount;3]> {
         // SPG-02: n = the catalogue gun's real shells (absent ones are 0, trailing).
         let n=compatible.iter().take_while(|c|**c!=0).count();let k=2*n;
-        if self.id<=0 || self.shop_revision()!=shop || n==0 || compatible[n..].iter().any(|c|*c!=0) || self.arguments[2]!=k as i32
-            || self.arguments[3+k]!=6 || self.arguments[4+k..]!=vec![0;12-k][..] {return Err(invalid("pool ammo service layout/shop"));}
+        if self.id<=0 || self.shop_revision()!=shop || n==0 || compatible[n..].iter().any(|c|*c!=0) {
+            return Err(invalid("pool ammo service layout/shop"));
+        }
+        if self.arguments[2]==0 && self.arguments[3]==6 {
+            self.check_equipment(0)?;
+            return Ok([ShellCount{compact_id:0,count:0};3]);
+        }
+        if self.arguments[2]!=k as i32 {return Err(invalid("pool ammo shell count"));}
+        self.check_equipment(k)?;
         self.checked_layout_n(compatible,capacity,n)
+    }
+    fn check_equipment(&self,k:usize)->io::Result<()> {
+        let args=&self.arguments[3+k..];
+        match args[0] {
+            0 if args[1..].iter().all(|value|*value==0)=>Ok(()),
+            6 if args[7..].iter().all(|value|*value==0) && args[1..7].chunks_exact(2).all(|pair|{
+                (pair[0]==0 && pair[1]==0) || (pair[1]==1 && pair[0].checked_abs().is_some_and(|id|id<=i32::from(u16::MAX) && id&0x0f==11))
+            })=>Ok(()),
+            _=>Err(invalid("pool ammo equipment layout")),
+        }
     }
     fn checked_layout(&self,compatible:[i32;3],capacity:u32)->io::Result<[ShellCount;3]> {self.checked_layout_n(compatible,capacity,3)}
     fn checked_layout_n(&self,compatible:[i32;3],capacity:u32,n:usize)->io::Result<[ShellCount;3]> {
@@ -263,10 +298,10 @@ mod tests {
             p.extend((args.len() as u32).to_le_bytes());for v in args{p.extend(v.to_le_bytes());}p};
         let payload=shells_only(&[5,58,6,3338,0,3594,0,3850,0,0]);assert_eq!(payload.len(),48);
         let r=Request::decode(&payload).unwrap();
-        assert_eq!(r.sent(),&[5,58,6,3338,0,3594,0,3850,0,6,0,0,0,0,0,0][..]);
+        assert_eq!(r.sent(),&[5,58,6,3338,0,3594,0,3850,0,0]);
         assert_eq!(r.layout_for_catalog([3338,3594,3850],45,5).unwrap()[2],ShellCount{compact_id:3850,count:0});
         let two=Request::decode(&shells_only(&[5,58,4,3338,7,3594,1,0])).unwrap();
-        assert_eq!(two.sent(),&[5,58,4,3338,7,3594,1,6,0,0,0,0,0,0][..]);
+        assert_eq!(two.sent(),&[5,58,4,3338,7,3594,1,0]);
         for bad in [&[5,58,6,3338,0,3594,0,3850,0,1][..],&[5,58,4,3338,0,3594,0,3850,0,0][..],&[5,58,6,3338,0,3594,0,0][..]] {
             assert!(Request::decode(&shells_only(bad)).is_err(),"{bad:?}");
         }
@@ -276,6 +311,29 @@ mod tests {
     fn sync(id:i16,revision:i64,hash:i32)->Vec<u8> {
         let mut bytes=vec![0x8e,20,0];bytes.extend(id.to_le_bytes());bytes.extend(100i16.to_le_bytes());
         bytes.extend(revision.to_le_bytes());bytes.extend(hash.to_le_bytes());bytes.extend(0i32.to_le_bytes());bytes
+    }
+
+    #[test]
+    fn content0_s5_maintenance_preserves_equipment_only_and_combined_layouts() {
+        let encode=|args:&[i32]| {
+            let mut raw=226i16.to_le_bytes().to_vec();
+            raw.extend(108i16.to_le_bytes());
+            raw.extend((args.len() as u32).to_le_bytes());
+            for value in args { raw.extend(value.to_le_bytes()); }
+            raw
+        };
+        let combined=[5,1,6,2570,15,2826,0,3082,12,6,-1275,1,763,1,0,0];
+        let request=Request::decode(&encode(&combined)).unwrap();
+        assert_eq!(request.sent(),&combined);
+        assert!(request.layout_for_catalog([2570,2826,3082],96,5).is_ok());
+        assert!(request.layout().is_err());
+        let only=[5,1,0,6,0,0,0,0,0,0];
+        let request=Request::decode(&encode(&only)).unwrap();
+        assert_eq!(request.sent(),&only);
+        assert_eq!(request.layout_for_catalog([2570,2826,3082],96,5).unwrap().map(|slot| slot.count),[0;3]);
+        let mut bad=combined;
+        bad[11]=2;
+        assert!(Request::decode(&encode(&bad)).unwrap().layout_for_catalog([2570,2826,3082],96,5).is_err());
     }
 
     #[test]

@@ -2,9 +2,11 @@
 """Opt-in native #717 ammunition UI policy and bounded passive observations.
 
 Original fillVehicle, inventory, Account and render handlers are not replaced.
-The server owns counts and authorization. No service command is generated here.
+The server owns counts and authorization. The module-install reload may use
+the original layout processor with the gun's defaults on a zero-price shop.
 """
 import hashlib
+import importlib
 import crew_vehicles
 
 try:
@@ -17,13 +19,20 @@ MOUNTS = {
     7169: (12035, 14852, 30, (14602, 14858, 15114)),
 }
 SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/TechnicalMaintenance.py'
-NOTICE = (u'БК: загрузка и возврат только со своего склада. '
-          u'Покупка снарядов, ремонт и автоматическое обслуживание пока недоступны.')
+NOTICE = u'Ремонт и автоматическое обслуживание пока недоступны.'
 MAX_EVENTS = 4096
 _binding = None
 _record = None
 _events = 0
 _truncated = False
+_default_reload = None
+
+_RELOAD_NAME = 'tryToLoadDefaultShellsLayout'
+_RELOAD_MODULE = 'gui.shared.gui_items.processors.vehicle'
+_RELOAD_CALLERS = ('gui.shared.gui_items.processors.module',
+    'gui.Scaleform.daapi.view.lobby.hangar.AmmunitionPanel',
+    'gui.Scaleform.daapi.view.lobby.techtree.Research')
+_ADISP_SOURCE = 'scripts/common/adisp.py'
 
 # Exact original code records, not replacement wrappers or inferred success.
 TARGETS = {
@@ -104,6 +113,84 @@ def selection():
     return mounted(g_currentVehicle.item)
 
 
+def _zero_price_default_layout(vehicle, prices):
+    mount = mounted(vehicle)
+    if mount is None or not all(prices.get(cd) == (0, 0) for cd in mount['compatible_shells']):
+        return None
+    shells = tuple(vehicle.shells)
+    if not any(shell.defaultCount > shell.inventoryCount for shell in shells):
+        return None
+    layout = flat([value for shell in shells for value in shell.defaultLayoutValue], signed=True)
+    if ([abs(cd) for cd in layout[::2]] != mount['compatible_shells'] or sum(layout[1::2]) > mount['capacity']):
+        raise RuntimeError('native default ammunition layout mismatch')
+    return layout
+
+
+def _verify_reload_code(function, source, line, digest):
+    code = getattr(function, 'func_code', getattr(function, '__code__', None))
+    if (code is None or code.co_filename != source or code.co_firstlineno != line
+            or hashlib.sha256(code.co_code).hexdigest() != digest):
+        raise RuntimeError('native #717 module ammunition reload source mismatch')
+
+
+class _DefaultReload(object):
+    def __init__(self, original, owners, processor, process, read_prices):
+        self.original, self.owners = original, tuple(owners)
+        self.installed = []
+
+        def replacement(vehicle):
+            layout = _zero_price_default_layout(vehicle, read_prices())
+            if layout is None:
+                return original(vehicle)
+
+            def start(callback):
+                @process
+                def request():
+                    result = yield processor(vehicle, layout).request()
+                    callback(bool(result and result.success))
+                request()
+
+            return start
+
+        self.replacement = replacement
+
+    def install(self):
+        if any(getattr(owner, _RELOAD_NAME, None) is not self.original for owner in self.owners):
+            raise RuntimeError('native #717 module ammunition reload aliases changed')
+        for owner in self.owners:
+            setattr(owner, _RELOAD_NAME, self.replacement)
+            self.installed.append(owner)
+
+    def restore(self):
+        if any(getattr(owner, _RELOAD_NAME, None) is not self.replacement for owner in self.installed):
+            raise RuntimeError('foreign module ammunition reload replacement')
+        for owner in reversed(self.installed):
+            setattr(owner, _RELOAD_NAME, self.original)
+        self.installed = []
+
+
+def _setup_default_reload():
+    from adisp import process
+    from gui.shared import g_itemsCache
+
+    vehicle = importlib.import_module(_RELOAD_MODULE)
+    original = getattr(vehicle, _RELOAD_NAME)
+    _verify_reload_code(original, _ADISP_SOURCE, 143, 'f7281c5fd24324e9279e9015fad7decb0936e16f631ff76664a6071df8b7391b')
+    closure = getattr(original, 'func_closure', getattr(original, '__closure__', None))
+    if closure is None or len(closure) != 3 or closure[0].cell_contents != 'callback':
+        raise RuntimeError('native #717 module ammunition reload wrapper mismatch')
+    wrapper = closure[2].cell_contents
+    _verify_reload_code(wrapper, _ADISP_SOURCE, 138, '3814ec7ed28deee153a088aa3def670d9cbce6ecc2bdd286e85165a2f3c9f701')
+    closure = getattr(wrapper, 'func_closure', getattr(wrapper, '__closure__', None))
+    if closure is None or len(closure) != 2:
+        raise RuntimeError('native #717 module ammunition reload wrapper mismatch')
+    _verify_reload_code(closure[0].cell_contents, 'scripts/client/gui/shared/gui_items/processors/vehicle.py', 556,
+                        '72c7ff76d9b9e0faa48e142d276b821aaa0eb2ab615fdc25ac8a7ec5a9fff716')
+    owners = [importlib.import_module(name) for name in _RELOAD_CALLERS] + [vehicle]
+    return _DefaultReload(original, owners, vehicle.VehicleLayoutProcessor, process,
+                          lambda: g_itemsCache.items.shop.getPrices() if g_itemsCache.isSynced() else {})
+
+
 def observe():
     """Actual selected native raw cache plus GUI projection; no mutation."""
     from CurrentVehicle import g_currentVehicle
@@ -166,7 +253,7 @@ class _Bindings(object):
                 return False
             binding.notice()
             binding.record('p09d_maintenance_entry', mount=value, original_callback_called=True,
-                           funding='owned_depot_only', server_authority=True)
+                           funding='server_policy', server_authority=True)
             return True
 
         self.gate = gate
@@ -226,8 +313,8 @@ class _LifecycleError(RuntimeError):
             type(error).__name__ + ': ' + str(error) for error in errors))
 
 
-def init(record, enabled=False):
-    global _binding, _record, _events, _truncated
+def init(record, enabled=False, module_reload=False):
+    global _binding, _record, _events, _truncated, _default_reload
     if enabled is not True:
         raise ValueError('explicit isolated ammunition service enable required')
     if _binding is not None or not callable(record):
@@ -240,8 +327,11 @@ def init(record, enabled=False):
     _binding = _Bindings(TechnicalMaintenance, SystemMessages, hangar_capabilities, record, selection)
     try:
         _binding.install()
+        if module_reload:
+            _default_reload = _setup_default_reload()
+            _default_reload.install()
         record('p09d_ui_policy', phase='install', original_fill_vehicle_preserved=True,
-               no_client_command_generation=True, event_limit=MAX_EVENTS)
+               no_client_command_generation=not module_reload, zero_price_module_reload=bool(module_reload), event_limit=MAX_EVENTS)
     except Exception as error:
         # Keep binding for explicit cleanup if installation/cleanup itself fails.
         try:
@@ -252,7 +342,10 @@ def init(record, enabled=False):
 
 
 def fini():
-    global _binding, _record
+    global _binding, _record, _default_reload
+    if _default_reload is not None:
+        _default_reload.restore()
+        _default_reload = None
     if _binding is not None:
         _binding.restore()
         if _record is not None:

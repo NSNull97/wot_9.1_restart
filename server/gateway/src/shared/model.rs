@@ -97,6 +97,8 @@ pub struct Actor {
     pub owned_loss:Option<crate::profile13_loss091::FrozenLoss>,
     pub owned_hold:Option<crate::profile13_hold091::FrozenHold>,
     pub devices:Option<crate::p06t_device_state::State>,
+    /// Frozen at owned admission; an activated slot is cleared for this battle.
+    pub(super) consumables:[u16;3],
     /// BOT-01: server bot ordinal; such an actor has no Session and no account.
     pub bot:Option<u8>,
     /// #717 VEHICLE_SETTING.AUTOROTATION_ENABLED, sent by the client's control modes.
@@ -106,13 +108,25 @@ pub struct Actor {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Actor
 impl crate::bw_wire::Wire for Actor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
 impl Actor {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
+
+    pub fn optional_devices(&self)->[u16;3] {
+        self.owned_v2.as_ref().map_or([0;3],|loadout|loadout.optional_devices)
+    }
+
+    fn view_range(&self)->io::Result<f32> {
+        use crate::profile13_v2091::{COATED_OPTICS,COATED_OPTICS_VIEW_FACTOR};
+        let damage=self.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
+        if !(0. ..=1.).contains(&damage){return Err(bad());}
+        let optics=if self.optional_devices().contains(&COATED_OPTICS){COATED_OPTICS_VIEW_FACTOR}else{1.};
+        Ok(self.vehicle_kind().view_range()*optics*damage)
+    }
     /// The player's input with the follow-the-aim hull turn in progress applied.
     pub fn drive_input(&self) -> Input {
         let (input, steer) = (self.input, self.hull_follow);
@@ -122,10 +136,20 @@ impl Actor {
     pub fn crew_active(&self)->bool{self.health>0&&self.devices.as_ref().is_none_or(|state|state.crew_active())}
     pub fn alive(&self)->bool{self.crew_active()}
     pub fn public_modifiers(&self)->Vec<u8>{self.devices.as_ref().map_or_else(Vec::new,|state|state.public_modifiers())}
+    pub(super) fn use_consumable(&mut self,kind:crate::p06t_device_state::Consumable,extra:u16,at_ms:u64,owner:u8)
+        ->io::Result<Vec<crate::p06t_device_state::Transition>>{
+        let Some(slot)=self.consumables.iter().position(|&cd|cd==kind.compact())else{return Ok(Vec::new());};
+        if !self.alive(){return Ok(Vec::new());}
+        let health=crate::p06t_device_state::Health{hp:self.health as u16,max_hp:self.vehicle_kind().max_health() as u16,terminal:false};
+        let events=self.devices.as_mut().ok_or_else(bad)?.restore(kind,extra,at_ms,owner,health)?;
+        if !events.is_empty(){self.consumables[slot]=0;}
+        Ok(events)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Armament(crate::p06t_armament091::Command), Leave, Autorotation(bool) }
+pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Armament(crate::p06t_armament091::Command),
+    ActivateEquipment{item:u16,extra:u16}, Leave, Autorotation(bool) }
 
 #[derive(Clone,Debug,PartialEq)]
 pub struct DamageRecord {
@@ -736,10 +760,8 @@ impl World {
             }
             let observer_active=actor.alive()&&actor.ready&&actor.session.is_some();
             let commander_active=observer_active&&actor.devices.as_ref().is_none_or(|state|state.crew().first()==Some(&true));
-            let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
-            if !view_scale.is_finite()||!(0. ..=1.).contains(&view_scale){return Err(bad());}
             Ok(super::spotting::Actor{slot,team:self.team(slot)?,position:actor.position,points,
-                view_range:actor.vehicle_kind().view_range()*view_scale,observer_active,commander_active,wreck:actor.health<=0})
+                view_range:actor.view_range()?,observer_active,commander_active,wreck:actor.health<=0})
         }).collect()
     }
     pub fn refresh_original_spotting(&mut self, now: Instant) -> io::Result<()> {
@@ -848,10 +870,8 @@ impl World {
         let mut actors=Vec::with_capacity(self.actors.len());
         for(slot,actor)in self.actors.iter().enumerate(){
             if actor.direction.iter().any(|v|!v.is_finite()||v.abs()>std::f32::consts::PI){return Err(bad());}
-            let kind=actor.vehicle_kind();
-            let view_scale=actor.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
             actors.push(super::visibility::Actor{slot,team:self.team(slot)?,position:actor.position,
-                sight_point:Self::visibility_sight_point(actor),view_range:kind.view_range()*view_scale});
+                sight_point:Self::visibility_sight_point(actor),view_range:actor.view_range()?});
         }
         let desired=super::visibility::desired_set(own,&actors,super::visibility::Allies::Always,|line|{
             if line.start==line.end{return Ok(true);}
@@ -1100,7 +1120,10 @@ impl World {
         if existing.is_none(){
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
             next.actors[slot].owned_v2=Some(loadout.clone());
-            next.actors[slot].devices=Some(next.classic_devices(crate::p06t_device_state::State::new(profile)?)?);
+            let mut devices=next.classic_devices(crate::p06t_device_state::State::new(profile)?)?;
+            devices.configure_consumables(loadout.consumables);
+            next.actors[slot].devices=Some(devices);
+            next.actors[slot].consumables=loadout.consumables;
         }
         *self=next;Ok(slot)
     }
@@ -1139,7 +1162,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             autorotation: true, hull_follow: 0, position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,bot:None });
+            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],bot:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -1241,11 +1264,13 @@ impl World {
         let mut shots = self.shots.clone();
         let mut projectiles = self.projectiles.clone();
         let mut impact_trace = self.impact.clone();
+        let mut consumable_transitions=Vec::new();
         for (at, command) in commands.iter().enumerate() {
             if self.lifecycle.as_ref().is_some_and(|state| !state.allows_actions()) {
                 match command {
                     Command::Move(input) => { if !input.valid() { return Err(bad()); } continue; },
                     Command::Fire(_) | Command::Armament(_) => { outcomes.push(fire::Outcome::RejectedBattlePeriod); continue; },
+                    Command::ActivateEquipment{..}=>continue,
                     Command::Aim(_) | Command::Leave | Command::Autorotation(_) => {},
                 }
             }
@@ -1260,12 +1285,25 @@ impl World {
                     },
                     Command::Fire(_) | Command::Armament(_) => {if next.fire.typed().is_some(){outcomes.push(fire::Outcome::RejectedVehicleState);}continue;},
                     Command::Autorotation(_) => continue,
+                    Command::ActivateEquipment{..}=>continue,
                     Command::Leave => {},
                 }
             }
             match command {
                 Command::Aim(intent) => next.aim.set(*intent)?,
                 Command::Autorotation(enabled) => next.autorotation = *enabled,
+                Command::ActivateEquipment{item,extra}=>{
+                    if let Some(kind)=crate::p06t_device_state::Consumable::from_item(*item){
+                        let at_ms=u64::from(self.tick.checked_sub(1000).ok_or_else(bad)?)*100;
+                        let transitions=next.use_consumable(kind,*extra,at_ms,slot as u8)?;
+                        if !transitions.is_empty(){
+                            if let Some(devices)=&next.devices{
+                                next.fire.adjust_reload_scale(devices.capabilities().reload_scale,now)?;
+                            }
+                            consumable_transitions.extend(transitions);
+                        }
+                    }
+                },
                 Command::Move(input) => {
                     if !input.valid() { return Err(bad()); }
                     next.input = *input;
@@ -1303,6 +1341,8 @@ impl World {
                 },
             }
         }
+        if self.device_events.len()+consumable_transitions.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+        self.device_events.extend(consumable_transitions.into_iter().map(|event|(slot,event)));
         self.actors[slot] = next; self.shots = shots; self.projectiles = projectiles;
         self.impact = impact_trace; Ok(outcomes)
     }

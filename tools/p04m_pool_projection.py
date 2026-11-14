@@ -11,6 +11,8 @@ from p08b_battle_store import POLICY_SHA256 as LEGACY_BATTLE_POLICY, SCHEMA as L
 from p04m_stock_registry import SCHEMA, DEFINITION_SHA256
 from p04m_pool_crew import native_crew, contract_for_crew
 from p04m_pool_store import POLICY_SHA256
+from content0_equipment_catalog import live_items
+from content0_equipment_store import installed_descriptor
 
 
 class PoolProjectionSource(BattleProjectionSource):
@@ -24,6 +26,25 @@ class PoolProjectionSource(BattleProjectionSource):
         self.depot_cd = store.depot_cd
         self.ammo_catalog_sha256 = store.ammo_catalog_sha256
         self._zero_gold = store.zero_economy(self._pool_profile["account_id"])
+        self._artefacts = store.artefacts_active()
+
+    def equipment_shop(self, shop):
+        if self._artefacts:
+            prices = shop["items"]["itemPrices"]
+            prices.update({cd: (0, 0) for cd in live_items()})
+            shop["paidRemovalCost"] = 0
+        return shop
+
+    def shop(self):
+        shop = shop_tree(self.catalog, self.trees["shop.bin"], zero_gold=self._zero_gold)
+        if self._zero_gold:
+            # The native Warehouse enumerates price rows. Keep shell trade hidden
+            # there while Maintenance buys the exact shortfall through CMD108.
+            items = shop["items"]
+            shell_cds = set(self.depot_cd.values())
+            items["itemPrices"].update(dict.fromkeys(shell_cds, (0, 0)))
+            items["notInShopItems"] = sorted(set(items["notInShopItems"]) | shell_cds)
+        return self.equipment_shop(shop)
 
     def state(self, aggregate, layouts):
         require(aggregate["account_id"] == self._pool_profile["account_id"], "FOREIGN_ACCOUNT")
@@ -40,6 +61,14 @@ class PoolProjectionSource(BattleProjectionSource):
         owned_by_id = {r["vehicle_inventory_id"]: r for r in research["vehicles"]}
         require(len(owned_by_id) == len(research["vehicles"]), "CORRUPT_STORE")
         records = {r["native_id"]: garage_record(self.catalog, r) for r in research["vehicles"]}
+        if "artefacts" in aggregate:
+            artefacts = aggregate["artefacts"]
+            for kind in (9, 11):
+                inventory[kind] = {int(cd): count for cd, count in artefacts["depot"].items() if int(cd) & 15 == kind}
+            for key, slots in artefacts["vehicles"].items():
+                record = records[owned_by_id[key]["native_id"]]
+                record.update(compDescr=installed_descriptor(record["compDescr"], slots["devices"]),
+                              eqs=slots["consumables"], eqsLayout=slots["layout"])
         for native, record in records.items():
             if native in crews: record["crew"] = crews[native]
         for ammo in aggregate["ammunition"]:
@@ -79,7 +108,7 @@ class PoolProjectionSource(BattleProjectionSource):
             baseline_layouts[by_id[row["vehicle_id"]]] = [n for key in mount.shell_ids for n in (SHELLS[key].native_compact_id, row["loaded"][key])]
         files = self._pool_base.fixture_files(self._pool_profile, self._pool_snapshot, baseline_layouts)
         files["state.bin"] = encode(self.state(aggregate, layouts), MAX_STATE, max_nodes=MAX_NODES)
-        files["shop.bin"] = encode(shop_tree(self.catalog, self.trees["shop.bin"], zero_gold=self._zero_gold), MAX_SHOP, max_nodes=MAX_NODES)
+        files["shop.bin"] = encode(self.shop(), MAX_SHOP, max_nodes=MAX_NODES)
         files["profile-input.json"] = canonical(profile)
         state_sha = sha(files["state.bin"])
         manifest = json.loads(files["manifest.json"])
@@ -103,6 +132,8 @@ class PoolProjectionSource(BattleProjectionSource):
                 if "state_sha256" in metadata:
                     metadata.update(state_sha256=state_sha, revision=aggregate["revision"])
                     if "shop_sha256" in metadata: metadata["shop_sha256"] = sha(files["shop.bin"])
+                    if name == "research-service.json" and "artefacts" in aggregate:
+                        metadata["commands"] = [101, 102, 104, 201, 301, 302, 308]
                     files[name] = canonical(metadata)
         files["p08b-battle.json"] = canonical(dict(version=1, schema=LEGACY_BATTLE_SCHEMA, policy_sha256=LEGACY_BATTLE_POLICY,
             account_id=profile["account_id"], native_database_id=profile["native_database_id"], revision=aggregate["revision"],

@@ -529,6 +529,9 @@ class ResearchStore(NativeBarracksRecruitmentStore):
                 and sha(row["policy_json"].encode("ascii")) == ECONOMY_POLICY_SHA256, "CORRUPT_STORE")
         return True
 
+    def _may_purchase_ammunition(self, account_id):
+        return self._native_request is not None and self.zero_economy(account_id)
+
     def apply_test_lab_economy(self, *, account_id, garage_slots, policy):
         """Explicit stand grant: zero-cost economy and an exact garage capacity.
 

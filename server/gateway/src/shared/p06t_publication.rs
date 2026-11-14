@@ -61,6 +61,14 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         body.extend(native::reload(wire::vehicle_id(c.slot)?,state.remaining_seconds(now),state.base_reload_seconds())?);
         outbox.push_back(body);c.armament_sent=Some(key);
     }
+    if c.consumables_sent!=owner.consumables {
+        let mut body=Vec::new();
+        for (before,after) in c.consumables_sent.into_iter().zip(owner.consumables){
+            if before!=0&&after==0 {body.extend(native::equipment_row(before,0)?);}
+        }
+        if !body.is_empty(){outbox.push_back(body);}
+        c.consumables_sent=owner.consumables;
+    }
     owner_snapshot(c,outbox,world)?;
     for event in world.damage_events.iter().skip(c.damage_cursor){
         let primary=world.impacts.iter().find(|impact|impact.shot==event.shot).map(|impact|impact.target);
@@ -106,6 +114,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
                         Condition::Critical=>Some((if event.from_fire{12}else{4},extra_index)),
                         Condition::Destroyed=>Some((if event.from_fire{13}else{5},extra_index)),Condition::Normal=>None}},
                 Change::Crew{extra_index,before_active:true,after_active:false,..}=>Some((10,extra_index)),
+                Change::Crew{extra_index,before_active:false,after_active:true,..}=>Some((22,extra_index)),
                 // Owner round 15: no "fire" voice. #717 FIRE (3) is a generic state code
                 // of __damageInfoNoNotification; DEVICE_STARTED_FIRE_AT_SHOT (8) is the one
                 // that plays the fire extra's voice. A fire here starts only from a shot.
@@ -117,7 +126,9 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
             };
             if let Some((code,extra))=notification{
                 let attacker=usize::from(event.cause.attacker_slot);
-                let id=if c.visible()[attacker]{wire::vehicle_id(attacker)?}else{0};
+                let id=if event.cause.shot!=0&&(code!=35||event.from_fire)&&c.visible()[attacker]{
+                    wire::vehicle_id(attacker)?
+                }else{0};
                 let mut targets=vec![c.slot];if id!=0&&attacker!=c.slot{targets.push(attacker);}
                 c.queue_private(outbox,native::damage_info(wire::vehicle_id(c.slot)?,code,extra,id)?,&targets)?;
             }

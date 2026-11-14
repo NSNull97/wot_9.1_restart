@@ -222,7 +222,8 @@ class ModuleMountTests(mixed.MixedStoreTests):
         native = self.owned(KV3)["native_id"]
         stock = self.store.mounts[self.store.mount_id_of(self.owned(KV3))]
         self.seed_owned_test_depot("ussr-KV-3", [10, 4, 0])
-        self.store.service(self.ammo_request(native, [6, 3, 0]), authenticated_account_id=self.account)
+        request = self.ammo_request(native, [6, 3, 0])
+        serviced = self.store.service(request, authenticated_account_id=self.account)
         loaded = next(r for r in self.profile()["ammunition"] if r["vehicle_id"] == self.owned(KV3)["vehicle_inventory_id"])["loaded"]
         self.assertEqual([loaded[k] for k in stock.shell_ids], [6, 3, 0])
         depot = {k: self.profile()["depot"][self.store.depot_key[k]] for k in stock.shell_ids}
@@ -240,6 +241,9 @@ class ModuleMountTests(mixed.MixedStoreTests):
         shell_depot = {self.store.shells[k].native_compact_id: profile["depot"][self.store.depot_key[k]] for k, n in zip(stock.shell_ids, [6, 3, 0]) if n}
         self.assertEqual(reply["update_hex"], update_delta(self.catalog, before, after, 1, self.store.pair_layouts(profile), shell_depot).hex())
         self.assertEqual(self.battle_code(native), "INCOMPLETE_CREW")
+        before_replay = self.state()
+        self.assertEqual(self.store.service(request, authenticated_account_id=self.account), dict(serviced, replayed=True))
+        self.assertEqual(self.state(), before_replay)
 
     def test_ms1_nonstock_chassis_and_engine_admit_with_the_starter_inventory_id(self):
         for index in (0, 2, 3): self.accepted(201, (3329, index, 0))
@@ -275,7 +279,8 @@ class ModuleMountTests(mixed.MixedStoreTests):
         for index in (7, 8, 13): self.accepted(201, (3329, index, 0))
         gun = "module:ussr:gun:_45mm_mod_1932"; turret = "module:ussr:turret:T-18_mod"
         self.buy(gun); self.buy(turret)
-        self.load((10, 0, 0))
+        request = self.ammo_request(1, [10, 0, 0])
+        serviced = self.store.service(request, authenticated_account_id=self.account)
         depot_key = self.store.depot_key["shell:ms1-stock-ap"]
         count = self.profile()["depot"][depot_key]
         self.accepted(101, (1, self.cd(turret), self.cd(gun)))
@@ -284,6 +289,9 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(build.assembly_id, "ms1@T-18_mod/_45mm_mod_1932")
         self.assertEqual(self.profile()["depot"][depot_key], count + 10)
         self.assertEqual(self.battle_code(1), "AMMUNITION_EMPTY")
+        before_replay = self.state()
+        self.assertEqual(self.store.service(request, authenticated_account_id=self.account), dict(serviced, replayed=True))
+        self.assertEqual(self.state(), before_replay)
 
         mount = self.store.mounts[build.assembly_id]
         shell_ids = [self.store.shells[key].native_compact_id for key in mount.shell_ids]

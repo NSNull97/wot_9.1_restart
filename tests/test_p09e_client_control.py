@@ -19,8 +19,8 @@ class ResearchCapabilityTests(unittest.TestCase):
     setUp = prior.CapabilityTests.setUp
     record = prior.CapabilityTests.record
 
-    def activate(self):
-        self.guard = prior.POLICY._ModuleChangeGuard(self.Panel, self.Messages, self.record, True)
+    def activate(self, artefact_offered=None):
+        self.guard = prior.POLICY._ModuleChangeGuard(self.Panel, self.Messages, self.record, True, artefact_offered)
         self.guard.install()
         self.addCleanup(self.guard.restore)
 
@@ -55,6 +55,15 @@ class ResearchCapabilityTests(unittest.TestCase):
         self.activate()
         with self.assertRaisesRegex(ValueError, "native processor failed"):
             self.Panel().setVehicleModule("5892", 0, None, False)
+
+    def test_shop_offered_artefacts_keep_original_slot_and_removal_paths(self):
+        self.activate({1529, 763}.__contains__)
+        allowed = [("1529", 2, None, False), ("1529", 2, "1529", True), ("763", 1, "251", False)]
+        rejected = [("507", 0, None, False), ("1529", 3, None, False), ("763", 0, "1529", False)]
+        for args in allowed + rejected:
+            self.Panel().setVehicleModule(*args)
+        self.assertEqual(self.mutations, allowed)
+        self.assertEqual(len(self.notices), len(rejected))
 
     def test_optin_does_not_weaken_original_binding_audit(self):
         with self.assertRaisesRegex(RuntimeError, "wrapper mismatch"):

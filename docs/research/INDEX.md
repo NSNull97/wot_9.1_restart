@@ -229,6 +229,8 @@
 
 - [CONTENT0_BUILD_BATTLE.md](CONTENT0_BUILD_BATTLE.md) — нативная проверка нестоковой сборки, gate шагов 3–4,
   восстановление закреплённого воркера и остаток из 319 сборок старых видов.
+- [CONTENT0_STEP5_EQUIPMENT_SOURCE.md](CONTENT0_STEP5_EQUIPMENT_SOURCE.md) — каталог оборудования и расходников #717,
+  команды ангара, слоты и кодирование установленного оборудования.
 - [CONTENT0_LEGACY_BUILDS.md](CONTENT0_LEGACY_BUILDS.md) — допуск 319 сборок старых видов, сцены Jolt,
   полный нативный бой на МС-1 и сравнение Python с базой.
 - [CONTENT0_INVENTORY.md](CONTENT0_INVENTORY.md) — опись контента 0.9.1 «клиент ↔ сервер» (шаг 0): машины, модули,

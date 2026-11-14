@@ -234,6 +234,36 @@ def economy(args):
     print(json.dumps(results, indent=2))
 
 
+def artefacts(args):
+    """Enable the equipment writer on a stopped zero-economy stand."""
+    import sys
+    sys.path[:0] = [str(ROOT), str(ROOT / 'tools')]
+    from p09e_research_catalog import load_catalog
+    from p06t_ammo_loss_store import AmmoLossStore
+    from p08b_owner_hold_store import OwnerHoldStore
+    stand = (ROOT / args.stand).resolve(strict=True)
+    if not stand.is_relative_to(LOCAL / 'stands'):
+        raise ValueError('stopped stand below this checkout local/stands required')
+    stand_stopped(stand)
+    if (stand / 'domain-process.json').exists():
+        raise ValueError('domain has a live receipt; stop it first')
+    bridge = json.loads((stand / 'bridge.json').read_text(encoding='utf-8'))
+    database = Path(bridge['game_database']).resolve(strict=True)
+    if not database.is_relative_to(stand):
+        raise ValueError('stand must own its game database')
+    mixed = bridge['mixed_service']
+    eligible = set(mixed['accounts']) & set(bridge['ammo_loss_service']['accounts']) & set(bridge['pool_service']['accounts'])
+    if args.account not in eligible:
+        raise ValueError('account requires the configured Pool, mixed and loss writers')
+    activate_stand_catalog(bridge)
+    catalog = load_catalog(Path(bridge['ammunition_service']['original_root']))
+    factory = OwnerHoldStore if args.account in bridge.get('owner_hold_service', {}).get('accounts', []) else AmmoLossStore
+    with factory(database, catalog, account_id=args.account, shell_catalog=mixed['shell_catalog'],
+                 terminal_policy=mixed['terminal_policy']) as store:
+        result = store.activate_artefacts(account_id=args.account)
+    print(json.dumps(result, indent=2))
+
+
 def provision(args):
     """Ready one purchased pool vehicle offline (services stopped).
 
@@ -679,7 +709,7 @@ def battle_any(args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('command', choices=('prepare', 'economy', 'provision', 'map', 'crew-contract', 'domain', 'battle-any'))
+    parser.add_argument('command', choices=('prepare', 'economy', 'artefacts', 'provision', 'map', 'crew-contract', 'domain', 'battle-any'))
     parser.add_argument('--version', type=int, choices=(1, 2), help='crew-contract: target pool crew contract (2 = lifetime 192)')
     parser.add_argument('--package', help='map: tools/map_package.py package directory of the new battle map')
     parser.add_argument('--catalog', help='map: v7 destructible catalog manifest of that map')
@@ -693,7 +723,7 @@ def main():
     parser.add_argument('--out', help='fresh stand dir below local/stands')
     parser.add_argument('--stand', help='economy: stopped stand dir below local/stands')
     parser.add_argument('--slots', type=int, default=100, help='economy: garage slots per account')
-    parser.add_argument('--account', help='provision: account id')
+    parser.add_argument('--account', help='provision or artefacts: account id')
     parser.add_argument('--disable', action='store_true', help='domain/battle-any: restore the configs saved when it was enabled')
     parser.add_argument('--pilot-sources', help='battle-any: dir with qualified/ and bundles/ of the generated catalog kinds')
     parser.add_argument('--vehicle', help='provision: catalogue vehicle id of a P04M pool type, e.g. vehicle:ussr:T-34')
@@ -722,6 +752,10 @@ def main():
         if not args.stand:
             parser.error('economy requires --stand')
         economy(args)
+    elif args.command == 'artefacts':
+        if not (args.stand and args.account):
+            parser.error('artefacts requires --stand and --account')
+        artefacts(args)
     else:
         if not (args.stand and args.account and args.vehicle):
             parser.error('provision requires --stand, --account and --vehicle')

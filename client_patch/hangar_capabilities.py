@@ -3,9 +3,8 @@
 
 Original module data, parameter highlighting and information windows are kept.
 The measured mutation entry point is denied by default; the explicit research
-lab admits the audited original callback for five supported module kinds only.
-Six genuinely empty optional-item
-selectors show an explicit unavailable tooltip instead of an empty dropdown.
+lab admits the audited original callback for supported modules and items.
+Genuinely empty optional-item selectors show an explicit unavailable tooltip.
 This policy is not server-side authorization or a purchase implementation.
 The battle button keeps its original update and tooltip lifecycle, but cannot
 dispatch a queue action. No vehicle readiness or ammunition data is changed.
@@ -25,6 +24,7 @@ except NameError:
 MODULE_CALLBACK_SHA256 = '02f79342b691d6c512bd441feb8d9239cf820f9044269f9f040f151ad9a09377'
 PROCESS_WRAPPER_SHA256 = '3814ec7ed28deee153a088aa3def670d9cbce6ecc2bdd286e85165a2f3c9f701'
 RESEARCH_MODULE_TYPES = (2, 3, 4, 5, 7)
+ARTEFACT_TYPES = (9, 11)
 
 AUDITED_SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.py'
 AUDITED_PYC_SHA256 = '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'
@@ -62,6 +62,24 @@ def _research_selection(new_id, slot, old_id, remove):
     return (compact is not None and compact & 15 in RESEARCH_MODULE_TYPES
             and type(slot) in _INTEGER_TYPES and slot == 0 and type(remove) is bool and not remove
             and (old_id is None or previous is not None and previous & 15 == compact & 15))
+
+
+def _artefact_selection(new_id, slot, old_id, remove):
+    compact = _module_cd(new_id)
+    previous = _module_cd(old_id) if old_id is not None else None
+    if (compact is None or compact & 15 not in ARTEFACT_TYPES
+            or type(slot) not in _INTEGER_TYPES or slot not in (0, 1, 2)
+            or type(remove) is not bool
+            or (old_id is not None and (previous is None or previous & 15 != compact & 15))):
+        return False
+    return True
+
+
+def _shop_offers_artefact(compact):
+    # These entries originate in the active owner's Shop projection and
+    # provide a UI capability. The server still authorizes selection.
+    from gui.shared import g_itemsCache
+    return g_itemsCache.items.shop.getPrices().get(compact) == (0, 0)
 
 
 def _default_step_callback():
@@ -140,8 +158,8 @@ BATTLE_METHODS = (
 class _ModuleChangeGuard(object):
     """Own reversible class binding; dependencies permit isolated policy tests."""
 
-    def __init__(self, panel_class, messages, record, allow_research=False):
-        if type(allow_research) is not bool:
+    def __init__(self, panel_class, messages, record, allow_research=False, artefact_offered=None):
+        if type(allow_research) is not bool or (artefact_offered is not None and not callable(artefact_offered)):
             raise ValueError('explicit research module capability required')
         self.panel_class = panel_class
         self.messages = messages
@@ -169,6 +187,11 @@ class _ModuleChangeGuard(object):
             if guard.allow_research and _research_selection(newId, slotIdx, oldId, isRemove):
                 guard.record('research_module_callback', original_mutation_called=True,
                              module_compact_id=_module_cd(newId), authority='server', native_acceptance='NOT_RUN')
+                return guard.original(panel, newId, slotIdx, oldId, isRemove)
+            if (guard.allow_research and artefact_offered is not None
+                    and _artefact_selection(newId, slotIdx, oldId, isRemove) and artefact_offered(_module_cd(newId))):
+                guard.record('artefact_callback', original_mutation_called=True,
+                             item_compact_id=_module_cd(newId), slot=slotIdx, remove=isRemove)
                 return guard.original(panel, newId, slotIdx, oldId, isRemove)
             action = 'remove' if isRemove else 'install_or_purchase'
             guard.record('capability_denied', capability='module_changes',
@@ -572,7 +595,8 @@ def init(record, enable_research_service=False):
     _audit_window_class(AmmunitionPanel)
     if enable_research_service:
         _audit_module_class(AmmunitionPanel)
-    _install_guards(_ModuleChangeGuard(AmmunitionPanel, SystemMessages, record, enable_research_service),
+    _install_guards(_ModuleChangeGuard(AmmunitionPanel, SystemMessages, record,
+                                      enable_research_service, _shop_offers_artefact),
                     _BattleGuard(FightButton, SystemMessages, record),
                     _WindowGuard(AmmunitionPanel, SystemMessages, record))
 

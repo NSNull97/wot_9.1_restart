@@ -2385,6 +2385,18 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     if !c.correction { return Ok(()); }
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
+    if next_world.mixed_ammo() {
+        // #717 locks an extinguisher button locally on click. A valid, still
+        // mounted extinguisher with no fire to stop reconciles the local flag.
+        use crate::p06t_device_state::Consumable;
+        for kind in [Consumable::HandExtinguisher,Consumable::AutoExtinguisher] {
+            if next_world.actors[slot].consumables.contains(&kind.compact())
+                &&commands.iter().any(|command|matches!(command,
+                    model::Command::ActivateEquipment{item,extra:1} if *item==kind as u16)){
+                next.outbox.push_back(crate::armament_wire091::equipment_row(kind.compact(),1)?);
+            }
+        }
+    }
     if next_world.mixed_ammo()&&outcomes.iter().any(|outcome|matches!(outcome,
         crate::battle091::fire::Outcome::Typed(crate::p06t_armament091::Outcome::Refused(_))
         |crate::battle091::fire::Outcome::RejectedBattlePeriod|crate::battle091::fire::Outcome::RejectedVehicleState)){

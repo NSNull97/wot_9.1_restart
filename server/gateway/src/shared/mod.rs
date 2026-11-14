@@ -190,6 +190,7 @@ pub(super) struct Client {
     crew_sent:[Option<bool>;model::MAX_ACTORS],
     fire_sent:[Option<Vec<u8>>;model::MAX_ACTORS],
     armament_sent:Option<([u16;3],u16,u16,u8,Option<Instant>,u32)>,
+    consumables_sent:[u16;3],
     devices_snapshot_sent:bool,
     health_sent: [Option<i16>; model::MAX_ACTORS],
     owner_health_sent: Option<i16>,
@@ -239,7 +240,7 @@ impl Client {
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
-            hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:std::array::from_fn(|_|None),armament_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: tracer_flags(),
+            hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:std::array::from_fn(|_|None),armament_sent:None,consumables_sent:[0;3],devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: tracer_flags(),
             tracer_stopped: tracer_flags(), engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
@@ -863,6 +864,7 @@ impl Session {
                 if c.phase != Phase::Entities || !c.creations[c.slot].is_some_and(|(_, ack)| ack) { return Err(bad()); }
                 let sequence = self.tx.enqueue_body_tracked(&wire::binding(world, c.slot, now)?)?;
                 c.binding = Some((sequence, false)); c.phase = Phase::Driving;
+                c.consumables_sent=world.actors[c.slot].consumables;
                 // Loading/reconnecting a scene is not a replay of prior gun effects.
                 c.shot_cursor = world.latest_shot();
                 c.impact_cursor = world.impacts.len();
@@ -1003,10 +1005,11 @@ impl Session {
                 if !c.correction{return Err(bad());}
                 use crate::{armament_wire091::{Intent,Setting},p06t_armament091 as armed};
                 let command=match intent{
-                    Intent::Select(setting,compact)=>armed::Command::Select(match setting{Setting::Current=>armed::Selection::Current,Setting::Next=>armed::Selection::Next},compact),
-                    Intent::ReloadPartialClip=>armed::Command::ReloadClip,
+                    Intent::Select(setting,compact)=>Command::Armament(armed::Command::Select(match setting{Setting::Current=>armed::Selection::Current,Setting::Next=>armed::Selection::Next},compact)),
+                    Intent::ReloadPartialClip=>Command::Armament(armed::Command::ReloadClip),
+                    Intent::ActivateEquipment{item,extra}=>Command::ActivateEquipment{item,extra},
                 };
-                c.commands.push(Command::Armament(command));
+                c.commands.push(command);
             } else if let Some(intent) = wire::aim_intent(raw, c.slot)? {
                 // The native initializer can emit its first target before
                 // ACK6 in the same envelope. It is only an intent: simulation

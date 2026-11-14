@@ -73,14 +73,20 @@ impl World {
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
         let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
         let state=device::State::new(profile)?;
-        terminal_json(loadout,&state,0,None)
+        terminal_json(loadout,&state,0,None,&[])
     }
     pub fn terminal_state_json(&self,slot:usize)->io::Result<String>{
         let actor=self.actors.get(slot).ok_or_else(||bad())?;
         let frozen=actor.owned_v2.as_ref().ok_or_else(||bad())?;
         let state=actor.devices.as_ref().ok_or_else(||bad())?;
         let death=self.death_cause(slot)?;
-        terminal_json(frozen,state,self.actors.len(),death)
+        let mut used=Vec::new();
+        for (index,(loaded,remaining)) in frozen.consumables.into_iter().zip(actor.consumables).enumerate(){
+            if loaded==remaining{continue;}
+            if loaded==0||remaining!=0{return Err(bad());}
+            used.push(index);
+        }
+        terminal_json(frozen,state,self.actors.len(),death,&used)
     }
     fn record_damage(&mut self,actors:&mut[Actor],target:usize,attacker:usize,shot:u32,tick:u32,
         reason:u8,amount:u16,crew_before:bool,direct:bool,pierced:bool)->io::Result<()> {
@@ -117,6 +123,10 @@ impl World {
             self.device_events.push((slot,event));
         }
         Ok(())
+    }
+    pub(super) fn extinguish_automatically(actor:&mut Actor,at_ms:u64,slot:usize)->io::Result<Vec<device::Transition>>{
+        if actor.devices.as_ref().is_none_or(|state|!state.fire_active()){return Ok(Vec::new());}
+        actor.use_consumable(device::Consumable::AutoExtinguisher,1,at_ms,slot as u8)
     }
     /// Explicit LAB SplitMix64 step of the one battle RNG; callers journal it.
     fn splitmix_next(&mut self)->u64{
@@ -263,6 +273,10 @@ impl World {
         let damage=resolution.damage_hp.saturating_add(additional).min(before as u16);
         self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
             crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced)?;
+        let at_ms=u64::from(contact.tick.checked_sub(1000).ok_or_else(bad)?)*100;
+        let events=Self::extinguish_automatically(&mut actors[slot],at_ms,slot)?;
+        if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+        self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         Ok(resolution)
     }
     /// SHELL-04 (owner 2026-11-08): external modules (tracks, gun) of one live vehicle around an
@@ -447,17 +461,18 @@ fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
     if joint.position.iter().chain(joint.direction.iter()).any(|v|!v.is_finite()){return Err(bad());}Ok(joint)
 }
 
-fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>)->io::Result<String>{
+fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>,used:&[usize])->io::Result<String>{
     if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
         ||state.policy_version()!=device::PolicyVersion::V1
         ||caps::Profile::for_owned(frozen.kind)!=Some(state.profile()){return Err(bad());}
-    let value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
+    let mut value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
         "crew":frozen.crew_ids.iter().zip(state.crew()).map(|(id,alive)|serde_json::json!({"crew_id":id,"alive":alive})).collect::<Vec<_>>(),
         "devices":state.health().iter().zip(*state.profile().caps()).enumerate().map(|(index,(health,cap))|
             serde_json::json!({"extra_index":26+index,"health":health,"max_health":cap.max})).collect::<Vec<_>>(),
         "fire":{"active":state.fire_active(),"ticks":state.fire_ticks(),"damage":state.proposed_fire_damage()},
         "death":{"reason":death.map_or(-1i16,|event|i16::from(event.reason)),"killer_slot":death.map(|event|event.attacker),
             "tick":death.map_or(0,|event|event.tick)}});
+    if !used.is_empty(){value["consumables_used"]=serde_json::json!(used);}
     let raw=serde_json::to_string(&value).map_err(|_|bad())?;if raw.len()>8192{return Err(bad());}Ok(raw)
 }
 

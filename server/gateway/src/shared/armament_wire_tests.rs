@@ -1,6 +1,19 @@
 use crate::{armament_wire091 as w,p06t_shells091::{Mount,PROFILES}};
 fn hex(bytes:Vec<u8>)->String{bytes.iter().map(|v|format!("{v:02x}")).collect()}
 
+#[test]
+fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
+    assert_eq!(w::command(&[0x8d,5,0,16,4,0,30,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:4,extra:30}));
+    assert_eq!(w::command(&[0x8d,5,0,16,0,0,1,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:0,extra:1}));
+    assert_eq!(w::command(&[0x8d,5,0,16,255,255,255,255]).unwrap(),Some(w::Intent::ActivateEquipment{item:65535,extra:65535}));
+    assert_eq!(hex(w::equipment_row(1275,1).unwrap()),"1344fb0400000100000000");
+    assert_eq!(hex(w::equipment_row(1275,0).unwrap()),"1344fb0400000000000000");
+    assert_eq!(hex(w::equipment_row(0,0).unwrap()),"1344000000000000000000");
+    assert!(w::equipment_row(0,1).is_err());
+    assert!(w::equipment_row(2570,1).is_err());
+    assert!(w::equipment_row(251,2).is_err());
+}
+
 #[test]fn p06t_effects_all24_original_order_and_launch_snapshot_identity(){
     let expected=[[2,4,3],[14,17,15],[2,5,3],[6,8,7],[6,9,7],[14,17,15],[14,16,15],[18,19,19]];
     for(m,p)in PROFILES.iter().enumerate(){for(s,shell)in p.shots.into_iter().enumerate(){assert_eq!(w::effect_index(shell).unwrap(),expected[m][s]);}}

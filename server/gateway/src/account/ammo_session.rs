@@ -284,7 +284,7 @@ pub(super) fn start(session:&mut Session,slot:&mut Option<Job>,config:Arc<identi
                 Command::Settings(_)=>unreachable!("settings returned above"),
             }
         }else{match dispatched {
-            Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.arguments),
+            Command::Ammo(request)=>config.service_ammunition(&profile,&key,revision,wire_revision,request.legacy_arguments()),
             Command::Crew(request)=>config.recruit_crew(&profile,&key,revision,wire_revision,request),
             Command::Barracks(request)=>config.recruit_barracks(&profile,&key,revision,wire_revision,request),
             Command::Dismiss(request)=>config.dismiss_crew(&profile,&key,revision,wire_revision,request),
@@ -311,10 +311,10 @@ fn apply(session:&mut Session,request_id:i16,reply:identity091::AmmoReply)->io::
     let state=next.ammo_service.as_mut().ok_or_else(invalid)?;
     if state.inflight.as_ref().map(Command::id)!=Some(request_id) {return Err(invalid());}
     let kind=state.inflight.as_ref().ok_or_else(invalid)?.kind();
-    // CONTENT-0: only a research purchase may chain further diffs (one cursor step each).
+    // Research and maintenance may publish further diffs, one cursor step each.
     let chained=reply.extra_updates.len();
     if chained>0 && (!reply.serviced || chained>identity091::MAX_CHAINED_UPDATES
-        || !matches!(state.inflight,Some(Command::Research(_))) || reply.recruitment.is_some()) {return Err(invalid());}
+        || !matches!(state.inflight,Some(Command::Research(_)|Command::Ammo(_))) || reply.recruitment.is_some()) {return Err(invalid());}
     let bodies=if reply.serviced {
         if reply.revision!=state.revision.checked_add(1).ok_or_else(invalid)?
             || reply.wire_revision!=state.wire_revision.checked_add(1+chained as i64).ok_or_else(invalid)? {return Err(invalid());}

@@ -68,6 +68,99 @@ fn aim_at(world:&mut World,slot:usize,point:[f32;3],base:Instant) {
 fn current(world:&World,slot:usize)->source::Shell {world.actors[slot].fire.typed().unwrap().current()}
 
 #[test]
+fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
+    let now=Instant::now();
+    let (owner,base_frozen)=actual_frozen_ap_zero();
+    let mut authored=base_frozen.value();
+    authored["artefacts"]=serde_json::json!({"optional_devices":[0,1529,0],"consumables":[0,0,0]});
+    let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&authored).unwrap()));
+    let frozen=v2::parse_frozen(&authored,&owner.account,&digest).unwrap();
+    let mut world=base(now,low_ground());
+    let slot=world.attach_owned_v2(owner,1,&frozen).unwrap();
+    lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);
+    start(&mut world,now);
+    let actor=&world.actors[slot];
+    assert_eq!(actor.optional_devices(),[0,1529,0]);
+    assert_eq!(actor.view_range().unwrap(),VehicleKind::Ms1.view_range()*1.1);
+    assert_eq!(world.actors[1].view_range().unwrap(),VehicleKind::Ms1.view_range());
+    let mut expected=VehicleKind::Ms1.descriptor().to_vec();
+    *expected.last_mut().unwrap()=0b010;
+    expected.extend([5,0]);
+    for packet in [super::super::wire::create_vehicle(&world,slot).unwrap(),super::super::wire::roster(&world,slot).unwrap()] {
+        assert!(packet.windows(expected.len()).any(|row|row==expected));
+    }
+}
+
+#[test]
+fn content0_s5_consumables_authoritative_targeting_use_once_and_terminal_slots(){
+    let now=Instant::now();let (owner,base_frozen)=actual_frozen_ap_zero();
+    let slots=[1275,763,251];let mut value=base_frozen.value();
+    value["artefacts"]=serde_json::json!({"consumables":slots,"optional_devices":[0,0,0]});
+    let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&value).unwrap()));
+    let frozen=v2::parse_frozen(&value,&owner.account,&digest).unwrap();
+    let mut w=base(now,low_ground());
+    w.attach_owned_v2(owner,1,&frozen).unwrap();lab_attach(&mut w,VehicleKind::Ms1,1,[5,5,5]);start(&mut w,now);
+    assert_eq!(w.actors[0].consumables,slots);
+    let expected=|counts:[u16;3]|slots.into_iter().zip(counts)
+        .flat_map(|(cd,count)|crate::armament_wire091::equipment_row(cd,count).unwrap()).collect::<Vec<_>>();
+    let initial=expected([1;3]);let binding=super::super::wire::binding(&w,0,now).unwrap();
+    assert!(binding.windows(initial.len()).any(|row|row==initial));
+    let command=|item,extra|Command::ActivateEquipment{item,extra};
+    let hits=[(0,crate::p06t_lab_proxy::Target::Device(crate::p06t_device_caps::Device::LeftTrack)),
+        (1,crate::p06t_lab_proxy::Target::Seat(1))];
+    let health=device::Health{hp:90,max_hp:90,terminal:false};
+    let shell=source::profile(Mount::Ms1Stock).shots[2];
+    let mut events=Vec::new();
+    for shot in 1..=4{
+        let cause=device::Cause{shot,attacker_slot:1};
+        let input=hits.map(|(ordinal,target)|device::ModuleHit{cause,ordinal,target,at_ms:0,shell,ignition_roll:0.});
+        events.extend(w.actors[0].devices.as_mut().unwrap().apply_hits(&input,health).unwrap());
+    }
+    w.device_events.extend(events.into_iter().map(|e|(0,e)));
+    let pristine=w.actors[0].clone();
+    assert!(w.apply(0,2,&[command(4,30)],now).is_err());
+    assert!(w.apply(0,1,&[command(4,30),Command::Move(Input{throttle:2,steer:0,speed_percent:100})],now).is_err());
+    w.apply(0,1,&[command(4,31),command(2,35),command(0,1),command(5,1),command(65535,65535)],now).unwrap();
+    assert_eq!(w.actors[0],pristine);
+    w.apply(0,1,&[command(4,30),command(2,36),command(4,30),command(2,36)],now).unwrap();
+    let actor=&w.actors[0];assert_eq!(actor.consumables,[0,0,251]);
+    let state=actor.devices.as_ref().unwrap();
+    assert_eq!(state.health()[4],state.profile().caps()[4].max);
+    assert!(state.crew()[1]);
+    assert_eq!(w.device_events.iter().filter(|(_,e)|e.cause.shot==0).count(),2);
+    let remaining=expected([0,0,1]);let rebound=super::super::wire::binding(&w,0,now).unwrap();
+    assert!(rebound.windows(remaining.len()).any(|row|row==remaining));
+    let raw:serde_json::Value=serde_json::from_str(&w.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(raw["consumables_used"],serde_json::json!([0,1]));
+    v2::validate_terminal_json(&raw.to_string(),&frozen,actor.health).unwrap();
+}
+
+#[test]
+fn content0_s5_consumables_automatic_extinguisher_stops_authoritative_fire(){
+    use crate::{p06t_device_caps::Device,p06t_lab_proxy::Target};
+    let now=Instant::now();let mut w=actual_owner_world(now);
+    let actor=&mut w.actors[0];actor.consumables=[507,0,0];
+    let health=device::Health{hp:90,max_hp:90,terminal:false};
+    let shell=source::profile(Mount::Ms1Stock).shots[2];
+    let state=actor.devices.as_mut().unwrap();state.configure_consumables(actor.consumables);
+    let chance=state.profile().engine_fire_chance();
+    let cause=device::Cause{shot:1,attacker_slot:1};
+    assert!(chance>0.);
+    state.apply_hits(&[device::ModuleHit{cause,ordinal:0,at_ms:0,target:Target::Device(Device::Engine),
+        shell,ignition_roll:chance*0.95}],health).unwrap();
+    assert!(!state.fire_active());
+    state.apply_hits(&[device::ModuleHit{cause:device::Cause{shot:2,..cause},ordinal:0,at_ms:0,target:Target::Device(Device::Engine),
+        shell,ignition_roll:0.}],health).unwrap();
+    assert!(state.fire_active());
+    let events=World::extinguish_automatically(actor,0,0).unwrap();
+    assert!(matches!(events.as_slice(),[event] if matches!(event.change,device::Change::Fire{before_active:true,after_active:false})));
+    assert_eq!(events[0].cause,device::Cause{shot:2,..cause});
+    assert_eq!(actor.consumables,[0;3]);
+    assert!(actor.devices.as_mut().unwrap().advance_fire(1000,health).unwrap().iter()
+        .all(|event|!matches!(event.change,device::Change::VehicleDamage{..})));
+}
+
+#[test]
 fn p06t_world_real_sqlite_ap_zero_admission_switch_preserves_airborne_shell_and_conserves_three_stacks() {
     let now=Instant::now();let mut w=actual_owner_world(now);w.actors[1].position=[300.,0.,300.];w.actors[1].origin=w.actors[1].position;
     let frozen=w.actors[0].owned_v2.clone().unwrap();assert_eq!(frozen.counts(),[0,4,11]);

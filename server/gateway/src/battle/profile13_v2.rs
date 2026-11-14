@@ -102,20 +102,43 @@ impl crate::bw_wire::Wire for Stack {
 #[derive(Clone,Debug,PartialEq,Eq)]
 pub struct Frozen{pub kind:VehicleKind,pub mount:source::Mount,pub descriptor:Vec<u8>,pub native_inventory_id:u32,
     pub vehicle_inventory_id:String,pub max_hp:i16,pub crew_ids:Vec<String>,pub capacity:u16,pub ammunition:[Stack;3],
+    pub optional_devices:[u16;3],pub consumables:[u16;3],
     pub initial_shell_compact_id:u16,pub sha256:String}
 // BW-01 wire codec (tools/bw01_wire_gen.py): Frozen
 impl crate::bw_wire::Wire for Frozen {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,mount,descriptor,native_inventory_id,vehicle_inventory_id,max_hp,crew_ids,capacity,ammunition,initial_shell_compact_id,sha256}=self;W::put(kind,bw_o);W::put(mount,bw_o);W::put(descriptor,bw_o);W::put(native_inventory_id,bw_o);W::put(vehicle_inventory_id,bw_o);W::put(max_hp,bw_o);W::put(crew_ids,bw_o);W::put(capacity,bw_o);W::put(ammunition,bw_o);W::put(initial_shell_compact_id,bw_o);W::put(sha256,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,mount:W::get(bw_i)?,descriptor:W::get(bw_i)?,native_inventory_id:W::get(bw_i)?,vehicle_inventory_id:W::get(bw_i)?,max_hp:W::get(bw_i)?,crew_ids:W::get(bw_i)?,capacity:W::get(bw_i)?,ammunition:W::get(bw_i)?,initial_shell_compact_id:W::get(bw_i)?,sha256:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{kind,mount,descriptor,native_inventory_id,vehicle_inventory_id,max_hp,crew_ids,capacity,ammunition,optional_devices,consumables,initial_shell_compact_id,sha256}=self;W::put(kind,bw_o);W::put(mount,bw_o);W::put(descriptor,bw_o);W::put(native_inventory_id,bw_o);W::put(vehicle_inventory_id,bw_o);W::put(max_hp,bw_o);W::put(crew_ids,bw_o);W::put(capacity,bw_o);W::put(ammunition,bw_o);W::put(optional_devices,bw_o);W::put(consumables,bw_o);W::put(initial_shell_compact_id,bw_o);W::put(sha256,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{kind:W::get(bw_i)?,mount:W::get(bw_i)?,descriptor:W::get(bw_i)?,native_inventory_id:W::get(bw_i)?,vehicle_inventory_id:W::get(bw_i)?,max_hp:W::get(bw_i)?,crew_ids:W::get(bw_i)?,capacity:W::get(bw_i)?,ammunition:W::get(bw_i)?,optional_devices:W::get(bw_i)?,consumables:W::get(bw_i)?,initial_shell_compact_id:W::get(bw_i)?,sha256:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.count)}
-    pub fn validate_owned(&self,account:&str)->io::Result<()>{let v=serde_json::json!({"kind":self.kind.label(),
+    pub(crate) fn value(&self)->Value {let mut v=serde_json::json!({"kind":self.kind.label(),
         "descriptor_hex":self.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),"native_inventory_id":self.native_inventory_id,
         "vehicle_inventory_id":self.vehicle_inventory_id,"max_hp":self.max_hp,"crew_ids":self.crew_ids,"capacity":self.capacity,
         "initial_shell_compact_id":self.initial_shell_compact_id,"ammunition":self.ammunition.iter().filter(|r|r.shell_compact_id!=0).map(|r|serde_json::json!({
             "shell_definition_id":r.shell_definition_id,"shell_compact_id":r.shell_compact_id,"family":r.family.source_name(),"count":r.count})).collect::<Vec<_>>()});
-        if parse_frozen(&v,account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
+        if self.optional_devices!=[0;3] || self.consumables!=[0;3] {
+            v["artefacts"]=serde_json::json!({"optional_devices":self.optional_devices,"consumables":self.consumables});
+        }
+        v
+    }
+    pub fn validate_owned(&self,account:&str)->io::Result<()>{
+        if parse_frozen(&self.value(),account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
+
+pub(crate) const COATED_OPTICS:u16=1529;
+pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
+
+fn artefact_slots(v:&Value,supported:&[u16])->io::Result<[u16;3]> {
+    let slots=v.as_array().filter(|rows|rows.len()==3).ok_or_else(||bad("artefact slots"))?;
+    let mut ids=[0;3];
+    for (index,value) in slots.iter().enumerate() {
+        let id=value.as_u64().and_then(|n|u16::try_from(n).ok()).ok_or_else(||bad("artefact compact ID"))?;
+        if id!=0 && (!supported.contains(&id) || ids[..index].contains(&id)) {
+            return Err(bad("unsupported or duplicate artefact"));
+        }
+        ids[index]=id;
+    }
+    Ok(ids)
+}
 
 fn device_profile(kind:VehicleKind)->Option<crate::p06t_device_caps::Profile>{use crate::p06t_device_caps::Profile as P;
     Some(match kind{VehicleKind::Ms1=>P::Ms1,VehicleKind::Is7=>P::Is7,VehicleKind::T26=>P::T26,VehicleKind::T34=>P::T34,VehicleKind::T3485=>P::T3485,
@@ -218,7 +241,16 @@ fn absent_stack(s:&source::Shell)->Stack{Stack{shell_definition_id:String::new()
 pub fn parse_frozen(v:&Value,account:&str,expected_sha:&str)->io::Result<Frozen>{parse_frozen_with(v,account,expected_sha,catalog_v1_enabled())}
 pub(crate) fn legacy_identity_for_tests(label:&str,native:u64)->io::Result<Identity>{legacy_identity(label,native)}
 pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_v1:bool)->io::Result<Frozen>{
-    keys(v,&["kind","descriptor_hex","native_inventory_id","vehicle_inventory_id","max_hp","crew_ids","capacity","ammunition","initial_shell_compact_id"])?;
+    let mut fields=vec!["kind","descriptor_hex","native_inventory_id","vehicle_inventory_id","max_hp","crew_ids","capacity","ammunition","initial_shell_compact_id"];
+    let (optional_devices,consumables)=if let Some(artefacts)=v.get("artefacts") {
+        fields.push("artefacts");
+        keys(artefacts,&["optional_devices","consumables"])?;
+        let devices=artefact_slots(&artefacts["optional_devices"],&[COATED_OPTICS])?;
+        let consumables=artefact_slots(&artefacts["consumables"],&[251,507,763,1019,1275,1531])?;
+        if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
+        (devices,consumables)
+    } else {([0;3],[0;3])};
+    keys(v,&fields)?;
     let native=number(v,"native_inventory_id")?;
     let(kind,mount,suffix,suffixes)=if catalog_v1{catalog_identity(text(v,"kind")?,native)?}else{legacy_identity(text(v,"kind")?,native)?};
     let crew_count=device_profile(kind).ok_or_else(||bad("device profile"))?.crew().len();
@@ -246,7 +278,8 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     let first=ammunition.iter().find(|r|r.count>0).ok_or_else(||bad("empty loadout"))?.shell_compact_id;
     if total>p.capacity||number(v,"initial_shell_compact_id")?!=u64::from(first)||digest(v)?!=expected_sha{return Err(bad("capacity/initial/digest"));}
     Ok(Frozen{kind,mount,descriptor:kind.descriptor().to_vec(),native_inventory_id:native as u32,vehicle_inventory_id:text(v,"vehicle_inventory_id")?.into(),
-        max_hp:kind.max_health(),crew_ids,capacity:p.capacity,ammunition,initial_shell_compact_id:first,sha256:expected_sha.into()})
+        max_hp:kind.max_health(),crew_ids,capacity:p.capacity,ammunition,optional_devices,consumables,
+        initial_shell_compact_id:first,sha256:expected_sha.into()})
 }
 
 #[derive(Clone,Debug,PartialEq,Eq)]
@@ -288,7 +321,9 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{
             ||(*reason==FinishReason::BattleFinished)!=results_json.is_some(){return Err(bad("finish arguments"));}
         v["reservation_id"]=reservation_id.as_str().into();v["terminal_hp"]=(*terminal_hp).into();v["reason"]=reason.name().into();
         let terminal=bounded_json(terminal_state_json.as_bytes(),8192)?;
-        keys(&terminal,&["policy_revision","roster_size","crew_active","crew","devices","fire","death"])?;
+        if !terminal_consumables(&terminal)?.is_empty() && *reason==FinishReason::Cancelled {
+            return Err(bad("cancelled battle consumed equipment"));
+        }
         v["terminal_state_json"]=terminal_state_json.as_str().into();
         v["remaining_ammunition"]=remaining_ammunition[..real].iter().map(|a|serde_json::json!({"shell_compact_id":a.shell_compact_id,"count":a.count})).collect::<Vec<_>>().into();
         if let Some(raw)=results_json{let result=results_v2(raw)?;let own=result.participants.iter().find(|p|p.account_dbid==c.native_database_id).ok_or_else(||bad("result owner"))?;
@@ -308,8 +343,27 @@ fn parse_remaining(v:&Value,f:&Frozen)->io::Result<[Remaining;3]>{let rows=v.as_
         result.push(Remaining{shell_compact_id:source.shell_compact_id,count:n});}
     while result.len()<3{result.push(Remaining{shell_compact_id:0,count:0});}
     result.try_into().map_err(|_|bad("remaining3"))}
+pub(crate) fn terminal_consumables(v:&Value)->io::Result<Vec<usize>> {
+    let mut fields=vec!["policy_revision","roster_size","crew_active","crew","devices","fire","death"];
+    let mut used=Vec::new();
+    if let Some(value)=v.get("consumables_used") {
+        fields.push("consumables_used");
+        let slots=value.as_array().filter(|rows|(1..=3).contains(&rows.len())).ok_or_else(||bad("used consumable slots"))?;
+        for value in slots {
+            let slot=value.as_u64().filter(|n|*n<3).ok_or_else(||bad("used consumable slot"))? as usize;
+            if used.last().is_some_and(|earlier|*earlier>=slot) {
+                return Err(bad("used consumable slot order"));
+            }
+            used.push(slot);
+        }
+    }
+    keys(v,&fields)?;
+    Ok(used)
+}
 fn terminal_state(v:&Value,f:&Frozen,hp:i16)->io::Result<TerminalState>{
-    keys(v,&["policy_revision","roster_size","crew_active","crew","devices","fire","death"])?;
+    if terminal_consumables(v)?.iter().any(|slot|f.consumables[*slot]==0) {
+        return Err(bad("used consumable ownership"));
+    }
     if serde_json::to_vec(v).map_err(|_|bad("terminal JSON"))?.len()>8192||text(v,"policy_revision")?!="test_lab.p06t.devices-proxy-fire.v1"{return Err(bad("terminal pinned policy"));}
     let roster_size=u8::try_from(number(v,"roster_size")?).map_err(|_|bad("roster bound"))?;if usize::from(roster_size)>MAX_ACTORS{return Err(bad("roster bound"));}
     let crew_active=flag(v,"crew_active")?;let crew=v["crew"].as_array().ok_or_else(||bad("crew state"))?;
