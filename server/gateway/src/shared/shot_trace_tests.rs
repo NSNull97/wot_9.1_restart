@@ -142,19 +142,43 @@ fn direct_case(armor: Option<f64>, angle: f32, distance: f64, spent: f64) -> Val
 
 #[test] fn a_module_record_replays_its_chance_decision() {
     use crate::gateway091::shared::shell_rules::ModuleClass;
+    use crate::p06t_device_state::CrewProtection;
     let rules = crate::gateway091::shared::shell_rules::rules().unwrap();
     let ap = shell(Family::ArmorPiercing);
     for (class, explosion, roll) in [(ModuleClass::AmmoBay, false, 0.26), (ModuleClass::AmmoBay, false, 0.28), (ModuleClass::Crew, true, 0.149), (ModuleClass::Crew, true, 0.2)] {
         let chance = rules.module_chance(class, explosion);
-        let record = stamp(module_record(7, 30, 150, 0, 5, KIND, &ap, "Device(AmmoBay)", class, explosion, chance, roll, roll < chance));
+        let record = stamp(module_record(7, 30, 150, 0, 5, KIND, &ap, "Device(AmmoBay)", class, explosion,
+            CrewProtection::default(), chance, roll, roll < chance));
         assert!(replay_record(&serde_json::from_str(&record.to_string()).unwrap()).unwrap(), "{record}");
         let mut flipped = record.clone();
         flipped["result"]["applied"] = (!(roll < chance)).into();
         assert!(!replay_record(&flipped).unwrap());
     }
-    let mut bad = stamp(module_record(7, 31, 150, 0, 5, KIND, &ap, "x", ModuleClass::Gun, false, 0.33, 0.5, false));
+    let mut bad = stamp(module_record(7, 31, 150, 0, 5, KIND, &ap, "x", ModuleClass::Gun, false,
+        CrewProtection::default(), 0.33, 0.5, false));
     bad["input"]["class"] = "hull".into();
     assert!(replay_record(&bad).is_err());
+}
+
+#[test]
+fn a_protected_crew_roll_replays_from_the_mounted_liner_and_medkit() {
+    use crate::p06t_device_state::CrewProtection;
+    let shell = shell(Family::HighExplosive);
+    let protection = CrewProtection { spall_liner: Some(11001), large_medkit: true };
+    let roll = 0.08;
+    let record = stamp(module_record(7, 30, 150, 0, 5, KIND, &shell, "Seat(0)", ModuleClass::Crew, true,
+        protection, 0.15 * 0.50 * 0.85, roll, false));
+    assert!(replay_record(&serde_json::from_str(&record.to_string()).unwrap()).unwrap());
+
+    let mut wrong_liner = record.clone();
+    wrong_liner["input"]["spall_liner"] = 505.into();
+    assert!(!replay_record(&wrong_liner).unwrap());
+    let mut invalid_liner = record.clone();
+    invalid_liner["input"]["spall_liner"] = 1529.into();
+    assert!(replay_record(&invalid_liner).is_err());
+    let mut non_crew = record;
+    non_crew["input"]["class"] = "gun".into();
+    assert!(replay_record(&non_crew).is_err());
 }
 
 #[test] fn a_shot_record_replays_its_deviation_from_the_seed() {

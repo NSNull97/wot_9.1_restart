@@ -329,7 +329,7 @@ class AmmoLossStoreTests(unittest.TestCase):
         with patch("p04m_pool_projection.installed_descriptor", old_descriptor):
             previous_fixture = Path(self.store.publish(source, account, root)["fixture_dir"])
         # Recreate the old revision directory name to exercise collision-free publication.
-        unchanged = previous_fixture.with_name(previous_fixture.name.removesuffix("-optdev2"))
+        unchanged = previous_fixture.with_name(f"p09d-r{before['revision']}")
         previous_fixture.rename(unchanged)
         published = Path(self.store.publish(source, account, root)["fixture_dir"])
         self.assertEqual(published, previous_fixture)
@@ -460,6 +460,65 @@ class AmmoLossStoreTests(unittest.TestCase):
                     validate_installed_devices(catalog, owned, equipped)
                 else:
                     self.reject("CHASSIS_OVERLOAD", lambda: validate_installed_devices(catalog, owned, equipped))
+
+    def test_spall_liners_use_source_classes_and_complete_chassis_load(self):
+        from collections import Counter
+        from unittest.mock import patch
+        from content0_equipment_catalog import SPALL_LINERS, live_items
+        from content0_equipment_store import validate_installed_devices
+        from p09e_research_store import ECONOMY_POLICY
+
+        catalog = self.store.catalog
+        items = live_items()
+        self.assertEqual([items[cd].weight_grams for cd in SPALL_LINERS],
+                         [250_000, 500_000, 1_000_000, 1_500_000])
+        self.assertTrue(all(not items[cd].removable for cd in SPALL_LINERS))
+        classes = Counter()
+        for vehicle in catalog.vehicles.values():
+            compatible = [cd for cd in SPALL_LINERS if items[cd].compatible(vehicle)]
+            self.assertEqual(len(compatible), 1)
+            if "test_lab" not in vehicle:
+                classes.update(compatible)
+        self.assertEqual(classes, {505: 119, 761: 149, 1017: 88, 11001: 18})
+
+        def stock(vehicle_id):
+            return {"vehicle_id": vehicle_id, "modules": catalog.vehicles[vehicle_id]["defaults"]}
+
+        targets = ["vehicle:ussr:T-26", "vehicle:ussr:T-34", "vehicle:ussr:IS-7", "vehicle:germany:Maus"]
+        for vehicle_id, cd in zip(targets, SPALL_LINERS):
+            with self.subTest(vehicle_id=vehicle_id):
+                validate_installed_devices(catalog, stock(vehicle_id), [0, cd, 0])
+
+        for vehicle_id, slots, error in (
+            ("vehicle:ussr:MS-1", [505, 0, 0], "CHASSIS_OVERLOAD"),
+            ("vehicle:ussr:IS-7", [1017, 1017, 0], "ARTEFACT_DUPLICATE"),
+            ("vehicle:germany:Maus", [1017, 0, 0], "ARTEFACT_INCOMPATIBLE"),
+        ):
+            with self.subTest(vehicle_id=vehicle_id, slots=slots):
+                with self.assertRaises(TransactionError) as caught:
+                    validate_installed_devices(catalog, stock(vehicle_id), slots)
+                self.assertEqual(caught.exception.code, error)
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        self.assertEqual(self.profile()["artefacts"]["vehicles"], {})
+        source = BattleProjectionSource(self.fx.source.bundle.root, catalog)
+        root = Path(self.fx.temp.name) / "spall-shop"
+        with patch("p04m_pool_projection.live_items", return_value={cd: item for cd, item in items.items()
+                                                                     if cd not in SPALL_LINERS}):
+            old = self.store.publish(source, account, root)
+        old_dir = Path(old["fixture_dir"])
+        old_shop = (old_dir / "shop.bin").read_bytes()
+        legacy_dir = old_dir.with_name(f"p09d-r{old['revision']}")
+        old_dir.rename(legacy_dir)
+        current = self.store.publish(source, account, root)
+        self.assertEqual(current["revision"], old["revision"])
+        self.assertTrue(Path(current["fixture_dir"]).name.startswith(legacy_dir.name + "-optdev2-shop-"))
+        self.assertNotEqual((Path(current["fixture_dir"]) / "shop.bin").read_bytes(), old_shop)
+        self.assertEqual((legacy_dir / "shop.bin").read_bytes(), old_shop)
+        self.assertEqual(self.store.publish(source, account, root)["fixture_dir"], current["fixture_dir"])
 
     def test_ventilation_and_rations_use_source_filters_and_settle_frozen_food(self):
         from content0_equipment_catalog import CREW_FOOD, VENTILATION_BONUS, live_items

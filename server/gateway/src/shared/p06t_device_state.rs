@@ -112,6 +112,33 @@ impl Consumable {
     pub fn from_item(item:u16)->Option<Self> {Self::ALL.get(usize::from(item)).copied()}
     pub fn from_compact(compact:u16)->Option<Self> {Self::ALL.into_iter().find(|kind|kind.compact()==compact)}
 }
+
+/// Frozen optional protection applied to the crew injury roll in a penetrating hit.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct CrewProtection {
+    pub(crate) spall_liner: Option<u16>,
+    pub(crate) large_medkit: bool,
+}
+
+impl CrewProtection {
+    pub(crate) fn from_artefacts(devices: [u16; 3], consumables: [u16; 3]) -> Self {
+        Self {
+            spall_liner: devices.into_iter().find(|id| crate::profile13_v2091::SPALL_LINERS.contains(id)),
+            large_medkit: consumables.contains(&Consumable::LargeMedkit.compact()),
+        }
+    }
+
+    pub(crate) fn apply(self, chance: f64) -> f64 {
+        // #717 AntifragmentationLining multiplies crewChanceToHitFactor by 1 - evade.
+        let liner_factor = self.spall_liner.and_then(|id| {
+            crate::profile13_v2091::SPALL_LINERS.iter().position(|liner| *liner == id)
+        }).map_or(1., |index| [0.80, 0.75, 0.70, 0.50][index]);
+        // Combine the independently documented relative reductions multiplicatively.
+        let medkit_factor = if self.large_medkit { 0.85 } else { 1. };
+        chance * liner_factor * medkit_factor
+    }
+}
+
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub struct Capabilities {
     pub crew_active:bool,pub can_fire:bool,pub drive_scale:f32,pub steer_scale:f32,

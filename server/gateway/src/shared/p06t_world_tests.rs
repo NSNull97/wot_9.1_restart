@@ -7,7 +7,7 @@ use crate::{p06t_shells091::{self as source,Mount},p06t_device_caps::Profile,
     profile13_v2091 as v2};
 use sha2::{Digest,Sha256};
 
-fn actual_frozen_ap_zero()->(Identity,v2::Frozen) {
+pub(in crate::gateway091::shared) fn actual_frozen_ap_zero()->(Identity,v2::Frozen) {
     let bytes=include_bytes!("../../../../tests/fixtures/p06t-writer-vectors.json");
     assert_eq!(format!("{:x}",Sha256::digest(bytes)),"0e293febb5e3053e34f5b543c19aa2f7420918415b22595aaa4bb16e532b2c21");
     let vectors:serde_json::Value=serde_json::from_slice(bytes).unwrap();
@@ -398,6 +398,33 @@ fn content0_s5_large_medkit_reduces_crew_wound_chance_throughout_the_battle() {
     assert_eq!(world.actors[0].consumables, [0;3]);
     assert!(world.actors[0].devices.as_ref().unwrap().crew()[0]);
     check(&world);
+}
+
+#[test]
+fn content0_s5_each_spall_liner_combines_with_medkit_on_penetrating_crew_rolls() {
+    use crate::{p06t_device_caps::Device, p06t_lab_proxy::Target};
+    let now = Instant::now();
+    let rules = super::super::shell_rules::rules().unwrap();
+    let chance = |actor: &Actor, target, explosion| p06t::penetration_module_chance(actor, target, explosion, rules);
+    for (liner, protection) in [(505, 0.80), (761, 0.75), (1017, 0.70), (11001, 0.50)] {
+        let (owner, original) = actual_frozen_ap_zero();
+        let mut value = original.value();
+        value["artefacts"] = serde_json::json!({"optional_devices":[liner,0,0],"consumables":[1019,0,0]});
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let equipped = v2::parse_frozen(&value, &owner.account, &digest).unwrap();
+        let mut world = base(now, low_ground());
+        world.impact.enable_layers().unwrap();
+        world.attach_owned_v2(owner, 1, &equipped).unwrap();
+        lab_attach(&mut world, VehicleKind::Ms1, 1, [5,5,5]);
+        start(&mut world, now);
+        for explosion in [false, true] {
+            let base = chance(&world.actors[1], Target::Seat(0), explosion);
+            let protected = chance(&world.actors[0], Target::Seat(0), explosion);
+            assert!((protected - base * protection * 0.85).abs() < 1e-12);
+            assert_eq!(chance(&world.actors[0], Target::Device(Device::Gun), explosion),
+                chance(&world.actors[1], Target::Device(Device::Gun), explosion));
+        }
+    }
 }
 
 #[test]

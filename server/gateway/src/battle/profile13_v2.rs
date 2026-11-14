@@ -132,12 +132,14 @@ pub(crate) const COATED_OPTICS:u16=1529;
 pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
 pub(crate) const STEREOSCOPE:u16=1273;
 pub(crate) const VERTICAL_STABILIZERS:[u16;2]=[7929,8185];
+pub(crate) const SPALL_LINERS: [u16; 4] = [505, 761, 1017, 11001];
 
 // CONTENT-0 #717 optional_devices.xml. Values are extra kg on the mounted vehicle.
-const OPTIONAL_DEVICE_MASS:[(u16,u16);17]=[(249,100),(STEREOSCOPE,50),(COATED_OPTICS,0),(4601,100),(4857,150),
+const OPTIONAL_DEVICE_MASS:[(u16,u16);21]=[(249,100),(STEREOSCOPE,50),(COATED_OPTICS,0),(4601,100),(4857,150),
     (5113,200),(5625,200),(5881,400),(6137,300),(6393,500),(6649,100),
     (WET_AMMO_RACKS[0],0),(WET_AMMO_RACKS[1],0),(CO2_FUEL_TANK,50),(CYCLONE_FILTER,10),
-    (VERTICAL_STABILIZERS[0],100),(VERTICAL_STABILIZERS[1],200)];
+    (VERTICAL_STABILIZERS[0],100),(VERTICAL_STABILIZERS[1],200),
+    (SPALL_LINERS[0],250),(SPALL_LINERS[1],500),(SPALL_LINERS[2],1000),(SPALL_LINERS[3],1500)];
 const VENTILATION:[u16;3]=[4601,4857,5113];
 const RAMMERS:[u16;4]=[5625,5881,6137,6393];
 // CONTENT-0 #717 equipments.xml. Indexed by the native nation order.
@@ -149,6 +151,12 @@ pub(crate) fn ventilation_bonus(ids:[u16;3])->u8 {
 }
 
 pub(crate) fn is_crew_food(id:u16)->bool { CREW_FOOD.contains(&id) }
+
+/// #717 `antifragmentationLiningFactor`, ordered by liner class.
+pub(crate) fn spall_absorption(ids: [u16; 3]) -> f64 {
+    SPALL_LINERS.iter().position(|id| ids.contains(id))
+        .map_or(1., |class| [1.20, 1.25, 1.30, 1.50][class])
+}
 
 pub(crate) fn equipment_mass(ids:[u16;3], base_mass_kg:f64)->f32 {
     let flat: f64 = ids.iter().filter_map(|id|OPTIONAL_DEVICE_MASS.iter().find(|(cd,_)|cd==id))
@@ -278,7 +286,7 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
         let devices=artefact_slots(&artefacts["optional_devices"],|id|OPTIONAL_DEVICE_MASS.iter().any(|row|row.0==id))?;
         let consumables=artefact_slots(&artefacts["consumables"],|id|ACTIVE_CONSUMABLES.contains(&id)||is_crew_food(id))?;
         if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
-        if [&VENTILATION[..],&RAMMERS[..],&VERTICAL_STABILIZERS[..],&WET_AMMO_RACKS[..]].into_iter()
+        if [&VENTILATION[..],&RAMMERS[..],&VERTICAL_STABILIZERS[..],&WET_AMMO_RACKS[..],&SPALL_LINERS[..]].into_iter()
             .any(|family| devices.iter().filter(|id|family.contains(id)).count()>1) {
             return Err(bad("incompatible equipment classes"));
         }

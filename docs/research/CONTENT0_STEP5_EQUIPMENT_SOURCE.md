@@ -24,8 +24,8 @@ Verified catalogue SHA-256
 | `client/account_helpers/shop.pyc`, `84aa30e…` | `Shop.buy`, 151–175 and `Shop.buyAndEquipItem`, 89–128 | 302 int4 `[shopRev, cd, count, goldForCredits]`. 308 int-array `[shopRev, cd, vehInvID, slot, isPaidRemoval, gunCD]` |
 | `client/gui/scaleform/daapi/view/lobby/hangar/technicalmaintenance.pyc`, `1193382…` | `TechnicalMaintenance.fillVehicle`, 126–280 | Consumable part contains three `(cd, 1)` or `(0, 0)` pairs. Negative CD indicates buying a gold item with credits |
 | `client/gui/shared/gui_items/vehicle.pyc`, `ec78e36…` | `Vehicle.__init__` and `Vehicle._parseEqs`, 34–99 | `inventory[1].eqs` and `eqsLayout` are raw compact ID slot lists read separately |
-| `common/items/vehicles.pyc`, `805240e…` | `VehicleDescr.makeCompactDescr`, 175–294 and `_combineVehicleCompactDescr`, 146–164 | Shift mask left per slot. Write each occupied raw `device.id[1]` as LE uint16 in slot order. Slots 0, 1 and 2 set mask bits 2, 1 and 0 |
-| Same | `VehicleDescr.__initFromCompactDescr`, 450–543 | Reverse loop starts at slot 2, reads low flag bit and reads device words from the end |
+| `common/items/vehicles.pyc`, `805240e…` | `VehicleDescr.makeCompactDescr`, 175–294 and `_combineVehicleCompactDescr`, 146–164 | Shift mask left per slot and prepend each occupied raw `device.id[1]` as LE uint16. Slots 0, 1 and 2 set bits 2, 1 and 0 |
+| Same | `VehicleDescr.__initFromCompactDescr`, 450–543 | Reverse loop starts at slot 2, reads low flag bit and consumes the first remaining device word |
 | `client/gui/shared/gui_items/processors/module.pyc`, `9ed4b67…` | `OptDeviceInstaller.__init__`, 243–342 and `_request`, 0–81 | Distinct preservation and destruction dialogs for a non-removable device, transmitted via the paid-removal flag |
 | `client/gui/scaleform/daapi/view/lobby/hangar/ammunitionpanel.pyc`, `54d139d…` | `AmmunitionPanel.setVehicleModule`, 317, 347, 505 | Purchase from the original UI uses the Shop buyer before the native installer when the item is absent from stock |
 
@@ -286,9 +286,19 @@ The #717 descriptions identify absorption for explosions and ramming. The
 independently confirm the four reductions in crew wound chance. The original
 server's application of the absorption multiplier to a ramming collision is
 UNKNOWN. The project currently uses a contact-energy law in `tank_ram.rs`.
-The explosion penalty can use the material's `useAntifragmentationLining` bit
-for the applicable armor term in direct non-penetration and splash. Splash
-simulation and its independent trace validator must agree on that input.
+The project multiplies the HE/HESH armor deduction by the fitted liner's
+absorption factor on a material with `useAntifragmentationLining`. Direct
+penetration tests use the original armor value. Splash applies the factor
+to the target plate and adds the traversed screens and tracks at their
+ordinary value. The impact trace independently checks the target and
+recalculates both direct and splash damage. Ramming uses the existing
+contact-energy share divided by the recipient's factor before flooring
+and clamping to the project's damage bounds. The owner reports that ramming
+itself behaves incorrectly. The current test policy uses the closing speed
+along the contact normal, a cutoff of 0.5 m/s, and a 1–500 HP clamp. It suppresses
+damage on subsequent frames of an already active pair. These are project
+choices. Native ramming remains open with vehicle collision work. The liner
+test establishes only the modifier on that existing law.
 
 The #717 Russian tooltip `largeMedkit/always` and the
 [official 8.8 manual, p. 52](https://worldoftanks.eu/dcont/fb/updated_manuals/world_of_tanks_game_manual_en_eu_web_8_8.pdf#page=52)
@@ -300,7 +310,27 @@ after use are UNKNOWN. The stand implements the documented relative crew
 chance factor 0.85 on penetrating projectile and HE/HESH seat rolls. It uses
 the frozen loadout so the effect lasts throughout the battle, including after
 active healing. That lifetime is a project decision. Spall liner integration
-remains pending.
+now multiplies that chance by the liner's crew factor on ordinary or explosive
+penetrating hits. External splash in the current model rolls only for exposed
+modules. Equipment mass uses the same frozen loadout as Jolt and ramming.
+The four filters cover 374 pinned types with no class overlap. The counts are
+119 light, 149 medium, 88 heavy and 18 superheavy. Effective mounting still
+checks assembled mass against the installed chassis's load allowance.
+
+Verification: three target Python/SQLite tests with the pinned test-lab bundle,
+the equipment manifest check, direct and splash HE checks, penetrating crew
+rolls and trace replay, and a ram through the world/terminal validator passed.
+The isolated shop projection from the current stand copy includes all four
+liners at revision 5 in 29,880 bytes. Evidence is under
+`local/evidence/content0-s5/` in `spall-liner-stand-shop.json`,
+`spall-liner-catalog-test-lab.log`, `spall-focused-rust-r2.log`, and
+`spall-a_protected_crew_roll-rust.log`. The isolated release build and local
+deployment are recorded in `spall-release-canonical.log` and
+`spall-stand-deploy.json`. The same shop was published on the active stand.
+Deploy used `domain.ps1` and `services.ps1` with the known previous gateway
+path saved in `services.before-spall-liners.ps1`. Revert the gateway and
+Domain code together after undoing new liner installs if reverting a test DB
+with liners fitted. A native equipped fight remains NOT_RUN.
 
 ## Stereoscope HUD and audio
 

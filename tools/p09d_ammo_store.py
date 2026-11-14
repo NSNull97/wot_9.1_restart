@@ -278,12 +278,9 @@ class NativeAmmoStore(AmmoServiceStore):
         require(re.fullmatch(r'[0-9a-f-]{36}', account_id) is not None, 'INVALID_ACCOUNT_PATH')
         root = no_links(fixture_root).resolve()
         root.mkdir(parents=True, exist_ok=True)
-        artefacts = aggregate.get('artefacts')
-        multiple_devices = artefacts and any(sum(bool(cd) for cd in row['devices']) > 1
-                                             for row in artefacts['vehicles'].values())
-        # Multi-device projections previously stored the native words in reverse order.
-        # Preserve already-published fixtures at the same domain revision.
-        suffix = '-optdev2' if multiple_devices else ''
+        # Equipment offers can change without a persisted account revision. Keep
+        # the native descriptor format version and immutable shop variant in the path.
+        suffix = '-optdev2-shop-' + sha(files['shop.bin'])[:16] if 'artefacts' in aggregate else ''
         destination = no_links(root / account_id / ('p09d-r' + str(aggregate['revision']) + suffix))
         def verify_existing():
             no_links(destination)

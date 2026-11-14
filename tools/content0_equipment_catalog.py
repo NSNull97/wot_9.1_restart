@@ -40,6 +40,10 @@ CREW_FOOD = {
 WET_AMMO_RACKS = {6905: "wetCombatPack_class1", 7161: "wetCombatPack_class2"}
 CO2_FUEL_TANK = 7417
 CYCLONE_FILTER = 7673
+SPALL_LINERS = {
+    505: "antifragmentationLining_light", 761: "antifragmentationLining_medium",
+    1017: "antifragmentationLining_heavy", 11001: "antifragmentationLining_superheavy",
+}
 
 # Authoritative runtime effect families backed by the battle command path.
 DEVICE_EFFECTS = {
@@ -48,7 +52,7 @@ DEVICE_EFFECTS = {
     6393: "largeCaliberHowitzerRammer", 6649: "enhancedAimDrives",
     CO2_FUEL_TANK: "carbonDioxide", CYCLONE_FILTER: "filterCyclone",
     7929: "aimingStabilizer_Mk1", 8185: "aimingStabilizer_Mk2",
-} | VENTILATION_BONUS | WET_AMMO_RACKS
+} | VENTILATION_BONUS | WET_AMMO_RACKS | SPALL_LINERS
 CONSUMABLE_EFFECTS = {
     251: "handExtinguishers", 507: "autoExtinguishers",
     763: "smallMedkit", 1019: "largeMedkit",

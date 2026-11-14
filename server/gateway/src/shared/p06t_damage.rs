@@ -189,13 +189,17 @@ pub fn track_layered(shell: Shell, distance_m: f64, spent_before_mm: f64, armor_
     Ok(TrackPass { power_before_mm: p.power_before_mm, power_after_mm: p.power_after_mm, stopped: p.outcome != PassOutcome::Passed })
 }
 /// `spent_mm` is the track armour already taken off this shot (`track_pass`); 0 is the old law.
-pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> { resolve_plate(i, spent_mm, None) }
+pub fn resolve_direct_spent(i: DirectInput, spent_mm: f64) -> io::Result<Resolution> { resolve_plate(i, spent_mm, None, 1.) }
 /// SHELL-PEN layered law (owner 2026-11-06): the main armour plate after the spaced
 /// layers and tracks of this shot (`spent_mm`), with the shot's one penetration roll
 /// and its damage roll; the caliber is the engine integer (#717 readInt).
 pub const LAYERS_POLICY: &str = "project.armor-layers.v1";
-pub fn resolve_layered(i: DirectInput, spent_mm: f64, rolls: Rolls) -> io::Result<Resolution> { resolve_plate(i, spent_mm, Some(rolls)) }
-fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>) -> io::Result<Resolution> {
+pub fn resolve_layered(i: DirectInput, spent_mm: f64, rolls: Rolls) -> io::Result<Resolution> { resolve_plate(i, spent_mm, Some(rolls), 1.) }
+pub(super) fn resolve_lined(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>, absorption: f64) -> io::Result<Resolution> {
+    if ![1., 1.20, 1.25, 1.30, 1.50].contains(&absorption) { return Err(bad("spall absorption factor")); }
+    resolve_plate(i, spent_mm, rolls, absorption)
+}
+fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>, absorption: f64) -> io::Result<Resolution> {
     source_shell(i.shell)?;
     let rules = rules()?;
     valid_armor(spent_mm)?;
@@ -228,7 +232,8 @@ fn resolve_plate(i: DirectInput, spent_mm: f64, rolls: Option<Rolls>) -> io::Res
         Some(roll)=>(f64::from(i.shell.damage_hp)*roll.damage).round().clamp(0.,f64::from(u16::MAX)) as u16,
         None=>i.shell.damage_hp };}
     else if i.shell.family==Family::HighExplosive {r.damage_hp=match rolls {
-        Some(roll)=>layered_he(rules,i.shell,0.,armor,roll.damage,false,1.)?, None=>attenuated_he(rules,i.shell,0.,armor)? };}
+        Some(roll)=>layered_he(rules,i.shell,0.,armor*absorption,roll.damage,false,1.)?,
+        None=>attenuated_he(rules,i.shell,0.,armor*absorption)? };}
     Ok(r)
 }
 /// Geometry/source identity is established by the Trace source-witness adapter.

@@ -1171,7 +1171,10 @@ impl World {
                 actor.vehicle_kind().mass_kg()+f64::from(actor.equipment_mass())
             };
             let a=mass(row.slot_a);let b=mass(row.slot_b);
-            resolved.push((contact,super::tank_ram::resolve(contact,a,b)?));
+            let absorption = [row.slot_a, row.slot_b].map(|slot| {
+                crate::profile13_v2091::spall_absorption(self.actors[slot].optional_devices())
+            });
+            resolved.push((contact,super::tank_ram::resolve(contact,a,b,absorption)?));
         }
         let mut next=self.clone();next.active_ram_pairs=pairs;
         for (contact,result) in resolved {
@@ -2760,7 +2763,7 @@ pub(super) mod tests {
 
 #[cfg(test)]
 #[path = "p06t_world_tests.rs"]
-mod p06t_world_tests;
+pub(super) mod p06t_world_tests;
 
 #[cfg(test)]
 #[path="result_spots_world_tests.rs"]

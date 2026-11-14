@@ -24,18 +24,20 @@ pub(super) fn module_class(target:crate::p06t_lab_proxy::Target)->crate::gateway
     }
 }
 
-/// The #717 tooltip specifies 15% passive crew protection. Apply the relative
-/// reduction to the existing crew injury roll for the frozen battle loadout.
+fn crew_protection(actor: &Actor, class: super::super::shell_rules::ModuleClass) -> device::CrewProtection {
+    if class != super::super::shell_rules::ModuleClass::Crew {
+        return device::CrewProtection::default();
+    }
+    actor.owned_v2.as_ref().map_or(device::CrewProtection::default(), |loadout| {
+        device::CrewProtection::from_artefacts(loadout.optional_devices, loadout.consumables)
+    })
+}
+
+/// Compute the native crew injury roll from the frozen loadout, including after medkit use.
 pub(super) fn penetration_module_chance(actor: &Actor, target: crate::p06t_lab_proxy::Target,
     explosion: bool, rules: &crate::gateway091::shared::shell_rules::Rules) -> f64 {
-    use crate::gateway091::shared::shell_rules::ModuleClass;
     let class = module_class(target);
-    let chance = rules.module_chance(class, explosion);
-    if class == ModuleClass::Crew && actor.owned_v2.as_ref()
-        .is_some_and(|loadout| loadout.consumables.contains(&device::Consumable::LargeMedkit.compact())) {
-        return chance * 0.85;
-    }
-    chance
+    crew_protection(actor, class).apply(rules.module_chance(class, explosion))
 }
 
 /// SHELL-04 (owner 2026-11-08): module damage takes the shot's one damage roll (+-25 %), rounded
@@ -193,8 +195,9 @@ impl World {
         let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(projectile.origin[i])).powi(2)).sum::<f64>().sqrt();
         // SHELL-02: track armour this shot already passed (0 without a TrackContact).
         let spent=trace.track_spent(projectile.sequence)?;
+        let absorption = impact::spall_for(&contact.material_facts, &actors[slot]);
         let resolution=impact::resolve_mixed_spent(actors[slot].vehicle_kind(),&contact.material_facts,shell,
-            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent,trace.shot_rolls(self.id,projectile.sequence)?)?;
+            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent,trace.shot_rolls(self.id,projectile.sequence)?,absorption)?;
         let after=(i32::from(before)-i32::from(resolution.damage_hp)).max(0)as i16;
         trace.mixed_resolution_source(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after,bundle,&actors[slot])?;
         let facts=&contact.material_facts;
@@ -242,7 +245,8 @@ impl World {
                         let roll=self.ignition_roll(projectile.sequence,slot,MODULE_ROLL_ORDINAL+index as u8)?;
                         let applied=roll<chance;
                         if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,contact.tick,projectile.slot,slot,
-                            projectile.vehicle_kind,&shell,&format!("{:?}",hit.target),module_class(hit.target),explosion,chance,roll,applied);}
+                            projectile.vehicle_kind,&shell,&format!("{:?}",hit.target),module_class(hit.target),explosion,
+                            crew_protection(&actors[slot], module_class(hit.target)),chance,roll,applied);}
                         if !applied {continue;}
                         let ordinal=device::CLASSIC_FIRST_ORDINAL+inputs.len() as u8;
                         amounts.push(rolled_device_damage(shell,trace.shot_rolls(self.id,projectile.sequence)?)?);
@@ -317,7 +321,8 @@ impl World {
             let roll=self.ignition_roll(projectile.sequence,slot,EXPLOSION_ROLL_ORDINAL+index as u8)?;
             let applied=roll<chance;
             if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,tick,projectile.slot,slot,
-                projectile.vehicle_kind,&shell,&format!("{target:?}"),module_class(target),true,chance,roll,applied);}
+                projectile.vehicle_kind,&shell,&format!("{target:?}"),module_class(target),true,
+                device::CrewProtection::default(),chance,roll,applied);}
             if !applied{continue;}
             let falloff=(1.-distance/radius).max(0.).powf(rules.he_falloff_exponent);
             let roll_damage=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,projectile.sequence).damage;
@@ -425,7 +430,9 @@ impl World {
             if !plate.ordinary{continue;}
             let clear=impact::splash_los(&terrain,center,contact.endpoint,&excluded)?;
             let input=crate::p06t_damage::SplashTarget{
-                slot:slot as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||bad())?+layers,los_clear:clear};
+                slot:slot as u8,distance_m:distance,
+                armor_mm:plate.armor_mm.ok_or_else(||bad())? * impact::spall_for(&contact.material_facts,&actors[slot]) + layers,
+                los_clear:clear};
             let result=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_blast(shell,&[input],r,blast)?[0],
                 None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
             let before=actors[slot].health;let after=(i32::from(before)-i32::from(result.damage_hp)).max(0)as i16;
