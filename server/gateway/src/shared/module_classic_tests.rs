@@ -1,5 +1,39 @@
 //! SHELL-04 (owner 2026-11-08): classic module rules of the layered law.
 use super::*;
+
+#[test]
+fn content0_s5_module_protection_absorbs_real_device_damage_and_repair_restores_effective_maximum() {
+    use crate::p06t_device_caps::{CO2_FUEL_TANK, CYCLONE_FILTER, WET_AMMO_RACKS};
+    use crate::p06t_shells091::{Mount, profile};
+    let mut bare = State::new(Profile::Is7).unwrap();
+    let mut equipped = bare.clone();
+    bare.enable_classic().unwrap();
+    equipped.enable_classic().unwrap();
+    let devices = [WET_AMMO_RACKS[1], CO2_FUEL_TANK, CYCLONE_FILTER];
+    equipped.configure_artefacts(devices, [0; 3]).unwrap();
+    assert_eq!(&equipped.health()[..3], &[540,315,300]);
+    assert_eq!(equipped.caps()[Device::Engine as usize].regen, 180);
+    let health = Health {hp:2150,max_hp:2150,terminal:false};
+    let shell = profile(Mount::Is7Stock).shots[0];
+    let hit = |unit, shot, at_ms| ModuleHit {target:Target::Device(unit),cause:Cause{shot,attacker_slot:1},
+        ordinal:CLASSIC_FIRST_ORDINAL,at_ms,shell,ignition_roll:0.99};
+    for (index, unit) in [Device::Engine, Device::AmmoBay, Device::FuelTank].into_iter().enumerate() {
+        let hits = [hit(unit, index as u32 + 1, 100)];
+        let amount = if unit == Device::Engine { 200 } else { 210 };
+        bare.apply_classic_hits(&hits, &[amount], health).unwrap();
+        equipped.apply_classic_hits(&hits, &[amount], health).unwrap();
+    }
+    assert_eq!(&bare.health()[..3], &[160,0,0]);
+    assert_eq!(&equipped.health()[..3], &[340,105,90]);
+    assert_eq!(bare.capabilities().drive_scale, 0.5);
+    assert_eq!(equipped.capabilities().drive_scale, 1.);
+    assert!(!equipped.fire_active());
+    assert!(bare.fire_active());
+    assert!(equipped.configure_artefacts(devices, [0; 3]).is_err());
+    let repaired = equipped.restore(Consumable::LargeRepairkit,1,100,0,health).unwrap();
+    assert_eq!(repaired.len(),3);
+    assert_eq!(&equipped.health()[..3], &[540,315,300]);
+}
 use crate::p06t_shells091::{self as source,Mount};
 
 fn he()->Shell {*source::profile(Mount::Ms1Stock).shots.iter().find(|s|s.family==source::Family::HighExplosive).unwrap()}

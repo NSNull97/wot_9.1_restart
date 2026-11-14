@@ -52,9 +52,11 @@ def validate_installed_devices(catalog, owned, slots):
     vehicle = catalog.vehicles[owned["vehicle_id"]]
     require(all(item.compatible(vehicle) for item in mounted), "ARTEFACT_INCOMPATIBLE")
     weight = sum(item.weight_grams for item in mounted)
-    if weight:
+    weight_percent = sum(item.weight_percent for item in mounted)
+    if weight or weight_percent:
         definition = assembly(catalog, owned["vehicle_id"], owned["modules"])
-        require(definition["mass_grams"] + weight <= definition["max_load_grams"], "CHASSIS_OVERLOAD")
+        base = definition["mass_grams"]
+        require(100 * (base + weight) + base * weight_percent <= 100 * definition["max_load_grams"], "CHASSIS_OVERLOAD")
 
 
 def validate_installed_consumables(catalog, vehicle_id, slots):

@@ -14,11 +14,24 @@ from p09d_ammo_store import require,sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p08b_battle_store import _integer, MAX_PARTICIPANTS
+from content0_equipment_catalog import CO2_FUEL_TANK, CYCLONE_FILTER, WET_AMMO_RACKS
 
 POLICY_SCHEMA="p06t-terminal-policy.v1"
 MANIFEST_SHA256="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717"
 SOURCE_CAPS_SHA256="3c4219c2adda799677dea310e84765bbfebca6edfa06aa3db450a7ddfb4875b5"
 FIELDS={"policy_revision","roster_size","crew_active","crew","devices","fire","death"}
+
+
+def fitted_device_maxima(devices, frozen):
+    fitted = frozen.get("artefacts", {}).get("optional_devices", ())
+    modified = {
+        26: CYCLONE_FILTER in fitted,
+        27: any(item in WET_AMMO_RACKS for item in fitted),
+        28: CO2_FUEL_TANK in fitted,
+    }
+    for device in devices:
+        extra, maximum = device["extra_index"], device["max_health"]
+        yield extra, min(65535, (maximum * 3 + 1) // 2) if modified.get(extra) else maximum
 
 
 class TerminalPolicy:
@@ -102,10 +115,10 @@ class TerminalPolicy:
         require(value["crew_active"]==any(row["alive"]for row in crew),"INVALID_TERMINAL_STATE")
         devices=value["devices"];policy=self.document["profiles"][frozen["kind"]]["devices"]
         require(type(devices)is list and len(devices)==len(policy),"INVALID_TERMINAL_STATE")
-        for row,source in zip(devices,policy):
+        for row,(extra,maximum) in zip(devices,fitted_device_maxima(policy,frozen)):
             require(type(row)is dict and set(row)=={"extra_index","health","max_health"}
-                and type(row["extra_index"])is int and row["extra_index"]==source["extra_index"]
-                and type(row["max_health"])is int and row["max_health"]==source["max_health"],"INVALID_TERMINAL_STATE")
+                and type(row["extra_index"])is int and row["extra_index"]==extra
+                and type(row["max_health"])is int and row["max_health"]==maximum,"INVALID_TERMINAL_STATE")
             _integer(row["health"],0,row["max_health"],"INVALID_TERMINAL_STATE")
         fire=value["fire"];death=value["death"]
         require(type(fire)is dict and set(fire)=={"active","ticks","damage"} and type(fire["active"])is bool

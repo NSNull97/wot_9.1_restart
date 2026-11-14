@@ -464,7 +464,9 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     if let Some(typed)=a.fire.typed() {
         b.extend(crate::armament_wire091::ammo_snapshot(typed.mount(),typed.counts(),
             typed.current().compact_descr,typed.next().compact_descr,typed.clip())?);
-        if let Some(frozen)=a.owned_v2.as_ref().filter(|f|f.consumables!=[0;3]) {
+        // Reserve the native consumable slots before the optional-device HUD
+        // callback uses the client's next slot index.
+        if let Some(frozen)=a.owned_v2.as_ref().filter(|f|f.consumables!=[0;3]||a.stereoscope_status().is_some()) {
             for (cd,remaining) in frozen.consumables.into_iter().zip(a.hud_consumables()){
                 b.extend(crate::armament_wire091::equipment_row(cd,u16::from(remaining!=0))?);
             }

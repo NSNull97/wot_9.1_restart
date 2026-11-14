@@ -3,6 +3,20 @@ fn input()->Input{Input{shot:1,target:1,attacker:0,tick:1010,device_sequence:3,d
     health_before:90,residual_hp:18,counts:[2,3,4],kind:VehicleKind::Ms1,
     joint:JointPose{position:[0.,1.,0.],direction:[0.;3]},from_fire:false}}
 fn event()->Event{let Outcome::New(event)=Ledger::new(2).unwrap().apply(input()).unwrap()else{panic!("expected real nonempty policy event")};event}
+#[test]
+fn content0_s5_ammo_detonation_checks_fitted_rack_maximum_and_immutable_replay() {
+    let enhanced = [crate::p06t_device_caps::WET_AMMO_RACKS[1],0,0];
+    let input = Input {kind:VehicleKind::Is7, device_before:315, ..input()};
+    let mut ledger = Ledger::new(2).unwrap();
+    assert!(ledger.apply(input).is_err());
+    assert!(ledger.apply_equipped(Input {device_before:316,..input},enhanced).is_err());
+    let Outcome::New(event) = ledger.apply_equipped(input,enhanced).unwrap() else {panic!("equipped event")};
+    assert_eq!(ledger.apply_equipped(input,enhanced).unwrap(),Outcome::Replay(Some(event)));
+    let lower_transition = Input {device_before:200,..input};
+    let mut ledger = Ledger::new(2).unwrap();
+    assert!(ledger.apply_equipped(lower_transition,enhanced).is_ok());
+    assert!(ledger.apply(lower_transition).is_err());
+}
 #[test]fn p06t_ammo_detonation_nonempty_exact_three_stacks_and_one_lethal_remainder(){
     let e=event();assert_eq!(e.policy(),POLICY);assert_eq!(e.lost(),[2,3,4]);assert_eq!(e.additional_damage(),18);
     let ordinary_plate_damage=e.health_before()-18;

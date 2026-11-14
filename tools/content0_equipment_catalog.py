@@ -37,13 +37,18 @@ CREW_FOOD = {
     2555: "chocolate", 3067: "ration", 3579: "hotCoffee", 4091: "ration_china",
     4603: "ration_uk", 4859: "ration_japan", 25851: "cocacola",
 }
+WET_AMMO_RACKS = {6905: "wetCombatPack_class1", 7161: "wetCombatPack_class2"}
+CO2_FUEL_TANK = 7417
+CYCLONE_FILTER = 7673
 
 # Authoritative runtime effect families backed by the battle command path.
 DEVICE_EFFECTS = {
-    249: "toolbox", 1529: "coatedOptics", 5625: "mediumCaliberTankRammer",
+    249: "toolbox", 1273: "stereoscope", 1529: "coatedOptics", 5625: "mediumCaliberTankRammer",
     5881: "largeCaliberTankRammer", 6137: "mediumCaliberHowitzerRammer",
     6393: "largeCaliberHowitzerRammer", 6649: "enhancedAimDrives",
-} | VENTILATION_BONUS
+    CO2_FUEL_TANK: "carbonDioxide", CYCLONE_FILTER: "filterCyclone",
+    7929: "aimingStabilizer_Mk1", 8185: "aimingStabilizer_Mk2",
+} | VENTILATION_BONUS | WET_AMMO_RACKS
 CONSUMABLE_EFFECTS = {
     251: "handExtinguishers", 507: "autoExtinguishers",
     763: "smallMedkit", 1019: "largeMedkit",
@@ -120,6 +125,7 @@ class LiveItem:
     tags: frozenset[str]
     incompatible_tags: frozenset[str]
     weight_grams: int
+    weight_percent: int
     filters: tuple[VehicleFilter, ...]
 
     def compatible(self, vehicle):
@@ -141,11 +147,14 @@ def live_items():
         if cd in SUPPORTED_ITEMS:
             effect = row["effect"]
             weight = effect.get("weight", 0)
+            fraction = effect.get("vehicleWeightFraction", "0")
+            expected_fraction = "0.01" if cd in WET_AMMO_RACKS else "0"
             if (row["source_name"] != SUPPORTED_ITEMS[cd] or type(weight) is not int or not 0 <= weight <= 1500
-                    or effect.get("vehicleWeightFraction", 0) or effect.get("chassisMaxLoadFactor", 0)):
+                    or fraction != expected_fraction or effect.get("chassisMaxLoadFactor", 0)):
                 raise ValueError("unsupported identity or weight on live artefact")
             result[cd] = LiveItem(cd, row["kind"], row["removable"],
                                   frozenset(row["tags"]), frozenset(row["incompatible_tags"]), weight * 1000,
+                                  int(fraction == "0.01"),
                                   tuple(_vehicle_filter(mode, entry) for mode, entry in row["filters"]))
     if set(result) != set(SUPPORTED_ITEMS):
         raise ValueError("incomplete artefact catalogue binding")

@@ -146,11 +146,12 @@ pub struct State {
     fire_starting_chance_factor:f64,
     /// #717 large repair kit: +10% speed on the server's module repair timer.
     module_repair_delay_ms:u64,
+    optional_devices: [u16; 3],
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): State
 impl crate::bw_wire::Wire for State {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage,classic,fire_starting_chance_factor,module_repair_delay_ms}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);W::put(classic,bw_o);W::put(fire_starting_chance_factor,bw_o);W::put(module_repair_delay_ms,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?,classic:W::get(bw_i)?,fire_starting_chance_factor:W::get(bw_i)?,module_repair_delay_ms:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{profile,policy,health,crew,fire,repair_due,repair_cause,observed_ms,sequence,seen,frozen,fire_ticks,proposed_fire_damage,classic,fire_starting_chance_factor,module_repair_delay_ms,optional_devices}=self;W::put(profile,bw_o);W::put(policy,bw_o);W::put(health,bw_o);W::put(crew,bw_o);W::put(fire,bw_o);W::put(repair_due,bw_o);W::put(repair_cause,bw_o);W::put(observed_ms,bw_o);W::put(sequence,bw_o);W::put(seen,bw_o);W::put(frozen,bw_o);W::put(fire_ticks,bw_o);W::put(proposed_fire_damage,bw_o);W::put(classic,bw_o);W::put(fire_starting_chance_factor,bw_o);W::put(module_repair_delay_ms,bw_o);W::put(optional_devices,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{profile:W::get(bw_i)?,policy:W::get(bw_i)?,health:W::get(bw_i)?,crew:W::get(bw_i)?,fire:W::get(bw_i)?,repair_due:W::get(bw_i)?,repair_cause:W::get(bw_i)?,observed_ms:W::get(bw_i)?,sequence:W::get(bw_i)?,seen:W::get(bw_i)?,frozen:W::get(bw_i)?,fire_ticks:W::get(bw_i)?,proposed_fire_damage:W::get(bw_i)?,classic:W::get(bw_i)?,fire_starting_chance_factor:W::get(bw_i)?,module_repair_delay_ms:W::get(bw_i)?,optional_devices:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl State {
@@ -172,7 +173,7 @@ impl State {
         Ok(Self {profile,policy,health:profile.caps().map(|c|c.max),
             crew:std::array::from_fn(|i|i<seats.len()),fire:None,repair_due:[None;9],repair_cause:[None;9],
             observed_ms:None,sequence:0,seen:Vec::new(),frozen:false,fire_ticks:0,proposed_fire_damage:0,classic:false,
-            fire_starting_chance_factor:1.,module_repair_delay_ms:MODULE_REPAIR_DELAY_MS})
+            fire_starting_chance_factor:1.,module_repair_delay_ms:MODULE_REPAIR_DELAY_MS,optional_devices:[0;3]})
     }
     pub fn profile(&self)->Profile {self.profile}
     /// SHELL-04: classic module rules before any hit (a later switch would rewrite history).
@@ -181,11 +182,17 @@ impl State {
         self.classic=true;Ok(())
     }
     pub fn classic(&self)->bool {self.classic}
-    pub fn configure_artefacts(&mut self,devices:[u16;3],consumables:[u16;3]){
-        if consumables.contains(&Consumable::AutoExtinguisher.compact()){self.fire_starting_chance_factor=0.9;}
+    pub fn configure_artefacts(&mut self,devices:[u16;3],consumables:[u16;3])->io::Result<()> {
+        if self.frozen || self.observed_ms.is_some() || self.health != self.caps().map(|cap| cap.max) {
+            return Err(bad("artefact setup after battle damage"));
+        }
+        self.optional_devices = devices;
+        self.health = self.caps().map(|cap| cap.max);
+        self.fire_starting_chance_factor=if consumables.contains(&Consumable::AutoExtinguisher.compact()){0.9}else{1.};
         let toolbox=if devices.contains(&TOOLBOX){125}else{100};
         let repair_kit=if consumables.contains(&Consumable::LargeRepairkit.compact()){110}else{100};
         self.module_repair_delay_ms=(MODULE_REPAIR_DELAY_MS*10_000).div_ceil(toolbox*repair_kit);
+        Ok(())
     }
     /// TURPHYS-01 test_lab turret test: a passive test bot's ammo bay starts at 1 HP (before any
     /// hit), so the first penetrating hit that reaches it destroys it and the real rack path runs.
@@ -198,7 +205,7 @@ impl State {
     /// This shot already hit this module or seat (tracks of a later explosion are skipped).
     pub fn hit_by_shot(&self,shot:u32,target:Target)->bool {self.seen.iter().any(|h|h.cause.shot==shot&&h.target==target)}
     fn condition_of(&self,index:usize,hp:u16)->Condition {
-        let caps=(*self.profile.caps())[index];
+        let caps=self.caps()[index];
         if self.classic {classic_condition(hp,caps.regen)} else {condition(hp,caps.max)}
     }
     fn shot_hit_limit(&self)->usize {if self.classic {MAX_CLASSIC_SHOT_HITS} else {MAX_SHOT_HITS}}
@@ -207,6 +214,8 @@ impl State {
     pub fn source_caps_sha(&self)->&'static str {self.policy.source_caps_sha()}
     pub fn policy_manifest_sha(&self)->&'static str {self.policy.manifest_sha()}
     pub fn health(&self)->[u16;9] {self.health}
+    pub fn caps(&self) -> [crate::p06t_device_caps::Cap; 9] { self.profile.equipped_caps(self.optional_devices) }
+    pub(crate) fn device_condition(&self, device: Device) -> Condition {self.condition_of(device as usize, self.health[device as usize])}
     pub fn crew(&self)->&[bool] {&self.crew[..self.profile.crew().len()]}
     pub fn crew_active(&self)->bool {self.crew().iter().any(|a|*a)}
     pub fn fire_active(&self)->bool {self.fire.is_some()}
@@ -233,7 +242,7 @@ impl State {
         out.push(Transition {sequence:self.sequence,at_ms,cause,from_fire,change});Ok(())
     }
     fn device(&mut self,out:&mut Vec<Transition>,device:Device,amount:u16,at:u64,cause:Cause,from_fire:bool)->io::Result<()> {
-        let index=device as usize;let max=(*self.profile.caps())[index].max;let before=self.health[index];let after=before.saturating_sub(amount);
+        let index=device as usize;let max=self.caps()[index].max;let before=self.health[index];let after=before.saturating_sub(amount);
         if before!=after {
             self.health[index]=after;
             self.emit(out,at,cause,from_fire,Change::Device {device,extra_index:device.extra(),max_health:max,before,after,
@@ -248,12 +257,13 @@ impl State {
     /// source maxRegenHealth, below maxHealth. INFERRED from the client codes; the historical server
     /// timer and full-repair rule are UNKNOWN (LAB).
     fn repair_due_devices(&mut self,out:&mut Vec<Transition>,now:u64)->io::Result<()> {
+        let caps = self.caps();
         for device in Device::ALL.into_iter().filter(|d|d.repairable()) {
             let index=device as usize;
             if self.health[index]!=0 || self.repair_due[index].is_none_or(|due|due>now) {continue;}
             let cause=self.repair_cause[index].ok_or_else(||bad("module repair cause missing"))?;
-            let max=(*self.profile.caps())[index].max;
-            let after=(*self.profile.caps())[index].regen;
+            let max=caps[index].max;
+            let after=caps[index].regen;
             if after==0 || after>max {return Err(bad("module repair health bounds"));}
             self.health[index]=after;self.repair_due[index]=None;self.repair_cause[index]=None;
             self.emit(out,now,cause,true,Change::Device {device,extra_index:device.extra(),max_health:max,
@@ -288,8 +298,9 @@ impl State {
                 let all=kind==Consumable::LargeRepairkit;
                 let eligible=|d:Device| next.condition_of(d as usize,next.health[d as usize])!=Condition::Normal;
                 if all&&(extra!=1||!Device::ALL.into_iter().any(eligible)){return Ok(events);}
+                let caps=next.caps();
                 for device in Device::ALL{
-                    let index=device as usize;let before=next.health[index];let after=next.profile.caps()[index].max;
+                    let index=device as usize;let before=next.health[index];let after=caps[index].max;
                     let before_condition=next.condition_of(index,before);
                     if before==after||!all&&(extra!=u16::from(device.extra())||before_condition==Condition::Normal){continue;}
                     next.health[index]=after;next.repair_due[index]=None;next.repair_cause[index]=None;
@@ -412,7 +423,7 @@ impl State {
             next.proposed_fire_damage=next.proposed_fire_damage.checked_add(u32::from(amount)).ok_or_else(||bad("fire aggregate damage overflow"))?;
             next.emit(&mut out,at,fire.cause,true,Change::VehicleDamage {amount})?;
             for device in [Device::Engine,Device::FuelTank] {
-                let amount=(*next.profile.caps())[device as usize].max.div_ceil(20);
+                let amount=next.caps()[device as usize].max.div_ceil(20);
                 next.device(&mut out,device,amount,at,fire.cause,true)?;
             }
             if fire.ticks==MAX_FIRE_TICKS || remaining==0 {

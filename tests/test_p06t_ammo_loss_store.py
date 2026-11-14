@@ -131,6 +131,44 @@ class AmmoLossStoreTests(unittest.TestCase):
             {"devices": [0,1529,0], "consumables": [0,0,1275], "layout": [763,0,1275]})
         self.assertEqual(self.send(finish), dict(result, replayed=True))
 
+    def test_module_protection_preserves_fitted_maxima_in_cancel_and_battle_result(self):
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        installed = native_service(self.store, dict(account_id=account, native_database_id=self.fx.native_id,
+            command_key="mount-cyclone", expected_revision=self.profile()["revision"], wire_revision=1,
+            command=308, arguments=[5,7673,1,0,0,0]), authenticated_account_id=account)
+        self.assertEqual(installed["status"], "researched")
+        self.send(self.request("run_open"))
+
+        for index, reason in enumerate(("cancelled", "battle_finished")):
+            battle_id = previous.RUN + ":" + str(9007199254740993 + index)
+            receipt = self.send(self.request("admit", battle_id=battle_id))["reservation"]
+            frozen = receipt["frozen"]["loadout"]
+            self.assertEqual(frozen["artefacts"]["optional_devices"], [7673,0,0])
+            counts = tuple(row["count"] for row in frozen["ammunition"])
+            finish = self.finish(receipt, fired=(0,0,0), lost=(0,0,0), remaining=counts,
+                                 event=False, natural=reason == "battle_finished")
+            finish.update(battle_id=battle_id, reason=reason)
+            terminal = json.loads(finish["terminal_state_json"])
+            self.reject("INVALID_TERMINAL_STATE", lambda: self.send(finish))
+            if reason == "cancelled":
+                finish["terminal_hp"] = frozen["max_hp"]
+                terminal["roster_size"] = 0
+            else:
+                result = json.loads(finish["results_json"])
+                result["arena_id"] = int(battle_id.rsplit(":",1)[1])
+                finish["results_json"] = canonical(result).decode("ascii")
+            engine = terminal["devices"][0]
+            engine.update(max_health=38, health=38 if reason == "cancelled" else 11)
+            finish["terminal_state_json"] = canonical(terminal).decode("ascii")
+            response = self.send(finish)
+            self.assertEqual(response["reservation"]["result"]["terminal_state"]["devices"][0], engine)
+            self.assertEqual(self.send(finish), dict(response,replayed=True))
+
     def test_native_maintenance_buys_shells_and_consumables_atomically(self):
         from p09e_research_service import existing_service
         from p09e_research_store import ECONOMY_POLICY
@@ -298,6 +336,38 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.send(self.request("run_open"))
         frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
         self.assertEqual(frozen["artefacts"]["optional_devices"], [6649, 0, 0])
+
+    def test_stereoscope_stabilizers_and_module_protection_use_source_filters_and_mass(self):
+        from unittest.mock import patch
+        from content0_equipment_catalog import live_items
+        from content0_equipment_store import validate_installed_devices
+        from p09e_research_store import assembly
+
+        catalog = self.store.catalog
+        is7 = catalog.vehicles["vehicle:ussr:IS-7"]
+        ms1 = catalog.vehicles["vehicle:ussr:MS-1"]
+        items = live_items()
+        self.assertEqual([items[cd].weight_grams for cd in (1273, 7929, 8185, 7417, 7673)],
+                         [50_000, 100_000, 200_000, 50_000, 10_000])
+        self.assertEqual([items[cd].weight_percent for cd in (6905, 7161)], [1, 1])
+        self.assertTrue(items[1273].compatible(ms1))
+        self.assertTrue(items[8185].compatible(is7))
+        self.assertFalse(items[7929].compatible(is7))
+        self.assertFalse(items[7417].compatible(ms1))
+        self.assertTrue(items[7673].compatible(ms1))
+        self.assertFalse(items[7161].compatible(ms1))
+
+        owned = {"vehicle_id": "vehicle:ussr:IS-7", "modules": is7["defaults"]}
+        equipped = [7161, 8185, 1273]
+        validate_installed_devices(catalog, owned, equipped)
+        chassis = assembly(catalog, owned["vehicle_id"], owned["modules"])
+        exact_max = chassis["mass_grams"] * 101 // 100 + 250_000
+        for limit, valid in [(exact_max, True), (exact_max - 1, False)]:
+            with patch("p09e_research_store.assembly", return_value=dict(chassis, max_load_grams=limit)):
+                if valid:
+                    validate_installed_devices(catalog, owned, equipped)
+                else:
+                    self.reject("CHASSIS_OVERLOAD", lambda: validate_installed_devices(catalog, owned, equipped))
 
     def test_ventilation_and_rations_use_source_filters_and_settle_frozen_food(self):
         from content0_equipment_catalog import CREW_FOOD, VENTILATION_BONUS, live_items

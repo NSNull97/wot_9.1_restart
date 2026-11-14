@@ -23,6 +23,21 @@ pub(super) fn module_class(target:crate::p06t_lab_proxy::Target)->crate::gateway
             caps::Device::Gun=>M::Gun,caps::Device::TurretRotator=>M::TurretRotator,caps::Device::SurveyingDevice=>M::SurveyingDevice},
     }
 }
+
+/// The #717 tooltip specifies 15% passive crew protection. Apply the relative
+/// reduction to the existing crew injury roll for the frozen battle loadout.
+pub(super) fn penetration_module_chance(actor: &Actor, target: crate::p06t_lab_proxy::Target,
+    explosion: bool, rules: &crate::gateway091::shared::shell_rules::Rules) -> f64 {
+    use crate::gateway091::shared::shell_rules::ModuleClass;
+    let class = module_class(target);
+    let chance = rules.module_chance(class, explosion);
+    if class == ModuleClass::Crew && actor.owned_v2.as_ref()
+        .is_some_and(|loadout| loadout.consumables.contains(&device::Consumable::LargeMedkit.compact())) {
+        return chance * 0.85;
+    }
+    chance
+}
+
 /// SHELL-04 (owner 2026-11-08): module damage takes the shot's one damage roll (+-25 %), rounded
 /// half away from zero like HP damage, at least 1.
 fn rolled_device_damage(shell:crate::p06t_shells091::Shell,rolls:Option<crate::gateway091::shared::shell_rules::Rolls>)->io::Result<u16>{
@@ -72,7 +87,8 @@ impl World {
     }
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
         let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
-        let state=device::State::new(profile)?;
+        let mut state=device::State::new(profile)?;
+        state.configure_artefacts(loadout.optional_devices,loadout.consumables)?;
         terminal_json(loadout,&state,0,None,&[])
     }
     pub fn terminal_state_json(&self,slot:usize)->io::Result<String>{
@@ -222,7 +238,7 @@ impl World {
                         bundle.chassis().is_some(),bundle.module_volumes())?;
                     let explosion=shell.family==crate::p06t_shells091::Family::HighExplosive;
                     for (index,hit) in hits.iter().enumerate() {
-                        let chance=rules.module_chance(module_class(hit.target),explosion);
+                        let chance=penetration_module_chance(&actors[slot],hit.target,explosion,rules);
                         let roll=self.ignition_roll(projectile.sequence,slot,MODULE_ROLL_ORDINAL+index as u8)?;
                         let applied=roll<chance;
                         if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,contact.tick,projectile.slot,slot,
@@ -358,16 +374,18 @@ impl World {
         health_before:u16,residual_hp:u16,shot:u32,attacker:usize,tick:u32)->io::Result<u16>{
         if self.ammo_detonation.is_none(){return Ok(0);}
         let mut destroyed=events.iter().filter_map(|event|match event.change{
-            device::Change::Device{device:caps::Device::AmmoBay,before,after:0,..}if before>0=>Some((event,before)),_=>None});
-        let Some((transition,device_before))=destroyed.next()else{return Ok(0);};
+            device::Change::Device{device:caps::Device::AmmoBay,max_health,before,after:0,..}if before>0=>Some((event,before,max_health)),_=>None});
+        let Some((transition,device_before,device_max))=destroyed.next()else{return Ok(0);};
         if destroyed.next().is_some()||transition.cause.shot!=shot||usize::from(transition.cause.attacker_slot)!=attacker
             ||transition.at_ms!=u64::from(tick.checked_sub(1000).ok_or_else(||bad())?)*100||transition.from_fire{return Err(bad());}
         let actor=actors.get(slot).ok_or_else(||bad())?;
+        let devices=actor.devices.as_ref().ok_or_else(bad)?;
+        if devices.caps()[caps::Device::AmmoBay as usize].max!=device_max{return Err(bad());}
         let input=rack::Input{shot,target:slot,attacker,tick,device_sequence:transition.sequence,device_before,device_after:0,
             health_before,residual_hp,counts:actor.fire.typed().ok_or_else(||bad())?.counts(),kind:actor.vehicle_kind(),
             joint:turret_joint(actor)?,from_fire:transition.from_fire};
         let mut ledger=self.ammo_detonation.as_ref().ok_or_else(||bad())?.clone();
-        let outcome=ledger.apply(input)?;
+        let outcome=ledger.apply_equipped(input,actor.optional_devices())?;
         match outcome{
             rack::Outcome::New(event)=>{
                 let mut fire=actors[slot].fire.clone();
@@ -464,10 +482,11 @@ fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
 fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>,used:&[usize])->io::Result<String>{
     if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
         ||state.policy_version()!=device::PolicyVersion::V1
-        ||caps::Profile::for_owned(frozen.kind)!=Some(state.profile()){return Err(bad());}
+        ||caps::Profile::for_owned(frozen.kind)!=Some(state.profile())
+        ||state.caps()!=state.profile().equipped_caps(frozen.optional_devices){return Err(bad());}
     let mut value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
         "crew":frozen.crew_ids.iter().zip(state.crew()).map(|(id,alive)|serde_json::json!({"crew_id":id,"alive":alive})).collect::<Vec<_>>(),
-        "devices":state.health().iter().zip(*state.profile().caps()).enumerate().map(|(index,(health,cap))|
+        "devices":state.health().iter().zip(state.caps()).enumerate().map(|(index,(health,cap))|
             serde_json::json!({"extra_index":26+index,"health":health,"max_health":cap.max})).collect::<Vec<_>>(),
         "fire":{"active":state.fire_active(),"ticks":state.fire_ticks(),"damage":state.proposed_fire_damage()},
         "death":{"reason":death.map_or(-1i16,|event|i16::from(event.reason)),"killer_slot":death.map(|event|event.attacker),

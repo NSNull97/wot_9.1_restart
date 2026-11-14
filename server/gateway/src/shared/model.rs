@@ -99,6 +99,8 @@ pub struct Actor {
     pub devices:Option<crate::p06t_device_state::State>,
     /// Frozen at owned admission; an activated slot is cleared for this battle.
     pub(super) consumables:[u16;3],
+    /// Anchor pose, first observed still instant and committed armed status.
+    stereoscope_rest: Option<([f32; 3], [f32; 3], Instant, bool)>,
     /// BOT-01: server bot ordinal; such an actor has no Session and no account.
     pub bot:Option<u8>,
     /// #717 VEHICLE_SETTING.AUTOROTATION_ENABLED, sent by the client's control modes.
@@ -108,8 +110,8 @@ pub struct Actor {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Actor
 impl crate::bw_wire::Wire for Actor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,stereoscope_rest,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(stereoscope_rest,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,stereoscope_rest:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -125,7 +127,7 @@ impl Actor {
     }
 
     pub(super) fn equipment_mass(&self)->f32 {
-        crate::profile13_v2091::equipment_mass(self.optional_devices())
+        crate::profile13_v2091::equipment_mass(self.optional_devices(), self.vehicle_kind().mass_kg())
     }
 
     /// Ratio to the same role in a fully trained, unboosted crew. The pinned
@@ -175,7 +177,39 @@ impl Actor {
         let damage=self.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
         if !(0. ..=1.).contains(&damage){return Err(bad());}
         let optics=if self.optional_devices().contains(&COATED_OPTICS){COATED_OPTICS_VIEW_FACTOR}else{1.};
-        Ok(self.vehicle_kind().view_range()*optics*damage*self.crew_performance(Self::COMMANDER) as f32)
+        let nominal=self.vehicle_kind().view_range()*damage*self.crew_performance(Self::COMMANDER) as f32;
+        let scope=if self.stereoscope_status()==Some(true) {(nominal*1.25).min(500.)} else {0.};
+        Ok((nominal*optics).max(scope))
+    }
+
+    pub(super) fn stereoscope_status(&self) -> Option<bool> {
+        self.optional_devices().contains(&crate::profile13_v2091::STEREOSCOPE).then(|| {
+            self.ready && self.session.is_some() && self.alive()
+                && self.stereoscope_rest.is_some_and(|(_, _, _, active)| active)
+        })
+    }
+
+    fn update_stereoscope(&mut self, now: Instant) {
+        if self.stereoscope_status().is_none() { return; }
+        // #717 exposes the 3 s delay. The pose tolerances are our physics policy
+        // for solver drift. Compare to the anchor to detect accumulating creep.
+        const POSITION_EPSILON_SQUARED: f32 = 0.05 * 0.05;
+        const DIRECTION_EPSILON: f32 = 0.01;
+        const SPEED_EPSILON: f32 = 0.1;
+        let stationary = self.speed.abs() <= SPEED_EPSILON;
+        self.stereoscope_rest = if !stationary {
+            None
+        } else if let Some((position, direction, since, _)) = self.stereoscope_rest {
+            let displacement = (0..3).map(|axis| (self.position[axis] - position[axis]).powi(2)).sum::<f32>();
+            let rotated = (0..3).any(|axis| aim::wrap(self.direction[axis] - direction[axis]).abs() > DIRECTION_EPSILON);
+            if displacement > POSITION_EPSILON_SQUARED || rotated {
+                Some((self.position, self.direction, now, false))
+            } else {
+                Some((position, direction, since, now.saturating_duration_since(since) >= Duration::from_secs(3)))
+            }
+        } else {
+            Some((self.position, self.direction, now, false))
+        };
     }
 
     pub(super) fn aiming_spec(&self)->super::vehicle_profile::AimSpec {
@@ -185,6 +219,17 @@ impl Actor {
         }
         spec.aiming_time /= self.crew_performance(Self::GUNNER) as f32;
         spec
+    }
+
+    fn dispersion_factors(&self) -> super::dispersion::Factors {
+        use crate::profile13_v2091::VERTICAL_STABILIZERS;
+        let has_stabilizer = self.optional_devices().iter().any(|id| VERTICAL_STABILIZERS.contains(id));
+        // The #717 client reads this from the optional device in its vehicle
+        // descriptor. Keep updateTargetingInfo's motion coefficients nominal.
+        super::dispersion::Factors {
+            additive: if has_stabilizer { 0.8 } else { 1. },
+            multiplier: self.devices.as_ref().map_or(1., |state| f64::from(state.capabilities().dispersion_scale)),
+        }
     }
 
     fn refresh_reload_scale(&mut self,now:Instant)->io::Result<()> {
@@ -1198,7 +1243,7 @@ impl World {
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
             next.actors[slot].owned_v2=Some(loadout.clone());
             let mut devices=next.classic_devices(crate::p06t_device_state::State::new(profile)?)?;
-            devices.configure_artefacts(loadout.optional_devices,loadout.consumables);
+            devices.configure_artefacts(loadout.optional_devices,loadout.consumables)?;
             next.actors[slot].devices=Some(devices);
             next.actors[slot].consumables=loadout.consumables;
             next.actors[slot].refresh_reload_scale(next.last)?;
@@ -1240,7 +1285,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             autorotation: true, hull_follow: 0, position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],bot:None });
+            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],stereoscope_rest:None,bot:None });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -1328,7 +1373,7 @@ impl World {
     }
     pub fn detach(&mut self, session: u32) -> io::Result<()> {
         let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(|| bad())?;
-        a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); Ok(())
+        a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); a.stereoscope_rest = None; Ok(())
     }
     pub fn owned(&self, slot: usize, session: u32) -> io::Result<&Actor> {
         self.actors.get(slot).filter(|a| a.session == Some(session)).ok_or_else(|| bad())
@@ -1416,7 +1461,7 @@ impl World {
                 },
                 Command::Leave => {
                     if at + 1 != commands.len() { return Err(bad()); }
-                    next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.; next.aim.park();
+                    next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.; next.aim.park(); next.stereoscope_rest = None;
                 },
             }
         }
@@ -1447,9 +1492,9 @@ impl World {
         impact_trace.launch(self.id, &projectile, launch_tick)?;
         if let Some(d)=deviation {
             if super::shot_trace::enabled(){super::shot_trace::shot(self.id,sequence,launch_tick,slot,next.vehicle_kind(),&projectile.shell.ok_or_else(||bad())?,d.angle,d.gun,d.seed,d.r,d.theta);}
-            let spec=next.aiming_spec();let mult=next.devices.as_ref().map_or(1.,|c|f64::from(c.capabilities().dispersion_scale));let speed=next.speed;
+            let spec=next.aiming_spec();let factors=next.dispersion_factors();let speed=next.speed;
             let (hull_yaw,turret_yaw)=(next.direction[0],next.aim.yaw);
-            next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,mult);
+            next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,factors);
         }
         shots.push(Shot { sequence, slot, tick: launch_tick, burst });
         projectiles.push(projectile);
@@ -1563,6 +1608,7 @@ impl World {
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
                 a.direction[0] = a.yaw;
+                a.update_stereoscope(now);
                 if self.lifecycle.as_ref().is_some_and(|state| state.allows_actions()) && a.alive() {
                     let distance = (0..3).map(|i| (f64::from(a.position[i]) - f64::from(previous_position[i])).powi(2)).sum::<f64>().sqrt();
                     a.mileage_metres += distance;
@@ -1575,10 +1621,10 @@ impl World {
                     }else{a.aim.advance_pose_for(a.vehicle_kind,a.position,a.direction,dt)?;}
                     if layered_circle {
                         let spec=a.aiming_spec();
-                        let mult=a.devices.as_ref().map_or(1.,|d|f64::from(d.capabilities().dispersion_scale));
+                        let factors=a.dispersion_factors();
                         let (hull_yaw,turret_yaw)=(a.direction[0],a.aim.yaw);
                         let (speed,state)=(a.speed,a.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)));
-                        state.step(&spec,speed,hull_yaw,turret_yaw,mult,dt)?;
+                        state.step(&spec,speed,hull_yaw,turret_yaw,factors,dt)?;
                     }
                 }
             }

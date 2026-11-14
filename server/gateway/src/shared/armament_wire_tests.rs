@@ -94,3 +94,8 @@ fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
     let shot=w::ammo_delta(m,same,([3,2,3],a,b,0)).unwrap();
     assert_eq!(shot,w::ammo_row(m,a,3,0).unwrap(),"a shot sends only its row");
 }
+#[test]
+fn content0_s5_stereoscope_owner_callback_uses_raw_source_id_and_bool() {
+    assert_eq!(crate::armament_wire091::stereoscope_status(false), [0x13, 0x3d, 4, 0]);
+    assert_eq!(crate::armament_wire091::stereoscope_status(true), [0x13, 0x3d, 4, 1]);
+}

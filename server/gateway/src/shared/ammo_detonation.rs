@@ -52,18 +52,19 @@ impl crate::bw_wire::Wire for Input {
 }
 // end BW-01 wire codec
 impl Input{
-    fn validate(self,roster:u8)->io::Result<()>{
+    fn validate(self,roster:u8,optional_devices:[u16;3])->io::Result<u16>{
         // Frozen loss-v1 has no qualified extended vehicle/device contract.
         // A public pure Input must refuse these kinds, never index ALL5.
         let profile=Profile::for_owned(self.kind).ok_or_else(||bad("detonation source profile unsupported"))?;
-        let max=(*profile.caps())[Device::AmmoBay as usize].max;
+        let max=profile.equipped_caps(optional_devices)[Device::AmmoBay as usize].max;
         let total=self.counts.iter().map(|n|u32::from(*n)).sum::<u32>();
         if self.shot==0||self.shot>MAX_SHOT||self.target>=usize::from(roster)||self.attacker>=usize::from(roster)||self.attacker==self.target
             ||!(1000..=37000).contains(&self.tick)||!(1..=super::model::MAX_DAMAGE_EVENTS as u32).contains(&self.device_sequence)
             ||self.device_before==0||self.device_before>max||self.device_after!=0
             ||self.health_before==0||self.health_before>self.kind.max_health()as u16||self.residual_hp>self.health_before
             ||total>u32::from(self.kind.ammo_limit()){return Err(bad("detonation source transition or counts bounds"));}
-        self.joint.validate()
+        self.joint.validate()?;
+        Ok(max)
     }
     fn identical(self,other:Self)->bool{
         self.shot==other.shot&&self.target==other.target&&self.attacker==other.attacker&&self.tick==other.tick
@@ -104,11 +105,11 @@ impl Event{
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum Outcome{New(Event),Empty,Replay(Option<Event>)}
 #[derive(Clone,Copy,Debug,PartialEq)]
-struct Seen{input:Input,event:Option<usize>}
+struct Seen{input:Input,event:Option<usize>,rack_max:u16}
 // BW-01 wire codec (tools/bw01_wire_gen.py): Seen
 impl crate::bw_wire::Wire for Seen {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{input,event}=self;W::put(input,bw_o);W::put(event,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{input:W::get(bw_i)?,event:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{input,event,rack_max}=self;W::put(input,bw_o);W::put(event,bw_o);W::put(rack_max,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{input:W::get(bw_i)?,event:W::get(bw_i)?,rack_max:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 #[derive(Clone,Debug,PartialEq)]
@@ -128,17 +129,20 @@ impl Ledger{
     pub fn is_pristine(&self)->bool{self.seen.is_empty()&&self.events.is_empty()}
     /// At most one rack-destruction observation per target, including empty-rack
     /// tombstones. An exact replay is explicit and never creates a second loss.
-    pub fn apply(&mut self,input:Input)->io::Result<Outcome>{
-        input.validate(self.roster)?;
+    #[cfg(test)]
+    pub fn apply(&mut self,input:Input)->io::Result<Outcome>{self.apply_equipped(input,[0;3])}
+
+    pub fn apply_equipped(&mut self,input:Input,optional_devices:[u16;3])->io::Result<Outcome>{
+        let rack_max=input.validate(self.roster,optional_devices)?;
         if let Some(old)=self.seen.iter().find(|old|old.input.target==input.target){
-            if !old.input.identical(input){return Err(bad("conflicting rack transition replay"));}
+            if !old.input.identical(input)||old.rack_max!=rack_max{return Err(bad("conflicting rack transition replay"));}
             return Ok(Outcome::Replay(old.event.map(|index|self.events[index])));
         }
         if self.seen.len()>=usize::from(self.roster)||self.events.len()>=MAX_EVENTS{return Err(bad("detonation journal bounds"));}
         // No event, no lethal HP proposal and no visual flight for an empty rack.
-        if input.counts==[0;3]{self.seen.push(Seen{input,event:None});return Ok(Outcome::Empty);}
+        if input.counts==[0;3]{self.seen.push(Seen{input,event:None,rack_max});return Ok(Outcome::Empty);}
         let index=self.events.len();let event=Event{sequence:index as u32+1,input};
-        self.seen.push(Seen{input,event:Some(index)});self.events.push(event);Ok(Outcome::New(event))
+        self.seen.push(Seen{input,event:Some(index),rack_max});self.events.push(event);Ok(Outcome::New(event))
     }
 }
 

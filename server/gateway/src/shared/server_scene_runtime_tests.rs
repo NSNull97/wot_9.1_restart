@@ -13,7 +13,7 @@ fn content0_s5_weighted_stand_starts_with_actual_body_binding() {
     let mut world=template.world;
     world.enable_team_base_spawn().unwrap();
     world.enable_mixed_ammo().unwrap();
-    for (slot,kind,gear) in [(0,VehicleKind::Ms1,[6649,0,0]),(1,VehicleKind::Is7,[5881,6649,0])] {
+    for (slot,kind,gear) in [(0,VehicleKind::Ms1,[6649,0,0]),(1,VehicleKind::Is7,[7161,8185,1273])] {
         let account=format!("12345678-1234-4234-8234-{slot:012}");
         let source=super::super::super::vehicle_catalog::by_kind(kind.label()).unwrap();
         let (native,suffix)=source.legacy_inventory.unwrap();
@@ -38,7 +38,7 @@ fn content0_s5_weighted_stand_starts_with_actual_body_binding() {
     runtime.start(&mut world,now).unwrap();
     spin(&mut runtime,&mut world,now,|r,_|r.ready_for_native());
     let spec=runtime.spec.as_ref().unwrap();
-    assert_eq!(spec.actors.iter().map(|actor|actor.physical_profile().unwrap().mass()).collect::<Vec<_>>(),[4791.,68690.]);
+    assert_eq!(spec.actors.iter().map(|actor|actor.physical_profile().unwrap().mass()).collect::<Vec<_>>(),[4791.,69121.9]);
     let initial=world.tick;
     world.lifecycle=None;
     for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();}

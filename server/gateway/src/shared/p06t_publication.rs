@@ -34,9 +34,12 @@ fn owner_snapshot(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World)->io:
     let actor=world.actors.get(c.slot).ok_or_else(||model::bad())?;
     let state=actor.devices.as_ref().ok_or_else(||model::bad())?;
     let mut body=Vec::new();let id=wire::vehicle_id(c.slot)?;
-    for(index,(hp,cap))in state.health().iter().zip(*state.profile().caps()).enumerate(){
-        if *hp==0{body.extend(native::damage_info(id,1,26+index as u8,0)?);}
-        else if u32::from(*hp)*2<=u32::from(cap.max){body.extend(native::damage_info(id,0,26+index as u8,0)?);}
+    for unit in crate::p06t_device_caps::Device::ALL {
+        match state.device_condition(unit) {
+            Condition::Destroyed => body.extend(native::damage_info(id,1,unit.extra(),0)?),
+            Condition::Critical => body.extend(native::damage_info(id,0,unit.extra(),0)?),
+            Condition::Normal => (),
+        }
     }
     for(seat,alive)in state.crew().iter().enumerate(){if !alive{
         body.extend(native::damage_info(id,2,state.profile().crew()[seat].extra,0)?);
@@ -69,6 +72,10 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         }
         if !body.is_empty(){outbox.push_back(body);}
         c.consumables_sent=hud_consumables;
+    }
+    if let Some(active) = owner.stereoscope_status().filter(|active| Some(*active) != c.stereoscope_sent) {
+        outbox.push_back(native::stereoscope_status(active));
+        c.stereoscope_sent = Some(active);
     }
     owner_snapshot(c,outbox,world)?;
     for event in world.damage_events.iter().skip(c.damage_cursor){

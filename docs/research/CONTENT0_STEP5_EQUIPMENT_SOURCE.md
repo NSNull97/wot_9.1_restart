@@ -215,3 +215,89 @@ are test expectations and do not represent measurements from a native battle.
 | Class 3 ventilation | 105 / 116 / 116 | 14.05 s | 3.020 s | 337.1 m |
 | Soviet ration | 110 / 121 / 121 | 13.78 s | 2.960 s | 344.1 m |
 | Class 3 ventilation and Soviet ration | 115 / 127 / 127 | 13.46 s | 2.892 s | 351.2 m |
+
+## Stabilizers, stereoscope and module protection
+
+The pinned `optional_devices.xml` defines these effects and installation filters.
+
+| Item | Compact ID | Mass added | Source effect and filter |
+| --- | ---: | ---: | --- |
+| Vertical stabilizer Mk1 | 7929 | 100 kg | `additiveShotDispersionFactor` × 0.8, `aimingStabilizer_Mk1_user` |
+| Vertical stabilizer Mk2 | 8185 | 200 kg | `additiveShotDispersionFactor` × 0.8, `aimingStabilizer_Mk2_user` |
+| Stereoscope | 1273 | 50 kg | 3 s stationary, `circularVisionRadiusFactor` × 1.25 |
+| Wet ammo rack, classes 1 and 2 | 6905 / 7161 | 1% of base assembled mass | `ammoBayHealthFactor` × 1.5, corresponding `wetCombatPack_class*_user` |
+| Cyclone filter | 7673 | 10 kg | `engineHealthFactor` × 1.5, USSR except `lendLeaseVehicle` |
+| CO₂ fuel tanks | 7417 | 50 kg | `fuelTankHealthFactor` × 1.5, tier VI and above |
+
+VERIFIED in `Avatar.getOwnVehicleShotDispersionAngle`: the stabilizer multiplies
+the sum of the squared motion, rotation and post-shot penalties by `0.8²` before
+the square root. The fixed stationary term stays one. The native descriptor
+already carries the device. `updateTargetingInfo` therefore sends unscaled
+movement coefficients so the client does not apply the effect twice. A scan of
+374 vehicle types found 52 Mk1 and 37 Mk2 matches with no overlap. The IS-7 can
+take Mk2. The KV-1S has neither of the stabilizer tags.
+
+The stereoscope drive condition uses the committed pose of the hull. Rotation
+of the turret alone is excluded. The [8.5 release notes](https://worldoftanks.com/en/news/general-news/85-update-notes/)
+explicitly document retaining stereoscope and camouflage net effects when a
+damaged track prevents movement. The [2014 official manual](https://worldoftanks.eu/dcont/fb/document/world_of_tanks_game_manual_fr_web_8_11_3.pdf)
+shows ×1.25 while stationary, with a 500 m equipment ceiling. The existing
+server spotting cap is measured separately. Exact historical movement
+tolerances and telescope/optics interaction are not exposed by #717. The stand
+uses a 5 cm translation limit from the stationary anchor, a 0.01 rad hull
+orientation limit and a 0.1 m/s speed limit to reject solver drift. It uses the
+stronger active range when both devices are fitted. The existing direct spotting
+limit is 445 m. The owner's equipment HUD is notified with the original
+`Avatar.updateVehicleOptionalDeviceStatus` raw ID 4 and a boolean. Avatar slot
+`0x3d` follows the inherited method table of the pinned client.
+
+The camouflage net sources establish an activation delay of 3 s, 100 kg and a
+stationary effect. The [8.6 release notes](https://worldoftanks.com/en/content/docs/release_notes/86-update-notes-archive/)
+confirm a fixed class-dependent bonus. The #717 `camouflageNetBonus` reader
+has no corresponding value in the pinned vehicle XML. The existing spotting
+law has no camouflage rating for the target. Net activation can follow the
+same stationary state after a target camouflage model and its data are bound.
+
+Module HP multipliers are source values. Whole HP rounds half up in the
+stand and `maxRegenHealth` remains source-pinned. Original server rounding and
+regeneration treatment are unknown. The frozen equipment sets maxima in the
+live damage state and in the result validators, including cancellation. The
+wet rack uses original `VehicleDescr.__computeWeight` order: 1% of the assembled
+mass before adding the fixed weights of other equipment.
+
+## Spall liners and passive first-aid protection
+
+VERIFIED against `optional_devices.xml` and `AntifragmentationLining.updateVehicleDescrAttrs`
+in `common/items/artefacts.pyc` (SHA-256
+`aedbfc161d7f0b2b78f376540811a0b4113736757982d03bceb4e6f4cccac49c`). At offsets
+9–27 the descriptor multiplies `antifragmentationLiningFactor` by the XML
+factor. At offsets 28–50 it multiplies `crewChanceToHitFactor` by one minus
+`increaseCrewChanceToEvadeHit`.
+
+| Spall liner | Compact ID | Added mass | Absorption factor | Crew hit chance factor |
+| --- | ---: | ---: | ---: | ---: |
+| Light | 505 | 250 kg | 1.20 | 0.80 |
+| Medium | 761 | 500 kg | 1.25 | 0.75 |
+| Heavy | 1017 | 1,000 kg | 1.30 | 0.70 |
+| Superheavy | 11001 | 1,500 kg | 1.50 | 0.50 |
+
+The #717 descriptions identify absorption for explosions and ramming. The
+[official 8.8 release notes](https://worldoftanks.eu/en/content/docs/release_notes/release-notes-88/)
+independently confirm the four reductions in crew wound chance. The original
+server's application of the absorption multiplier to a ramming collision is
+UNKNOWN. The project currently uses a contact-energy law in `tank_ram.rs`.
+The explosion penalty can use the material's `useAntifragmentationLining` bit
+for the applicable armor term in direct non-penetration and splash. Splash
+simulation and its independent trace validator must agree on that input.
+
+The #717 Russian tooltip `largeMedkit/always` and the
+[official 8.8 manual, p. 52](https://worldoftanks.eu/dcont/fb/updated_manuals/world_of_tanks_game_manual_en_eu_web_8_8.pdf#page=52)
+both specify +15% crew wound protection. `Repairkit._readConfig` offsets 21–42
+read the XML `bonusValue` of 0.30 as a fraction. No battle consumer of that
+property exists in the scanned original `common` or `client` bytecode. The
+exact original server conversion, combination with spall lining and duration
+after use are UNKNOWN. The stand implements the documented relative crew
+chance factor 0.85 on penetrating projectile and HE/HESH seat rolls. It uses
+the frozen loadout so the effect lasts throughout the battle, including after
+active healing. That lifetime is a project decision. Spall liner integration
+remains pending.

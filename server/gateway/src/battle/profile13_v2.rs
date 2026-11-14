@@ -126,12 +126,18 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
     pub fn validate_owned(&self,account:&str)->io::Result<()>{
         if parse_frozen(&self.value(),account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
 
+use crate::p06t_device_caps::{CO2_FUEL_TANK, CYCLONE_FILTER, WET_AMMO_RACKS};
+
 pub(crate) const COATED_OPTICS:u16=1529;
 pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
+pub(crate) const STEREOSCOPE:u16=1273;
+pub(crate) const VERTICAL_STABILIZERS:[u16;2]=[7929,8185];
 
 // CONTENT-0 #717 optional_devices.xml. Values are extra kg on the mounted vehicle.
-const OPTIONAL_DEVICE_MASS:[(u16,u16);10]=[(249,100),(COATED_OPTICS,0),(4601,100),(4857,150),
-    (5113,200),(5625,200),(5881,400),(6137,300),(6393,500),(6649,100)];
+const OPTIONAL_DEVICE_MASS:[(u16,u16);17]=[(249,100),(STEREOSCOPE,50),(COATED_OPTICS,0),(4601,100),(4857,150),
+    (5113,200),(5625,200),(5881,400),(6137,300),(6393,500),(6649,100),
+    (WET_AMMO_RACKS[0],0),(WET_AMMO_RACKS[1],0),(CO2_FUEL_TANK,50),(CYCLONE_FILTER,10),
+    (VERTICAL_STABILIZERS[0],100),(VERTICAL_STABILIZERS[1],200)];
 const VENTILATION:[u16;3]=[4601,4857,5113];
 const RAMMERS:[u16;4]=[5625,5881,6137,6393];
 // CONTENT-0 #717 equipments.xml. Indexed by the native nation order.
@@ -144,9 +150,10 @@ pub(crate) fn ventilation_bonus(ids:[u16;3])->u8 {
 
 pub(crate) fn is_crew_food(id:u16)->bool { CREW_FOOD.contains(&id) }
 
-pub(crate) fn equipment_mass(ids:[u16;3])->f32 {
-    ids.iter().filter_map(|id|OPTIONAL_DEVICE_MASS.iter().find(|(cd,_)|cd==id))
-        .map(|(_,mass)|f32::from(*mass)).sum()
+pub(crate) fn equipment_mass(ids:[u16;3], base_mass_kg:f64)->f32 {
+    let flat: f64 = ids.iter().filter_map(|id|OPTIONAL_DEVICE_MASS.iter().find(|(cd,_)|cd==id))
+        .map(|(_,mass)|f64::from(*mass)).sum();
+    (flat + if ids.iter().any(|id|WET_AMMO_RACKS.contains(id)) { base_mass_kg / 100. } else { 0. }) as f32
 }
 
 fn artefact_slots(v:&Value,supported:impl Fn(u16)->bool)->io::Result<[u16;3]> {
@@ -271,8 +278,8 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
         let devices=artefact_slots(&artefacts["optional_devices"],|id|OPTIONAL_DEVICE_MASS.iter().any(|row|row.0==id))?;
         let consumables=artefact_slots(&artefacts["consumables"],|id|ACTIVE_CONSUMABLES.contains(&id)||is_crew_food(id))?;
         if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
-        if devices.iter().filter(|id|VENTILATION.contains(id)).count()>1
-            ||devices.iter().filter(|id|RAMMERS.contains(id)).count()>1 {
+        if [&VENTILATION[..],&RAMMERS[..],&VERTICAL_STABILIZERS[..],&WET_AMMO_RACKS[..]].into_iter()
+            .any(|family| devices.iter().filter(|id|family.contains(id)).count()>1) {
             return Err(bad("incompatible equipment classes"));
         }
         (devices,consumables)
@@ -412,7 +419,8 @@ fn terminal_state(v:&Value,f:&Frozen,hp:i16)->io::Result<TerminalState>{
     if any!=crew_active{return Err(bad("crew active policy"));}
     // Source device maxima of the admitted stock profiles (the MS-1/IS-7 rows
     // are the pinned TERMINAL_MANIFEST values). Not universal defaults.
-    let maxima=(*device_profile(f.kind).ok_or_else(||bad("terminal admission"))?.caps()).map(|c|u64::from(c.max));
+    let maxima=device_profile(f.kind).ok_or_else(||bad("terminal admission"))?
+        .equipped_caps(f.optional_devices).map(|c|u64::from(c.max));
     let devices=v["devices"].as_array().ok_or_else(||bad("devices"))?;if devices.len()!=maxima.len(){return Err(bad("device count"));}
     for(i,(row,max))in devices.iter().zip(maxima).enumerate(){keys(row,&["extra_index","health","max_health"])?;
         if number(row,"extra_index")?!=26+i as u64||number(row,"max_health")?!=max||number(row,"health")?>max{return Err(bad("source device maxima/order"));}}
@@ -579,7 +587,7 @@ mod tests{
         let parsed=parse_frozen_with(&value,account,&hash,false).unwrap();
         assert_eq!(parsed.crew_qualification,Some(vec![25,50,63,100]));
         assert_eq!(ventilation_bonus(parsed.optional_devices),5);
-        assert_eq!(equipment_mass(parsed.optional_devices),350.);
+        assert_eq!(equipment_mass(parsed.optional_devices, parsed.kind.mass_kg()),350.);
         assert_eq!(parsed.value(),value);
         let anchor=std::time::Instant::now();
         let encoded=crate::bw_wire::encode(&parsed,anchor,&mut crate::bw_wire::Arcs::new(false)).unwrap();

@@ -53,6 +53,12 @@ pub fn equipment_row(compact:u16,quantity:u16)->io::Result<Vec<u8>>{
     body.extend([0,0,0]);Ok(body)
 }
 
+/// #717 Avatar.updateVehicleOptionalDeviceStatus takes the raw item ID, not its compact ID.
+pub(super) fn stereoscope_status(active: bool) -> Vec<u8> {
+    let item_id = (crate::profile13_v2091::STEREOSCOPE >> 8) as u8;
+    vec![0x13, 0x3d, item_id, u8::from(active)]
+}
+
 fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact&&!s.is_absent()).ok_or_else(||bad("P06T shell not mounted"))}
 /// quantity includes the clip under the explicitly documented server lab policy.
 /// timeRemaining=0 is intentional: original shell consumer ignores this field.
