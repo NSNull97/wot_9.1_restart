@@ -392,5 +392,21 @@ The client uses the normal installer and the `install-demount-fix` rollback ledg
 The owner confirmed native demount on the updated stand. Client trace
 `native-42252-1794659900340.jsonl` line 191 records item `1529`, slot `2`.
 Gateway `gateway-20261114-173738.stdout.log` line 603 commits revision 818.
-SQLite has slots `[0, 5113, 0]` and one `1529` in the depot. A complete battle
-on the updated gateway remains NOT_RUN.
+SQLite has slots `[0, 5113, 0]` and one `1529` in the depot.
+
+The owner completed native battle `46723758016008944` on the updated gateway.
+`gateway-20261114-173738.stdout.log` line 1847 records devices `[1273, 5113, 5881]`
+and ration `3067`. Native trace `native-42252-1794659900340.jsonl` lines 3536
+and 3584 show the first inactive and active callbacks 3.064 s apart. There
+are five successful playbacks and five deactivations. The battle finished
+with a team 1 win by elimination. The result was committed at revision 823,
+and SQLite has `p06t_result.acked=1`. Gateway lines 14852, 15065, 15070, 15080
+and 15101 show the outcome, commit, result-confirmed return, hangar sync and
+processed ACK. Client trace line 7245 shows the loaded hangar and selected
+SU-152 on the existing connection. The persisted result has 10 spent shells
+and 870 terminal HP. The ration slot is empty and its layout is retained.
+
+The active phase had no drive resync, battle fault or reliable retransmits.
+The maximum gateway loop time in the 23 complete active-phase windows was
+17.0 ms (line 9678). This native run did not encounter a long stall. Recovery
+from the 5.1 s boundary remains covered by the controlled cadence test.
