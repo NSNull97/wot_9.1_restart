@@ -1,0 +1,11 @@
+{
+  "schema": "content0-s5a-project-camouflage.v1",
+  "classification": "PROJECT_CALIBRATION_NOT_HISTORICAL",
+  "class_order": ["lightTank", "mediumTank", "heavyTank", "SPG", "AT-SPG"],
+  "still": [0.16, 0.12, 0.05, 0.08, 0.12],
+  "moving": [0.16, 0.06, 0.025, 0.04, 0.06],
+  "net_bonus": [0.10, 0.10, 0.05, 0.10, 0.15],
+  "fire_multiplier": 0.25,
+  "fire_window_ms": 5000,
+  "net_delay_ms": 3000
+}

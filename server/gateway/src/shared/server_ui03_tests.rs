@@ -48,10 +48,10 @@ fn module(device:Device,after:device::Condition)->device::Change {
         before_condition:device::Condition::Normal,after_condition:after,repair:false}
 }
 fn ram(attacker:usize,target:usize,before:i16,after:i16)->model::RamDamageRecord {
-    model::RamDamageRecord{sequence:1,tick:1,domain_tick:1000,attacker,target,pair:(0,1),energy_j:1.,closing_speed:1.,health_before:before,health_after:after}
+    model::RamDamageRecord{sequence:1,tick:1,domain_tick:1000,attacker,target,pair:(0,1),energy_j:1.,closing_speed:1.,health_before:before,health_after:after,spotting:None}
 }
 fn damage(reason:u8,attacker:usize,target:usize,before:i16,after:i16)->model::DamageRecord {
-    model::DamageRecord{sequence:1,tick:1000,attacker,target,shot:1,reason,health_before:before,health_after:after,
+    model::DamageRecord{spotting:None,sequence:1,tick:1000,attacker,target,shot:1,reason,health_before:before,health_after:after,
         crew_before:true,crew_after:after>0,direct:true,pierced:true}
 }
 fn mixed(now:Instant)->World {
@@ -122,6 +122,12 @@ fn publish_or_empty(c:&mut Client,w:&World,now:Instant)->Vec<Row> {
     let mut lines=Vec::new();let mut outbox=VecDeque::new();
     battle_events_publication::publish(c,&mut outbox,w,now,&mut lines).unwrap();
     rows_of(&channel_frames(&outbox.into_iter().collect::<Vec<_>>()))
+}
+pub(in crate::gateway091::shared) fn assert_last_crew_live_assist(w:&World,now:Instant,hp:u16) {
+    let mut client=Client::new(2);client.creations[2]=Some((0,true));client.creations[1]=Some((0,true));
+    let mut channel=Channel::new();channel.open_feed();channel.cursors=Some(FROM_START);client.battle_events=Some(channel);
+    let rows=publish_or_empty(&mut client,w,now);
+    assert!(rows.iter().any(|r|r.kind==FeedKind::AssistSpot as u8&&r.value==Some(hp)&&r.vehicle==id(1)),"{rows:?}");
 }
 
 #[test] fn ui03_ram_counts_for_both_sides_and_keeps_the_source_rule() {
@@ -378,6 +384,51 @@ fn track(attacker:usize,after:device::Condition,repair:bool,at_ms:u64)->device::
     if let device::Change::Device{repair:flag,..}=&mut row.change {*flag=repair;}row
 }
 fn ally_shot(tick:u32,before:i16,after:i16)->model::DamageRecord {let mut row=damage(0,2,1,before,after);row.tick=tick;row}
+#[test] fn content0_s5a_track_author_remains_eligible_after_death_and_disconnect() {
+    let now=Instant::now();let mut w=assist_world(now);
+    w.device_events.push((1,track(0,device::Condition::Destroyed,false,0)));
+    w.actors[0].health=0;w.actors[0].session=None;w.actors[0].ready=false;
+    let authors=battle_ledger::track_authors(&w,1,1000).unwrap();assert!(authors.contains(&Some(0)));
+    let mut shot=ally_shot(1000,500,475);
+    shot.spotting=Some(model::result_spots::AssistEvidence{scan_tick:Some(1000),direct_mask:0,track_mask:1<<authors[0].unwrap()});
+    w.damage_events.push(shot);
+    let credits=battle_ledger::credits(&w).unwrap();
+    assert_eq!(credits.iter().map(|c|(c.recipient,c.kind,c.amount)).collect::<Vec<_>>(),vec![(0,battle_ledger::Assist::Track,25)]);
+}
+#[test] fn content0_s5a_shared_assist_splits_odd_hp_and_freezes_track_priority() {
+    let now=Instant::now();
+    let mut w=assist_world(now);let clone=w.actors[0].clone();for _ in 0..4 {w.actors.push(clone.clone());}
+    w.clear_test_team_plan();
+    let mut shot=ally_shot(1001,500,399);
+    shot.spotting=Some(model::result_spots::AssistEvidence{scan_tick:Some(1000),direct_mask:(1<<0)|(1<<4)|(1<<6),track_mask:1<<0});
+    w.damage_events.push(shot);
+    let all=battle_ledger::credits(&w).unwrap();
+    assert_eq!(all.iter().map(|c|(c.recipient,c.kind,c.amount)).collect::<Vec<_>>(),
+        vec![(0,battle_ledger::Assist::Track,34),(4,battle_ledger::Assist::Spot,34),(6,battle_ledger::Assist::Spot,33)]);
+    assert_eq!(all.iter().map(|c|u32::from(c.amount)).sum::<u32>(),101);
+    assert_eq!(battle_ledger::totals(&w,0).unwrap().assist_track,34);
+    assert_eq!(battle_ledger::totals(&w,4).unwrap().assist_spot,34);
+    assert_eq!(battle_ledger::totals(&w,6).unwrap().assist_spot,33);
+    let mut client=Client::new(0);client.creations[0]=Some((0,true));client.creations[1]=Some((0,true));
+    let mut channel=Channel::new();channel.open_feed();channel.cursors=Some(FROM_START);client.battle_events=Some(channel);
+    let rows=publish_or_empty(&mut client,&w,now);
+    assert!(rows.iter().any(|r|r.kind==FeedKind::AssistTrack as u8 && r.value==Some(34)));
+    // Later track changes cannot rewrite the frozen HP-event attribution.
+    w.device_events.push((1,track(0,device::Condition::Critical,true,100)));
+    assert_eq!(battle_ledger::credits(&w).unwrap(),all);
+    // A direct sighting by the shooter suppresses only spotting credits.
+    w.damage_events[0].spotting.as_mut().unwrap().direct_mask|=1<<2;
+    let own=battle_ledger::credits(&w).unwrap();
+    assert_eq!(own.iter().map(|c|(c.recipient,c.kind,c.amount)).collect::<Vec<_>>(),vec![(0,battle_ledger::Assist::Track,101)]);
+}
+#[test] fn content0_s5a_assist_ignores_zero_and_allied_ram() {
+    let now=Instant::now();let mut w=assist_world(now);let clone=w.actors[0].clone();w.actors.push(clone);w.clear_test_team_plan();
+    let evidence=Some(model::result_spots::AssistEvidence{scan_tick:Some(1000),direct_mask:1<<0,track_mask:0});
+    let mut zero=ram(2,1,50,50);zero.spotting=evidence;w.ram_damage_events.push(zero);
+    let mut ally=ram(0,2,50,40);ally.spotting=evidence;w.ram_damage_events.push(ally);
+    assert!(battle_ledger::credits(&w).unwrap().is_empty());
+    assert_eq!(battle_ledger::dealt(&w,0).unwrap(),0);
+}
 #[test] fn ui03_assist_track_lasts_until_the_repair_and_only_for_its_author() {
     let now=Instant::now();let (terrain,now)=hit_world(now,0,1);
     let mut s=spotted(now,&terrain,0);open(&mut s);

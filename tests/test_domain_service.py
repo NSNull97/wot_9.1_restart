@@ -7,6 +7,8 @@ from __future__ import annotations
 
 from contextlib import closing
 import json
+import hashlib
+import hmac
 import os
 from pathlib import Path
 import shutil
@@ -27,6 +29,38 @@ from server.domain.protocol import SCHEMA, ProtocolError
 
 SECRET = b"dom01-test-secret-0123456789abcdefghijklmno"
 assert len(SECRET) == 43
+
+
+class FakeLiveGateway:
+    """Owned loopback test peer; never claims to be the actual Rust gateway."""
+    def __init__(self, secret):
+        self.secret, self.generation, self.enabled, self.closed = secret, None, False, False
+        self.listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.listener.bind(("127.0.0.1", 0)); self.listener.listen(8); self.listener.settimeout(0.2)
+        self.port = self.listener.getsockname()[1]
+        self.thread = threading.Thread(target=self.run, daemon=True); self.thread.start()
+
+    def run(self):
+        while not self.closed:
+            try: stream, _ = self.listener.accept()
+            except socket.timeout: continue
+            except OSError: return
+            with stream:
+                stream.settimeout(1)
+                try:
+                    nonce = b""
+                    while len(nonce) < 32:
+                        part = stream.recv(32 - len(nonce))
+                        if not part: break
+                        nonce += part
+                    if self.enabled and self.generation is not None and len(nonce) == 32:
+                        value = hmac.new(self.secret, b"wot091-domain.v1:camouflage-live.v1\0"
+                                         + self.generation.encode("ascii") + nonce, hashlib.sha256).digest()
+                        stream.sendall(value)
+                except OSError: pass
+
+    def close(self):
+        self.closed = True; self.listener.close(); self.thread.join(2)
 
 
 class ProtocolTests(unittest.TestCase):
@@ -61,6 +95,40 @@ class ProtocolTests(unittest.TestCase):
         import hmac, hashlib
         self.assertEqual(hmac.new(b"Jefe", b"what do ya want for nothing?", hashlib.sha256).hexdigest(),
             "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
+
+    def test_camouflage_hmac_cross_language_vector(self):
+        header = {"camouflage_nonce": "cd" * 32, "camouflage_generation": "12" * 32, "id": 42,
+                  "op": "research", "account_id": "5b0b6a52-7d4e-4f1a-9c3b-2e1d0f9a8b7c", "key": "k:1"}
+        proof = protocol.capability_request_proof(SECRET, "ab" * 32, header, b'{"x":1}')
+        self.assertEqual(proof, "70416858b4c486502cf3aaaedb38957ebf6e3f6332bf5da3c154983e05457fc2")
+        self.assertEqual(protocol.capability_response_proof(SECRET, proof, "12" * 32, 200, b'{"ok":true}'),
+                         "ab82b8343c9f2e7ce97bf46d748dda79e0038c5d45bf4df424f1ab9fa42a379e")
+        changed = dict(header, op="battle")
+        self.assertNotEqual(protocol.capability_request_proof(SECRET, "ab" * 32, changed, b'{"x":1}'), proof)
+        self.assertNotEqual(protocol.capability_request_proof(SECRET, "ee" * 32, header, b'{"x":1}'), proof)
+
+    def test_gateway_guard_uses_one_deadline_for_slow_response(self):
+        from server.domain import service
+        from types import SimpleNamespace
+        listener = socket.socket(); listener.bind(("127.0.0.1", 0)); listener.listen(1)
+        config = SimpleNamespace(camouflage_v1=True, camouflage_guard_secret=SECRET,
+                                 camouflage_guard_endpoint=listener.getsockname())
+        def slow():
+            with listener:
+                stream, _ = listener.accept()
+                with stream:
+                    stream.recv(32)
+                    for _ in range(12):
+                        try: stream.sendall(b"x")
+                        except OSError: break
+                        time.sleep(0.1)
+        thread = threading.Thread(target=slow); thread.start()
+        started = time.monotonic()
+        self.assertFalse(service.check_camouflage_gateway(config, "ab" * 32))
+        elapsed = time.monotonic() - started
+        thread.join(3)
+        self.assertFalse(thread.is_alive())
+        self.assertLess(elapsed, 0.9, "whole operation, not 32 independent read deadlines")
 
     def test_rate_and_lane(self):
         from server.domain import service
@@ -107,13 +175,16 @@ class DomainServiceTests(unittest.TestCase):
             server.stop(); thread.join(10)
         self.store.close()
 
-    def config(self, database=None, accounts=None, fixtures="domain-fixtures"):
+    def config(self, database=None, accounts=None, fixtures="domain-fixtures", camouflage=False, guard=None):
         value = {"version": 1, "endpoint": "127.0.0.1:0", "secret_file": str(self.temp_root / "secret"),
             "database": str(database or self.database), "bundle": str(self.source.bundle.root),
             "original_root": str(self.original), "fixture_root": str(self.temp_root / fixtures),
             "mixed": {"shell_catalog": str(mixed.SHELL_SOURCE), "terminal_policy": str(mixed.TERMINAL_POLICY)},
             "catalog_sha256": None, "workers": 4,
             "accounts": accounts or [{"account_id": self.account, "mixed": True, "ammo_loss": False, "owner_hold": False, "late": False}]}
+        if camouflage:
+            value["camouflage_v1"] = True
+            if guard is not None: value["camouflage_guard"] = guard
         return service.Config(json.dumps(value).encode())
 
     def serve(self, config=None):
@@ -190,6 +261,129 @@ class DomainServiceTests(unittest.TestCase):
                 return [(name, c.execute(f'SELECT * FROM "{name}" ORDER BY 1').fetchall())
                         for (name,) in c.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
         self.assertEqual(dump(self.database), dump(cli_db))
+
+    def test_scoped_camouflage_contract_requires_live_generation_and_never_opens_legacy(self):
+        from content0_equipment_catalog import trusted_camouflage_test_scope
+        from p09e_research_store import ECONOMY_POLICY
+        from p06t_ammo_loss_store import AmmoLossStore
+        self.store.close()
+        self.store = AmmoLossStore(self.database, self.catalog, account_id=self.account,
+            shell_catalog=mixed.SHELL_SOURCE, terminal_policy=mixed.TERMINAL_POLICY)
+        self.store.activate_loss(account_id=self.account, authenticated_account_id=self.account,
+            expected_revision=self.profile()["revision"], native_database_id=self.native_id)
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=self.account)
+        accounts = [{"account_id": self.account, "mixed": True, "ammo_loss": True, "owner_hold": False, "late": False}]
+        guard_secret = b"guard1-test-secret-0123456789abcdefghijklmn"
+        self.assertEqual(len(guard_secret), 43)
+        secret_path = self.temp_root / "guard-secret"
+        secret_path.write_bytes(guard_secret)
+        guard = FakeLiveGateway(guard_secret); self.addCleanup(guard.close)
+        guard_config = {"version": 1, "endpoint": "127.0.0.1:" + str(guard.port), "secret_file": str(secret_path)}
+        with mock.patch.dict(os.environ, {"WOT091_TEST_LAB": "1"}):
+            config = self.config(camouflage=True, accounts=accounts, guard=guard_config)
+        server = self.serve(config)
+        before = self.state()
+        request = dict(account_id=self.account, native_database_id=self.native_id, command_key="domain-net:1",
+            expected_revision=self.profile()["revision"], wire_revision=1, command=308, arguments=[5,1785,1,0,0,0])
+        with self.client(server) as client:
+            status, _, data = client.call("describe", camouflage_generation="-")
+            facts = json.loads(data)
+            self.assertEqual(client.last_camouflage_generation, facts["camouflage_generation"])
+            self.assertEqual((status, facts["camouflage_v1"]), (200, True))
+            generation = facts["camouflage_generation"]
+            self.assertRegex(generation, r"^[0-9a-f]{64}$")
+            self.assertEqual(client.call("research", self.account, canonical(request), request["command_key"])[:2], (403, "forbidden"))
+            for wrong in ("a" * 64, "b" * 64):
+                if wrong == generation: continue
+                self.assertEqual(client.call("research", self.account, canonical(request), request["command_key"],
+                                             camouflage_generation=wrong)[:2], (403, "forbidden"))
+            self.assertEqual(self.state(), before)
+            # Domain and bridge are ON but the gateway guard is missing:
+            # buy, mount and buy+mount all fail before touching SQLite.
+            blocked = [dict(request, command=302, arguments=[5,1785,1,0], command_key="guard-off:buy"),
+                       dict(request, command=102, arguments=[5,1,1785,0,0], command_key="guard-off:mount"),
+                       dict(request, command_key="guard-off:buy-mount")]
+            for attempt in blocked:
+                self.assertEqual(client.call("research", self.account, canonical(attempt), attempt["command_key"],
+                                             camouflage_generation=generation)[:2], (503, "unavailable"))
+                self.assertEqual(self.state(), before)
+            setting = {"account_id": self.account, "native_database_id": self.native_id, "set": [[1, 7]], "delete": []}
+            self.assertEqual(client.call("int-settings", self.account, canonical(setting), None,
+                                         camouflage_generation=generation)[:2], (503, "unavailable"))
+            self.assertEqual(self.state(), before)
+            # A guard with a stale generation also fails closed.
+            guard.enabled = True; guard.generation = "aa" * 32
+            self.assertEqual(client.call("research", self.account, canonical(request), request["command_key"],
+                                         camouflage_generation=generation)[:2], (503, "unavailable"))
+            self.assertEqual(self.state(), before)
+            guard.generation = generation
+            # A relaying peer cannot change a signed body or replay a client nonce.
+            with self.client(server) as attacker:
+                forged = {"schema": SCHEMA, "id": 1, "op": "research", "account_id": self.account,
+                          "key": request["command_key"], "camouflage_generation": generation,
+                          "camouflage_nonce": "cd" * 32}
+                forged["camouflage_request_proof"] = protocol.capability_request_proof(
+                    SECRET, attacker.server_nonce, forged, canonical(request))
+                protocol.write_frame(attacker.stream, forged, canonical(dict(request, arguments=[5, 1529, 1, 0, 0, 0])))
+                with self.assertRaises((ConnectionError, ProtocolError)): protocol.read_frame(attacker.stream, 2)
+            with self.client(server) as replay:
+                ping = {"schema": SCHEMA, "id": 1, "op": "ping", "account_id": None, "key": None,
+                        "camouflage_generation": generation, "camouflage_nonce": "ef" * 32}
+                ping["camouflage_request_proof"] = protocol.capability_request_proof(SECRET, replay.server_nonce, ping, b"")
+                protocol.write_frame(replay.stream, ping)
+                self.assertEqual(protocol.read_frame(replay.stream, 2)[0]["status"], 200)
+                protocol.write_frame(replay.stream, ping)
+                with self.assertRaises((ConnectionError, ProtocolError)): protocol.read_frame(replay.stream, 2)
+            self.assertEqual(self.state(), before)
+            revision = request["expected_revision"]
+            for label, command, arguments in (("buy",302,[5,1785,1,0]), ("mount",102,[5,1,1785,0,0]),
+                                               ("demount",102,[5,1,0,0,0]), ("buy-mount",308,[5,1785,1,0,0,0])):
+                attempt = dict(request, command_key="guard-on:" + label, expected_revision=revision,
+                               command=command, arguments=arguments)
+                status, _, reply = client.call("research", self.account, canonical(attempt), attempt["command_key"],
+                                               camouflage_generation=generation)
+                result = json.loads(reply)
+                self.assertEqual((status, result["status"]), (200, "researched"), label)
+                revision = result["revision"]
+            self.assertEqual(client.call("ping")[:2], (403, "forbidden"))
+            self.assertEqual(client.call("ping", camouflage_generation=generation)[:2], (200, None))
+        with trusted_camouflage_test_scope():
+            after = self.state()
+            self.assertNotEqual(after, before)
+            self.assertEqual(self.profile()["artefacts"]["vehicles"][next(row["vehicle_inventory_id"]
+                for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)]["devices"], [1785,0,0])
+        original_port = server.port
+        server.stop()
+        next(thread for candidate, thread in self.servers if candidate is server).join(5)
+        config.port = original_port
+        restarted = self.serve(config)
+        self.assertEqual(restarted.port, original_port)
+        with self.client(restarted) as client:
+            self.assertEqual(client.call("fixture", self.account, camouflage_generation=generation)[:2], (403, "forbidden"))
+            new = json.loads(client.call("describe", camouflage_generation="-")[2])["camouflage_generation"]
+            self.assertNotEqual(new, generation)
+            self.assertEqual(client.call("fixture", self.account, camouflage_generation=new)[:2], (503, "unavailable"))
+            guard.generation = new
+            self.assertEqual(client.call("fixture", self.account, camouflage_generation=new)[0], 200)
+        with trusted_camouflage_test_scope(): self.assertEqual(self.state(), after)
+        legacy = self.serve(self.config(accounts=accounts))
+        with self.client(legacy) as client:
+            facts = json.loads(client.call("describe")[2])
+            self.assertEqual((facts["camouflage_v1"], facts["camouflage_generation"]), (False, None))
+            self.assertEqual(client.call("fixture", self.account, camouflage_generation=new)[:2], (403, "forbidden"))
+            self.assertEqual(client.call("fixture", self.account)[0], 503)
+        with trusted_camouflage_test_scope(): self.assertEqual(self.state(), after)
+
+    def test_camouflage_config_requires_explicit_test_lab(self):
+        with mock.patch.dict(os.environ, {"WOT091_TEST_LAB": "0"}):
+            with self.assertRaises(service.ConfigError): self.config(camouflage=True)
+            self.assertFalse(self.config().camouflage_v1)
+        same = {"version": 1, "endpoint": "127.0.0.1:40000", "secret_file": str(self.temp_root / "secret")}
+        with mock.patch.dict(os.environ, {"WOT091_TEST_LAB": "1"}):
+            with self.assertRaises(service.ConfigError): self.config(camouflage=True)
+            with self.assertRaises(service.ConfigError): self.config(camouflage=True, guard=same)
+            with self.assertRaises(service.ConfigError): self.config(camouflage=True, guard=dict(same, endpoint="127.0.0.1:0"))
 
     def test_repeat_returns_same_outcome_across_domain_restart(self):
         server = self.serve()

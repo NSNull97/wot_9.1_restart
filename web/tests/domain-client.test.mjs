@@ -8,7 +8,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createDomainClient, domainConfiguration, DOMAIN_SCHEMA } from '../src/domain-client.mjs';
+import { createDomainClient, domainConfiguration, DOMAIN_SCHEMA, capabilityRequestProof, capabilityResponseProof } from '../src/domain-client.mjs';
 import { createNativeCrewService, CREW_POLICY_SHA256, TRANSFER_POLICY_SHA256, CROSS_CREW_POLICY_SHA256, ROSTER_CREW_POLICY_SHA256,
   PROGRESSION_CREW_POLICY_SHA256, DISMISSAL_CREW_POLICY_SHA256, RESEARCH_POLICY_SHA256 } from '../src/p04d-crew.mjs';
 import { BARRACKS_CREW_POLICY_SHA256 } from '../src/p04k-crew.mjs';
@@ -43,10 +43,19 @@ async function fakeDomain(handler, { proofOverride } = {}) {
           if (header.op !== 'hello' || header.proof !== (proofOverride ?? expected)) return socket.destroy();
           authed = true; socket.write(frame({ schema: DOMAIN_SCHEMA, status: 200 })); continue;
         }
+        if (header.camouflage_request_proof !== undefined
+            && header.camouflage_request_proof !== capabilityRequestProof(SECRET, nonce, header, body)) return socket.destroy();
         seen.push({ header, body: body.toString('utf8') });
         const reply = await handler(header, body);
         if (reply === null) continue; // never answer: client deadline
-        socket.write(frame({ schema: DOMAIN_SCHEMA, id: header.id, status: reply.status, error: reply.error ?? null }, Buffer.from(reply.body ?? '')));
+        const responseBody = Buffer.from(reply.body ?? '');
+        const response = { schema: DOMAIN_SCHEMA, id: header.id, status: reply.status, error: reply.error ?? null };
+        if (header.camouflage_request_proof !== undefined) {
+          response.camouflage_generation = reply.generation ?? header.camouflage_generation;
+          response.camouflage_proof = capabilityResponseProof(SECRET, header.camouflage_request_proof, response.camouflage_generation, reply.status, responseBody);
+          if (reply.tamperProof) response.camouflage_proof = '0'.repeat(64);
+        }
+        socket.write(frame(response, responseBody));
       }
     });
   });
@@ -74,6 +83,56 @@ test('client authenticates, sends the exact body/key and returns status and raw 
   await assert.rejects(client.call('battle', 'not-a-uuid', '', null, 200), /account identity/);
   const small = createDomainClient({ host: '127.0.0.1', port: fake.port, secret: SECRET, maxReply: 4 });
   await assert.rejects(small.call('fixture', ACCOUNT, '', null, 2000), /reply bound/);
+});
+
+test('camouflage mode pins Domain generation and refuses stale or mismatched peers', async t => {
+  let current = 'ab'.repeat(32);
+  const fake = await fakeDomain(header => {
+    if (header.op === 'describe') return { status: 200, generation: current, body: JSON.stringify({ camouflage_v1: true, camouflage_generation: current }) };
+    return header.camouflage_generation === current ? { status: 200, generation: current, body: '{}' } : { status: 403, generation: current, error: 'forbidden' };
+  });
+  t.after(fake.close);
+  const client = createDomainClient({ host: '127.0.0.1', port: fake.port, secret: SECRET, camouflage: true });
+  await assert.rejects(client.call('fixture', ACCOUNT, '', null, 2000), /handshake required/);
+  assert.equal((await client.call('describe', null, '', null, 2000)).status, 200);
+  assert.equal((await client.call('fixture', ACCOUNT, '', null, 2000)).status, 200);
+  assert.equal(fake.seen.at(-1).header.camouflage_generation, current);
+  current = 'cd'.repeat(32); // simulate a restarted Domain on the same endpoint
+  await assert.rejects(client.call('fixture', ACCOUNT, '', null, 2000), /generation changed/);
+  await assert.rejects(client.call('describe', null, '', null, 2000), /capability mismatch/);
+  await assert.rejects(client.call('fixture', ACCOUNT, '', null, 2000), /generation changed/);
+  const legacy = createDomainClient({ host: '127.0.0.1', port: fake.port, secret: SECRET });
+  await assert.rejects(legacy.call('describe', null, '', null, 2000), /capability mismatch/);
+});
+
+test('camouflage MAC matches cross-language vector and rejects forged response', async t => {
+  const header = { camouflage_nonce: 'cd'.repeat(32), camouflage_generation: '12'.repeat(32), id: 42,
+    op: 'research', account_id: ACCOUNT, key: 'k:1' };
+  const proof = capabilityRequestProof(SECRET, 'ab'.repeat(32), header, Buffer.from('{"x":1}'));
+  assert.equal(proof, '70416858b4c486502cf3aaaedb38957ebf6e3f6332bf5da3c154983e05457fc2');
+  assert.equal(capabilityResponseProof(SECRET, proof, '12'.repeat(32), 200, Buffer.from('{"ok":true}')),
+    'ab82b8343c9f2e7ce97bf46d748dda79e0038c5d45bf4df424f1ab9fa42a379e');
+  const fake = await fakeDomain(() => ({ status: 200, generation: '12'.repeat(32), tamperProof: true,
+    body: JSON.stringify({ camouflage_v1: true, camouflage_generation: '12'.repeat(32) }) }));
+  t.after(fake.close);
+  const client = createDomainClient({ host: '127.0.0.1', port: fake.port, secret: SECRET, camouflage: true });
+  await assert.rejects(client.call('describe', null, '', null, 2000), /response authentication/);
+  await assert.rejects(client.call('fixture', ACCOUNT, '', null, 2000), /handshake required/);
+});
+
+test('camouflage configuration needs explicit test-lab and exact boolean', () => {
+  const value = { version: 1, endpoint: '127.0.0.1:3700', secret_file: 'x', camouflage_v1: true };
+  const old = process.env.WOT091_TEST_LAB;
+  try {
+    delete process.env.WOT091_TEST_LAB;
+    assert.throws(() => domainConfiguration(value), /Domain service configuration/);
+    process.env.WOT091_TEST_LAB = '1';
+    assert.equal(domainConfiguration(value).camouflage, true);
+    assert.throws(() => domainConfiguration({ ...value, camouflage_v1: 1 }), /Domain service configuration/);
+    assert.equal(domainConfiguration({ ...value, camouflage_v1: false }).camouflage, undefined);
+  } finally {
+    if (old === undefined) delete process.env.WOT091_TEST_LAB; else process.env.WOT091_TEST_LAB = old;
+  }
 });
 
 test('a wrong secret is refused before any request', async t => {
@@ -158,7 +217,7 @@ test('bridge accepts the Domain option only for the profile13 battle writer', as
 });
 
 const BUNDLE = process.env.P04D_TEST_BUNDLE;
-const CONFIG = join(ROOT, 'config/project.local.json');
+const CONFIG = process.env.WOT091_CONFIG ?? join(ROOT, 'config/project.local.json');
 test('real Python Domain peer: HMAC handshake, describe, authorization', {
   skip: BUNDLE && existsSync(CONFIG) ? false : 'NOT_RUN: P04D_TEST_BUNDLE and config/project.local.json required', timeout: 120000,
 }, async t => {
@@ -193,6 +252,65 @@ test('real Python Domain peer: HMAC handshake, describe, authorization', {
   assert.equal((await client.call('ping', null, '', null, 5000)).status, 200);
   const wrong = createDomainClient({ host: '127.0.0.1', port: ready.port, secret: SECRET.replace('d', 'e') });
   await assert.rejects(wrong.call('ping', null, '', null, 5000), /Domain closed|Domain unavailable/);
+  child.stdin.end();
+  assert.equal(await new Promise(done => child.once('exit', done)), 0);
+});
+
+
+test('real Python Domain and opted-in bridge authenticate every camouflage RPC', {
+  skip: BUNDLE && existsSync(CONFIG) ? false : 'NOT_RUN: P04D_TEST_BUNDLE and WOT091_CONFIG required', timeout: 120000,
+}, async t => {
+  const directory = testDirectory(); t.after(() => removeTestDirectory(directory));
+  const original = JSON.parse(readFileSync(CONFIG, 'utf8').replace(/^\ufeff/, '')).paths.original_client_root;
+  const database = join(directory, 'game.sqlite'), secret = join(directory, 'secret'), config = join(directory, 'domain.json');
+  const db = new DatabaseSync(database);
+  db.exec('CREATE TABLE game_profiles(native_id INTEGER PRIMARY KEY AUTOINCREMENT,account_id TEXT NOT NULL UNIQUE,profile_json TEXT NOT NULL)');
+  db.prepare('INSERT INTO game_profiles VALUES (?,?,?)').run(7, ACCOUNT, JSON.stringify({ account_id: ACCOUNT, native_database_id: 7 }));
+  db.close();
+  writeFileSync(secret, SECRET); mkdirSync(join(directory, 'fixtures'));
+  const guardSecret = join(directory, 'guard-secret');
+  const guardKey = 'guard1-test-secret-0123456789abcdefghijklmn';
+  writeFileSync(guardSecret, guardKey);
+  let guardGeneration = null;
+  const guard = createServer(socket => {
+    let input = Buffer.alloc(0);
+    socket.on('data', part => {
+      input = Buffer.concat([input, part]);
+      if (input.length > 32) return socket.destroy();
+      if (input.length === 32) {
+        if (guardGeneration === null) return socket.destroy();
+        const signature = createHmac('sha256', guardKey).update('wot091-domain.v1:camouflage-live.v1\0', 'ascii')
+          .update(guardGeneration, 'ascii').update(input).digest();
+        socket.end(signature);
+      }
+    });
+  });
+  await new Promise(done => guard.listen(0, '127.0.0.1', done));
+  t.after(() => new Promise(done => guard.close(done)));
+  writeFileSync(config, JSON.stringify({ version: 1, endpoint: '127.0.0.1:0', secret_file: secret, database, bundle: BUNDLE, original_root: original,
+    fixture_root: join(directory, 'fixtures'), mixed: null, catalog_sha256: null, workers: 2, camouflage_v1: true,
+    camouflage_guard: { version: 1, endpoint: `127.0.0.1:${guard.address().port}`, secret_file: guardSecret },
+    accounts: [{ account_id: ACCOUNT, mixed: false, ammo_loss: false, owner_hold: false, late: false }] }));
+  const python = spawnSync('python', ['-B', '-c', 'import sys;print(sys.executable)'], { encoding: 'utf8', windowsHide: true }).stdout.trim();
+  const child = spawn(python, ['-B', '-X', 'utf8', join(ROOT, 'server/domain/service.py'), '--config', config, '--parent-stdin'],
+    { cwd: ROOT, windowsHide: true, env: { ...process.env, WOT091_TEST_LAB: '1' } });
+  t.after(() => { if (child.exitCode === null) child.kill(); });
+  const ready = await new Promise((done, fail) => {
+    let text = ''; child.stdout.on('data', part => { text += part; if (text.includes('\n')) done(JSON.parse(text.split('\n')[0])); });
+    child.once('exit', code => fail(new Error(`domain exited ${code}`)));
+  });
+  assert.equal(ready.event, 'domain_ready');
+  const client = createDomainClient({ host: '127.0.0.1', port: ready.port, secret: SECRET, camouflage: true });
+  await assert.rejects(client.call('ping', null, '', null, 5000), /handshake required/);
+  const describe = JSON.parse((await client.call('describe', null, '', null, 5000)).body);
+  assert.equal(describe.camouflage_v1, true);
+  assert.match(describe.camouflage_generation, /^[0-9a-f]{64}$/);
+  assert.equal((await client.call('ping', null, '', null, 5000)).status, 503);
+  guardGeneration = describe.camouflage_generation;
+  assert.equal((await client.call('ping', null, '', null, 5000)).status, 200);
+  assert.equal((await client.call('fixture', '00000000-0000-4000-8000-000000000000', '', null, 5000)).status, 403);
+  const legacy = createDomainClient({ host: '127.0.0.1', port: ready.port, secret: SECRET });
+  await assert.rejects(legacy.call('describe', null, '', null, 5000), /capability mismatch/);
   child.stdin.end();
   assert.equal(await new Promise(done => child.once('exit', done)), 0);
 });

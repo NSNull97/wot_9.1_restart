@@ -135,6 +135,7 @@ _p04h_scenario = None
 _p04i_scenario = None
 _p04j_scenario = None
 _p04k_scenario = None
+_profile13_fight_scenario = None
 _ammo_export_done = False
 _arena_export_done = False
 _vehicle_capture_ready = None
@@ -301,6 +302,17 @@ def connection_status(stage, status, server_message, is_auto_register):
             scenario.note_login_result(stage, status)
 
 
+def install_optional_visibility_debug():
+    # Diagnostics are optional: a missing grant or changed native contract
+    # disables this channel without terminating the ordinary game bootstrap.
+    try:
+        import project_visibility_debug
+        project_visibility_debug.validate_settings(_settings)
+        project_visibility_debug.install(record, _settings['visibility_debug'])
+    except Exception as error:
+        record('visibility_debug_unavailable', error_type=type(error).__name__)
+
+
 def init(*args):
     global _ready
     record('init', sys_version=sys.version, pointer_bytes=struct.calcsize('P'),
@@ -374,6 +386,8 @@ def init(*args):
         if _settings.get(project_battle_history.SETTING) is not None:
             # Project policy, not original #717 behaviour: see the module docstring.
             project_battle_history.install(record, _settings[project_battle_history.SETTING], project_hit_indicator.policy())
+        if 'visibility_debug' in _settings:
+            install_optional_visibility_debug()
         if _settings.get(project_battle_settings.SETTING) is not None:
             # Project policy, not original #717 behaviour: see the module docstring.
             project_battle_settings.install(
@@ -660,7 +674,7 @@ def shared_login_control(data, settings):
 
 
 def consume_control(view):
-    global _control_done, _control, _p04d_scenario, _p04f_scenario, _p04g_scenario, _p04h_scenario, _p04i_scenario, _p04j_scenario, _p04k_scenario
+    global _control_done, _control, _p04d_scenario, _p04f_scenario, _p04g_scenario, _p04h_scenario, _p04i_scenario, _p04j_scenario, _p04k_scenario, _profile13_fight_scenario
     path = _settings.get('test_control')
     if _control_done or not path or not os.path.isfile(path):
         return
@@ -673,7 +687,7 @@ def consume_control(view):
     os.remove(path)
     data = json.loads(payload)
     del payload
-    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'verify_p09d_ammo', 'p09d_ammo_expected', 'verify_crew_recruitment', 'crew_recruitment_mode', 'crew_recruitment_expected', 'verify_crew_transfer', 'crew_transfer_mode', 'crew_transfer_expected', 'verify_cross_vehicle_crew', 'cross_vehicle_crew_mode', 'cross_vehicle_crew_expected', 'verify_roster_recruitment', 'roster_recruitment_mode', 'roster_recruitment_expected', 'roster_recruitment_hires', 'verify_crew_progression', 'crew_progression_mode', 'crew_progression_expected', 'crew_progression_learned', 'verify_crew_dismissal', 'crew_dismissal_mode', 'crew_dismissal_expected', 'crew_dismissal_hire', 'verify_barracks_recruitment', 'barracks_recruitment_mode', 'barracks_recruitment_expected', 'barracks_recruitment_hires', 'verify_crew_any_lifetime', 'crew_any_lifetime_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'export_armor_layers', 'quit_when')):
+    if not isinstance(data, dict) or set(data) - set(('username', 'password', 'quit_after_seconds', 'screenshot_when', 'submit_via', 'ui_scenario', 'inspect_vehicle', 'export_ms1_crew', 'verify_ms1_crew', 'verify_hangar_limits', 'verify_hangar_windows', 'verify_inprocess_relogin', 'verify_account_switch', 'alternate_username', 'alternate_password', 'account_switch_expected', 'verify_long_hangar', 'long_hangar_expected', 'export_ms1_ammo', 'verify_ms1_ammo', 'ms1_ammo_expected', 'verify_p09d_ammo', 'p09d_ammo_expected', 'verify_crew_recruitment', 'crew_recruitment_mode', 'crew_recruitment_expected', 'verify_crew_transfer', 'crew_transfer_mode', 'crew_transfer_expected', 'verify_cross_vehicle_crew', 'cross_vehicle_crew_mode', 'cross_vehicle_crew_expected', 'verify_roster_recruitment', 'roster_recruitment_mode', 'roster_recruitment_expected', 'roster_recruitment_hires', 'verify_crew_progression', 'crew_progression_mode', 'crew_progression_expected', 'crew_progression_learned', 'verify_crew_dismissal', 'crew_dismissal_mode', 'crew_dismissal_expected', 'crew_dismissal_hire', 'verify_barracks_recruitment', 'barracks_recruitment_mode', 'barracks_recruitment_expected', 'barracks_recruitment_hires', 'verify_crew_any_lifetime', 'crew_any_lifetime_expected', 'export_arena_entry', 'probe_avatar_base', 'probe_arena_space', 'probe_arena_vehicle', 'probe_arena_ready', 'probe_arena_movement', 'probe_map_drive', 'probe_map_drive_acceptance', 'map_drive_acceptance_mode', 'probe_destructible_identity', 'probe_destructible_catalog', 'export_armor_layers', 'quit_when', 'profile13_fight_test')):
         raise ValueError('unknown one-shot control schema')
     if (type(data.get('probe_destructible_identity', False)) is not bool
             or data.get('probe_destructible_identity') and _settings.get('enable_shared_lab') is not True):
@@ -969,6 +983,16 @@ def consume_control(view):
         # catalog-specific `vehicles`/`crews` shape before crew_vehicles.enable().
     elif 'crew_any_lifetime_expected' in data:
         raise ValueError('CREW-ANY lifetime expectation requires its explicit operation')
+    if 'profile13_fight_test' in data:
+        if (set(data) != set(('username','password','submit_via','profile13_fight_test'))
+                or not has_credentials or submit_via != 'python'):
+            raise ValueError('fight test requires only explicit own login and its test contract')
+        import project_auth
+        if not project_auth.valid_email(data['username']) or not project_auth.valid_password(data['password']):
+            raise ValueError('fight test requires a valid explicit project login')
+        import profile13_fight_test
+        expected_fight = profile13_fight_test.checked(data['profile13_fight_test'], _settings)
+        _profile13_fight_scenario = profile13_fight_test.arm(expected_fight, _settings, record, time.clock, globals()['capture_profile13_screenshot'])
     _control_done = True
     _control = {'screenshot_when': capture, 'ui_scenario': scenario, 'inspect_vehicle': inspect_vehicle,
                 'export_ms1_crew': export_crew, 'export_armor_layers': export_layers, 'verify_ms1_crew': verify_crew,
@@ -1005,6 +1029,7 @@ def consume_control(view):
         _control['roster_recruitment_mode'] = data['roster_recruitment_mode']
     record('test_control_consumed', input_removed=not os.path.exists(path),
            credentials_present=has_credentials, quit_after_seconds=seconds,
+           profile13_fight_test=_profile13_fight_scenario is not None,
            screenshot_when=capture, original_login_view=type(view).__name__, submit_via=submit_via,
            inspect_vehicle=inspect_vehicle, export_ms1_crew=export_crew, export_armor_layers=export_layers, verify_ms1_crew=verify_crew,
            verify_hangar_limits=verify_limits, verify_hangar_windows=verify_windows,
@@ -1093,6 +1118,27 @@ def capture(name):
     record('native_screenshot_return', result_type=type(result).__name__, result=primitive(result))
 
 
+
+def capture_profile13_screenshot(name):
+    """Capture this scenario only; unrelated shared screenshots remain untouched."""
+    import re
+    import Settings
+    if not re.match(r'\Avisibility_test_[0-9]{1,10}_[0-9]{1,20}_[0-9]{1,20}\Z', name):
+        raise ValueError('invalid profile13 screenshot basename')
+    directory = owned(_settings['screenshot_dir'], _settings['local_root'])
+    configured = Settings.g_instance.engineConfig.readString('screenShot/path')
+    if os.path.normcase(os.path.realpath(configured)) != directory:
+        raise ValueError('native screenshot path differs from local owned directory')
+    names = os.listdir(directory)
+    if len(names) >= 128:
+        raise ValueError('screenshot count bound')
+    if any(item.startswith(name + '_') for item in names):
+        raise ValueError('profile13 screenshot basename already used')
+    record('profile13_native_screenshot_requested', directory=directory, basename=name, extension='png')
+    result = BigWorld.screenShot('png', name)
+    record('profile13_native_screenshot_return', result_type=type(result).__name__, result=primitive(result))
+
+
 def capture_observed_vehicle(observed, ready):
     """Photograph up to two owner-selected ready models without selecting either."""
     global _vehicle_capture_ready
@@ -1159,6 +1205,8 @@ def observe():
     byte_limit = observation_byte_limit()
     if _stream.tell() > byte_limit:
         sys.setprofile(None)
+        if _profile13_fight_scenario is not None:
+            _profile13_fight_scenario.observer_failed(RuntimeError('observation limit'))
         if _control and (_control.get('verify_long_hangar') or _control.get('export_ms1_ammo') or _control.get('verify_ms1_ammo') or _control.get('verify_p09d_ammo') or _control.get('verify_crew_recruitment') or _control.get('verify_crew_transfer') or _control.get('verify_cross_vehicle_crew') or _control.get('verify_roster_recruitment') or _control.get('verify_crew_progression') or _control.get('verify_crew_dismissal') or _control.get('verify_barracks_recruitment') or _control.get('verify_crew_any_lifetime') or _control.get('export_arena_entry') or _control.get('probe_avatar_base') or _control.get('probe_arena_space') or _control.get('probe_arena_vehicle') or _control.get('probe_arena_ready') or _control.get('probe_arena_movement') or _control.get('probe_map_drive') or _control.get('probe_map_drive_acceptance')):
             record('observation_limit', reason='finite diagnostic trace bound', max_bytes=byte_limit)
             record('diagnostic_condition_failed', condition=_control.get('quit_when', 'long_hangar_observed'))
@@ -1213,6 +1261,8 @@ def observe():
                 schedule_drive_observation(map_drive_acceptance)
                 return
             if drive_context['player_kind'] == 'avatar':
+                if _profile13_fight_scenario is not None:
+                    _profile13_fight_scenario.tick(avatar=True)
                 # Ordinary travel retains native input and services. Do not run
                 # Account-only cache observers while the native player is Avatar.
                 BigWorld.callback(1.0, observe)
@@ -1281,6 +1331,8 @@ def observe():
         ready_hangar = bool(observed.get('native_connected') and observed.get('items_cache_synced') and
                             observed.get('vehicle_model_loaded') and not observed.get('waiting_visible') and
                             sub is not None and type(sub).__name__ == 'Hangar' and sub.flashObject is not None)
+        if _profile13_fight_scenario is not None:
+            _profile13_fight_scenario.tick(hangar_ready=ready_hangar)
         if _control and _control.get('verify_barracks_recruitment'):
             if _p04k_scenario is None:
                 raise RuntimeError('P04K Barracks diagnostic was not explicitly armed')
@@ -1485,7 +1537,9 @@ def observe():
         elif not _capture_done and time.clock() - _capture_ready_at >= 2.0:
             capture(desired)
         capture_observed_vehicle(observed, ready_hangar)
-    except Exception:
+    except Exception as error:
+        if _profile13_fight_scenario is not None:
+            _profile13_fight_scenario.observer_failed(error)
         record('observation_error', traceback=traceback.format_exc())
         # A failed test is visible and bounded; a normal interactive GUI is not
         # forcibly closed because an observer failed.
@@ -1493,7 +1547,12 @@ def observe():
             record('diagnostic_condition_failed', condition=_control['quit_when'])
             quit_client()
         return
-    BigWorld.callback(1.0, observe)
+    try:
+        BigWorld.callback(1.0, observe)
+    except Exception as error:
+        if _profile13_fight_scenario is not None:
+            _profile13_fight_scenario.observer_failed(error)
+        raise
 
 
 def quit_client():
@@ -1525,6 +1584,13 @@ def _input(name, *args):
 
 
 def handleKeyEvent(*args):
+    # The real handler receives every event unchanged, including our shortcut.
+    module = sys.modules.get('project_visibility_debug')
+    if module is not None and len(args) == 1:
+        try:
+            module.handle_operator_key(args[0])
+        except Exception as error:
+            record('visibility_debug_pair_key_failed', error_type=type(error).__name__)
     return _input('handleKeyEvent', *args)
 
 
@@ -1646,6 +1712,8 @@ def fini():
             sys.modules['project_pose_trace'].restore(record)
         if 'project_battle_settings' in sys.modules:
             sys.modules['project_battle_settings'].restore(record)
+        if 'project_visibility_debug' in sys.modules:
+            sys.modules['project_visibility_debug'].restore(record)
         if 'project_battle_history' in sys.modules:
             sys.modules['project_battle_history'].restore(record)
         if 'project_battle_feed' in sys.modules:

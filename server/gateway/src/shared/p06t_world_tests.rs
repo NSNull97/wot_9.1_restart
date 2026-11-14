@@ -61,6 +61,38 @@ fn actual_owner_world(now:Instant)->World {
     let mut world=base(now,low_ground());let (owner,frozen)=actual_frozen_ap_zero();
     world.attach_owned_v2(owner,1,&frozen).unwrap();lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);start(&mut world,now);world
 }
+pub(in crate::gateway091::shared) fn last_crew_pending(now:Instant)->World {
+    let mut w=actual_owner_world(now);
+    w.original_spotting=Some(super::super::spotting::State::new(super::super::spotting::Rules::selected().unwrap()).unwrap());
+    let extra=w.actors[0].clone();w.actors.push(extra);w.set_test_teams(&[1,2,1]);
+    w.actors[2].position=[10.,0.,20.];w.actors[2].origin=w.actors[2].position;
+    let shell=source::profile(Mount::Ms1Stock).shots[2];
+    w.actors[1].devices.as_mut().unwrap().apply_hits(&[device::ModuleHit{cause:device::Cause{shot:999,attacker_slot:0},
+        ordinal:0,at_ms:0,target:crate::p06t_lab_proxy::Target::Seat(0),shell,ignition_roll:0.9}],
+        device::Health{hp:90,max_hp:90,terminal:false}).unwrap();
+    w.actors[1].direction=[-std::f32::consts::PI,0.,0.];w.actors[1].yaw=-std::f32::consts::PI;
+    let target=w.actors[1].clone();let b=w.geometry_for(target.vehicle_kind()).unwrap().clone();
+    let query=b.explosion_contact(&target,[0.,1.,15.],16.,1,1,1000).unwrap().unwrap();
+    // The fixed aim intersects the fixture's real seat-1 proxy after penetration.
+    aim_at(&mut w,0,[query.endpoint[0]+0.25,query.endpoint[1]-0.2,query.endpoint[2]],now);
+    let at=now+Duration::from_secs(2);
+    // Build a committed scan with only observer 2 in direct range; restore the
+    // staged shooter's pose for this laboratory impact. No event is authored.
+    let p=w.actors[0].position;w.actors[0].position=[500.,0.,500.];w.refresh_original_spotting(at).unwrap();w.actors[0].position=p;
+    w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();w
+}
+#[test]
+fn content0_s5a_last_crew_impact_rollback_is_atomic() {
+    let now=Instant::now();let mut w=last_crew_pending(now);
+    let row=DamageRecord{sequence:1,tick:1000,attacker:0,target:1,shot:1,reason:0,
+        health_before:90,health_after:90,crew_before:true,crew_after:true,direct:true,pierced:true,spotting:None};
+    w.damage_events=vec![row;MAX_DAMAGE_EVENTS].into();
+    let before=w.clone();assert!(w.advance(now+Duration::from_millis(2100)).is_err());
+    assert_eq!(w.actors,before.actors);assert_eq!(w.projectiles,before.projectiles);assert_eq!(w.contacts,before.contacts);
+    assert_eq!(w.damage_events,before.damage_events);assert_eq!(w.device_events,before.device_events);
+    assert_eq!(w.rng_draws,before.rng_draws);assert_eq!(w.rng_state,before.rng_state);assert_eq!(w.impact.events(),before.impact.events());
+    assert_eq!(w.tick,before.tick);assert_eq!(w.last,before.last);
+}
 fn aim_at(world:&mut World,slot:usize,point:[f32;3],base:Instant) {
     world.apply(slot,slot as u32+1,&[Command::Aim(aim::Intent::Point(point))],base).unwrap();
     for step in 1..=20 {world.advance(base+Duration::from_millis(step*100)).unwrap();}

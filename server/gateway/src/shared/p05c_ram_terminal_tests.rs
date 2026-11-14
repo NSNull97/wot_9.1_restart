@@ -67,7 +67,7 @@ fn content0_s5_spall_liner_scales_own_ram_damage_from_the_frozen_loadout() {
 #[test]
 fn p05c_ram_terminal_conflicting_death_journals_remain_an_error(){
     let now=Instant::now();let(_,mut w)=f::fixture(now);w.actors[0].owned_v2=Some(frozen());contact(&mut w,50.);
-    w.damage_events.push(DamageRecord{sequence:1,tick:1000,attacker:1,target:0,shot:1,reason:0,
+    w.damage_events.push(DamageRecord{spotting:None,sequence:1,tick:1000,attacker:1,target:0,shot:1,reason:0,
         health_before:1,health_after:0,crew_before:true,crew_after:false,direct:true,pierced:true});
     assert!(w.death_cause(0).is_err());assert!(w.terminal_state_json(0).is_err());
 }

@@ -17,6 +17,7 @@ import battle_ui_feed_flash as feed
 import battle_ui_history_flash as history
 import battle_ui_hit_flash as flash
 import battle_ui_native_flash as native
+import battle_ui_visibility_flash as visibility
 import project_battle_feed as feed_client
 import project_battle_history as history_client
 from test_battle_ui_hit_flash import Clip, Delegate, Machine, ORIGINAL, TextFormat
@@ -136,6 +137,30 @@ class BuilderTests(unittest.TestCase):
 
 
 class SetupTests(unittest.TestCase):
+    def test_visibility_callbacks_draw_and_mark_only_when_requested(self):
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'TextFormat': TextFormat,
+                 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine=Machine(root)
+        machine.run(native.actions(False,False,with_visibility=True),[scope])
+        self.assertEqual(set(delegate.callbacks),{visibility.CLEAR,visibility.LINE,visibility.PANEL,visibility.MARKER})
+        holder=root.members['projectVisibility']
+        machine.invoke(scope['_projectVisibilityClear'],root,[True])
+        self.assertTrue(holder.members['_visible'])
+        machine.invoke(scope['_projectVisibilityLine'],root,[2,3,20,30,0xff00ff])
+        self.assertIn(('moveTo',2,3),holder.calls)
+        self.assertIn(('lineTo',20,30),holder.calls)
+        machine.invoke(scope['_projectVisibilityMarker'],root,[2,30,40,'#2 ussr:T-50',0xffffff])
+        self.assertEqual(field(holder,'visibilityMarker2'),'#2 ussr:T-50')
+        machine.invoke(scope['_projectVisibilityPanel'],root,['row']*8)
+        panel_calls=[c for c in holder.calls if c[0]=='createTextField' and str(c[1]).startswith('visibilityText')]
+        self.assertEqual([c[4] for c in panel_calls],[230+i*18 for i in range(8)])
+        marker_call=[c for c in holder.calls if c[0]=='createTextField' and c[1]=='visibilityMarker2'][0]
+        self.assertEqual(marker_call[5],256)
+        machine.invoke(scope['_projectVisibilityClear'],root,[False])
+        self.assertFalse(holder.members['_visible'])
+
     def test_holders_on_the_root_and_four_callbacks(self):
         machine, scope, root, delegate = loaded()
         self.assertEqual(sorted(delegate.callbacks), sorted([feed.CALLBACK, feed.PLACE_CALLBACK, history.CALLBACK,

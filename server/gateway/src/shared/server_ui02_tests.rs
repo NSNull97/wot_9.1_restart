@@ -194,3 +194,28 @@ pub(super) fn before_hit(s:&mut Session) {s.shared.as_mut().unwrap().impact_curs
     let c=s.shared.as_ref().unwrap();
     assert_eq!(c.battle_events.as_ref().unwrap().dropped,1);
 }
+
+#[test] fn visibility_debug_hello_requires_operator_and_resets_on_battle() {
+    let now=Instant::now(); let w=model::tests::world(now);
+    let account="788fa1bf-8a21-4bdb-84de-a63310e390a3";let grant=b"0123456789012345678901234567890123456789012".to_vec();
+    let mut ordinary=Session::new(1,[1;16],"127.0.0.1:30001".parse().unwrap(),now);
+    ordinary.active=true;ordinary.rx=1;ordinary.account_ready=true;ordinary.tx=Window::interactive();ordinary.arena_base=true;
+    let mut c=Client::new(0);c.phase=Phase::Driving;c.view=Some(w);ordinary.shared=Some(c);
+    let mut operator=ordinary.clone();
+    let feature=super::super::visibility_debug::FEATURE;
+    let mut args=vec![feature.len() as u8];args.extend(feature);args.extend(1i32.to_le_bytes());
+    let mut raw=vec![0xa1];raw.extend((args.len() as u16).to_le_bytes());raw.extend(args);
+    ordinary.receive(&frame(&ordinary,&raw),now).unwrap();
+    assert!(ordinary.shared.as_ref().unwrap().visibility_debug.is_none());assert!(ordinary.shared.as_ref().unwrap().visibility_debug_challenge.is_none());
+    operator.identity=Some(Arc::new(crate::identity091::Profile{account_id:account.into(),database_id:1,name:"test".into(),fixture_dir:PathBuf::new()}));
+    {let c=operator.shared.as_mut().unwrap();c.visibility_debug_owner=Some(account.into());c.visibility_debug_grant=Some(Arc::new(grant.clone()));c.visibility_debug_run=Some(account.into());}
+    operator.receive(&frame(&operator,&raw),now).unwrap();
+    assert!(operator.shared.as_ref().unwrap().visibility_debug.is_none());
+    let reply=operator.shared.as_ref().unwrap().visibility_debug_challenge.as_ref().unwrap().test_response(&grant,account);
+    operator.receive(&frame(&operator,&reply),now).unwrap();
+    assert_eq!(operator.shared.as_ref().unwrap().visibility_debug.as_ref().unwrap().pair(),Some((0,1)));
+    assert!(operator.shared.as_ref().unwrap().visibility_debug_challenge.is_none());
+    operator.receive(&frame(&operator,&reply),now).unwrap();assert!(operator.shared.as_ref().unwrap().visibility_debug_challenge.is_none());
+    let c=operator.shared.as_mut().unwrap();c.reset_for_battle(0);
+    assert!(c.visibility_debug.is_none());assert!(c.visibility_debug_owner.is_some());assert!(c.visibility_debug_challenge.is_none());
+}

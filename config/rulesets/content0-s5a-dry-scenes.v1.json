@@ -1,0 +1,224 @@
+{
+  "schema": "content0-s5a-dry-scenes.v1",
+  "classification": "INFERRED_NOT_JOLT_OR_NATIVE_VERIFIED",
+  "map": "02_malinovka",
+  "water_y_m": 4.058976173400879,
+  "yaw_observer_and_ally_rad": 3.1415925,
+  "yaw_enemies_rad": 0.0,
+  "source_pins": {
+    "terrain_vertices_sha256": "2c71cc769a6ba3671620a567a9c5ee3dfe9ab38e55c034c39d28dd612eba4e2b",
+    "physics_manifest_sha256": "53623ab13a6ca29f2ff9e2d3df0fd90ec8c46cc14063f66ecabf82c30faa6528",
+    "projectile_manifest_sha256": "cab87f5edad76a2322351f6cc173467d9d3cef6d54cac9f0399b3370c5a9f5ea",
+    "foliage_sha256": "aac4bb0509c1d30ebf0c49eca5892b48dead28c2d3156dc830079635eeea12c1",
+    "camouflage_rules_sha256": "b14ee80026fb5be5d4cc431560a06bcb9b52e9e21f0463952d9a6b165b1eb481",
+    "spotting_rules_sha256": "8856eca739ab511b3c90949810198cf2b31714284da12ee9056e52433f6a45bd"
+  },
+  "selected_bush": {
+    "resource": "speedtree/02_Malinovka/Bush.spt",
+    "chunk": [
+      3,
+      0
+    ],
+    "speedtree_index": 19,
+    "center_world": [
+      372.3704322993755,
+      29.7035475730896,
+      51.96890856921673
+    ],
+    "classification": "PROJECT_CALIBRATION_NOT_HISTORICAL"
+  },
+  "common_roster": [
+    {
+      "slot": 0,
+      "kind": "human",
+      "team": 1,
+      "net": false,
+      "crew_percent": null
+    },
+    {
+      "slot": 1,
+      "kind": "china-Ch17_WZ131_1_WZ132",
+      "team": 2,
+      "net": "explicit",
+      "crew_percent": 100
+    },
+    {
+      "slot": 2,
+      "kind": "france-AMX_13_75",
+      "team": 1,
+      "net": "explicit",
+      "crew_percent": 100
+    },
+    {
+      "slot": 3,
+      "kind": "usa-T71",
+      "team": 2,
+      "net": "explicit",
+      "crew_percent": 100
+    }
+  ],
+  "common_positions": {
+    "ally": [
+      336.875,
+      27.721,
+      175.3125
+    ],
+    "enemy_2": [
+      336.875,
+      24.96,
+      25.3125
+    ],
+    "ally_isolated": [
+      -300.0,
+      9.685,
+      -300.0
+    ]
+  },
+  "scenes": {
+    "field180": {
+      "observer": [
+        343.75,
+        28.7536,
+        230.0
+      ],
+      "target": [
+        350.0,
+        25.558,
+        50.0
+      ],
+      "distance_3d_m": 180.137,
+      "terrain_sample_clearance_min_m": 0.416,
+      "bush_ellipsoid_ray_hits": 0,
+      "projectile_aabb_ray_hits": 0
+    },
+    "field200": {
+      "observer": [
+        343.75,
+        29.517,
+        250.0
+      ],
+      "target": [
+        350.0,
+        25.558,
+        50.0
+      ],
+      "distance_3d_m": 200.137,
+      "terrain_sample_clearance_min_m": 0.481,
+      "bush_ellipsoid_ray_hits": 0,
+      "projectile_aabb_ray_hits": 0
+    },
+    "bush180": {
+      "observer": [
+        371.875,
+        29.2448,
+        225.3125
+      ],
+      "target": [
+        371.875,
+        27.917,
+        45.3125
+      ],
+      "distance_3d_m": 180.005,
+      "terrain_sample_clearance_min_m": 0.216,
+      "bush_ellipsoid_ray_hits": 14,
+      "projectile_aabb_ray_hits": 0
+    },
+    "assist6": {
+      "observer": [
+        343.75,
+        28.7536,
+        230.0
+      ],
+      "target": [
+        350.0,
+        25.558,
+        50.0
+      ],
+      "shooter": [
+        300,
+        27.122,
+        240
+      ],
+      "shooter_yaw_rad": 2.884269,
+      "enemy_3": [
+        391.875,
+        28.216,
+        13.4375
+      ],
+      "distance_shooter_target_3d_m": 196.475,
+      "classification": "INFERRED_NOT_JOLT_OR_NATIVE_VERIFIED",
+      "expected": "With the WZ net active, shooter direct is expected false; two allied direct spotters are expected true. Actual settling, aim, ballistic hit, damage, and assist split are NOT_RUN. The projectile and terrain clearance are sampled/bounds estimates only."
+    }
+  },
+  "method": {
+    "terrain": "pinned 769x769 terrain mesh, source triangle interpolation, 240 samples per ray; not exact triangle intersection",
+    "rays": "2x7 P07B source points, yaw observer=pi target=0, pitch=roll=0, gun yaw=0; settled physical angles unknown",
+    "static": "3D projectile instance AABB intersections and 4 m physical AABB clearance at spawns; no dynamic objects",
+    "foliage": "pinned project-calibrated affine ellipsoids, not original leaf geometry",
+    "ally": "center-to-center dry terrain sample and obstacle AABB only; actual bot scan not observed",
+    "note": "network and fire outcomes must be checked via committed server trace; team publication may remain true when own direct is false"
+  },
+  "expected_inferred": {
+    "field180_net_on": "base threshold 190.6m; direct LOS candidate, usually early return after first clear ray",
+    "field200_net_on": "threshold 190.6m; outside_base_threshold, zero rays",
+    "field200_net_off": "threshold 209.6m; direct LOS candidate at 200.137m",
+    "bush180_net_on": "base threshold 190.6m, foliage-adjusted 152.6m; 14/14 predicted foliage intersections and no direct sight",
+    "bush180_net_off": "base threshold 209.6m, foliage-adjusted 171.6m; 14/14 predicted foliage intersections and no direct sight",
+    "bush180_after_fire": "for a hit within 15m, effect 0.20*0.25; net-on effective camo 0.26*0.25+0.05=0.115, threshold 218.15m; first clear ray may make direct sight true",
+    "isolated_ally": "ally farther than max detection 445m from target; team-shared retention may expire after 5s if no other active allied observer sees it",
+    "team_ally": "ally within ~135m and view 390m can share target if its own actual LOS is clear",
+    "field200_movement": "light tank moving base equals still in this calibration; with a net, actual committed movement/turn resets net and temporarily increases range from 190.6m to 209.6m; without net it does not demonstrate a movement-only penalty"
+  },
+  "native": "NOT_RUN",
+  "jolt_settled": "NOT_RUN",
+  "current_battle": "UNCHANGED",
+  "scripted_cycle": {
+    "classification": "PROJECT_TEST_LAB_NOT_HISTORICAL",
+    "tick_ms": 100,
+    "events": [
+      {
+        "tick": 120,
+        "slot": 1,
+        "action": "forward"
+      },
+      {
+        "tick": 130,
+        "slot": 1,
+        "action": "stop"
+      },
+      {
+        "tick": 240,
+        "slot": 1,
+        "action": "left"
+      },
+      {
+        "tick": 250,
+        "slot": 1,
+        "action": "stop"
+      },
+      {
+        "tick": 360,
+        "slot": 1,
+        "action": "shoot"
+      }
+    ],
+    "interpretation": "relative to first Battle tick; read accepted outcomes and committed physical poses; approximate 12–13s forward, 24–25s turning and 36s fire; leave >=3s for net and >=5s for retention"
+  },
+  "assist_shot": {
+    "events": [
+      {
+        "tick": 40,
+        "slot": 4,
+        "action": "aim_target",
+        "target_slot": 1
+      },
+      {
+        "tick": 100,
+        "slot": 4,
+        "action": "shoot_shared",
+        "target_slot": 1
+      }
+    ],
+    "description": "test_lab only; server takes aim point from committed target pose, requires committed team visibility and shooter direct=false both at aim and fire; actual ballistic damage NOT_RUN"
+  }
+}

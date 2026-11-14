@@ -108,7 +108,7 @@ fn p06t_private_attacker_epoch_discards_health_and_critical_then_rebuilds_owner_
     let(state,events)=fuel_damage(false);world.actors[0].devices=Some(state);
     world.device_events.extend(events.into_iter().map(|event|(0,event)));
     world.actors[0].health=60;
-    world.damage_events.push(model::DamageRecord{sequence:1,tick:1000,attacker:1,target:0,shot:6,reason:0,
+    world.damage_events.push(model::DamageRecord{spotting:None,sequence:1,tick:1000,attacker:1,target:0,shot:6,reason:0,
         health_before:90,health_after:60,crew_before:true,crew_after:true,direct:true,pierced:true});
     let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
     let critical=native::damage_info(wire::vehicle_id(0).unwrap(),5,28,wire::vehicle_id(1).unwrap()).unwrap();
@@ -144,9 +144,9 @@ fn p06t_private_he_splash_never_reveals_a_hidden_primary_vehicle_anchor() {
     let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
     let mut projectile=crate::gateway091::shared::projectile::Projectile::launch_shell_for_limit(1,1,&world.actors[1],now,world.shot_limit(),shell).unwrap();
     projectile.stopped=true;projectile.terminal=[41.125,1.75,62.5];world.projectiles.push(projectile);
-    world.impacts.push(model::AppliedImpact{shot:1,attacker:1,target:2,tick:1001,outcome:model::ImpactOutcome::WreckBlocked,
+    world.impacts.push(model::AppliedImpact{spotting:None,shot:1,attacker:1,target:2,tick:1001,outcome:model::ImpactOutcome::WreckBlocked,
         health_before:0,health_after:0,segment:None});
-    world.actors[0].health=80;world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
+    world.actors[0].health=80;world.damage_events.push(model::DamageRecord{spotting:None,sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
         health_before:90,health_after:80,crew_before:true,crew_after:true,direct:false,pierced:false});
     let forbidden=native::explosion(wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap(),projectile.terminal,shell).unwrap();
     let c=s.shared.as_mut().unwrap();c.tracer_started[0]=true;
@@ -177,9 +177,9 @@ fn p06t_private_he_center_tracks_the_primary_vehicle_epoch_until_flush() {
     let mut projectile=crate::gateway091::shared::projectile::Projectile::launch_shell_for_limit(1,1,&world.actors[1],now,world.shot_limit(),shell).unwrap();
     projectile.stopped=true;projectile.terminal=[41.125,1.75,62.5];world.projectiles.push(projectile);
     // Authored publication-only direct result; no geometric/native acceptance.
-    world.impacts.push(model::AppliedImpact{shot:1,attacker:1,target:2,tick:1001,outcome:model::ImpactOutcome::WreckBlocked,
+    world.impacts.push(model::AppliedImpact{spotting:None,shot:1,attacker:1,target:2,tick:1001,outcome:model::ImpactOutcome::WreckBlocked,
         health_before:90,health_after:90,segment:None});
-    world.actors[0].health=80;world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
+    world.actors[0].health=80;world.damage_events.push(model::DamageRecord{spotting:None,sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
         health_before:90,health_after:80,crew_before:true,crew_after:true,direct:false,pierced:false});
     c.tracer_started[0]=true;publish(c,&mut s.outbox,&world,now).unwrap();
     let explosion=native::explosion(wire::vehicle_id(0).unwrap(),wire::vehicle_id(1).unwrap(),projectile.terminal,shell).unwrap();
@@ -201,7 +201,7 @@ fn postmortem01_visible_ally_killed_by_hidden_attacker_gets_native_death_callbac
     let mut killer=world.actors[1].clone();killer.identity.account="hidden-killer".into();
     killer.identity.database=103;killer.identity.name="hidden".into();world.actors.push(killer);
     world.actors[1].health=0;
-    world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:2,target:1,shot:1,reason:0,
+    world.damage_events.push(model::DamageRecord{spotting:None,sequence:1,tick:1001,attacker:2,target:1,shot:1,reason:0,
         health_before:90,health_after:0,crew_before:true,crew_after:false,direct:true,pierced:true});
     let c=s.shared.as_mut().unwrap();
     assert!(c.visible()[0]&&c.visible()[1]&&!c.visible()[2]);

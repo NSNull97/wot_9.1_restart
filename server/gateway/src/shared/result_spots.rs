@@ -10,6 +10,41 @@ use std::io;
 pub(crate) const POLICY: &str = "test_lab.p08c.first-visible-enemy-lowest-slot.v1";
 const MAX_ACTORS:usize=super::MAX_ACTORS;
 
+/// Project policy: retain the latest successful direct scan only, at most two
+/// fixed 100 ms battle ticks old. This is not a claim about the #717 server.
+pub(crate) const ASSIST_POLICY:&str="content0.s5a.assist-direct-shared-hp.v1";
+pub(crate) const ASSIST_MAX_SCAN_AGE_TICKS:u32=2;
+
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]
+pub struct AssistEvidence {pub scan_tick:Option<u32>,pub direct_mask:u32,pub track_mask:u32}
+impl crate::bw_wire::Wire for AssistEvidence {
+    fn put(&self,w:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;W::put(&self.scan_tick,w);W::put(&self.direct_mask,w);W::put(&self.track_mask,w);}
+    fn get(r:&mut crate::bw_wire::Dec)->io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{scan_tick:W::get(r)?,direct_mask:W::get(r)?,track_mask:W::get(r)?})}
+}
+
+impl super::World {
+    /// Called at the HP transition with its staged actors, before the target's
+    /// damage is applied. Only the server's last direct scan is evidence.
+    pub(super) fn assist_evidence(&self,actors:&[super::Actor],attacker:usize,target:usize,tick:u32)->io::Result<Option<AssistEvidence>> {
+        let Some(state)=self.original_spotting.as_ref() else {return Ok(None)};
+        if actors.len()>MAX_ACTORS || attacker>=actors.len() || target>=actors.len() || tick<1000 {return Err(bad("assist impact identity"));}
+        let mut out=AssistEvidence{scan_tick:None,direct_mask:0,track_mask:0};
+        for slot in super::super::server::battle_ledger::track_authors(self,target,tick)?.into_iter().flatten() {
+            if slot>=actors.len(){return Err(bad("assist track author"));}out.track_mask|=1_u32<<slot;
+        }
+        let Some(scan_ms)=state.last_scan_ms() else {return Ok(Some(out))};
+        let scan_tick=1000_u32.checked_add(u32::try_from(scan_ms/100).map_err(|_|bad("assist scan clock"))?).ok_or_else(||bad("assist scan clock"))?;
+        out.scan_tick=Some(scan_tick);
+        if scan_tick>tick || tick-scan_tick>ASSIST_MAX_SCAN_AGE_TICKS || !actors[target].alive()
+            || self.team(attacker)?==self.team(target)? {return Ok(Some(out));}
+        for (slot,actor) in actors.iter().enumerate() {
+            if self.team(slot)?==self.team(attacker)? && actor.alive() && actor.ready && actor.session.is_some()
+                && state.direct(slot)?[target] {out.direct_mask|=1_u32<<slot;}
+        }
+        Ok(Some(out))
+    }
+}
+
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub(crate) struct SpotRecord {observer:usize,target:usize,tick:u32}
 // BW-01 wire codec (tools/bw01_wire_gen.py): SpotRecord

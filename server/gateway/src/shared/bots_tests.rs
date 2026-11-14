@@ -74,6 +74,109 @@ fn bot01_fill_is_synthetic_atomic_and_follows_the_native_places(){
 }
 
 #[test]
+fn content0_s5a_ready_bot_has_direct_sight_and_shares_until_inactive_retention_expires(){
+    let now=Instant::now();let mut w=fixture(1,4,1,now);w.fill_bots().unwrap();
+    // 0 and 2 are allies. The human is outside view range; allied bot 2 sees
+    // enemy 1. Bot sessions are server-reserved identifiers, not native peers.
+    place(&mut w,0,[0.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);
+    place(&mut w,2,[400.,0.,0.],0.);place(&mut w,3,[-400.,0.,-400.],0.);
+    let at=begin(&mut w,now);w.refresh_original_spotting(at).unwrap();
+    assert_eq!(w.actors[2].session,Some(SESSION_BASE+2));
+    assert!(!w.own_sightings(0).unwrap()[1]);assert!(w.own_sightings(2).unwrap()[1]);
+    assert!(w.desired_visibility(0).unwrap()[1],"allied bot shares the actual direct sighting");
+    for mode in 0..3 {
+        let mut copy=w.clone();match mode {
+            0=>copy.actors[2].ready=false,
+            1=>copy.actors[2].health=0,
+            _=>copy.actors[2].session=None,
+        }
+        copy.refresh_original_spotting(at+Duration::from_millis(5100)).unwrap();
+        assert!(!copy.own_sightings(2).unwrap()[1],"inactive bot retains no direct sight, mode={mode}");
+        assert!(!copy.desired_visibility(0).unwrap()[1],"old team sight expires, mode={mode}");
+    }
+}
+
+#[test]
+fn content0_s5a_fixed_scout_preserves_bot_health_and_never_drives(){
+    let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,4,1,now);
+    assert!(w.fixed_scout().is_none(),"default off");
+    let seats=(0..4).map(|slot|super::super::super::fixed_scout::Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
+    w.enable_fixed_scout(super::super::super::fixed_scout::Scenario{seats,events:vec![]}).unwrap();w.fill_bots().unwrap();
+    assert!(w.actors.iter().skip(1).all(|a|a.vehicle_kind()==VehicleKind::Ms1&&a.health==VehicleKind::Ms1.max_health()));
+    assert_eq!(w.actors[1].optional_devices(),[super::super::super::camouflage::NET,0,0]);
+    assert_eq!(w.actors[2].optional_devices(),[0;3]);
+    assert!(w.actors.iter().skip(1).all(|a|a.owned_v2.is_none()),"lab setup does not forge owned loadouts");
+    assert!(w.actors[1].equipment_mass()>w.actors[2].equipment_mass());
+    assert!(!w.bot_turret_test());let at=begin(&mut w,now);
+    for k in 1..=10 {assert_eq!(w.drive_bots(at+STEP*k).unwrap(),0);}
+    assert!(w.actors.iter().skip(1).all(|a|a.input==Input::STOP&&a.health==VehicleKind::Ms1.max_health()));
+    assert_eq!((0..4).map(|slot|w.team(slot).unwrap()).collect::<Vec<_>>(),vec![1,2,1,2]);
+}
+
+#[test]
+fn content0_s5a_fixed_scout_script_uses_authoritative_input_and_fire_once(){
+    use super::super::super::fixed_scout::{Seat,Scenario,Event};
+    let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,4,1,now);
+    let seats=(0..4).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
+    let events=vec![Event{tick:1,slot:1,action:1,target:None},Event{tick:3,slot:1,action:4,target:None},Event{tick:4,slot:1,action:2,target:None},Event{tick:5,slot:1,action:4,target:None},Event{tick:6,slot:1,action:5,target:None}];
+    let scenario=Scenario{seats,events};scenario.validate().unwrap();
+    let mut invalid=scenario.clone();invalid.events.remove(1);assert!(invalid.validate().is_err());
+    let mut invalid=scenario.clone();invalid.events[0].slot=0;assert!(invalid.validate().is_err());
+    w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();let at=begin(&mut w,now);
+    assert_eq!(w.drive_bots(at).unwrap(),0); // establish battle origin
+    for k in 1..=6 {w.tick+=1;let t=at+STEP*k;let count=w.drive_bots(t).unwrap();
+        assert_eq!(count,if k==2{0}else{1});assert_eq!(w.drive_bots(t).unwrap(),0,"never replay same tick");
+        if k==1{assert_eq!(w.actors[1].input.throttle,1);}if k==4{assert_eq!(w.actors[1].input.steer,-1);}
+        if k==3||k==5{assert_eq!(w.actors[1].input,Input::STOP);}
+    }
+    assert_eq!(w.bot_shots(),1);assert!(w.shots.iter().any(|s|s.slot==1));
+}
+
+#[test]
+fn content0_s5a_shared_only_script_uses_committed_sight_and_server_pose(){
+    use super::super::super::fixed_scout::{Seat,Scenario,Event};
+    let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,6,1,now);
+    let seats=(0..6).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:false,crew_percent:(slot!=0).then_some(100)}).collect();
+    let events=vec![Event{tick:1,slot:4,action:6,target:Some(1)},Event{tick:31,slot:4,action:7,target:Some(1)}];
+    let scenario=Scenario{seats,events};scenario.validate().unwrap();
+    let mut invalid=scenario.clone();invalid.events[0].target=Some(2);assert!(invalid.validate().is_err(),"cannot aim at ally");
+    let mut invalid=scenario.clone();invalid.events[1].tick=30;assert!(invalid.validate().is_err(),"requires three seconds after aim");
+    let mut invalid=scenario.clone();invalid.events[1].target=Some(3);assert!(invalid.validate().is_err(),"fire target must equal aimed target");
+    let mut invalid=scenario.clone();invalid.events.push(Event{tick:32,slot:4,action:7,target:Some(1)});assert!(invalid.validate().is_err(),"one fire per committed aim");
+    w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();
+    place(&mut w,0,[400.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);place(&mut w,2,[420.,0.,0.],0.);
+    place(&mut w,3,[-400.,0.,-400.],0.);place(&mut w,4,[0.,0.,0.],0.);place(&mut w,5,[-300.,0.,-400.],0.);
+    let at=begin(&mut w,now);w.refresh_original_spotting(at).unwrap();
+    assert!(!w.own_sightings(4).unwrap()[1]);assert!(w.desired_visibility(4).unwrap()[1]);
+    assert_eq!(w.drive_bots(at).unwrap(),0);w.tick+=1;assert_eq!(w.drive_bots(at+STEP).unwrap(),1);
+    assert_eq!(w.actors[4].aim.intent,aim::Intent::Point([500.,1.,0.]),"uses current committed server target pose");
+    assert_eq!(w.drive_bots(at+STEP).unwrap(),0,"same tick cannot replay aim");
+    w.tick+=30;assert_eq!(w.drive_bots(at+STEP*31).unwrap(),1);assert_eq!(w.bot_shots(),1);
+    assert_eq!(w.drive_bots(at+STEP*31).unwrap(),0,"same tick cannot replay fire");
+}
+
+#[test]
+fn content0_s5a_shared_only_script_refuses_direct_or_missing_team_sight(){
+    use super::super::super::fixed_scout::{Seat,Scenario,Event};
+    for mode in 0..3 {
+        let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,6,1,now);
+        let seats=(0..6).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:false,crew_percent:(slot!=0).then_some(100)}).collect();
+        let events=vec![Event{tick:1,slot:4,action:6,target:Some(1)},Event{tick:31,slot:4,action:7,target:Some(1)}];
+        w.enable_fixed_scout(Scenario{seats,events}).unwrap();w.fill_bots().unwrap();
+        place(&mut w,0,[400.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);place(&mut w,2,[420.,0.,0.],0.);
+        place(&mut w,3,[-400.,0.,-400.],0.);place(&mut w,4,if mode==0{[450.,0.,0.]}else{[0.,0.,0.]},0.);place(&mut w,5,[-300.,0.,-400.],0.);
+        if mode==1 {place(&mut w,0,[0.,0.,-300.],0.);place(&mut w,2,[0.,0.,300.],0.);}
+        let at=begin(&mut w,now);if mode!=2{w.refresh_original_spotting(at).unwrap();}
+        w.drive_bots(at).unwrap();w.tick+=1;assert_eq!(w.drive_bots(at+STEP).unwrap(),0,"mode {mode} rejects aim");
+        assert!(matches!(w.actors[4].aim.intent,aim::Intent::Hold{..}));
+        // Even if team visibility subsequently becomes valid, a skipped aim
+        // cannot authorize the scheduled shared shot.
+        place(&mut w,0,[400.,0.,0.],0.);place(&mut w,4,[0.,0.,0.],0.);w.refresh_original_spotting(at+STEP*2).unwrap();
+        w.tick+=30;assert_eq!(w.drive_bots(at+STEP*31).unwrap(),0);assert_eq!(w.bot_shots(),0);
+    }
+}
+
+#[test]
 fn bot01_plan_and_enable_are_bounded(){
     let now=Instant::now();
     for plan in [Plan{human_places:0,seed:0,kinds:vec![VehicleKind::Ms1]},Plan{human_places:6,seed:0,kinds:vec![VehicleKind::Ms1]},

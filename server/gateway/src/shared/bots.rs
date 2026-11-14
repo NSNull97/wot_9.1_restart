@@ -185,11 +185,14 @@ pub(crate) struct Bots { plan: Arc<Plan>, brains: Vec<Brain>, last_tick: Option<
     /// MM-01: the matched group's tiers; facing places get one tier.
     pairing: Option<(u8, u8)>,
     /// TURPHYS-01 test_lab turret test: passive bots with stepped racks (see `enable_bot_turret_test`).
-    turret_test: bool }
+    turret_test: bool,
+    fixed_scout: Option<super::super::fixed_scout::Scenario>,
+    fixed_origin_tick:Option<u32>,
+    fixed_shared_aims:[Option<(u32,u8)>;6] }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Bots
 impl crate::bw_wire::Wire for Bots {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,repositions,stucks,think_ns,pairing,turret_test}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(repositions,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);W::put(turret_test,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,repositions:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?,turret_test:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{plan,brains,last_tick,digest,shots,held,repositions,stucks,think_ns,pairing,turret_test,fixed_scout,fixed_origin_tick,fixed_shared_aims}=self;W::put(plan,bw_o);W::put(brains,bw_o);W::put(last_tick,bw_o);W::put(digest,bw_o);W::put(shots,bw_o);W::put(held,bw_o);W::put(repositions,bw_o);W::put(stucks,bw_o);W::put(think_ns,bw_o);W::put(pairing,bw_o);W::put(turret_test,bw_o);W::put(fixed_scout,bw_o);W::put(fixed_origin_tick,bw_o);W::put(fixed_shared_aims,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{plan:W::get(bw_i)?,brains:W::get(bw_i)?,last_tick:W::get(bw_i)?,digest:W::get(bw_i)?,shots:W::get(bw_i)?,held:W::get(bw_i)?,repositions:W::get(bw_i)?,stucks:W::get(bw_i)?,think_ns:W::get(bw_i)?,pairing:W::get(bw_i)?,turret_test:W::get(bw_i)?,fixed_scout:W::get(bw_i)?,fixed_origin_tick:W::get(bw_i)?,fixed_shared_aims:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -226,7 +229,7 @@ impl World {
             if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
             self.geometry_for(*kind)?;
         }
-        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 5], repositions: 0, stucks: 0, think_ns: 0, pairing: None, turret_test: false });
+        self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 5], repositions: 0, stucks: 0, think_ns: 0, pairing: None, turret_test: false, fixed_scout:None, fixed_origin_tick:None, fixed_shared_aims:[None;6] });
         Ok(())
     }
     pub fn bot_plan(&self) -> Option<&Plan> { self.bots.as_ref().map(|b| b.plan.as_ref()) }
@@ -241,12 +244,21 @@ impl World {
         Ok(())
     }
     pub fn bot_turret_test(&self) -> bool { self.bots.as_ref().is_some_and(|b| b.turret_test) }
+    pub fn enable_fixed_scout(&mut self,scenario:super::super::fixed_scout::Scenario)->io::Result<()> {
+        scenario.validate()?;
+        let bots=self.bots.as_mut().ok_or_else(bad)?;
+        if self.started.is_some() || self.map.asset()!="02_malinovka" || self.expected_actors!=scenario.seats.len()
+            || bots.plan.human_places!=1 || bots.turret_test || bots.fixed_scout.is_some() || !bots.brains.is_empty()
+            || scenario.seats.iter().skip(1).any(|seat|seat.kind.is_none_or(|kind|!bots.plan.kinds.contains(&kind))) {return Err(bad());}
+        bots.fixed_scout=Some(scenario);Ok(())
+    }
+    pub fn fixed_scout(&self)->Option<&super::super::fixed_scout::Scenario>{self.bots.as_ref().and_then(|b|b.fixed_scout.as_ref())}
     /// MM-01: this battle's native places (1..=all places) and the bot kinds of
     /// its group of tiers `group`, before the start. The template's plan is
     /// untouched; a reset battle comes back with it.
     pub fn set_match_roster(&mut self, humans: usize, kinds: Vec<VehicleKind>, group: (u8, u8)) -> io::Result<()> {
         let bots = self.bots.as_mut().ok_or_else(bad)?;
-        if self.started.is_some() || !bots.brains.is_empty() || !(1..=self.expected_actors).contains(&humans)
+        if self.started.is_some() || bots.fixed_scout.is_some() || !bots.brains.is_empty() || !(1..=self.expected_actors).contains(&humans)
             || self.actors.len() > humans || kinds.is_empty() || kinds.iter().any(|k| !bots.plan.kinds.contains(k))
             || kinds.iter().enumerate().any(|(i, k)| kinds[..i].contains(k)) { return Err(bad()); }
         bots.plan = Arc::new(Plan { human_places: humans, seed: bots.plan.seed, kinds });
@@ -294,8 +306,9 @@ impl World {
         let paired = bots.pairing.map(|group| self.paired_bot_kinds(&plan, group)).transpose()?;
         for ordinal in 0..count {
             let slot = next.actors.len();
-            let kind = match &paired { Some(kinds) => *kinds.get(ordinal).ok_or_else(bad)?,
-                None => plan.kinds[(ordinal + (plan.seed % plan.kinds.len() as u64) as usize) % plan.kinds.len()] };
+            let kind = if let Some(scenario)=&bots.fixed_scout {scenario.seats.get(slot).and_then(|seat|seat.kind).ok_or_else(bad)?} else {match &paired { Some(kinds) => *kinds.get(ordinal).ok_or_else(bad)?,
+                None => plan.kinds[(ordinal + (plan.seed % plan.kinds.len() as u64) as usize) % plan.kinds.len()] }
+            };
             let mut database = DATABASE_BASE.checked_add(ordinal as i32).ok_or_else(bad)?;
             while next.actors.iter().any(|a| a.identity.database == database) { database = database.checked_add(1).ok_or_else(bad)?; }
             let rack = bots.turret_test.then(|| turret_test_rack(kind, ordinal));
@@ -304,6 +317,7 @@ impl World {
             let session = SESSION_BASE.checked_add(slot as u32).ok_or_else(bad)?;
             if next.attach_bot_actor(identity, session, kind, rack)? != slot { return Err(bad()); }
             next.actors[slot].bot = Some(u8::try_from(ordinal).map_err(|_| bad())?);
+            if let Some(scenario)=&bots.fixed_scout {next.actors[slot].fixed_scout_net=scenario.seats[slot].net;}
         }
         let bounds = playable_bounds(self.map.asset()).ok_or_else(bad)?;
         let inner = [bounds[0] + BOUNDS_INSET_M, bounds[1] + BOUNDS_INSET_M, bounds[2] - BOUNDS_INSET_M, bounds[3] - BOUNDS_INSET_M];
@@ -393,6 +407,7 @@ impl World {
         if self.started.is_none() || state.brains.is_empty() || state.last_tick == Some(self.tick) { return Ok(0); }
         // TURPHYS-01 turret test: the bots are targets; they never move, aim or shoot.
         if state.turret_test { return Ok(0); }
+        if state.fixed_scout.is_some() {return self.drive_fixed_scout(now); }
         let mut state = state.clone();
         state.last_tick = Some(self.tick);
         if self.lifecycle.as_ref().is_some_and(|l| !l.allows_actions()) { self.bots = Some(state); return Ok(0); }
@@ -430,6 +445,59 @@ impl World {
         }
         self.bots = Some(state);
         Ok(issued)
+    }
+
+    /// Explicit bounded scripted commands, applied through the same authoritative player path.
+    /// Times are domain ticks after Battle starts; no historical bot behaviour is claimed.
+    fn drive_fixed_scout(&mut self,now:Instant)->io::Result<usize>{
+        let mut state=self.bots.clone().ok_or_else(bad)?;
+        if self.lifecycle.as_ref().is_none_or(|l|!l.allows_actions()) {return Ok(0);}
+        state.last_tick=Some(self.tick);
+        let origin=*state.fixed_origin_tick.get_or_insert(self.tick);
+        let elapsed=self.tick.checked_sub(origin).ok_or_else(bad)?;
+        let events=state.fixed_scout.as_ref().ok_or_else(bad)?.events.clone();
+        let mut count=0;
+        for event in events.iter().filter(|e|e.tick==elapsed){
+            let slot=usize::from(event.slot);let actor=self.actors.get(slot).ok_or_else(bad)?;
+            // Consume a pending aim even when the shooter or target became inactive;
+            // a later fire must not inherit stale authorization.
+            if event.action==6 {state.fixed_shared_aims[slot]=None;}
+            if event.action==7 && state.fixed_shared_aims[slot].take().is_none_or(|(at,target)|
+                Some(target)!=event.target || self.tick.saturating_sub(at)<30) {
+                println!("FIXED_SCOUT_COMMAND battle={} tick={} slot={} outcome=aim_not_committed",self.id,self.tick,slot);continue;
+            }
+            if actor.bot.is_none()||!actor.ready||!actor.alive(){
+                println!("FIXED_SCOUT_COMMAND battle={} tick={} slot={} action={} outcome=inactive",self.id,self.tick,slot,event.action);continue;
+            }
+            // This script is server-configured test_lab only. Never accept a client
+            // coordinate: a shared-only target uses its committed server pose.
+            let shared_target=if event.action>=6 {
+                let target=usize::from(event.target.ok_or_else(bad)?);
+                let victim=self.actors.get(target).ok_or_else(bad)?;
+                let Some(spotting)=self.original_spotting.as_ref().filter(|s|s.initialized()) else {
+                    println!("FIXED_SCOUT_COMMAND battle={} tick={} slot={} outcome=no_committed_scan",self.id,self.tick,slot);continue;
+                };
+                if !victim.alive() || !victim.ready || self.team(slot)?==self.team(target)?
+                    || spotting.direct(slot)?[target] || !spotting.desired(slot)?[target] {
+                    println!("FIXED_SCOUT_COMMAND battle={} tick={} slot={} target={} outcome=shared_only_refused",self.id,self.tick,slot,target);continue;
+                }
+                Some(victim.position)
+            }else{None};
+            let command=match event.action {
+                1=>Command::Move(Input{throttle:1,steer:0,speed_percent:100}),
+                2=>Command::Move(Input{throttle:0,steer:-1,speed_percent:100}),
+                3=>Command::Move(Input{throttle:0,steer:1,speed_percent:100}),
+                4=>Command::Move(Input::STOP),5=>Command::Fire(fire::Command::Shoot),
+                6=>{let mut p=shared_target.ok_or_else(bad)?;p[1]+=1.;Command::Aim(aim::Intent::Point(p))},
+                7=>{let _=shared_target.ok_or_else(bad)?;Command::Fire(fire::Command::Shoot)},_=>return Err(bad())};
+            let outcomes=self.apply(slot,SESSION_BASE+slot as u32,&[command],now)?;
+            if event.action==6 {state.fixed_shared_aims[slot]=Some((self.tick,event.target.ok_or_else(bad)?));}
+            if outcomes.iter().any(|o|matches!(o,fire::Outcome::AcceptedShot{..}|fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{..}))){state.shots=state.shots.saturating_add(1);}
+            state.digest=fnv(state.digest,format!("{}:{slot}:{command:?}:{outcomes:?};",self.tick).as_bytes());
+            println!("FIXED_SCOUT_COMMAND battle={} tick={} slot={} action={} outcomes={:?}",self.id,self.tick,slot,event.action,outcomes);
+            count+=1;
+        }
+        self.bots=Some(state);Ok(count)
     }
 
     /// Pure decision from this World snapshot and the bot's own RNG.

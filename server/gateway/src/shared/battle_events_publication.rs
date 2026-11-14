@@ -152,13 +152,13 @@ impl Feed<'_> {
     /// dealt damage); the sum stays in the end-of-battle totals.
     fn assists(&mut self,cursors:&FeedCursors)->io::Result<()> {
         let(c,world)=(self.c,self.world);
-        for harm in battle_ledger::harms(world,cursors.damage,cursors.impacts)? {
-            let kind=match battle_ledger::assist(world,c.slot,harm)? {
-                Some(battle_ledger::Assist::Track)=>FeedKind::AssistTrack,
-                Some(battle_ledger::Assist::Spot)=>FeedKind::AssistSpot,
+        for harm in battle_ledger::harms(world,cursors.damage,cursors.impacts,cursors.ram)? {
+            let (kind,amount)=match battle_ledger::assist(world,c.slot,harm)? {
+                Some((battle_ledger::Assist::Track,amount))=>(FeedKind::AssistTrack,amount),
+                Some((battle_ledger::Assist::Spot,amount))=>(FeedKind::AssistSpot,amount),
                 None=>continue,
             };
-            self.dealt(harm.tick,kind,harm.target,harm.amount)?;
+            self.dealt(harm.tick,kind,harm.target,amount)?;
         }
         Ok(())
     }

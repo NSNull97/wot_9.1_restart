@@ -388,6 +388,35 @@ class HostTests(unittest.TestCase):
         manager.onDestroyBattleGUI()
         self.assertEqual(seen, ['battle', 'gone'])
 
+    def test_failed_second_subscription_rolls_back_and_allows_retry(self):
+        class FailingEvent(self.Event):
+            def __init__(self, after_registration):
+                super().__init__()
+                self.after_registration = after_registration
+
+            def __iadd__(self, handler):
+                if self.after_registration:
+                    self.handlers.append(handler)
+                raise RuntimeError('second subscription failed')
+
+        for after_registration in (False, True):
+            with self.subTest(after_registration=after_registration):
+                manager, host, seen = self.manager(), m.BattleHost(), []
+                manager.onDestroyBattleGUI = FailingEvent(after_registration)
+                attach, detach = seen.append, lambda: seen.append('gone')
+                with self.assertRaisesRegex(RuntimeError, 'second subscription failed'):
+                    host.add(attach, detach, manager)
+                self.assertEqual(manager.onInitBattleGUI.handlers, [])
+                self.assertEqual(manager.onDestroyBattleGUI.handlers, [])
+                self.assertEqual((host.manager, host.window, host.listeners), (None, None, []))
+                manager.onInitBattleGUI()  # no dangling callback on the unbound host
+                manager.onDestroyBattleGUI = self.Event()
+                host.add(attach, detach, manager)
+                manager.battleWindow = 'battle'
+                manager.onInitBattleGUI()
+                host.remove(attach, detach)
+                self.assertEqual(seen, ['battle', 'gone'])
+
     def test_a_window_already_open_is_attached_at_once_and_the_last_listener_unbinds(self):
         manager, host, seen = self.manager(), m.BattleHost(), []
         manager.battleWindow = 'battle'
