@@ -440,3 +440,49 @@ The active phase had no drive resync, battle fault or reliable retransmits.
 The maximum gateway loop time in the 23 complete active-phase windows was
 17.0 ms (line 9678). This native run did not encounter a long stall. Recovery
 from the 5.1 s boundary remains covered by the controlled cadence test.
+
+## Enhanced suspensions
+
+**VERIFIED #717** — `res/scripts/common/items/artefacts.pyc` SHA‑256
+`aedbfc161d7f0b2b78f376540811a0b4113736757982d03bceb4e6f4cccac49c`.
+`EnhancedSuspension.weightOnVehicle`, lines 247–252, adds the chassis limit
+times `chassisMaxLoadFactor − 1`. `updateVehicleDescrAttrs`, lines 262–265,
+multiplies `chassisHealthFactor` and `vehicleByChassisDamageFactor`. All 20
+original items use 1.10, 1.20 and 0.50. Original vehicle filters select one
+compatible item for 315 of 374 catalogue vehicles. The items have no weight
+and the original preservation flag applies when demounting them.
+
+**PROJECT** — the authoritative store checks the fitted item and complete
+vehicle mass on install, demount, module change, relog and mixed battle
+reservation. Research journals record the fitted suspension used for a
+weight-sensitive module command, so identical replays survive removal later.
+The gateway independently requires the exact native item for each extended
+build. Both tracks receive +20% maximum HP, rounded to nearest (project rule),
+with source regen values and unrelated device caps preserved. Terminal caps
+are checked independently in the gateway and the SQLite writer. The 0.50
+vehicle damage factor needs a server landing damage event, which is pending.
+
+**PASS** — both build modes exported 14,382 generated assemblies, including
+1,862 additional configurations across 145 vehicle types. Existing stock
+profiles remain byte-identical. Native Jolt qualified 14,377 ordinary and
+14,378 `test_lab` definitions. Results and source bundles are in
+`local/evidence/suspension-builds-{main,lab}-01` and
+`local/evidence/suspension-qualify-{main,lab}-01`.
+The actual SQLite/native argument test installed the U-11 on a KV-1: stock
+chassis limit 47,800 kg, assembly 47,850 kg, new limit 52,580 kg. It refused
+removal while overweight without changing SQLite, accepted removal after
+returning the stock gun, and replayed the mount across reopen and removal.
+Gateway tests applied three real-rule 30 HP hits per track. Stock tracks
+dropped to zero, fitted tracks kept 18 of 108 HP, and repair restored 108.
+Gateway also refused absent, foreign and duplicate suspension classes for a
+build with a required item. Logs: `local/evidence/content0-s5/suspension-*.log`.
+
+Generation: `tools/battle_any_profiles.py build --original <original>
+--out <local-export> --update`, `server/build.py physics --out <local-worker>`
+and `tools/battle_any_profiles.py qualify --worker <worker> --out <local-proof>`.
+Run both variants using `WOT091_TEST_LAB=1` and `server/build.py physics
+--test-lab` for the lab. Live Jolt/gateway/Domain deployment and a natively
+driven round are **NOT_RUN**. Before deploying, retain a scoped game database
+snapshot and the previous gateway and worker. Roll back the generated pins,
+worker, gateway and Domain together with the pre-test snapshot when a new
+overweight assembly or suspension is already present in the database.

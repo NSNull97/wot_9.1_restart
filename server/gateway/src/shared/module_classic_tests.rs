@@ -46,6 +46,37 @@ fn after(events:&[Transition])->(u16,Condition) {
         Some(v)=>v, None=>panic!("no device transition")}
 }
 
+#[test]
+fn content0_s5_enhanced_suspension_keeps_both_tracks_above_zero_on_a_stock_breaking_hit() {
+    use crate::p06t_device_caps::ENHANCED_SUSPENSIONS;
+    let profile = Profile::T34;
+    let mut stock = State::new(profile).unwrap();
+    stock.enable_classic().unwrap();
+    let mut fitted = stock.clone();
+    for id in ENHANCED_SUSPENSIONS {
+        fitted.configure_artefacts([0, id, 0], [0; 3]).unwrap();
+        let caps = fitted.caps();
+        let base = profile.caps();
+        assert_eq!((caps[4].max, caps[5].max, caps[4].regen, caps[5].regen), (108, 108, 70, 70));
+        assert_eq!(&caps[..4], &base[..4]);
+        assert_eq!(&caps[6..], &base[6..]);
+    }
+    for shot in 1..=3 {
+        let left = track_hit(shot);
+        let right = ModuleHit { ordinal: TRACK_ORDINALS[1], target: Target::Device(Device::RightTrack), ..left };
+        let hits = [left, right];
+        stock.apply_explosion_hits(&hits, &[30, 30], full(profile)).unwrap();
+        fitted.apply_explosion_hits(&hits, &[30, 30], full(profile)).unwrap();
+    }
+    assert_eq!(&stock.health()[4..6], &[0, 0]);
+    assert_eq!(&fitted.health()[4..6], &[18, 18]);
+    assert_eq!(stock.capabilities().steer_scale, 0.);
+    assert!(fitted.capabilities().steer_scale > 0.);
+    let repaired = fitted.restore(Consumable::LargeRepairkit, 1, 100, 0, full(profile)).unwrap();
+    assert_eq!(repaired.len(), 2);
+    assert_eq!(&fitted.health()[4..6], &[108, 108]);
+}
+
 #[test] fn classic_damaged_threshold_is_max_regen_health_inclusive() {
     // MS-1 left track: maxHealth 40, maxRegenHealth 30 (#717 source caps).
     let caps=(*Profile::Ms1.caps())[Device::LeftTrack as usize];

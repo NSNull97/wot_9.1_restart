@@ -5,7 +5,7 @@ from collections import Counter
 from copy import deepcopy
 import struct
 
-from content0_equipment_catalog import MANIFEST_SHA256, SLOT_COUNT, live_items
+from content0_equipment_catalog import ENHANCED_SUSPENSIONS, MANIFEST_SHA256, SLOT_COUNT, live_items
 from destructible_catalog import json_value
 from p09d_ammo_store import require, sha
 from p09d_ammo_projection import canonical
@@ -37,6 +37,7 @@ def _slots(slots, kind):
     require(all(type(cd) is int for cd in slots), "ARTEFACT_SLOT_INVALID")
     mounted = [_item(cd, kind) for cd in slots if cd != 0]
     require(len({item.compact_id for item in mounted}) == len(mounted), "ARTEFACT_DUPLICATE")
+    require(sum(item.compact_id in ENHANCED_SUSPENSIONS for item in mounted) <= 1, "ARTEFACT_CONFLICT")
     for index, item in enumerate(mounted):
         require(not any(item.tags & other.incompatible_tags or other.tags & item.incompatible_tags
                         for other in mounted[index + 1:]), "ARTEFACT_CONFLICT")
@@ -47,16 +48,15 @@ def validate_installed_devices(catalog, owned, slots):
     """Check source compatibility and the complete equipped chassis load."""
     from p09e_research_store import assembly
     mounted = [_item(cd, OPTDEV) for cd in _slots(slots, OPTDEV) if cd]
-    if not mounted:
-        return
     vehicle = catalog.vehicles[owned["vehicle_id"]]
     require(all(item.compatible(vehicle) for item in mounted), "ARTEFACT_INCOMPATIBLE")
+    suspension = next((item.compact_id for item in mounted if item.compact_id in ENHANCED_SUSPENSIONS), None)
+    args = {"suspension": suspension} if suspension is not None else {}
+    definition = assembly(catalog, owned["vehicle_id"], owned["modules"], **args)
     weight = sum(item.weight_grams for item in mounted)
     weight_percent = sum(item.weight_percent for item in mounted)
-    if weight or weight_percent:
-        definition = assembly(catalog, owned["vehicle_id"], owned["modules"])
-        base = definition["mass_grams"]
-        require(100 * (base + weight) + base * weight_percent <= 100 * definition["max_load_grams"], "CHASSIS_OVERLOAD")
+    base = definition["mass_grams"]
+    require(100 * (base + weight) + base * weight_percent <= 100 * definition["max_load_grams"], "CHASSIS_OVERLOAD")
 
 
 def validate_installed_consumables(catalog, vehicle_id, slots):

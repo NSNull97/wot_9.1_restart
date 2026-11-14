@@ -14,7 +14,8 @@ from p09d_ammo_store import require,sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p08b_battle_store import _integer, MAX_PARTICIPANTS
-from content0_equipment_catalog import CO2_FUEL_TANK, CYCLONE_FILTER, WET_AMMO_RACKS
+from content0_equipment_catalog import (CO2_FUEL_TANK, CYCLONE_FILTER, ENHANCED_SUSPENSIONS,
+                                       SUSPENSION_TRACK_HEALTH_PERCENT, WET_AMMO_RACKS)
 
 POLICY_SCHEMA="p06t-terminal-policy.v1"
 MANIFEST_SHA256="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717"
@@ -24,14 +25,14 @@ FIELDS={"policy_revision","roster_size","crew_active","crew","devices","fire","d
 
 def fitted_device_maxima(devices, frozen):
     fitted = frozen.get("artefacts", {}).get("optional_devices", ())
-    modified = {
-        26: CYCLONE_FILTER in fitted,
-        27: any(item in WET_AMMO_RACKS for item in fitted),
-        28: CO2_FUEL_TANK in fitted,
-    }
+    factors = {26: 150 if CYCLONE_FILTER in fitted else 100,
+               27: 150 if any(item in WET_AMMO_RACKS for item in fitted) else 100,
+               28: 150 if CO2_FUEL_TANK in fitted else 100}
+    if any(item in ENHANCED_SUSPENSIONS for item in fitted):
+        factors.update({30: SUSPENSION_TRACK_HEALTH_PERCENT, 31: SUSPENSION_TRACK_HEALTH_PERCENT})
     for device in devices:
         extra, maximum = device["extra_index"], device["max_health"]
-        yield extra, min(65535, (maximum * 3 + 1) // 2) if modified.get(extra) else maximum
+        yield extra, min(65535, (maximum * factors.get(extra, 100) + 50) // 100)
 
 
 class TerminalPolicy:

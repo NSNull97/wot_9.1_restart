@@ -44,6 +44,19 @@ SPALL_LINERS = {
     505: "antifragmentationLining_light", 761: "antifragmentationLining_medium",
     1017: "antifragmentationLining_heavy", 11001: "antifragmentationLining_superheavy",
 }
+ENHANCED_SUSPENSIONS = {
+    2041: "enhancedSuspension_Vikkers", 2297: "enhancedSuspension_candle",
+    2553: "enhancedSuspension_Christie", 2809: "enhancedTorsions1t",
+    3065: "enhancedTorsions3t", 3321: "enhancedTorsions5t", 3577: "enhancedSprings",
+    3833: "enhancedLevers", 4089: "enhancedBelwillWashers", 4345: "enhancedLongitudinalTorsions",
+    8441: "enhancedVertical_springs", 8697: "enhancedHorizontal_springs",
+    8953: "enhancedSprings_class2", 9209: "enhancedSprings_class3",
+    9465: "enhancedHorizontal_springs_class2", 9721: "enhancedHorizontal_springs_class3",
+    9977: "enhancedVertical_springs_class2", 10233: "enhancedVertical_springs_class3",
+    10489: "enhancedVertical_elastic_elements", 10745: "enhancedHorizontal_elastic_elements",
+}
+SUSPENSION_MAX_LOAD_PERCENT = 110
+SUSPENSION_TRACK_HEALTH_PERCENT = 120
 
 # Authoritative runtime effect families backed by the battle command path.
 DEVICE_EFFECTS = {
@@ -52,7 +65,7 @@ DEVICE_EFFECTS = {
     6393: "largeCaliberHowitzerRammer", 6649: "enhancedAimDrives",
     CO2_FUEL_TANK: "carbonDioxide", CYCLONE_FILTER: "filterCyclone",
     7929: "aimingStabilizer_Mk1", 8185: "aimingStabilizer_Mk2",
-} | VENTILATION_BONUS | WET_AMMO_RACKS | SPALL_LINERS
+} | VENTILATION_BONUS | WET_AMMO_RACKS | SPALL_LINERS | ENHANCED_SUSPENSIONS
 CONSUMABLE_EFFECTS = {
     251: "handExtinguishers", 507: "autoExtinguishers",
     763: "smallMedkit", 1019: "largeMedkit",
@@ -153,8 +166,12 @@ def live_items():
             weight = effect.get("weight", 0)
             fraction = effect.get("vehicleWeightFraction", "0")
             expected_fraction = "0.01" if cd in WET_AMMO_RACKS else "0"
+            suspension = cd in ENHANCED_SUSPENSIONS
             if (row["source_name"] != SUPPORTED_ITEMS[cd] or type(weight) is not int or not 0 <= weight <= 1500
-                    or fraction != expected_fraction or effect.get("chassisMaxLoadFactor", 0)):
+                    or fraction != expected_fraction or effect.get("chassisMaxLoadFactor") != ("1.1" if suspension else None)
+                    or suspension and (row["script"] != "EnhancedSuspension" or weight != 0 or row["removable"]
+                                       or effect.get("chassisHealthFactor") != "1.2"
+                                       or effect.get("vehicleByChassisDamageFactor") != "0.5")):
                 raise ValueError("unsupported identity or weight on live artefact")
             result[cd] = LiveItem(cd, row["kind"], row["removable"],
                                   frozenset(row["tags"]), frozenset(row["incompatible_tags"]), weight * 1000,
@@ -163,6 +180,10 @@ def live_items():
     if set(result) != set(SUPPORTED_ITEMS):
         raise ValueError("incomplete artefact catalogue binding")
     return MappingProxyType(result)
+
+
+def compatible_suspension(vehicle):
+    return next((cd for cd in ENHANCED_SUSPENSIONS if live_items()[cd].compatible(vehicle)), None)
 
 
 def main():

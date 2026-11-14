@@ -32,7 +32,7 @@ const BUILDS:&[u8]=include_bytes!("../../../../config/test_lab/battle_builds.v1.
 pub const POLICY:&str="battle-any-generated-v1";
 /// Same bound as the scene worker's angular frame and ram response.
 pub const MAX_GENERATED:usize=512;
-/// CONTENT-0 3.3: stock kinds plus every mountable build (12 520 in #717).
+/// CONTENT-0: stock kinds and every generated assembly, including enhanced suspensions.
 pub const MAX_REGISTRY:usize=16384;
 /// Client vehicle device order of the build table (`DEVICES` of tools/battle_any_profiles.py).
 const DEVICES:[&str;9]=["engine","ammoBay","fuelTank","radio","leftTrack","rightTrack","gun","turretRotator","surveyingDevice"];
@@ -91,6 +91,8 @@ pub struct Entry {
     pub effects:[u8;3],
     /// CONTENT-0 3.3: the stock build of its vehicle (`by_vehicle`/`by_compact` index only these).
     pub stock:bool,
+    /// #717 load allowance for a generated assembly over the stock chassis limit.
+    pub required_suspension:Option<u16>,
     /// Collision part pins (hull, turret, turret x gun) of a non-stock build; stock builds keep their bundle.
     pub part_sha256:Option<[String;3]>,
     /// SHELL-02 track armour part of a non-stock build's chassis (None: stock, or the chassis source is refused).
@@ -243,6 +245,7 @@ fn build_rows(builds:&Value,table_sha:&str)->io::Result<Vec<Value>> {
             let parts=[&hull["part"],&turret["part"],&mount["part"]];
             let bytes:u64=parts.iter().map(|p|u(&p["bytes"])).sum::<io::Result<u64>>()?;
             rows.push(serde_json::json!({"status":"generated","kind":b["label"],"vehicle_id":vehicle_id,
+                "required_suspension":b["required_suspension"],
                 "native_nation_id":v["native_nation_id"],
                 "identity":{"descriptor_hex":b["descriptor_hex"],"type_compact_id":v["type_compact_id"],
                     "module_compact_ids":b["module_compact_ids"],"max_hp":b["max_hp"],"mass_kg":b["mass_kg"]},
@@ -349,7 +352,11 @@ fn build(table:&[u8],qualification:&[u8],builds:&[u8])->io::Result<Registry> {
             let path=g["mount_source_path"].as_str().filter(|p|p.len()<=512).ok_or_else(||bad("build mount path"))?;
             super::dispersion::pair_key(&vehicle_name,path).ok_or_else(||bad("build mount path"))?};
         let entry=Entry{id,label:label.to_owned(),vehicle_id:s(&row["vehicle_id"])?.to_owned(),nation_id:nation,descriptor,dispersion_key,
-            stock,part_sha256,chassis_armor_sha256:if stock||row["chassis_armor"].is_null(){None}else{
+            stock,required_suspension:if row["required_suspension"].is_null(){None}else{
+                let id=u16::try_from(u(&row["required_suspension"])?).map_err(|_|bad("required suspension"))?;
+                if stock||!crate::p06t_device_caps::ENHANCED_SUSPENSIONS.contains(&id){return Err(bad("required suspension"));}
+                Some(id)
+            },part_sha256,chassis_armor_sha256:if stock||row["chassis_armor"].is_null(){None}else{
                 let h=s(&row["chassis_armor"])?;if h.len()!=64||!h.bytes().all(|b|b.is_ascii_hexdigit()){return Err(bad("chassis part pin"));}Some(h.to_owned())},
             type_compact_id:type_cd,gun_compact_id:gun_cd,
             max_hp:i16::try_from(u(&identity["max_hp"])?).map_err(|_|bad("hp"))?,mass_kg:f(&identity["mass_kg"])?,
@@ -411,7 +418,8 @@ mod tests {
         let r=registry().unwrap();
         // Only stock generated rows reserve stock registry IDs.
         assert_eq!(r.entries().iter().filter(|e|e.stock).count(),if cfg!(feature="test_lab"){363}else{362});
-        if !cfg!(feature="test_lab") {assert_eq!(r.entries().len(),12_515);}
+        assert_eq!(r.entries().len(),if cfg!(feature="test_lab"){14_378}else{14_377});
+        assert_eq!(r.entries().iter().filter(|entry|entry.required_suspension.is_some()).count(),1_862);
         for (stock,count) in [(VehicleKind::Ms1,86),(VehicleKind::T26,95),(VehicleKind::T34,55),
             (VehicleKind::T3485,83),(VehicleKind::Is7,0)] {
             let id=format!("vehicle:{}",stock.name());

@@ -17,6 +17,7 @@ from p04k_crew_projection import BarracksRecruitmentProjectionSource
 from p09d_ammo_store import NativeAmmoStore, require, sha, REQUEST_FIELDS as AMMO_REQUEST_FIELDS
 from p09d_ammo_projection import canonical, update_delta
 from p09c_ammo_catalog import SHELLS
+from content0_equipment_catalog import ENHANCED_SUSPENSIONS, SUSPENSION_MAX_LOAD_PERCENT, compatible_suspension
 
 SCHEMA = "p09e-tank-module-research.v1"
 # Profile13 extends the accepted P04K profile12; crew receipts keep their own contract.
@@ -126,7 +127,7 @@ def validate_request(request, authenticated_account_id, *, stand_grant=False):
     return deepcopy(request)
 
 
-def assembly(catalog, vehicle_id, modules):
+def assembly(catalog, vehicle_id, modules, *, suspension=None):
     """Source-bound compatibility and full dry mass; no battle-readiness claim."""
     require(vehicle_id in catalog.vehicles, "UNKNOWN_VEHICLE_TYPE")
     vehicle = catalog.vehicles[vehicle_id]
@@ -144,6 +145,9 @@ def assembly(catalog, vehicle_id, modules):
         mass += value
     maximum = vehicle.get("module_max_load_grams", {}).get(modules["chassis"], catalog.modules[modules["chassis"]]["max_load_grams"])
     require(type(maximum) is int and maximum > 0, "SOURCE_LOAD_UNKNOWN")
+    if suspension is not None:
+        require(suspension == compatible_suspension(vehicle), "ARTEFACT_INCOMPATIBLE")
+        maximum = (maximum * SUSPENSION_MAX_LOAD_PERCENT) // 100
     require(mass <= maximum, "CHASSIS_OVERLOAD")
     return {"mass_grams": mass, "max_load_grams": maximum, "battle_admission": False}
 
@@ -174,7 +178,7 @@ def _default_unlocks(catalog, vehicle_id):
     return values
 
 
-def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=(), zero_gold=False):
+def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=(), zero_gold=False, suspension=None):
     """Pure bounded transition, also re-executed when replaying the journal.
 
     ``zero_gold`` is the explicit ECONOMY_POLICY of the account's stand."""
@@ -255,7 +259,8 @@ def plan(catalog, state, operation, payload, *, account_id, reserved=(), loaded=
             require(role not in seen, "DUPLICATE_MODULE_SLOT")
             seen.add(role)
             installed[role] = item
-        metrics = assembly(catalog, owned["vehicle_id"], installed)
+        args = {"suspension": suspension} if suspension is not None else {}
+        metrics = assembly(catalog, owned["vehicle_id"], installed, **args)
         changes = {role: item for role, item in installed.items() if item != owned["modules"][role]}
         require(changes, "NO_CONFIGURATION_CHANGE")
         require(not (set(changes) & {"turret", "gun"} and inventory_id in loaded), "UNLOAD_AMMUNITION_REQUIRED")
@@ -327,13 +332,19 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         require(type(state["vehicles"]) is list and 2 <= len(state["vehicles"]) <= MAX_OWNED, "CORRUPT_STORE")
         require(type(state["garage_slots"]) is int and len(state["vehicles"]) <= state["garage_slots"] <= MAX_OWNED, "CORRUPT_STORE")
         seen_id, seen_type, seen_native = set(), set(), set()
+        from content0_equipment_store import read_state
+        artefacts = read_state(self.connection, account)
+        fitted = artefacts["vehicles"] if artefacts is not None else {}
         for item in state["vehicles"]:
             require(type(item) is dict and set(item) == {"vehicle_inventory_id", "native_id", "vehicle_id", "modules", "runtime_supported"}, "CORRUPT_STORE")
             _identity(item["vehicle_inventory_id"]); _number(item["native_id"], 1)
             require(item["vehicle_inventory_id"] not in seen_id and item["vehicle_id"] not in seen_type
                     and item["native_id"] not in seen_native and item["runtime_supported"] is False
                     and item["vehicle_id"] in state["unlocked"], "CORRUPT_STORE")
-            assembly(self.catalog, item["vehicle_id"], item["modules"])
+            slots = fitted.get(item["vehicle_inventory_id"], {}).get("devices", ())
+            suspension = next((cd for cd in slots if cd in ENHANCED_SUSPENSIONS), None)
+            args = {"suspension": suspension} if suspension is not None else {}
+            assembly(self.catalog, item["vehicle_id"], item["modules"], **args)
             if item["native_id"] > 2:
                 require(item["vehicle_inventory_id"] == account + ":p09e-vehicle:" + str(item["native_id"]), "CORRUPT_STORE")
             else:
@@ -637,15 +648,19 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             unloads = self._auto_unload(profile)
             loaded = [r["vehicle_id"] for r in profile["ammunition"] if any(r["loaded"].values()) and r["vehicle_id"] not in unloads]
             before = profile["research"]
-            after, details = plan(self.catalog, before, request["operation"], request["payload"], account_id=account, reserved=reserved, loaded=loaded,
-                                  zero_gold=self.zero_economy(account))
+            fitted = None
+            suspension = None
             if request["operation"] in ("install", "buy_equip") and "artefacts" in profile:
                 inventory = request["payload"]["vehicle_inventory_id"]
                 fitted = profile["artefacts"]["vehicles"].get(inventory)
-                if fitted and any(fitted["devices"]):
-                    from content0_equipment_store import validate_installed_devices
-                    selected = next(row for row in after["vehicles"] if row["vehicle_inventory_id"] == inventory)
-                    validate_installed_devices(self.catalog, selected, fitted["devices"])
+                if fitted is not None:
+                    suspension = next((cd for cd in fitted["devices"] if cd in ENHANCED_SUSPENSIONS), None)
+            after, details = plan(self.catalog, before, request["operation"], request["payload"], account_id=account, reserved=reserved, loaded=loaded,
+                                  zero_gold=self.zero_economy(account), suspension=suspension)
+            if fitted and any(fitted["devices"]):
+                from content0_equipment_store import validate_installed_devices
+                selected = next(row for row in after["vehicles"] if row["vehicle_inventory_id"] == inventory)
+                validate_installed_devices(self.catalog, selected, fitted["devices"])
             new_ids = {r["vehicle_inventory_id"] for r in after["vehicles"]} - {r["vehicle_inventory_id"] for r in before["vehicles"]}
             for vehicle_id in new_ids:
                 c.execute("INSERT INTO game_vehicle VALUES (?,?,'available',NULL)", (account, vehicle_id))
@@ -681,6 +696,8 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             journal = {"schema": JOURNAL_SCHEMA, "before": before, "after_sha256": sha(canonical(after)),
                        "reserved": reserved, "loaded": loaded, "response": response,
                        "native_context": native_context, "native_response": native}
+            if suspension is not None:
+                journal["suspension"] = suspension
             raw = _encode(journal)
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, key, command, payload_sha, revision, revision + 1, raw, sha(raw.encode("ascii"))))
             self._failpoint("after_research_ledger")
@@ -713,13 +730,19 @@ class ResearchStore(NativeBarracksRecruitmentStore):
         journal = _json(row["result_json"])
         require(sha(row["result_json"].encode("ascii")) == row["p09c_result_sha256"], "CORRUPT_STORE")
         legacy = journal.get("schema") == SCHEMA
+        suspension = journal.get("suspension")
+        suspension_fields = set()
+        if "suspension" in journal:
+            require(not legacy and type(suspension) is int and suspension in ENHANCED_SUSPENSIONS
+                    and request["operation"] in ("install", "buy_equip"), "CORRUPT_STORE")
+            suspension_fields.add("suspension")
         require((legacy and set(journal) == {"schema", "before", "after", "reserved", "loaded", "response", "native_before", "native_response"})
-                or (journal.get("schema") == JOURNAL_SCHEMA and set(journal) == {"schema", "before", "after_sha256", "reserved", "loaded", "response", "native_context", "native_response"}), "CORRUPT_STORE")
+                or (journal.get("schema") == JOURNAL_SCHEMA and set(journal) - suspension_fields == {"schema", "before", "after_sha256", "reserved", "loaded", "response", "native_context", "native_response"}), "CORRUPT_STORE")
         source, destination = row["source_revision"], row["destination_revision"]
         require(type(source) is int and source == request["expected_revision"] and destination == source + 1 and destination <= profile["revision"], "CORRUPT_STORE")
         try:
             after, details = plan(self.catalog, journal["before"], request["operation"], request["payload"], account_id=request["account_id"], reserved=journal["reserved"], loaded=journal["loaded"],
-                                  zero_gold=self.zero_economy(request["account_id"]))
+                                  zero_gold=self.zero_economy(request["account_id"]), suspension=suspension)
             equipment = None
             if request["operation"] == "buy_vehicle_equipped":
                 equipment = journal["response"]["details"]["equipment"]

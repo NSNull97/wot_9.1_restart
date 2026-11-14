@@ -245,6 +245,56 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(self.store.service(request, authenticated_account_id=self.account), dict(serviced, replayed=True))
         self.assertEqual(self.state(), before_replay)
 
+    def test_enhanced_suspension_carries_overweight_gun_and_blocks_unsafe_demount(self):
+        from p06t_ammo_loss_store import AmmoLossStore
+        from p09e_research_store import assembly
+
+        def reopen():
+            self.store.close()
+            self.store = AmmoLossStore(self.database, self.catalog, account_id=self.account,
+                shell_catalog=mixed.SHELL_SOURCE, terminal_policy=mixed.TERMINAL_POLICY)
+        reopen()
+        self.store.activate_loss(account_id=self.account, authenticated_account_id=self.account,
+                                 expected_revision=self.profile()["revision"], native_database_id=self.native_id)
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=self.account)
+        self.buy_curated("KV1")
+        vehicle = "vehicle:ussr:KV1"
+        native = self.owned(vehicle)["native_id"]
+        suspension = 3321
+        gun = "module:ussr:gun:_122mm_cannon_U-11"
+        baseline = self.catalog.vehicles[vehicle]["defaults"]
+        stock_limit = assembly(self.catalog, vehicle, baseline)["max_load_grams"]
+        self.research(vehicle, gun)
+        self.buy(gun)
+        self.refused("CHASSIS_OVERLOAD", 101, (native, self.cd(gun), 0))
+
+        self.accepted(308, (SHOP_REVISION, suspension, native, 1, 0, 0))
+        mount = self.native_request(101, (native, self.cd(gun), 0))
+        response = native_service(self.store, mount, authenticated_account_id=self.account)
+        self.assertEqual(response["status"], "researched")
+        owned = self.owned(vehicle)
+        self.assertEqual(owned["modules"]["gun"], gun)
+        metrics = assembly(self.catalog, vehicle, owned["modules"], suspension=suspension)
+        self.assertGreater(metrics["mass_grams"], stock_limit)
+        self.assertEqual(metrics["max_load_grams"], stock_limit * 110 // 100)
+        profile = self.store.registry.by_descriptor[descriptor(self.catalog, owned).hex()]
+        self.assertEqual(profile.required_suspension, suspension)
+
+        def remove():
+            return self.native(102, (SHOP_REVISION, native, 0, 1, 1))
+        before = self.state()
+        self.assertEqual(remove()["status"], "rejected")
+        self.assertEqual(self.state(), before)
+        reopen()
+        self.assertEqual(self.owned(vehicle)["modules"]["gun"], gun)
+        self.assertEqual(native_service(self.store, mount, authenticated_account_id=self.account), dict(response, replayed=True))
+        self.accepted(101, (native, self.cd(baseline["gun"]), 0))
+        self.assertEqual(remove()["status"], "researched")
+        self.assertEqual(self.owned(vehicle)["modules"], baseline)
+        self.assertEqual(native_service(self.store, mount, authenticated_account_id=self.account), dict(response, replayed=True))
+        self.assertEqual(self.owned(vehicle)["modules"], baseline)
+
     def test_ms1_nonstock_chassis_and_engine_admit_with_the_starter_inventory_id(self):
         for index in (0, 2, 3): self.accepted(201, (3329, index, 0))
         self.buy(AMO3); self.buy(MS1_CHASSIS)

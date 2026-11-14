@@ -520,6 +520,31 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.assertEqual((legacy_dir / "shop.bin").read_bytes(), old_shop)
         self.assertEqual(self.store.publish(source, account, root)["fixture_dir"], current["fixture_dir"])
 
+    def test_enhanced_suspension_terminal_uses_fitted_track_maxima(self):
+        from content0_equipment_catalog import ENHANCED_SUSPENSIONS, live_items
+        from p06t_terminal import fitted_device_maxima
+
+        items = live_items()
+        self.assertEqual(len(ENHANCED_SUSPENSIONS), 20)
+        self.assertTrue(all(not items[cd].removable and not items[cd].weight_grams for cd in ENHANCED_SUSPENSIONS))
+        is7 = self.store.catalog.vehicles["vehicle:ussr:IS-7"]
+        self.assertEqual([cd for cd in ENHANCED_SUSPENSIONS if items[cd].compatible(is7)], [3321])
+
+        frozen = {"kind": "is7", "max_hp": 2150, "crew_ids": [f"crew-{i}" for i in range(5)],
+                  "artefacts": {"optional_devices": [0, 3321, 0], "consumables": [0, 0, 0]}}
+        terminal = self.fx.terminal(frozen, 2150)
+        policy = self.store.terminal_policy
+        policy_caps = policy.document["profiles"]["is7"]["devices"]
+        caps = dict(fitted_device_maxima(policy_caps, frozen))
+        self.assertEqual((caps[30], caps[31]), (300, 300))
+        with self.assertRaises(TransactionError) as caught:
+            policy.validate(canonical(terminal).decode("ascii"), frozen=frozen, terminal_hp=2150)
+        self.assertEqual(caught.exception.code, "INVALID_TERMINAL_STATE")
+        for row in terminal["devices"]:
+            if row["extra_index"] in (30, 31):
+                row.update(health=300, max_health=300)
+        policy.validate(canonical(terminal).decode("ascii"), frozen=frozen, terminal_hp=2150)
+
     def test_ventilation_and_rations_use_source_filters_and_settle_frozen_food(self):
         from content0_equipment_catalog import CREW_FOOD, VENTILATION_BONUS, live_items
         from p09e_research_service import existing_service

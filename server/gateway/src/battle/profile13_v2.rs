@@ -126,7 +126,7 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
     pub fn validate_owned(&self,account:&str)->io::Result<()>{
         if parse_frozen(&self.value(),account,&self.sha256)?!=*self{return Err(bad("changed frozen"));}Ok(())}}
 
-use crate::p06t_device_caps::{CO2_FUEL_TANK, CYCLONE_FILTER, WET_AMMO_RACKS};
+use crate::p06t_device_caps::{CO2_FUEL_TANK, CYCLONE_FILTER, ENHANCED_SUSPENSIONS, WET_AMMO_RACKS};
 
 pub(crate) const COATED_OPTICS:u16=1529;
 pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
@@ -283,10 +283,11 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     let (optional_devices,consumables)=if let Some(artefacts)=v.get("artefacts") {
         fields.push("artefacts");
         keys(artefacts,&["optional_devices","consumables"])?;
-        let devices=artefact_slots(&artefacts["optional_devices"],|id|OPTIONAL_DEVICE_MASS.iter().any(|row|row.0==id))?;
+        let devices=artefact_slots(&artefacts["optional_devices"],|id|OPTIONAL_DEVICE_MASS.iter().any(|row|row.0==id)
+            ||ENHANCED_SUSPENSIONS.contains(&id))?;
         let consumables=artefact_slots(&artefacts["consumables"],|id|ACTIVE_CONSUMABLES.contains(&id)||is_crew_food(id))?;
         if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
-        if [&VENTILATION[..],&RAMMERS[..],&VERTICAL_STABILIZERS[..],&WET_AMMO_RACKS[..],&SPALL_LINERS[..]].into_iter()
+        if [&VENTILATION[..],&RAMMERS[..],&VERTICAL_STABILIZERS[..],&WET_AMMO_RACKS[..],&SPALL_LINERS[..],&ENHANCED_SUSPENSIONS[..]].into_iter()
             .any(|family| devices.iter().filter(|id|family.contains(id)).count()>1) {
             return Err(bad("incompatible equipment classes"));
         }
@@ -295,6 +296,9 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     keys(v,&fields)?;
     let native=number(v,"native_inventory_id")?;
     let(kind,mount,suffix,suffixes)=if catalog_v1{catalog_identity(text(v,"kind")?,native)?}else{legacy_identity(text(v,"kind")?,native)?};
+    if kind.generated().and_then(|build|build.required_suspension).is_some_and(|required|!optional_devices.contains(&required)) {
+        return Err(bad("reinforced chassis required for build"));
+    }
     let nation=((kind.vehicle_compact_id()>>4)&15) as usize;
     if consumables.iter().copied().any(|id|is_crew_food(id)&&CREW_FOOD.get(nation)!=Some(&id)) {
         return Err(bad("food nation"));
@@ -616,6 +620,29 @@ mod tests{
         assert!(parse_frozen_with(&wrong,account,&hash,false).is_err());
         let mut wrong=value.clone();wrong.as_object_mut().unwrap().remove("crew_qualification");
         assert!(parse_frozen_with(&wrong,account,&digest(&wrong).unwrap(),false).is_err());
+    }
+    #[test]
+    fn content0_s5_overweight_build_requires_its_exact_native_suspension_at_admission() {
+        let account = "12345678-1234-4234-8234-123456789abc";
+        let registry = crate::gateway091::shared::generated_vehicles::registry().unwrap();
+        let b = registry.entries().iter().find(|row|row.vehicle_id=="vehicle:ussr:KV1"
+            &&row.required_suspension==Some(3321)).unwrap();
+        let kind = VehicleKind::Generated(b.id);
+        let profile = source::profile(kind.mount());
+        let mount_key = shell_mount(kind).unwrap();
+        let suffixes = b.suffixes.each_ref().map(String::as_str);
+        let mut value = pool_frozen(account,kind,kind.mount(),3,suffixes);
+        value["crew_ids"] = serde_json::json!((0..b.crew.len()).map(|i| format!("{account}:crew:{i}")).collect::<Vec<_>>());
+        value["ammunition"] = serde_json::json!((0..real_shots(&profile)).map(|i| {
+            let shell = profile.shots[i];
+            serde_json::json!({"shell_definition_id":format!("shell:{mount_key}-{}",suffixes[i]),
+                "shell_compact_id":shell.compact_descr,"family":shell.family.source_name(),"count":u16::from(i==0)*10})
+        }).collect::<Vec<_>>());
+        assert!(parse_frozen_with(&value,account,&digest(&value).unwrap(),true).is_err());
+        for devices in [[2041,0,0],[3321,2041,0],[0,3321,0]] {
+            value["artefacts"] = serde_json::json!({"optional_devices":devices,"consumables":[0,0,0]});
+            assert_eq!(parse_frozen_with(&value,account,&digest(&value).unwrap(),true).is_ok(),devices==[0,3321,0]);
+        }
     }
     #[test]fn purchased_pool_kinds_parse_only_on_their_own_inventory_and_source_shell_order(){
         // Owner full stand 2026-10-20: a bought T-26/T-34/T-34-85 is a p09e

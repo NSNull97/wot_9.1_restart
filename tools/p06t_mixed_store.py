@@ -248,8 +248,9 @@ class MixedAmmoStore(PoolStore):
             max_hp=p.max_hp, crew_ids=[r["crew_id"] for r in members], crew_qualification=self._crew_qualification(p, members), capacity=p.capacity,
             ammunition=rows, initial_shell_compact_id=next(r["shell_compact_id"] for r in rows if r["count"]))
         devices, consumables = battle_loadout(self.connection, aggregate["account_id"], vehicle["vehicle_id"])
+        require(p.required_suspension is None or p.required_suspension in devices, "BATTLE_PROFILE_UNSUPPORTED")
+        validate_installed_devices(self.catalog, {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}, devices)
         if any(devices) or any(consumables):
-            validate_installed_devices(self.catalog, {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}, devices)
             validate_installed_consumables(self.catalog, p.vehicle_id, consumables)
             frozen["artefacts"] = {"optional_devices": list(devices), "consumables": list(consumables)}
         return frozen
@@ -319,8 +320,10 @@ class MixedAmmoStore(PoolStore):
             and type(f["max_hp"]) is int and type(f["capacity"]) is int and f["capacity"] == p.capacity
             and f["native_inventory_id"] == row["native_inventory_id"] and type(f["native_inventory_id"]) is int
             and f["vehicle_inventory_id"] == row["vehicle_inventory_id"] == self.registry.inventory_id(row["account_id"], f["native_inventory_id"], p.kind), "CORRUPT_STORE")
+        require(p.required_suspension is None or p.required_suspension in f.get("artefacts", {}).get("optional_devices", ()), "CORRUPT_STORE")
+        validate_installed_devices(self.catalog, {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)},
+                                   f.get("artefacts", {}).get("optional_devices", [0] * SLOT_COUNT))
         if "artefacts" in f:
-            validate_installed_devices(self.catalog, {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}, f["artefacts"]["optional_devices"])
             validate_installed_consumables(self.catalog, p.vehicle_id, f["artefacts"]["consumables"])
         mount = self.mounts[p.assembly_id]; ammo = f["ammunition"]
         require(type(ammo) is list and len(ammo) == len(mount.shell_ids) and 1 <= len(ammo) <= 3, "CORRUPT_STORE")

@@ -4,6 +4,8 @@ pub const SOURCE_V2_SHA256:&str="2d74a8e8f272e6305d6779d887cac44ad9794c4ec40807d
 pub(crate) const WET_AMMO_RACKS: [u16; 2] = [6905, 7161];
 pub(crate) const CO2_FUEL_TANK: u16 = 7417;
 pub(crate) const CYCLONE_FILTER: u16 = 7673;
+pub(crate) const ENHANCED_SUSPENSIONS: [u16; 20] = [2041, 2297, 2553, 2809, 3065, 3321, 3577, 3833,
+    4089, 4345, 8441, 8697, 8953, 9209, 9465, 9721, 9977, 10233, 10489, 10745];
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Profile {Ms1,Is7,T26,T34,T3485,Wt128,Fv183,
 /// BATTLE-ANY generated assembly: caps/crew from the verified registry.
@@ -34,6 +36,12 @@ impl Profile {
                 // XML changes maxHealth. The project keeps the source maxRegenHealth and
                 // rounds the positive maximum to the nearest integer, half up.
                 cap.max = (u32::from(cap.max) * 3).div_ceil(2).min(u32::from(u16::MAX)) as u16;
+            }
+        }
+        if equipment.iter().any(|id| ENHANCED_SUSPENSIONS.contains(id)) {
+            for device in [Device::LeftTrack, Device::RightTrack] {
+                let max = &mut caps[device as usize].max;
+                *max = ((u32::from(*max) * 6 + 2) / 5).min(u32::from(u16::MAX)) as u16;
             }
         }
         caps
