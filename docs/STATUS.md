@@ -1,6 +1,6 @@
 # Состояние проекта
 
-Параллельная HANGAR-717: [исследование и кандидат](research/HANGAR_717_LATENCY.md); повторные проверки research ускорены в SQLite-снимке, нативное сравнение до/после и приёмка NOT_RUN.
+Параллельная HANGAR-717: [исследование и кандидат](research/HANGAR_717_LATENCY.md); native до/после для семи действий PASS, медиана 9,01 → 6,37 с; полный Python-gate и приёмка NOT_RUN.
 
 Снимок 2026-11-14. История разделов и прежние статусы — в git.
 Порядок карточек — [IMPLEMENTATION_ORDER](IMPLEMENTATION_ORDER.md).

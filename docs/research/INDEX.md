@@ -80,7 +80,7 @@
 
 ## P02 вход, шлюз, ангар
 
-- [HANGAR_717_LATENCY.md](HANGAR_717_LATENCY.md) — задержка ангара: нативный baseline с ошибкой наблюдателя, кандидат и offline сравнение; native до/после NOT_RUN
+- [HANGAR_717_LATENCY.md](HANGAR_717_LATENCY.md) — задержка ангара: candidate, native до/после для семи действий и проверка состояния; полный Python-gate NOT_RUN
 
 - [P02_ACCOUNT_READY.md](P02_ACCOUNT_READY.md) — P02 — минимальный Account: lifecycle и начальная синхронизация
 - [P02_ACCOUNT_SWITCH.md](P02_ACCOUNT_SWITCH.md) — P02 — смена двух аккаунтов в одном клиентском процессе
