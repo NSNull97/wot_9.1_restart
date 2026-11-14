@@ -34,6 +34,7 @@ MODULES += ('project_network',)
 MODULES += ('native_contract',)
 MODULES += ('native_call_trace',)
 MODULES += ('project_sixth_sense_sound',)
+MODULES += ('project_stereoscope_sound',)
 MODULES += ('project_player_kill_marker',)
 MODULES += ('project_loading_icons',)
 MODULES += ('project_pose_trace',)
@@ -470,6 +471,18 @@ def prepare(args):
         if field is None:
             field = ET.SubElement(shot, name)
         field.text = value
+    stereoscope_sample = getattr(args, 'stereoscope_sample', None)
+    if stereoscope_sample is not None:
+        if not p06t_mixed_ammo:
+            raise ValueError('--stereoscope-sample requires --enable-p06t-mixed-ammo')
+        import stereoscope_fmod
+        soundbanks = engine.find('soundMgr/soundbanks')
+        if soundbanks is None or stereoscope_fmod.PROJECT_NAME in [p.findtext('name') for p in soundbanks]:
+            raise ValueError('Unexpected #717 FMOD project configuration')
+        ET.SubElement(ET.SubElement(soundbanks, 'project'), 'name').text = stereoscope_fmod.PROJECT_NAME
+        cue_files, resource_evidence['project_stereoscope_sound'] = stereoscope_fmod.payloads(
+            original, local_path(stereoscope_sample, paths))
+        payloads.update(cue_files)
     payloads['res/engine_config.xml'] = xml_bytes(engine)
     payloads['res_mods/0.9.1/sr_local.pubkey'] = public_payload
     settings = {'schema_version':1, 'endpoint':endpoint, 'profile_dir':str(profile),
@@ -521,6 +534,8 @@ def prepare(args):
     if sixth_sense is not None:
         settings['sixth_sense_sound'] = sixth_sense['candidate']
         resource_evidence['project_sixth_sense_sound'] = sixth_sense
+    if stereoscope_sample is not None:
+        settings['stereoscope_sound'] = True
     if getattr(args, 'player_kill_marker', False):
         # Owner order 2026-10-20: keep the player's killing hit/explosion colour.
         if not profile13_battle:
@@ -878,6 +893,7 @@ def main():
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
+    prep.add_argument('--stereoscope-sample', help='Pinned PCM WAV from tools/stereoscope_lesta_audio.py')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',

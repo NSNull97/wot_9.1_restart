@@ -301,3 +301,41 @@ chance factor 0.85 on penetrating projectile and HE/HESH seat rolls. It uses
 the frozen loadout so the effect lasts throughout the battle, including after
 active healing. That lifetime is a project decision. Spall liner integration
 remains pending.
+
+## Stereoscope HUD and audio
+
+OBSERVED on `content0-step5-equipment-02`, battle `30671350172957519`,
+the SU-152 fitted coated optics (`1529`). The gateway receipt lists
+`devices=[5881, 5113, 1529]`. The trial did not exercise stereoscope `1273`.
+
+VERIFIED in #717, `PlayerAvatar.updateVehicleOptionalDeviceStatus` delegates
+to `__processVehicleOptionalDevices`, which resolves raw ID `4`, adds the
+slot with `stereoscope.png` and passes the boolean to `setOptionalDeviceState`.
+The latter changes the cooldown frame. Both native consumables SWFs have zero
+audio tags, and the callback and original GUI FMOD project have no scope cue.
+
+VERIFIED in local Lesta v1.46.0.0 #2320, `opt_device_in_battle.pyc` has SHA-256
+`5d460ca6d7bbe7c12d60b0bd1426a6bd35bab1d71199f00f380d9620cd5b2458`.
+`stereo_trumpet_start` plays Wwise media `1064042675`. `stereo_trumpet_stop`
+fades the same sound for 500 ms. `tools/stereoscope_lesta_audio.py` extracts
+the full 29,064-frame stream and pins the decoder and result. It writes the WAV
+and provenance to ignored local storage. The sample stays on local test copies.
+
+The client receives the original HUD callback first. The added hook uses raw
+ID `4`, plays on the rising edge and fades the handle when the scope deactivates.
+The extra FMOD project registers its own event and wave bank in `res/audio`.
+A test using the pinned x86 FMOD libraries played the 606 ms scope cue and the
+original GUI event in the same mixer. They shared the original `gui` category.
+The FMOD test does not count as playback in a native battle. Evidence lives in
+`local/evidence/content0-s5/stereoscope-audio.json` and
+`local/evidence/content0-s5/stereoscope-fmod-probe.actual.log`.
+The `content0-step5-equipment-b` client installed the hook and reached the
+login screen. Its receipt is `install-stereoscope/install.json` and its
+bootstrap records are in `runtime/native-18648-1794658096157.jsonl` under
+`local/stands/content0-step5-equipment-client-b` in the client worktree.
+
+Prepare uses the normal native client options plus `--stereoscope-sample` and
+the extracted WAV path. The usual `interactive_client.py rollback --out`
+uses the installation ledger to remove the two audio files and restore
+the prior client configuration. Native HUD and audibility in battle and the
+full card gate remain NOT_RUN.
