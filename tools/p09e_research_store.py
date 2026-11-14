@@ -635,6 +635,13 @@ class ResearchStore(NativeBarracksRecruitmentStore):
             before = profile["research"]
             after, details = plan(self.catalog, before, request["operation"], request["payload"], account_id=account, reserved=reserved, loaded=loaded,
                                   zero_gold=self.zero_economy(account))
+            if request["operation"] in ("install", "buy_equip") and "artefacts" in profile:
+                inventory = request["payload"]["vehicle_inventory_id"]
+                fitted = profile["artefacts"]["vehicles"].get(inventory)
+                if fitted and any(fitted["devices"]):
+                    from content0_equipment_store import validate_installed_devices
+                    selected = next(row for row in after["vehicles"] if row["vehicle_inventory_id"] == inventory)
+                    validate_installed_devices(self.catalog, selected, fitted["devices"])
             new_ids = {r["vehicle_inventory_id"] for r in after["vehicles"]} - {r["vehicle_inventory_id"] for r in before["vehicles"]}
             for vehicle_id in new_ids:
                 c.execute("INSERT INTO game_vehicle VALUES (?,?,'available',NULL)", (account, vehicle_id))

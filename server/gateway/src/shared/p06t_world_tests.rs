@@ -92,6 +92,71 @@ fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
 }
 
 #[test]
+fn content0_s5_weighted_equipment_changes_server_aim_reload_and_repair(){
+    use crate::p06t_device_caps::Device;
+    use crate::p06t_lab_proxy::Target;
+    let now=Instant::now();
+    let owner=Identity{account:"12345678-1234-4234-8234-123456789abc".into(),database:93,name:"T-34 owner".into()};
+    let kind=VehicleKind::T34;
+    let mounted=source::profile(Mount::T34Stock);
+    let slots=[device::GUN_LAYING_DRIVE,device::RAMMERS[0],device::TOOLBOX];
+    let authored=serde_json::json!({
+        "kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+        "native_inventory_id":3,"vehicle_inventory_id":format!("{}:p09e-vehicle:3",owner.account),
+        "max_hp":kind.max_health(),"capacity":mounted.capacity,
+        "crew_ids":(0..Profile::T34.crew().len()).map(|i|format!("{}:crew:{i}",owner.account)).collect::<Vec<_>>(),
+        "ammunition":mounted.shots.iter().zip(["ap","heat","he"]).enumerate().map(|(index,(shot,suffix))|
+            serde_json::json!({"shell_definition_id":format!("shell:t34-stock-{suffix}"),"shell_compact_id":shot.compact_descr,
+                "family":shot.family.source_name(),"count":if index==0{10}else{0}})).collect::<Vec<_>>(),
+        "initial_shell_compact_id":mounted.shots[0].compact_descr,
+        "artefacts":{"optional_devices":slots,"consumables":[0,0,0]},
+    });
+    let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&authored).unwrap()));
+    let frozen=v2::parse_frozen(&authored,&owner.account,&digest).unwrap();
+    let mut world=base(now,low_ground());
+    world.impact.enable_layers().unwrap();
+    world.attach_owned_v2(owner,1,&frozen).unwrap();
+    lab_attach(&mut world,kind,1,[10,0,0]);
+    start(&mut world,now);
+    let expected_reload=Duration::from_secs_f64(mounted.reload_seconds*0.9);
+    assert_eq!(world.actors[0].fire.typed().unwrap().base_reload_seconds(),expected_reload.as_secs_f32());
+    let effective_aim=kind.aim().aiming_time*0.91;
+    let bound=super::super::wire::binding(&world,0,now).unwrap();
+    let targeting=bound.windows(2).position(|row|row==[0x13,0x4b]).unwrap();
+    let aim_offset=targeting+2+8*4;
+    assert_eq!(&bound[aim_offset..aim_offset+4],&effective_aim.to_le_bytes());
+
+    for actor in &mut world.actors {
+        actor.dispersion=Some(super::super::dispersion::State{factor:3.,hull_yaw:0.,turret_yaw:0.});
+    }
+    world.advance(now+STEP).unwrap();
+    let settled=world.actors[0].dispersion.unwrap().factor;
+    assert!(settled < world.actors[1].dispersion.unwrap().factor);
+    assert!((settled-3.*(-f64::from(STEP.as_secs_f32())/f64::from(effective_aim)).exp()).abs()<1e-9);
+
+    let at=now+STEP;
+    world.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();
+    assert_eq!(world.actors[0].fire.reload_until(),Some(at+expected_reload));
+
+    let module=Device::LeftTrack;
+    let hull=kind.max_health() as u16;
+    let health=device::Health{hp:hull,max_hp:hull,terminal:false};
+    for actor in &mut world.actors {
+        let state=actor.devices.as_mut().unwrap();
+        for shot in 1..=9{
+            state.apply_hits(&[device::ModuleHit{cause:device::Cause{shot,attacker_slot:1},
+                ordinal:0,at_ms:100,target:Target::Device(module),shell:mounted.shots[2],ignition_roll:0.}],health).unwrap();
+        }
+        assert_eq!(state.health()[module as usize],0);
+        state.advance_fire(899,health).unwrap();
+        assert_eq!(state.health()[module as usize],0);
+        state.advance_fire(900,health).unwrap();
+    }
+    assert!(world.actors[0].devices.as_ref().unwrap().health()[module as usize]>0);
+    assert_eq!(world.actors[1].devices.as_ref().unwrap().health()[module as usize],0);
+}
+
+#[test]
 fn content0_s5_consumables_authoritative_targeting_use_once_and_terminal_slots(){
     let now=Instant::now();let (owner,base_frozen)=actual_frozen_ap_zero();
     let slots=[1275,763,251];let mut value=base_frozen.value();
@@ -142,7 +207,7 @@ fn content0_s5_consumables_automatic_extinguisher_stops_authoritative_fire(){
     let actor=&mut w.actors[0];actor.consumables=[507,0,0];
     let health=device::Health{hp:90,max_hp:90,terminal:false};
     let shell=source::profile(Mount::Ms1Stock).shots[2];
-    let state=actor.devices.as_mut().unwrap();state.configure_consumables(actor.consumables);
+    let state=actor.devices.as_mut().unwrap();state.configure_artefacts([0;3],actor.consumables);
     let chance=state.profile().engine_fire_chance();
     let cause=device::Cause{shot:1,attacker_slot:1};
     assert!(chance>0.);

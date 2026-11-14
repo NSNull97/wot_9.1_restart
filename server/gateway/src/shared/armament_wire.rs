@@ -101,8 +101,10 @@ pub fn ammo_delta(mount:Mount,before:([u16;3],u16,u16,u8),now:([u16;3],u16,u16,u
 /// are emitted; negative original sentinels remain deliberately unavailable.
 /// 480 is the explicit LAB source-base ceiling120 * module/crew scale4.
 pub fn reload(vehicle_id:u32,time_left:f32,base_time:f32)->io::Result<Vec<u8>>{
+    use crate::p06t_armament091::{MIN_BASE_RELOAD_SECONDS,MIN_RELOAD_SCALE};
     entity(vehicle_id)?;
-    if !base_time.is_finite()||!(0.1..=480.).contains(&base_time)||!time_left.is_finite()||!(0. ..=base_time).contains(&time_left){return Err(bad("P06T bounded reload clock"));}
+    let minimum=(MIN_BASE_RELOAD_SECONDS*MIN_RELOAD_SCALE) as f32;
+    if !(minimum..=480.).contains(&base_time)||!(0. ..=base_time).contains(&time_left){return Err(bad("P06T bounded reload clock"));}
     let mut b=vec![0x13,0x46];b.extend(vehicle_id.to_le_bytes());b.extend(time_left.to_le_bytes());b.extend(base_time.to_le_bytes());Ok(b)
 }
 

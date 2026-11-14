@@ -40,14 +40,12 @@ final `00`. Coated optics raw item ID is 5 and compact ID is 1529.
 
 ## Project policy and coverage
 
-- The initial runtime subset is coated optics, the two repair kits, the two
-  first-aid kits and the two extinguishers. Only those rows are offered in the
-  original Shop. The native callback selects writable item kinds using the
-  projected zero-priced rows and retains original confirmation behavior.
-- The catalogue records source filters for all items. The runtime subset has no
-  vehicle filter or equipment weight. Source duplicate restrictions are enforced
-  at the store, and broader runtime effects will require their own implementation
-  before any additional catalogue rows become purchasable.
+- The first stand offered coated optics, two repair kits, two first-aid kits
+  and two extinguishers. The weighted candidate adds the six rows below. The
+  native callback uses projected zero-priced rows and retains original
+  confirmation behavior.
+- The catalogue records source vehicle filters. Source duplicate restrictions
+  are enforced at the store.
 - Four unsupported fuel items, `lendLeaseOil`, `gasoline100`, `gasoline105` and
   `qualityOil`, have the separate nested `incompatibleTags/installed=fuel` rule in
   the pinned source. The current catalogue receipt omits this nested equipment
@@ -59,3 +57,49 @@ final `00`. Coated optics raw item ID is 5 and compact ID is 1529.
 - The original client and full wire transport must still be exercised for
   native acceptance. Bytecode inspection and repository tests cover source
   contracts and server transactions.
+
+## Hangar parameter display in #717
+
+VERIFIED in `gui/shared/utils/parameterscache.pyc` (SHA-256
+`e5aa176b58c059d17287b7cde2f41786bd3bc87d57d4431a5c3b275bf84925a4`).
+`getVehicleParameters` takes the shot rate from the gun at offsets 324–338.
+`_getShotsPerMinute` uses the raw reload time and clip/burst properties. View
+range reads the turret's `circularVisionRadius` at offsets 676–689, and aiming
+time reads the gun at offsets 725–747. These paths do not evaluate the assigned
+crew or specify a fixed crew level. Whether the source values were calibrated
+to any specific crew level is UNKNOWN. Other rows can read computed descriptor
+properties, for example mass from `vd.physics`.
+
+## Weighted equipment
+
+VERIFIED against the same `optional_devices.xml` source and existing manifest.
+
+| Item subtype | Compact ID | Added mass | Source effect |
+| --- | ---: | ---: | --- |
+| Toolbox | 249 | 100 kg | `repairSpeedFactor` × 1.25 |
+| Medium caliber tank rammer | 5625 | 200 kg | `gunReloadTimeFactor` × 0.90 |
+| Large caliber tank rammer | 5881 | 400 kg | `gunReloadTimeFactor` × 0.90 |
+| Medium caliber howitzer rammer | 6137 | 300 kg | `gunReloadTimeFactor` × 0.90 |
+| Large caliber howitzer rammer | 6393 | 500 kg | `gunReloadTimeFactor` × 0.90 |
+| Enhanced gun laying drive | 6649 | 100 kg | `gunAimingTimeFactor` × 0.91 |
+
+`artefacts._VehicleFilter.checkCompatibility` checks exclusions first at
+bytecode offsets 0–54, then includes at 58–122. `_matchSubfilter` checks the
+nation at 41–80, any matching vehicle tag at 122–168, then minimum and maximum
+tiers at 174–267. Separate `<include>` entries are alternatives. The four
+rammers have no individual component filters, so every mounted build inherits
+its vehicle type's eligibility. Medium and large tank rammers require their
+respective `*TankRammer_user` tags. Medium and large SPG rammers require their
+respective `*HowitzerRammer_user` tags or an American SPG of tier ≤6 or 8–10,
+respectively. A scan of all 374 original vehicle types found 157, 74, 37 and 13
+matches in that order and zero overlaps.
+
+`VehicleDescr.mayInstallComponent` recalculates optional-device compatibility
+and weight at offsets 684–736 before approving a module replacement. The server
+retains compatible equipment and refuses a replacement that would exceed the
+new chassis's weight allowance. Every stored configuration must already fit, so
+the client's alternative non-worsening overload condition cannot occur in this
+slice. The mass check uses integer grams and the existing module catalogue.
+For example, the stock MS-1 has 199 kg reserve, allowing either a toolbox or
+laying drive. The two together require an upgraded suspension. The IS-7 takes
+the large tank rammer and enhanced laying drive on its stock suspension.

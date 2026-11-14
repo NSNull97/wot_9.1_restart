@@ -43,6 +43,20 @@ def _slots(slots, kind):
     return list(slots)
 
 
+def validate_installed_devices(catalog, owned, slots):
+    """Check source compatibility and the complete equipped chassis load."""
+    from p09e_research_store import assembly
+    mounted = [_item(cd, OPTDEV) for cd in _slots(slots, OPTDEV) if cd]
+    if not mounted:
+        return
+    vehicle = catalog.vehicles[owned["vehicle_id"]]
+    require(all(item.compatible(vehicle) for item in mounted), "ARTEFACT_INCOMPATIBLE")
+    weight = sum(item.weight_grams for item in mounted)
+    if weight:
+        definition = assembly(catalog, owned["vehicle_id"], owned["modules"])
+        require(definition["mass_grams"] + weight <= definition["max_load_grams"], "CHASSIS_OVERLOAD")
+
+
 def _validate_state(state, owned_ids=None):
     require(type(state) is dict and set(state) == {"catalog_sha256", "depot", "vehicles"}
             and state["catalog_sha256"] == MANIFEST_SHA256
@@ -124,10 +138,11 @@ def _stock(state, cd, change, *, allow_purchase=False):
         state["depot"].pop(key, None)
 
 
-def _device(state, vehicle_id, cd, slot, paid_removal, *, buy, allow_purchase):
+def _device(state, catalog, owned, cd, slot, paid_removal, *, buy, allow_purchase):
     require(type(slot) is int and 0 <= slot < SLOT_COUNT, "ARTEFACT_SLOT_INVALID")
     if cd:
         _item(cd, OPTDEV)
+    vehicle_id = owned["vehicle_inventory_id"]
     row = state["vehicles"].get(vehicle_id, _empty_vehicle())
     previous = row["devices"][slot]
     require(previous != cd, "ARTEFACT_NO_CHANGE")
@@ -136,7 +151,7 @@ def _device(state, vehicle_id, cd, slot, paid_removal, *, buy, allow_purchase):
     require(not paid_removal or (previous and not live_items()[previous].removable),
             "PAID_OR_SLOT_OPERATION_UNSUPPORTED")
     row["devices"][slot] = cd
-    _slots(row["devices"], OPTDEV)
+    validate_installed_devices(catalog, owned, row["devices"])
     if previous and (live_items()[previous].removable or paid_removal):
         _stock(state, previous, 1)
     if cd and not buy:
@@ -180,9 +195,10 @@ def plan_maintenance(aggregate, native_id, equipment_layout, *, allow_purchase):
     return after if after != before else None
 
 
-def _plan(before, target, command, args, *, allow_purchase):
+def _plan(before, catalog, owned, command, args, *, allow_purchase):
     require(before is not None, "ARTEFACTS_UNAVAILABLE")
     after = deepcopy(_validate_state(before))
+    target = owned and owned["vehicle_inventory_id"]
     if command == 302:
         _, cd, count, _ = args
         require(allow_purchase, "PURCHASE_UNSUPPORTED")
@@ -190,14 +206,14 @@ def _plan(before, target, command, args, *, allow_purchase):
         _stock(after, cd, count)
     elif command == 102:
         _, _, cd, slot, paid = args
-        _device(after, target, cd, slot, paid, buy=False, allow_purchase=allow_purchase)
+        _device(after, catalog, owned, cd, slot, paid, buy=False, allow_purchase=allow_purchase)
     elif command == 104:
         _consumables(after, target, args[1:], allow_purchase=False)
     elif command == 308:
         _, cd, _, slot, paid, _ = args
         require(allow_purchase, "PURCHASE_UNSUPPORTED")
         if cd & 15 == OPTDEV:
-            _device(after, target, cd, slot, paid, buy=True, allow_purchase=allow_purchase)
+            _device(after, catalog, owned, cd, slot, paid, buy=True, allow_purchase=allow_purchase)
         else:
             _item(cd, EQUIPMENT)
             require(not paid and type(slot) is int and 0 <= slot < SLOT_COUNT, "ARTEFACT_SLOT_INVALID")
@@ -318,7 +334,7 @@ def service(store, request, *, authenticated_account_id):
             before, allow_purchase = aggregate["artefacts"], store.zero_economy(account)
             native = args[1] if command == 102 else args[0] if command == 104 else args[2] if command == 308 else None
             owned = _owned(aggregate["research"], native) if native is not None else None
-        after = _plan(before, owned and owned["vehicle_inventory_id"], command, args, allow_purchase=allow_purchase)
+        after = _plan(before, store.catalog, owned, command, args, allow_purchase=allow_purchase)
         updates = projection_updates(before, after, {"vehicles": [owned] if owned else []}, request["wire_revision"],
                                      catalog=store.catalog)
         response = {"status": "researched", "account_id": account, "native_database_id": request["native_database_id"],

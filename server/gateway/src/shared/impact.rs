@@ -536,7 +536,7 @@ impl Trace {
         self.fragiles=Some(state);Ok(())
     }
     pub fn bind_contact_source(&mut self,slot:usize,source:super::ram_proof::Source)->io::Result<()> {
-        if slot>=self.actor_limit()||source.profile!=super::ram_proof::Profile::for_vehicle(self.kind_for_slot(slot)?)
+        if slot>=self.actor_limit()||source.profile.base()!=super::ram_proof::Profile::for_vehicle(self.kind_for_slot(slot)?)
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(invalid("vehicle source authority"));}
         if self.contact_revoked[slot]&&self.contact_sources[slot].as_ref().is_some_and(|old|source.generation<=old.generation){return Err(invalid("revoked vehicle source"));}
         self.contact_sources[slot]=Some(source);self.contact_revoked[slot]=false;Ok(())

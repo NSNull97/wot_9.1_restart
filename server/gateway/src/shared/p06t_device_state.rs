@@ -37,6 +37,13 @@ pub const MAX_FIRE_TICKS:u8=10;
 /// repaired-state notifications, but the historical server timer/crew
 /// modifiers are not established by the available evidence.
 pub const MODULE_REPAIR_DELAY_MS:u64=1000;
+
+// Original #717 optional_devices.xml StaticFactorDevice compact identities.
+pub(crate) const TOOLBOX:u16=249;
+pub(crate) const GUN_LAYING_DRIVE:u16=6649;
+pub(crate) const RAMMERS:[u16;4]=[5625,5881,6137,6393];
+pub(crate) const GUN_LAYING_DRIVE_FACTOR:f32=0.91;
+pub(crate) const RAMMER_FACTOR:f64=0.9;
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,reason)}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Condition {Normal,Critical,Destroyed}
@@ -174,11 +181,11 @@ impl State {
         self.classic=true;Ok(())
     }
     pub fn classic(&self)->bool {self.classic}
-    pub fn configure_consumables(&mut self,slots:[u16;3]){
-        if slots.contains(&Consumable::AutoExtinguisher.compact()){self.fire_starting_chance_factor=0.9;}
-        if slots.contains(&Consumable::LargeRepairkit.compact()){
-            self.module_repair_delay_ms=(MODULE_REPAIR_DELAY_MS*10).div_ceil(11);
-        }
+    pub fn configure_artefacts(&mut self,devices:[u16;3],consumables:[u16;3]){
+        if consumables.contains(&Consumable::AutoExtinguisher.compact()){self.fire_starting_chance_factor=0.9;}
+        let toolbox=if devices.contains(&TOOLBOX){125}else{100};
+        let repair_kit=if consumables.contains(&Consumable::LargeRepairkit.compact()){110}else{100};
+        self.module_repair_delay_ms=(MODULE_REPAIR_DELAY_MS*10_000).div_ceil(toolbox*repair_kit);
     }
     /// TURPHYS-01 test_lab turret test: a passive test bot's ammo bay starts at 1 HP (before any
     /// hit), so the first penetrating hit that reaches it destroys it and the real rack path runs.

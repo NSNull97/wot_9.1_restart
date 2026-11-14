@@ -453,10 +453,10 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, a.direction);
     b.extend(a.speed.to_le_bytes()); b.extend(0f32.to_le_bytes());
     // Native Avatar.updateTargetingInfo starts the original gun rotator and
-    // its original target-input path. Nominal resource parameters, no crew
-    // modifier claim; conversions mirror the original resource readers.
+    // its original target-input path. Publish the same effective aim time the
+    // server uses to settle the circle.
     b.extend([0x13, 0x4b]);
-    let kind=a.vehicle_kind(); let aiming=kind.aim();
+    let kind=a.vehicle_kind(); let aiming=a.aiming_spec();
     for value in [a.aim.yaw, a.aim.pitch, aiming.yaw_rate, aiming.pitch_rate, 1.,
         aiming.turret_dispersion, aiming.movement_dispersion, aiming.hull_dispersion, aiming.aiming_time] {
         b.extend(value.to_le_bytes());

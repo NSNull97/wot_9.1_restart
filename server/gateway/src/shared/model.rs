@@ -120,12 +120,35 @@ impl Actor {
         self.owned_v2.as_ref().map_or([0;3],|loadout|loadout.optional_devices)
     }
 
+    pub(super) fn equipment_mass(&self)->f32 {
+        crate::profile13_v2091::equipment_mass(self.optional_devices())
+    }
+
     fn view_range(&self)->io::Result<f32> {
         use crate::profile13_v2091::{COATED_OPTICS,COATED_OPTICS_VIEW_FACTOR};
         let damage=self.devices.as_ref().map_or(1.,|state|state.capabilities().view_scale);
         if !(0. ..=1.).contains(&damage){return Err(bad());}
         let optics=if self.optional_devices().contains(&COATED_OPTICS){COATED_OPTICS_VIEW_FACTOR}else{1.};
         Ok(self.vehicle_kind().view_range()*optics*damage)
+    }
+
+    pub(super) fn aiming_spec(&self)->super::vehicle_profile::AimSpec {
+        let mut spec=self.vehicle_kind().aim();
+        if self.optional_devices().contains(&crate::p06t_device_state::GUN_LAYING_DRIVE) {
+            spec.aiming_time*=crate::p06t_device_state::GUN_LAYING_DRIVE_FACTOR;
+        }
+        spec
+    }
+
+    fn refresh_reload_scale(&mut self,now:Instant)->io::Result<()> {
+        use crate::p06t_device_state::{RAMMER_FACTOR,RAMMERS};
+        if let Some(devices)=&self.devices {
+            let damage=f64::from(devices.capabilities().reload_scale);
+            let scale=self.optional_devices().into_iter().filter(|id|RAMMERS.contains(id))
+                .fold(damage,|scale,_|scale*RAMMER_FACTOR);
+            self.fire.adjust_reload_scale(scale,now)?;
+        }
+        Ok(())
     }
     /// The player's input with the follow-the-aim hull turn in progress applied.
     pub fn drive_input(&self) -> Input {
@@ -952,7 +975,7 @@ impl World {
     pub fn bind_contact_source(&mut self,slot:usize,source:ram_proof::Source)->io::Result<()> {
         if slot>=self.expected_actors||!(self.actors.get(slot).and_then(|a|a.session)==Some(source.session)
             ||self.mixed_profiles&&self.contact_sources[slot].as_ref()==Some(&source))
-            ||source.profile!=ram_proof::Profile::for_vehicle(self.actors[slot].vehicle_kind)
+            ||source.profile!=ram_proof::Profile::for_equipment(self.actors[slot].vehicle_kind,self.actors[slot].equipment_mass())?
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(bad());}
         self.impact.bind_contact_source(slot,source.clone())?;
         if self.contact_sources[slot].as_ref()!=Some(&source){self.contact_sequences[slot]=0;}
@@ -1037,7 +1060,11 @@ impl World {
         for row in contacts {
             if row.slot_a>=row.slot_b||row.slot_b>=self.actors.len()||!pairs.insert((row.slot_a,row.slot_b)){return Err(bad());}
             let contact=super::tank_ram::Contact{slot_a:row.slot_a,slot_b:row.slot_b,substep:row.substep,point:row.point,normal:row.normal,relative_velocity:row.relative_velocity};
-            let a=self.actors[row.slot_a].vehicle_kind().mass_kg();let b=self.actors[row.slot_b].vehicle_kind().mass_kg();
+            let mass=|slot:usize| {
+                let actor=&self.actors[slot];
+                actor.vehicle_kind().mass_kg()+f64::from(actor.equipment_mass())
+            };
+            let a=mass(row.slot_a);let b=mass(row.slot_b);
             resolved.push((contact,super::tank_ram::resolve(contact,a,b)?));
         }
         let mut next=self.clone();next.active_ram_pairs=pairs;
@@ -1121,9 +1148,10 @@ impl World {
             next.actors[slot].fire=fire::State::with_typed(loadout.mount,loadout.counts(),loadout.initial_shell_compact_id)?;
             next.actors[slot].owned_v2=Some(loadout.clone());
             let mut devices=next.classic_devices(crate::p06t_device_state::State::new(profile)?)?;
-            devices.configure_consumables(loadout.consumables);
+            devices.configure_artefacts(loadout.optional_devices,loadout.consumables);
             next.actors[slot].devices=Some(devices);
             next.actors[slot].consumables=loadout.consumables;
+            next.actors[slot].refresh_reload_scale(next.last)?;
         }
         *self=next;Ok(slot)
     }
@@ -1297,9 +1325,7 @@ impl World {
                         let at_ms=u64::from(self.tick.checked_sub(1000).ok_or_else(bad)?)*100;
                         let transitions=next.use_consumable(kind,*extra,at_ms,slot as u8)?;
                         if !transitions.is_empty(){
-                            if let Some(devices)=&next.devices{
-                                next.fire.adjust_reload_scale(devices.capabilities().reload_scale,now)?;
-                            }
+                            next.refresh_reload_scale(now)?;
                             consumable_transitions.extend(transitions);
                         }
                     }
@@ -1313,7 +1339,7 @@ impl World {
                     let counts_before=next.fire.typed().map(|state|state.counts());
                     let shooting=matches!(command,Command::Fire(fire::Command::Shoot)|Command::Armament(crate::p06t_armament091::Command::Shoot));
                     if shooting&&next.devices.as_ref().is_some_and(|state|!state.capabilities().can_fire){outcomes.push(fire::Outcome::RejectedVehicleState);continue;}
-                    if let Some(state)=next.devices.as_ref(){next.fire.adjust_reload_scale(state.capabilities().reload_scale,now)?;}
+                    next.refresh_reload_scale(now)?;
                     let result = match command {
                         Command::Fire(command) if next.fire.typed().is_none()=>next.fire.apply(&[*command],now)?,
                         Command::Fire(command)=>next.fire.apply_typed(&[match command{
@@ -1368,7 +1394,7 @@ impl World {
         impact_trace.launch(self.id, &projectile, launch_tick)?;
         if let Some(d)=deviation {
             if super::shot_trace::enabled(){super::shot_trace::shot(self.id,sequence,launch_tick,slot,next.vehicle_kind(),&projectile.shell.ok_or_else(||bad())?,d.angle,d.gun,d.seed,d.r,d.theta);}
-            let spec=next.vehicle_kind().aim();let mult=next.devices.as_ref().map_or(1.,|c|f64::from(c.capabilities().dispersion_scale));let speed=next.speed;
+            let spec=next.aiming_spec();let mult=next.devices.as_ref().map_or(1.,|c|f64::from(c.capabilities().dispersion_scale));let speed=next.speed;
             let (hull_yaw,turret_yaw)=(next.direction[0],next.aim.yaw);
             next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,mult);
         }
@@ -1495,7 +1521,7 @@ impl World {
                         a.aim.advance_pose_for_selected(a.vehicle_kind,a.position,a.direction,dt,armament.current(),caps)?;
                     }else{a.aim.advance_pose_for(a.vehicle_kind,a.position,a.direction,dt)?;}
                     if layered_circle {
-                        let spec=a.vehicle_kind.aim();
+                        let spec=a.aiming_spec();
                         let mult=a.devices.as_ref().map_or(1.,|d|f64::from(d.capabilities().dispersion_scale));
                         let (hull_yaw,turret_yaw)=(a.direction[0],a.aim.yaw);
                         let (speed,state)=(a.speed,a.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)));
@@ -1814,9 +1840,9 @@ impl World {
         if tick_changed{
             self.launch_due_bursts(&mut next_actors,now,&mut next_shots,&mut next_projectiles,&mut impact_trace)?;
         }
-        if self.mixed_ammo{for actor in &mut next_actors{if let Some(state)=actor.devices.as_ref(){
-            actor.fire.adjust_reload_scale(state.capabilities().reload_scale,now)?;
-        }}}
+        if self.mixed_ammo{
+            for actor in &mut next_actors{actor.refresh_reload_scale(now)?;}
+        }
         self.shots = next_shots;
         self.actors = next_actors;
         self.last = next_last;

@@ -246,6 +246,59 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.assertEqual(self.profile()["artefacts"]["vehicles"], {})
         self.assertEqual(apply(buy), dict(bought, replayed=True))
 
+    def test_weighted_equipment_checks_source_filter_and_preserves_full_chassis_load(self):
+        from collections import Counter
+        from content0_equipment_catalog import live_items
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        items = live_items()
+        rammers = [5625, 5881, 6137, 6393]
+        classes = Counter()
+        for vehicle in self.store.catalog.vehicles.values():
+            compatible = [cd for cd in rammers if items[cd].compatible(vehicle)]
+            self.assertLessEqual(len(compatible), 1)
+            if "test_lab" not in vehicle:
+                classes.update(compatible)
+        self.assertEqual(classes, {5625: 157, 5881: 74, 6137: 37, 6393: 13})
+
+        def send(command, arguments, *, rejected=False):
+            revision = self.profile()["revision"]
+            key = f"weighted:{command}:{revision}:" + ":".join(map(str, arguments))
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=key, expected_revision=revision, wire_revision=1, command=command, arguments=arguments)
+            previous = self.state() if rejected else None
+            result = native_service(self.store, request, authenticated_account_id=account)
+            self.assertEqual(result["status"], "rejected" if rejected else "researched")
+            if rejected:
+                self.assertEqual(self.state(), previous)
+            return request, result
+
+        ms1, is7 = self.profile()["research"]["vehicles"][:2]
+        garage = self.store.catalog.vehicles[ms1["vehicle_id"]]
+        stock_chassis = self.store.catalog.modules[garage["defaults"]["chassis"]]["native_compact_id"]
+        upgrade = "module:ussr:chassis:T-18Bis"
+        upgraded = self.store.catalog.modules[upgrade]["native_compact_id"]
+        unlock = next(row for row in self.store.catalog.unlocks if row["vehicle_id"] == ms1["vehicle_id"] and row["item_id"] == upgrade)
+        request, reply = send(308, [5, 6649, 1, 0, 0, 0])
+        send(308, [5, 5625, 1, 1, 0, 0], rejected=True)
+        send(308, [5, 249, 1, 1, 0, 0], rejected=True)  # MS-1 stock has 199 kg reserve
+        send(201, [garage["native_compact_id"], unlock["native_index"], 0])
+        send(308, [5, upgraded, 1, 0, 0, 0])
+        send(308, [5, 249, 1, 1, 0, 0]); send(101, [1, stock_chassis, 0], rejected=True)
+        send(102, [5, 1, 0, 1, 0]); send(101, [1, stock_chassis, 0])
+        send(308, [5, 5625, 2, 0, 0, 0], rejected=True)
+        send(308, [5, 5881, 2, 0, 0, 0])
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][is7["vehicle_inventory_id"]]["devices"], [5881, 0, 0])
+        self.assertEqual(native_service(self.store, request, authenticated_account_id=account), dict(reply, replayed=True))
+
+        self.send(self.request("run_open"))
+        frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
+        self.assertEqual(frozen["artefacts"]["optional_devices"], [6649, 0, 0])
+
     def test_activation_is_additive_and_wrong_old_active_contract_is_refused(self):
         old = {r[0]: [tuple(v) for v in self.store.connection.execute('SELECT * FROM "'+r[0]+'"')] for r in self.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         self.activate()

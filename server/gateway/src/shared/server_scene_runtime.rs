@@ -159,9 +159,10 @@ impl BatchRuntime {
     /// One actor row at an explicit server-chosen pose (LAB lane or SPAWN-15 spot).
     fn actor_manifest_placed(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,roster:usize,origin:[f32;3],yaw:f32)->io::Result<serde_json::Value> {
         let bound=Self::slot_bound(roster);
-        if slot>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
-            ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7)
-            ||kind.is_generated()&&(version!=2||resources.version!=5) {return Err(model::bad());}
+        if slot>=bound || !matches!(version,1|2|3|4) || version==1&&kind.index()>=2
+            ||kind.is_extended()&&(!matches!(version,3|4)||resources.version!=4||resources.maps.len()!=7)
+            ||version==3&&(resources.version!=4||resources.maps.len()!=7)
+            ||kind.is_generated()&&(!matches!(version,2|4)||resources.version!=5) {return Err(model::bad());}
         let row_slot=resources.slot(resources.template_kind(kind)).ok_or_else(||model::bad())?;
         let stock_map=resources.maps.get(row_slot).ok_or_else(||model::bad())?;
         // CONTENT-0 3.3: a non-stock build uses its own config (stock config + build physics) and qualified profile.
@@ -175,7 +176,7 @@ impl BatchRuntime {
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=match &build {Some((_,source))=>source,None=>resources.source_profiles[row_slot].as_ref().ok_or_else(||model::bad())?};
-                if version==3&&sha256!=ram_proof::Profile::for_vehicle(kind).sha(){return Err(model::bad());}
+                if version>=3&&sha256!=ram_proof::Profile::for_vehicle(kind).sha(){return Err(model::bad());}
                 serde_json::json!({"path":Self::physical_path(path),"sha256":sha256})
             } else {
                 if resources.source_profiles[row_slot].is_some() {return Err(model::bad());}serde_json::Value::Null
@@ -195,7 +196,8 @@ impl BatchRuntime {
         if world.extended_lab()&&self.resources.version!=4||!world.extended_lab()&&world.actors.iter().any(|a|a.vehicle_kind().is_extended()) {
             return Err(model::bad());
         }
-        let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
+        let version=if world.actors.iter().any(|actor|actor.equipment_mass()>0.){4}
+            else if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
         // TURRET-01: this battle has a scene worker, so detached turrets are Jolt bodies.
         world.enable_turret_jolt()?;
         // SPAWN-15: each team on its own base formation; otherwise LAB lanes.
@@ -204,11 +206,14 @@ impl BatchRuntime {
             Some(super::super::team_spawn::placement(world.map,&teams)?)
         } else {None};
         let rows=world.actors.iter().enumerate().map(|(slot,actor)|{
-            if let Some(spot)=spots.as_ref().and_then(|s|s.get(slot)) {
-                return Self::actor_manifest_placed(&self.resources,slot,actor.vehicle_kind(),version,world.expected_actors(),spot.position,spot.yaw);
-            }
-            let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
-            Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())
+            let mut row=if let Some(spot)=spots.as_ref().and_then(|s|s.get(slot)) {
+                Self::actor_manifest_placed(&self.resources,slot,actor.vehicle_kind(),version,world.expected_actors(),spot.position,spot.yaw)?
+            } else {
+                let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
+                Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())?
+            };
+            if version==4 {row["equipment_mass_kg"]=actor.equipment_mass().into();}
+            Ok(row)
         })
             .collect::<io::Result<Vec<_>>>()?;
         let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
@@ -251,6 +256,10 @@ impl BatchRuntime {
         let domain=world.fragiles.as_ref().ok_or_else(||model::bad())?;
         let mut contacts=Vec::new();
         for actor in &frame.actors {
+            let selected=spec.actors.get(actor.slot).ok_or_else(||model::bad())?;
+            let seated=world.actors.get(actor.slot).ok_or_else(||model::bad())?;
+            if selected.equipment_mass_kg.to_bits()!=seated.equipment_mass().to_bits()
+                ||selected.kind.extended_vehicle()!=seated.vehicle_kind(){return Err(model::bad());}
             let rows=actor.proof["object_contacts"].as_array().ok_or_else(||model::bad())?;
             let vec3=|v:&serde_json::Value|->io::Result<[f32;3]>{let a=v.as_array().filter(|a|a.len()==3).ok_or_else(||model::bad())?;
                 let mut out=[0.;3];for(i,n)in a.iter().enumerate(){out[i]=n.as_f64().filter(|x|x.is_finite()).ok_or_else(||model::bad())? as f32;}Ok(out)};
@@ -259,7 +268,7 @@ impl BatchRuntime {
                 substep:c["substep"].as_u64().ok_or_else(||model::bad())?.try_into().map_err(|_|model::bad())?,
                 kind:c["kind"].as_str().ok_or_else(||model::bad())?.into(),point:vec3(&c["point"])?,
                 normal:vec3(&c["normal"])?,velocity:vec3(&c["velocity"])?})).collect::<io::Result<Vec<_>>>()?;
-            let proof=crate::map_drive_worker091::shared_angular_proof(&actor.proof,&raw,&self.catalog,Self::profile(actor.kind,world.extended_lab())?,frame.sequence)?;
+            let proof=crate::map_drive_worker091::shared_angular_proof(&actor.proof,&raw,&self.catalog,selected.physical_profile()?,frame.sequence)?;
             proof.final_motion(actor.pose.linear_velocity,actor.pose.angular_velocity,actor.pose.rspeed)?;
             if frame.sequence==0{continue;}
             let context=ram_proof::Context{battle:world.id,slot:actor.slot,session:self.sessions[actor.slot],generation:self.generation,
@@ -299,7 +308,7 @@ impl BatchRuntime {
                 candidate.import_external_poses(&rows)?;
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
                 for actor in &frame.actors{candidate.bind_contact_source(actor.slot,ram_proof::Source{session:self.sessions[actor.slot],generation:self.generation,
-                    config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:Self::profile(actor.kind,world.extended_lab())?})?;}
+                    config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:spec.actors[actor.slot].physical_profile()?})?;}
                 self.settled=true;println!("P05C_SCENE_READY battle={} process_id={} actors={} tick={}",world.id,self.runtime.as_ref().unwrap().process_id(),rows.len(),frame.tick);
             }else{
                 // A quick reply may arrive in the current wall-clock bucket.
@@ -314,7 +323,7 @@ impl BatchRuntime {
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
                 let columns=frame.column_contacts.iter().map(|c|Ok(model::ColumnContactInput{object_id:c.object_id,shooter:c.slot,substep:c.substep,
                     point:c.point,normal:c.normal,velocity:c.velocity,
-                    mass_kg:Self::profile(spec.actors.get(c.slot).ok_or_else(||model::bad())?.kind,world.extended_lab())?.mass()})).collect::<io::Result<Vec<_>>>()?;
+                    mass_kg:spec.actors.get(c.slot).ok_or_else(||model::bad())?.physical_profile()?.mass()})).collect::<io::Result<Vec<_>>>()?;
                 for event in candidate.apply_column_contacts(&columns)? {
                     println!("SHARED_COLUMN_FALL battle={} slot={} object={} fallen_column={:#06x} tick={} speed_mps={:.3} policy={}",
                         world.id,event.shooter,event.object_id,event.fallen_column.unwrap_or_default(),event.tick,

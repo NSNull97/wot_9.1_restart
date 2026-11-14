@@ -8,6 +8,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import sys
+from types import MappingProxyType
 
 if not __package__:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -28,7 +29,11 @@ MANIFEST_SHA256 = "2c38786202ef015ae0e3a645719b869fe1e01421b7ec9521e2af93332f4b7
 SLOT_COUNT = 3
 
 # Authoritative runtime effect families backed by the battle command path.
-DEVICE_EFFECTS = {1529: "coatedOptics"}
+DEVICE_EFFECTS = {
+    249: "toolbox", 1529: "coatedOptics", 5625: "mediumCaliberTankRammer",
+    5881: "largeCaliberTankRammer", 6137: "mediumCaliberHowitzerRammer",
+    6393: "largeCaliberHowitzerRammer", 6649: "enhancedAimDrives",
+}
 CONSUMABLE_EFFECTS = {
     251: "handExtinguishers", 507: "autoExtinguishers",
     763: "smallMedkit", 1019: "largeMedkit",
@@ -75,12 +80,43 @@ def build(original_root):
 
 
 @dataclass(frozen=True)
+class VehicleFilter:
+    exclude: bool
+    nations: frozenset[str]
+    tags: frozenset[str]
+    min_level: int
+    max_level: int
+
+    def matches(self, vehicle):
+        return (not self.nations or vehicle["nation"] in self.nations) and (
+            not self.tags or not self.tags.isdisjoint(vehicle["tags"])) and self.min_level <= vehicle["tier"] <= self.max_level
+
+
+def _vehicle_filter(mode, entry):
+    if mode not in ("include", "exclude") or set(entry) - {"nations", "vehicle"}:
+        raise ValueError("unsupported restriction on live artefact")
+    vehicle = entry.get("vehicle", {})
+    if set(vehicle) - {"tags", "minLevel", "maxLevel"}:
+        raise ValueError("unsupported vehicle filter on live artefact")
+    return VehicleFilter(mode == "exclude", frozenset(entry.get("nations", "").split()),
+                         frozenset(vehicle.get("tags", "").split()), vehicle.get("minLevel", 0), vehicle.get("maxLevel", 255))
+
+
+@dataclass(frozen=True)
 class LiveItem:
     compact_id: int
     kind: int
     removable: bool
     tags: frozenset[str]
     incompatible_tags: frozenset[str]
+    weight_grams: int
+    filters: tuple[VehicleFilter, ...]
+
+    def compatible(self, vehicle):
+        if any(row.exclude and row.matches(vehicle) for row in self.filters):
+            return False
+        inclusions = [row for row in self.filters if not row.exclude]
+        return not inclusions or any(row.matches(vehicle) for row in inclusions)
 
 
 @lru_cache(maxsize=1)
@@ -93,13 +129,16 @@ def live_items():
     for row in document["items"]:
         cd = row["compact_id"]
         if cd in SUPPORTED_ITEMS:
-            if row["source_name"] != SUPPORTED_ITEMS[cd] or row["filters"] or row["effect"].get("weight", 0):
-                raise ValueError("unsupported restrictions on live artefact")
+            effect = row["effect"]
+            weight = effect.get("weight", 0)
+            if (row["source_name"] != SUPPORTED_ITEMS[cd] or type(weight) is not int or not 0 <= weight <= 1500
+                    or effect.get("vehicleWeightFraction", 0) or effect.get("chassisMaxLoadFactor", 0)):
+                raise ValueError("unsupported identity or weight on live artefact")
             result[cd] = LiveItem(cd, row["kind"], row["removable"],
-                                  frozenset(row["tags"]), frozenset(row["incompatible_tags"]))
+                                  frozenset(row["tags"]), frozenset(row["incompatible_tags"]), weight * 1000,
+                                  tuple(_vehicle_filter(mode, entry) for mode, entry in row["filters"]))
     if set(result) != set(SUPPORTED_ITEMS):
         raise ValueError("incomplete artefact catalogue binding")
-    from types import MappingProxyType
     return MappingProxyType(result)
 
 

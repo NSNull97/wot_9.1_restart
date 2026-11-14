@@ -110,10 +110,14 @@ impl Kind{
         Self::T26=>include_bytes!("worker/p04m-t26-qualified-profile.json"),Self::T34=>include_bytes!("worker/p04m-t34-qualified-profile.json"),
         Self::T3485=>include_bytes!("worker/p04m-t3485-qualified-profile.json"),
         Self::WtE100128=>include_bytes!("worker/p06t-wt-e100-128-qualified-profile.json"),Self::Fv215b183=>include_bytes!("worker/p06t-fv215b-183-qualified-profile.json")}}
-    // CONTENT-0 2.2: the qualified inertia rotation of the kind (7 generated kinds report identity, the rest the usual axes).
-    fn binding_bits(self)->(u32,[u32;3],[u32;4]){let b=self.physical_profile().binding();(b.inverse_mass.to_bits(),b.principal.map(f32::to_bits),b.inertia_rotation.map(f32::to_bits))}
 }
-#[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32}
+#[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32,
+    pub equipment_mass_kg:f32}
+impl ActorSpec {
+    pub(crate) fn physical_profile(&self)->io::Result<crate::gateway091::shared::ram_proof::Profile> {
+        crate::gateway091::shared::ram_proof::Profile::for_equipment(self.kind.extended_vehicle(),self.equipment_mass_kg)
+    }
+}
 #[derive(Clone,Debug)]pub struct SceneSpec{
     pub local_root:PathBuf,pub manifest_path:PathBuf,pub manifest_sha256:String,pub map:String,pub actors:Vec<ActorSpec>,
     catalog_sha256:String,catalog_ids:BTreeSet<u32>,pins:Vec<(PathBuf,String,usize)>,
@@ -124,11 +128,12 @@ impl SceneSpec{
     pub fn load(root:&Path,path:&Path,sha:&str)->io::Result<Self>{let manifest_path=owned(root,path)?;let raw=read(&manifest_path,MAX_INPUT,sha)?;let m=parse(&raw,MAX_INPUT)?;
         keys(&m,&["version","profile","policy","map","catalog","actors"])?;
         let version=uint(&m["version"])?;
-        let map=string(&m,"map")?;if !matches!(version,1|2|3)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
+        let map=string(&m,"map")?;if !matches!(version,1|2|3|4)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
         let rows=array(&m["actors"],MAX_ACTORS)?;if rows.is_empty(){return Err(bad("empty roster"));}
         let mut actors=Vec::new();let mut pins=vec![(manifest_path.clone(),sha.to_string(),MAX_INPUT)];let mut geometry=None;
         for row in rows{let mut generated_source:Option<Vec<u8>>=None;
-            if version>=2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
+            if version==4 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile","equipment_mass_kg"])?;}
+            else if version>=2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
             else {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw"])?;}
             if uint(&row["slot"])?!=actors.len()as u64{return Err(bad("ordered actor slots"));}
             let kind=match string(row,"kind")?{"ms1"=>Kind::Ms1,"is7"=>Kind::Is7,
@@ -159,8 +164,12 @@ impl SceneSpec{
                 read(&p,8*1024*1024,sha)?;pins.push((p,sha.into(),8*1024*1024));}
             let spawn=vector::<3>(&row["spawn_origin"],1000.)?;let yaw=number(&row["spawn_yaw"],std::f32::consts::PI)?;let b=vector::<4>(&c["bounds_xz"],1000.)?;
             if b[2]-b[0]<100.||b[3]-b[1]<100.||spawn[0]<b[0]+5.||spawn[0]>b[2]-5.||spawn[2]<b[1]+5.||spawn[2]>b[3]-5.{return Err(bad("spawn/bounds"));}
-            pins.push((path,hash.into(),16384));actors.push(ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw});
+            let equipment_mass_kg=if version==4 {number(&row["equipment_mass_kg"],5000.)?}else{0.};
+            let actor=ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw,equipment_mass_kg};
+            actor.physical_profile()?;
+            pins.push((path,hash.into(),16384));actors.push(actor);
         }
+        if version==4 && actors.iter().all(|actor|actor.equipment_mass_kg==0.) {return Err(bad("massless roster uses base manifest"));}
         let mut catalog_sha256=ZERO.into();let mut catalog_ids=BTreeSet::new();let mut column_ids=BTreeSet::new();
         if !m["catalog"].is_null(){let r=&m["catalog"];keys(r,&["path","sha256"])?;let p=owned(root,Path::new(string(r,"path")?))?;let h=string(r,"sha256")?;
             let c=parse(&read(&p,1024*1024,h)?,1024*1024)?;
@@ -256,7 +265,9 @@ fn actor_frame(row:&Value,spec:&ActorSpec,catalog:&BTreeSet<u32>)->io::Result<Ac
     let contacts=uint(&v["contacts"])?;if contacts>6{return Err(bad("support count"));}
     let masks=array(&v["wheel_contact_masks"],6)?;if masks.len()!=6{return Err(bad("six support samples"));}let mut wheel_contact_masks=[0;6];
     for(i,m)in masks.iter().enumerate(){let m=uint(m)?;if m>63{return Err(bad("support mask"));}wheel_contact_masks[i]=m as u8;}
-    let b=&v["body_binding"];keys(b,&["inverse_mass","principal_inverse_diagonal","inertia_rotation_xyzw"])?;let(mass,principal,rotation)=spec.kind.binding_bits();
+    let b=&v["body_binding"];keys(b,&["inverse_mass","principal_inverse_diagonal","inertia_rotation_xyzw"])?;
+    let expected=spec.physical_profile()?.binding();
+    let(mass,principal,rotation)=(expected.inverse_mass.to_bits(),expected.principal.map(f32::to_bits),expected.inertia_rotation.map(f32::to_bits));
     let (got_mass,got_principal,got_rotation)=(number(&b["inverse_mass"],1.)?.to_bits(),vector::<3>(&b["principal_inverse_diagonal"],1.)?.map(f32::to_bits),
         vector::<4>(&b["inertia_rotation_xyzw"],1.)?.map(f32::to_bits));
     if got_mass!=mass||got_principal!=principal||got_rotation!=rotation{

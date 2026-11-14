@@ -17,7 +17,8 @@ from p04m_stock_registry import mixed_admission
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST
 from p08c_battle_results import results_value
 from destructible_catalog import json_value, no_links
-from content0_equipment_store import battle_loadout, consume_battle
+from content0_equipment_catalog import CONSUMABLE_EFFECTS, DEVICE_EFFECTS, SLOT_COUNT
+from content0_equipment_store import battle_loadout, consume_battle, validate_installed_devices
 
 # CONTENT-0 2.6: one stack of a vehicle's load (gateway model.rs MAX_AMMO_PER_ACTOR); M2 light carries 1800.
 MAX_STACK = 2048
@@ -244,6 +245,7 @@ class MixedAmmoStore(PoolStore):
             ammunition=rows, initial_shell_compact_id=next(r["shell_compact_id"] for r in rows if r["count"]))
         devices, consumables = battle_loadout(self.connection, aggregate["account_id"], vehicle["vehicle_id"])
         if any(devices) or any(consumables):
+            validate_installed_devices(self.catalog, {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}, devices)
             frozen["artefacts"] = {"optional_devices": list(devices), "consumables": list(consumables)}
         return frozen
 
@@ -270,9 +272,9 @@ class MixedAmmoStore(PoolStore):
             fields.add("artefacts")
             items = f["artefacts"]
             require(type(items) is dict and set(items) == {"optional_devices", "consumables"}, "CORRUPT_STORE")
-            for key, supported in (("optional_devices", {1529}), ("consumables", {251, 507, 763, 1019, 1275, 1531})):
+            for key, supported in (("optional_devices", DEVICE_EFFECTS), ("consumables", CONSUMABLE_EFFECTS)):
                 slots = items[key]
-                require(type(slots) is list and len(slots) == 3 and all(type(cd) is int and (cd == 0 or cd in supported) for cd in slots), "CORRUPT_STORE")
+                require(type(slots) is list and len(slots) == SLOT_COUNT and all(type(cd) is int and (cd == 0 or cd in supported) for cd in slots), "CORRUPT_STORE")
                 equipped = [cd for cd in slots if cd]
                 require(len(equipped) == len(set(equipped)), "CORRUPT_STORE")
             require(any(items["optional_devices"]) or any(items["consumables"]), "CORRUPT_STORE")
@@ -283,6 +285,8 @@ class MixedAmmoStore(PoolStore):
             and type(f["max_hp"]) is int and type(f["capacity"]) is int and f["capacity"] == p.capacity
             and f["native_inventory_id"] == row["native_inventory_id"] and type(f["native_inventory_id"]) is int
             and f["vehicle_inventory_id"] == row["vehicle_inventory_id"] == self.registry.inventory_id(row["account_id"], f["native_inventory_id"], p.kind), "CORRUPT_STORE")
+        if "artefacts" in f:
+            validate_installed_devices(self.catalog, {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}, f["artefacts"]["optional_devices"])
         mount = self.mounts[p.assembly_id]; ammo = f["ammunition"]
         require(type(ammo) is list and len(ammo) == len(mount.shell_ids) and 1 <= len(ammo) <= 3, "CORRUPT_STORE")
         for value, key in zip(ammo, mount.shell_ids):

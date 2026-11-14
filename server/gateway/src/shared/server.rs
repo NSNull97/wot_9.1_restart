@@ -326,6 +326,9 @@ impl IntegratedRuntime {
 
     fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
         if let Some(batch)=&mut self.batch{batch.start(world,now)?;self.started=true;return Ok(());}
+        if world.actors.iter().any(|actor|actor.equipment_mass()>0.) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"weighted equipment requires the shared scene worker"));
+        }
         if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
             || self.started || world.actors.len() != model::CAPACITY
             || world.started.is_none() { return Err(model::bad()); }

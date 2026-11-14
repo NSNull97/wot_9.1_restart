@@ -25,7 +25,7 @@ internal static class BattleSceneInput
         CheckedInput.Fields(m, "version", "profile", "policy", "map", "catalog", "actors");
         string map = m.GetProperty("map").GetString()!;
         int version=m.GetProperty("version").GetInt32();
-        if (version is not (1 or 2 or 3) || m.GetProperty("profile").GetString() != "test_lab" ||
+        if (version is not (1 or 2 or 3 or 4) || m.GetProperty("profile").GetString() != "test_lab" ||
             m.GetProperty("policy").GetString() != Policy || !CheckedInput.IsRegisteredMap(map))
             throw new InvalidDataException("battle scene policy/map");
         var rows = m.GetProperty("actors");
@@ -34,7 +34,8 @@ internal static class BattleSceneInput
         var actors = new List<Actor>();
         foreach (var row in rows.EnumerateArray())
         {
-            if(version==1)CheckedInput.Fields(row, "slot", "kind", "config", "spawn_origin", "spawn_yaw");
+            if(version==4)CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw","equipment_mass_kg");
+            else if(version==1)CheckedInput.Fields(row, "slot", "kind", "config", "spawn_origin", "spawn_yaw");
             else CheckedInput.Fields(row,"slot","kind","config","source_profile","spawn_origin","spawn_yaw");
             if (row.GetProperty("slot").GetInt32() != actors.Count) throw new InvalidDataException("ordered contiguous actor slots");
             var reference = row.GetProperty("config"); CheckedInput.Fields(reference, "path", "sha256");
@@ -58,7 +59,7 @@ internal static class BattleSceneInput
                 }
                 else if(kind is "wt-e100-128" or "fv215b-183")
                 {
-                    if(version!=3)throw new InvalidDataException("extended kind requires manifest3");
+                    if(version<3)throw new InvalidDataException("extended kind requires manifest3 or later");
                     ExtendedProfileQualification.Runtime();
                     binding=ExtendedVehicleProfiles.Select(root,row.GetProperty("source_profile"),c,kind);
                 }
@@ -71,6 +72,8 @@ internal static class BattleSceneInput
             else binding=AngularBodyBinding.Select(c); // Existing v1 projections are unchanged.
             if (c.GetProperty("map").GetString() != map || kind != binding.Kind)
                 throw new InvalidDataException("battle actor kind/config map");
+            if (version == 4)
+                binding = binding.WithEquipmentMass(CheckedInput.Number(row.GetProperty("equipment_mass_kg"), 0, AngularBodyBinding.MaxEquipmentMassKg));
             foreach (string key in new[] { "terrain", "obstacles" })
             {
                 CheckedInput.Fields(c.GetProperty(key), "path", "sha256");

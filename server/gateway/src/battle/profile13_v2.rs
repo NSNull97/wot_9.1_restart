@@ -127,6 +127,15 @@ impl Frozen{pub fn counts(&self)->[u16;3]{self.ammunition.each_ref().map(|r|r.co
 pub(crate) const COATED_OPTICS:u16=1529;
 pub(crate) const COATED_OPTICS_VIEW_FACTOR:f32=1.1;
 
+// CONTENT-0 #717 optional_devices.xml. Values are extra kg on the mounted vehicle.
+const OPTIONAL_DEVICE_MASS:[(u16,u16);7]=[(249,100),(COATED_OPTICS,0),(5625,200),(5881,400),
+    (6137,300),(6393,500),(6649,100)];
+
+pub(crate) fn equipment_mass(ids:[u16;3])->f32 {
+    ids.iter().filter_map(|id|OPTIONAL_DEVICE_MASS.iter().find(|(cd,_)|cd==id))
+        .map(|(_,mass)|f32::from(*mass)).sum()
+}
+
 fn artefact_slots(v:&Value,supported:&[u16])->io::Result<[u16;3]> {
     let slots=v.as_array().filter(|rows|rows.len()==3).ok_or_else(||bad("artefact slots"))?;
     let mut ids=[0;3];
@@ -245,7 +254,7 @@ pub(crate) fn parse_frozen_with(v:&Value,account:&str,expected_sha:&str,catalog_
     let (optional_devices,consumables)=if let Some(artefacts)=v.get("artefacts") {
         fields.push("artefacts");
         keys(artefacts,&["optional_devices","consumables"])?;
-        let devices=artefact_slots(&artefacts["optional_devices"],&[COATED_OPTICS])?;
+        let devices=artefact_slots(&artefacts["optional_devices"],&OPTIONAL_DEVICE_MASS.map(|(id,_)|id))?;
         let consumables=artefact_slots(&artefacts["consumables"],&[251,507,763,1019,1275,1531])?;
         if devices==[0;3] && consumables==[0;3] {return Err(bad("empty artefacts"));}
         (devices,consumables)
