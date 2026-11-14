@@ -164,6 +164,7 @@ class CombinedCleanupTests(unittest.TestCase):
         ns = functions({'fini'}, dict(sys=sys, traceback=__import__('traceback'),
             _fini=False, _ready=False, _exception_hook=sys.excepthook,
             _settings={'enable_profile13_battle': True},
+            project_stereoscope_sound=NS(restore=lambda record: calls.append('stereoscope_restore')),
             native_call_trace=NS(_tooltip_callbacks={}), clear_relogin_credentials=lambda: None,
             clear_account_switch_credentials=lambda: None,
             record=lambda event, **data: calls.append(event)))
@@ -180,6 +181,8 @@ class CombinedCleanupTests(unittest.TestCase):
         self.assertLess(calls.index('arena_before'), calls.index('native_entities'))
         self.assertLess(calls.index('native_entities'), calls.index('arena_after'))
         self.assertEqual(calls.count('native_entities'), 1)
+        self.assertEqual(calls.count('stereoscope_restore'), 1)
+        self.assertLess(calls.index('arena_after'), calls.index('stereoscope_restore'))
 
     def test_ammo_cleanup_error_still_runs_native_shutdown_and_is_reported(self):
         calls = self.run_cleanup(fail_ammo=True)
