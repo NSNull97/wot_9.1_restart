@@ -33,6 +33,7 @@
 
 ## Общие (клиент, протокол, ресурсы, решения)
 
+- [KV1S_VISUAL_UPSCALE.md](KV1S_VISUAL_UPSCALE.md) — принятый владельцем локальный цветовой пробник КВ-1С; интеграция и перенос материалов/HD не проверены
 - [BUILD_LEGACY_ENTRYPOINTS.md](BUILD_LEGACY_ENTRYPOINTS.md) — legacy gateway3/physics builds и actual stock+extended IPC7 PASS; native/full legacy NOT_RUN
 - [P04W_SHELL_DEPOT_DISPLAY.md](P04W_SHELL_DEPOT_DISPLAY.md) — шесть original ammo refs/hidden purchases, actual Python9+Web11, native Warehouse NOT_RUN
 - [P04M_GARAGE_FRESH_PUBLICATION.md](P04M_GARAGE_FRESH_PUBLICATION.md) — known reply/readonly Fresh/atomic delta, actual Loss4+Hold5, full1619; native NOT_RUN
