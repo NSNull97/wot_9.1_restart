@@ -407,13 +407,22 @@ mod tests {
     use super::super::vehicle_profile::VehicleKind;
 
     #[test]
-    fn embedded_registry_verifies_and_excludes_legacy_kinds() {
+    fn embedded_registry_verifies_generated_builds_without_shadowing_legacy_stock() {
         let r=registry().unwrap();
-        // main and test_lab: the
-        // qualified rows of config/test_lab/battle_qualification.v1.json (CONTENT-0 2.6+2.5b).
+        // Only stock generated rows reserve stock registry IDs.
         assert_eq!(r.entries().iter().filter(|e|e.stock).count(),if cfg!(feature="test_lab"){363}else{362});
-        // CONTENT-0 3.3: every other generated build of the build table (main: 12 196 qualified in all).
-        if !cfg!(feature="test_lab") {assert_eq!(r.entries().len(),12196);}
+        if !cfg!(feature="test_lab") {assert_eq!(r.entries().len(),12_515);}
+        for (stock,count) in [(VehicleKind::Ms1,86),(VehicleKind::T26,95),(VehicleKind::T34,55),
+            (VehicleKind::T3485,83),(VehicleKind::Is7,0)] {
+            let id=format!("vehicle:{}",stock.name());
+            assert!(r.by_vehicle(&id).is_none());
+            assert!(r.by_descriptor(stock.descriptor()).is_none());
+            assert_eq!(VehicleKind::from_owned_label(stock.label()),Some(stock));
+            let builds=r.entries().iter().filter(|row|row.vehicle_id==id).collect::<Vec<_>>();
+            assert_eq!(builds.len(),count,"{id}");
+            assert!(builds.iter().all(|entry|!entry.stock
+                &&super::super::build_resources::stock_of(VehicleKind::Generated(entry.id))==Some(stock)),"{id}");
+        }
         assert!(r.entries()[..r.entries().iter().filter(|e|e.stock).count()].iter().all(|e|e.stock),"stock entries keep their ids");
         for refused in ["vehicle:france:AMX_13_90","vehicle:france:AMX_M4_1945"] {assert!(r.by_vehicle(refused).is_none(),"{refused}");}
         for (i,e) in r.entries().iter().enumerate() {

@@ -164,3 +164,30 @@ fn hex(text:&str)->Vec<u8>{(0..text.len()).step_by(2).map(|i|u8::from_str_radix(
     let mut over=r.clone();over.arguments[4]=capacity+1;assert!(pair_ammo_layout(stock.type_compact_id,&over).unwrap().is_none());
     let mut foreign=r.clone();foreign.arguments[3]=1;assert!(pair_ammo_layout(stock.type_compact_id,&foreign).unwrap().is_none());
 }
+
+#[test]
+fn content0_ms1_pair_gun_layout_uses_reserved_inventory_in_catalog_mode() {
+    let registry=crate::gateway091::shared::generated_vehicles::registry().unwrap();
+    let (stock,_) = Kind::Ms1.ammo();
+    let build=registry.entries().iter().find(|row|row.type_compact_id==Kind::Ms1.type_cd() as u32
+        &&!stock.contains(&i32::from(row.gun.shots[0].compact_descr))).unwrap();
+    let shots=build.gun.shots.iter().take_while(|shot|!shot.is_absent());
+    let count=shots.clone().count();
+    let mut arguments=[0;16];
+    arguments[..3].copy_from_slice(&[5,1,2*count as i32]);
+    for (index,shot) in shots.enumerate() {
+        arguments[3+2*index]=i32::from(shot.compact_descr);
+    }
+    arguments[4]=1;
+    arguments[3+2*count]=6;
+    let request=crate::ammo_service091::Request{id:230,arguments};
+    let raw=serde_json::to_vec(&test_value(ACCOUNT,14)).unwrap();
+    let sha=format!("{:x}",Sha256::digest(b"\x80\x02}."));
+    let legacy=Binding::parse_with(&raw,ACCOUNT,900001,14,&sha,false).unwrap();
+    assert!(legacy.ammo_layout(&request).is_err());
+    let catalog=Binding::parse_with(&raw,ACCOUNT,900001,14,&sha,true).unwrap();
+    assert_eq!(catalog.ammo_layout(&request).unwrap()[0].count,1);
+    let mut foreign=request;
+    foreign.arguments[1]=2;
+    assert!(catalog.ammo_layout(&foreign).is_err());
+}

@@ -33,6 +33,7 @@
 
 ## Общие (клиент, протокол, ресурсы, решения)
 
+- [KV1S_VISUAL_UPSCALE.md](KV1S_VISUAL_UPSCALE.md) — принятый владельцем локальный цветовой пробник КВ-1С; интеграция и перенос материалов/HD не проверены
 - [BUILD_LEGACY_ENTRYPOINTS.md](BUILD_LEGACY_ENTRYPOINTS.md) — legacy gateway3/physics builds и actual stock+extended IPC7 PASS; native/full legacy NOT_RUN
 - [P04W_SHELL_DEPOT_DISPLAY.md](P04W_SHELL_DEPOT_DISPLAY.md) — шесть original ammo refs/hidden purchases, actual Python9+Web11, native Warehouse NOT_RUN
 - [P04M_GARAGE_FRESH_PUBLICATION.md](P04M_GARAGE_FRESH_PUBLICATION.md) — known reply/readonly Fresh/atomic delta, actual Loss4+Hold5, full1619; native NOT_RUN
@@ -230,6 +231,8 @@
 
 - [CONTENT0_BUILD_BATTLE.md](CONTENT0_BUILD_BATTLE.md) — нативная проверка нестоковой сборки, gate шагов 3–4,
   восстановление закреплённого воркера и остаток из 319 сборок старых видов.
+- [CONTENT0_LEGACY_BUILDS.md](CONTENT0_LEGACY_BUILDS.md) — допуск 319 сборок старых видов, сцены Jolt,
+  полный нативный бой на МС-1 и сравнение Python с базой.
 - [CONTENT0_INVENTORY.md](CONTENT0_INVENTORY.md) — опись контента 0.9.1 «клиент ↔ сервер» (шаг 0): машины, модули,
   снаряды, оборудование, расходники, экипаж, достижения, карты и режимы, разрушаемое и правило простреливания клиента;
   данные — `content0_inventory.v1.json`.

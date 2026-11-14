@@ -173,25 +173,31 @@ pub(crate) fn catalog_identity_in(table:&[catalog::Vehicle],label:&str,native:u6
         ||entry.seats!=crew||entry.native_compact_id!=kind.vehicle_compact_id()
         ||shells.iter().zip(p.shots.iter()).any(|(s,shot)|s.native_compact_id!=u32::from(shot.compact_descr)||s.family!=shot.family.source_name()){
         return Err(bad("catalog disagrees with battle profile"));}
-    let suffix=match entry.legacy_inventory{Some((n,s)) if native==u64::from(n)=>s.to_string(),
-        None if (3..=i32::MAX as u64).contains(&native)=>format!("p09e-vehicle:{native}"),_=>return Err(bad("stock/source/ownership"))};
+    let suffix=catalog_inventory_suffix(entry,native)?;
     Ok((kind,mount,suffix,std::array::from_fn(|i|shells.get(i).map_or("",|s|s.suffix))))
 }
+fn catalog_inventory_suffix(entry:&catalog::Vehicle,native:u64)->io::Result<String>{
+    match entry.legacy_inventory {
+        Some((id,suffix)) if native==u64::from(id)=>Ok(suffix.to_owned()),
+        None if (3..=i32::MAX as u64).contains(&native)=>Ok(format!("p09e-vehicle:{native}")),
+        _=>Err(bad("stock/source/ownership")),
+    }
+}
 /// CONTENT-0 3.3/4: a non-stock build (`<kind>--<hash>`) of a catalogue vehicle. Admission is its stock row's;
-/// the battle profile is the build's own registry entry (descriptor, health, gun); never a legacy-inventory kind.
+/// its reserved or purchased inventory identity and the generated battle profile are bound independently.
 fn build_identity_in(table:&[catalog::Vehicle],label:&str,native:u64)->io::Result<Identity>{
     let unknown=||bad("owner acceptance required/unknown kind");
-    let kind=VehicleKind::from_owned_label(label).filter(|k|VehicleKind::from_label(label).is_none()&&k.is_generated()).ok_or_else(unknown)?;
+    let kind=VehicleKind::from_owned_label(label).ok_or_else(unknown)?;
     let build=kind.generated().filter(|e|!e.stock).ok_or_else(unknown)?;
-    let stock=build_stock(build)?;
-    table.iter().find(|e|e.kind==stock.label).filter(|e|e.battle_admission!=Admission::None&&e.legacy_inventory.is_none()).ok_or_else(unknown)?;
+    let stock=build_stock(kind)?;
+    let entry=table.iter().find(|e|e.kind==stock.label()&&e.vehicle_id==build.vehicle_id)
+        .filter(|e|e.battle_admission!=Admission::None).ok_or_else(unknown)?;
     device_profile(kind).ok_or_else(||bad("device profile"))?;
-    if !(3..=i32::MAX as u64).contains(&native) {return Err(bad("stock/source/ownership"));}
-    Ok((kind,kind.mount(),format!("p09e-vehicle:{native}"),std::array::from_fn(|i|build.suffixes[i].as_str())))
+    let suffix=catalog_inventory_suffix(entry,native)?;
+    Ok((kind,kind.mount(),suffix,std::array::from_fn(|i|build.suffixes[i].as_str())))
 }
-fn build_stock(build:&'static crate::gateway091::shared::generated_vehicles::Entry)->io::Result<&'static crate::gateway091::shared::generated_vehicles::Entry>{
-    let registry=crate::gateway091::shared::generated_vehicles::registry()?;
-    registry.by_vehicle(&build.vehicle_id).map(crate::gateway091::shared::generated_vehicles::entry).filter(|e|e.stock)
+fn build_stock(kind:VehicleKind)->io::Result<VehicleKind>{
+    crate::gateway091::shared::build_resources::stock_of(kind)
         .ok_or_else(||bad("build without its stock entry"))
 }
 /// The writer's mount of a frozen kind's shells (`shell:<mount>-<suffix>`): `<kind>-stock`, and for a build its
@@ -199,11 +205,11 @@ fn build_stock(build:&'static crate::gateway091::shared::generated_vehicles::Ent
 /// `<stock kind>@<turret>/<gun>` (CONTENT-0 4, the pair row of `dispersion_key`).
 fn shell_mount(kind:VehicleKind)->io::Result<String>{
     let Some(build)=kind.generated().filter(|e|!e.stock) else {return Ok(format!("{}-stock",kind.label()));};
-    let stock=build_stock(build)?;
-    if build.descriptor.len()<14||stock.descriptor.len()<14 {return Err(bad("build descriptor"));}
-    if build.descriptor[10..14]==stock.descriptor[10..14] {return Ok(format!("{}-stock",stock.label));}
+    let stock=build_stock(kind)?;
+    if build.descriptor.len()<14||stock.descriptor().len()<14 {return Err(bad("build descriptor"));}
+    if build.descriptor[10..14]==stock.descriptor()[10..14] {return Ok(format!("{}-stock",stock.label()));}
     let pair=build.dispersion_key.split_once('@').map(|(_,pair)|pair).filter(|pair|!pair.is_empty()).ok_or_else(||bad("build pair"))?;
-    Ok(format!("{}@{pair}",stock.label))
+    Ok(format!("{}@{pair}",stock.label()))
 }
 /// SPG-02: the number of the gun's real (not absent) shell cells; real cells come first.
 pub(crate) fn real_shots(p:&source::GunProfile)->usize{p.shots.iter().take_while(|s|!s.is_absent()).count()}

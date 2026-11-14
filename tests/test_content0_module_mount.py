@@ -24,8 +24,10 @@ from p08b_battle_service import battle_service
 from p09e_native_commands import NativeRequest, domain_request
 from p09e_research_projection import SHOP_REVISION, delta_tree, descriptor, update_delta
 from p09e_research_service import native_service
+from p09e_research_store import ECONOMY_POLICY
 
 KV3 = "vehicle:ussr:KV-3"
+MS1 = "vehicle:ussr:MS-1"
 V5, V2IS = "module:ussr:engine:V-5", "module:ussr:engine:V-2IS"
 KV220, KV3_TURRET = "module:ussr:turret:KV-220_mod", "module:ussr:turret:KV-3"
 F30, ZIS6, D10T = "module:ussr:gun:_85mm_F-30", "module:ussr:gun:_107mm_ZiS-6", "module:ussr:gun:_100mm_D10T"
@@ -239,31 +241,75 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(reply["update_hex"], update_delta(self.catalog, before, after, 1, self.store.pair_layouts(profile), shell_depot).hex())
         self.assertEqual(self.battle_code(native), "INCOMPLETE_CREW")
 
-    # --- legacy MS-1 (native 1): mass, loaded shells, reservation ---------------------
-    def test_ms1_overload_loaded_gun_and_reservation_refusals(self):
+    def test_ms1_nonstock_chassis_and_engine_admit_with_the_starter_inventory_id(self):
         for index in (0, 2, 3): self.accepted(201, (3329, index, 0))
         self.buy(AMO3); self.buy(MS1_CHASSIS)
         # Stock T-18 chassis cannot carry AMO-3 (chassis maxLoad, 0.9.1 'too heavy').
         self.refused("CHASSIS_OVERLOAD", 101, (1, self.cd(AMO3), 0))
         self.accepted(101, (1, self.cd(MS1_CHASSIS), 0))
         self.accepted(101, (1, self.cd(AMO3), 0))
-        self.assertEqual(self.battle_code(1), "BATTLE_PROFILE_UNSUPPORTED")
-        stock = self.catalog.vehicles["vehicle:ussr:MS-1"]["defaults"]
         self.refused("NO_CONFIGURATION_CHANGE", 101, (1, self.cd(MS1_CHASSIS), 0))
-        self.accepted(101, (1, self.cd(stock["engine"]), 0))
-        # Loaded shells block a gun/turret change (no automatic unloading in 3.1);
-        # a chassis change with loaded shells stays allowed.
+        self.load((10, 7, 9))
+        mounted = self.owned(MS1)
+        profile = self.store.registry.by_descriptor[descriptor(self.catalog, mounted).hex()]
+        self.assertEqual(profile.assembly_id, "ms1-stock")
+        self.assertTrue(profile.kind.startswith("ms1--"))
+        old = next(row for row in self.store.registry.capabilities(self.profile()) if row["native_inventory_id"] == 1)
+        self.assertEqual((old["kind"], old["admission"], old["readiness_code"]),
+                         ("ms1", False, "BATTLE_PROFILE_UNSUPPORTED"))
+
+        admitted = self.admit_reply(1)
+        self.assertEqual(admitted["status"], "admitted")
+        reservation = admitted["reservation"]
+        self.assertEqual(reservation["frozen"]["kind"], profile.kind)
+        self.assertEqual(reservation["frozen"]["vehicle_inventory_id"], self.account + ":starter-vehicle-v1")
+        self.assertEqual(self.battle_code(1), "VEHICLE_RESERVED")
+        self.refused("VEHICLE_RESERVED", 101, (1, self.cd(self.catalog.vehicles[MS1]["defaults"]["engine"]), 0))
+        self.assertEqual(self.send(self.finish(reservation))["status"], "finished")
+
+    def test_ms1_nonstock_turret_gun_admit_and_return_ammunition_to_the_correct_mount(self):
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
+        self.research(MS1, MS1_CHASSIS)
+        self.buy(MS1_CHASSIS)
+        self.accepted(101, (1, self.cd(MS1_CHASSIS), 0))
         for index in (7, 8, 13): self.accepted(201, (3329, index, 0))
         gun = "module:ussr:gun:_45mm_mod_1932"; turret = "module:ussr:turret:T-18_mod"
         self.buy(gun); self.buy(turret)
         self.load((10, 0, 0))
-        self.refused("UNLOAD_AMMUNITION_REQUIRED", 101, (1, self.cd(turret), self.cd(gun)))
-        self.accepted(101, (1, self.cd(stock["chassis"]), 0))
-        self.assertEqual(self.owned("vehicle:ussr:MS-1")["modules"], stock)
-        # A reserved (queued/in battle) vehicle cannot change modules.
-        self.load((10, 7, 9)); self.send(self.rq("run_open")); self.send(self.rq("admit"))
-        self.assertEqual(self.battle_code(1), "VEHICLE_RESERVED")
-        self.refused("VEHICLE_RESERVED", 101, (1, self.cd(MS1_CHASSIS), 0))
+        depot_key = self.store.depot_key["shell:ms1-stock-ap"]
+        count = self.profile()["depot"][depot_key]
+        self.accepted(101, (1, self.cd(turret), self.cd(gun)))
+        mounted = self.owned(MS1)
+        build = self.store.registry.by_descriptor[descriptor(self.catalog, mounted).hex()]
+        self.assertEqual(build.assembly_id, "ms1@T-18_mod/_45mm_mod_1932")
+        self.assertEqual(self.profile()["depot"][depot_key], count + 10)
+        self.assertEqual(self.battle_code(1), "AMMUNITION_EMPTY")
+
+        mount = self.store.mounts[build.assembly_id]
+        shell_ids = [self.store.shells[key].native_compact_id for key in mount.shell_ids]
+        layout = [value for cd, count in zip(shell_ids, (8, 4, 3)) for value in (cd, count)]
+        request = self.ammo_request(1, (), layout=[5, 1, len(layout), *layout, 6, 0, 0, 0, 0, 0, 0])
+        self.assertEqual(self.store.service(request, authenticated_account_id=self.account)["status"], "serviced")
+
+        source = BattleProjectionSource(self.source.bundle.root, self.catalog)
+        fixture = self.store.publish(source, self.account, Path(self.temp.name) / "ms1-pair-fixture")
+        caps = json.loads((Path(fixture["fixture_dir"]) / "p06t-ammunition.json").read_text())["capabilities"]
+        self.assertEqual(next(c for c in caps if c["native_inventory_id"] == 1),
+                         dict(native_inventory_id=1, kind="ms1", admission=True, code=None))
+        admitted = self.admit_reply(1)
+        self.assertEqual(admitted["status"], "admitted")
+        frozen = admitted["reservation"]["frozen"]
+        self.assertEqual(frozen["kind"], build.kind)
+        self.assertEqual(frozen["descriptor_hex"], descriptor(self.catalog, mounted).hex())
+        self.assertEqual(frozen["capacity"], mount.capacity)
+        self.assertEqual(frozen["max_hp"], build.max_hp)
+        self.assertEqual([r["shell_definition_id"] for r in frozen["ammunition"]], list(mount.shell_ids))
+        self.assertEqual([r["shell_compact_id"] for r in frozen["ammunition"]], shell_ids)
+        remaining = [dict(shell_compact_id=cd, count=count) for cd, count in zip(shell_ids, (7, 4, 2))]
+        finish = self.finish(admitted["reservation"], remaining_ammunition=remaining)
+        self.assertEqual(self.send(finish)["status"], "finished")
+        self.assertEqual(self.store.layouts(self.account)[1],
+                         [value for row in remaining for value in (row["shell_compact_id"], row["count"])])
 
 
 # Only the mounting cases above belong here; the inherited mixed-store cases

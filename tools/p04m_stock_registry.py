@@ -137,7 +137,7 @@ class StockRegistry:
             mounts = content0_builds.mounts()
             for encoded, b in sorted(content0_builds.load().items()):
                 stock = profiles.get(b["stock_kind"])
-                if stock is None or stock.assembly_kind or stock.kind in PINS:
+                if stock is None or stock.assembly_kind:
                     continue
                 modules = dict(b["modules"])
                 require(stock.vehicle_id == b["vehicle_id"] and b["label"] not in profiles
@@ -164,6 +164,8 @@ class StockRegistry:
         _uuid(account); _integer(native, 1)
         c = _catalog()
         if c is not None:
+            from content0_builds import stock_kind
+            kind = stock_kind(kind)
             legacy = {row["legacy_inventory"]["native_inventory_id"]: (row["kind"], row["legacy_inventory"]["suffix"])
                       for row in c.vehicles() if row["legacy_inventory"] is not None}
             if native in legacy:

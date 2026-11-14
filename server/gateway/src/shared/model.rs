@@ -663,7 +663,7 @@ impl World {
     fn ensure_build_geometry(&mut self,kind:VehicleKind)->io::Result<()> {
         if !super::build_resources::is_build(kind)||self.generated_geometries.contains_key(&kind.index()) {return Ok(());}
         let stock=super::build_resources::stock_of(kind).ok_or_else(bad)?;
-        let bundle=self.generated_geometries.get(&stock.index()).cloned().ok_or_else(bad)?;
+        let bundle=self.geometry_for(stock)?.clone();
         let built=super::build_resources::geometry(kind,&bundle)?;
         self.bind_geometry(built)
     }
