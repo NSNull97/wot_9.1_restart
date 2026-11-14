@@ -166,7 +166,6 @@ impl BatchRuntime {
         let stock_map=resources.maps.get(row_slot).ok_or_else(||model::bad())?;
         // CONTENT-0 3.3: a non-stock build uses its own config (stock config + build physics) and qualified profile.
         let build=if super::super::build_resources::is_build(kind) {
-            if resources.source_profiles[row_slot].is_none() {return Err(model::bad());}
             Some(super::super::build_resources::map_and_source(kind,stock_map)?)
         } else {None};
         let map=build.as_ref().map_or(stock_map,|(map,_)|map);

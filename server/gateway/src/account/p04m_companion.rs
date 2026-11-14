@@ -114,7 +114,7 @@ pub(crate) fn pair_ammo_layout(type_cd:u32,r:&crate::ammo_service091::Request)->
     Ok(None)
 }
 #[derive(Clone,Debug,PartialEq,Eq)]
-pub struct Binding{account:String,database:i32,pub revision:u64,state_sha:String,capabilities:Vec<Capability>,capacity:i64}
+pub struct Binding{account:String,database:i32,pub revision:u64,state_sha:String,capabilities:Vec<Capability>,capacity:i64,catalog_mode:bool}
 pub enum Request{Ammo(crate::ammo_service091::Request),Crew(crate::crew_service091::Request),Transfer(crate::crew_transfer091::Request),Barracks(crate::crew_barracks091::Request),
     Dismiss(crate::crew_dismissal091::Request),Skill(crate::crew_progression091::Request)}
 impl Binding{
@@ -159,7 +159,7 @@ impl Binding{
             capabilities.push(Capability{native,kind});
         }
         if capabilities.get(0).map(|c|c.native)!=Some(1)||capabilities.get(1).map(|c|c.native)!=Some(2){return Err(bad("missing base inventory"));}
-        Ok(Self{account:account.into(),database,revision,state_sha:state_sha.into(),capabilities,capacity})
+        Ok(Self{account:account.into(),database,revision,state_sha:state_sha.into(),capabilities,capacity,catalog_mode})
     }
     pub fn metadata(directory:&Path,account:&str,database:i32,revision:u64)->io::Result<Self>{
         let read=crate::crew_service091::fixture_file;
@@ -183,7 +183,7 @@ impl Binding{
         let kind=self.kind(r.vehicle_inventory_id() as i64)?;
         let (shells,capacity)=kind.ammo();
         let stock=r.layout_for_catalog(shells,capacity,5);
-        if stock.is_ok()||!kind.generated() {return stock;}
+        if stock.is_ok()||!self.catalog_mode {return stock;}
         Ok(pair_ammo_layout(kind.type_cd() as u32,r)?.ok_or_else(||bad("unsupported pair ammo layout"))?)
     }
     pub fn recruit(&self,r:crate::crew_service091::Request)->io::Result<()>{

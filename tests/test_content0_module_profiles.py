@@ -22,7 +22,7 @@ ORIGINAL = Path(os.environ.get("WOT091_ORIGINAL_ROOT", "C:/WoT_0.9.1_RU_0717_ori
 BUILDS = 12617
 COUNTS = {"AIM_ENVELOPE_UNSUPPORTED": 92, "COLLISION_SOURCE_UNRESOLVED": 3, "MOUNTED_SHOT_OVERRIDE_UNSUPPORTED": 1,
           "SUPPORT_SOURCE_UNRESOLVED": 1, "generated": 12520}
-DIGEST = "3502824d77eac52c335cabe0e805691394083fde5d967870cc18316608995ea6"
+DIGEST = "327ca4eb35258ede4e36af9d7b9f60981815366c1a3ce767f5f853aa6f720ba5"
 _CONTEXT = None
 
 
@@ -124,11 +124,7 @@ class BuildTable(unittest.TestCase):
     def test_rebuild_equals_committed_table(self):
         self.assertEqual(self.raw, generator.BUILDS.read_bytes())
         self.assertEqual(self.table["profile_table_sha256"], generator.sha(generator.TABLE.read_bytes()))
-        # 12 520 generated builds less the 319 non-stock builds of the five legacy kinds (stock-only until they move
-        # to the generated path) = 12 201; 12 196 runtime entries (the 5 legacy stock builds keep their closed arms).
-        self.assertEqual(self.table["builds"], 12201)
-        refused = [e for v in self.table["vehicles"].values() for e in v["builds"] if e["refusal"] == "LEGACY_KIND_BUILD_UNSUPPORTED"]
-        self.assertEqual(len(refused), 319)
+        self.assertEqual(self.table["builds"], 12520)
 
     def test_every_generated_build_is_copied_from_the_table(self):
         by_label = {e["label"]: (v, e) for v in self.table["vehicles"].values() for e in v["builds"] if "label" in e}
@@ -185,6 +181,24 @@ class BuildTable(unittest.TestCase):
 
 class StoreBuilds(unittest.TestCase):
     """CONTENT-0 4: what the domain reads from the build table agrees with the stock rows it already trusts."""
+
+    def test_legacy_non_stock_builds_have_exact_descriptors_and_mounts(self):
+        import content0_builds
+
+        table, builds, mounts = content0_builds._table(), content0_builds.load(), content0_builds.mounts()
+        expected = {"MS-1": 86, "T-26": 95, "T-34": 55, "T-34-85": 83, "IS-7": 0}
+        for resource, count in expected.items():
+            vehicle_id = "vehicle:ussr:" + resource
+            entries = [entry for entry in table["vehicles"][vehicle_id]["builds"] if not entry["stock"]]
+            self.assertEqual(len(entries), count, vehicle_id)
+            for entry in entries:
+                self.assertEqual(entry["status"], "generated", entry)
+                build = builds[entry["descriptor_hex"]]
+                self.assertEqual((build["vehicle_id"], build["label"], build["modules"]),
+                                 (vehicle_id, entry["label"], entry["modules"]))
+                mount = mounts[(vehicle_id, build["modules"]["turret"], build["modules"]["gun"])]
+                self.assertEqual([generator.FAMILY_SUFFIX[shell[2]] for shell in mount["shells"]],
+                                 [shell[0].rstrip("0123456789") for shell in mount["shells"]])
 
     def test_stock_devices_and_mounts_equal_the_stock_profile_rows(self):
         import battle_any

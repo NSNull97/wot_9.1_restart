@@ -137,6 +137,83 @@ fn spin(runtime:&mut BatchRuntime,world:&mut World,now:Instant,until:impl Fn(&Ba
     assert_eq!(profile,ram_proof::Profile::for_vehicle(vehicle));assert!(profile.mass()>40000.);
     assert_eq!(BatchRuntime::profile(scene_worker::Kind::T26,false).unwrap(),ram_proof::Profile::T26);
 }
+
+/// Run in isolation with BATTLE_ANY_STAND pointing to the prepared candidate stand.
+/// Exercises every migrated descriptor through the owned loadout parser, gateway
+/// geometry and scene preparation, and an actual Jolt ready frame and step.
+#[test]
+#[ignore]
+fn content0_legacy_builds_start_actual_scenes() {
+    use super::super::super::{build_resources, generated_vehicles, profile13_templates, vehicle_catalog};
+    let root=PathBuf::from(std::env::var_os("WOT091_ROOT").unwrap_or_else(||"D:/WoT_9.1_Server".into())).join("local");
+    let stand=PathBuf::from(std::env::var_os("BATTLE_ANY_STAND").expect("BATTLE_ANY_STAND"));
+    crate::profile13_v2091::enable_catalog_v1().unwrap();
+    let rows=profile13_templates::load(&root,&stand.join("battle-profiles.json")).unwrap();
+    let builds=generated_vehicles::registry().unwrap().entries().iter().filter_map(|entry|{
+        let kind=VehicleKind::Generated(entry.id);
+        let stock=build_resources::stock_of(kind).filter(|stock|VehicleKind::ALL.contains(stock))?;
+        Some((entry,kind,stock))
+    }).collect::<Vec<_>>();
+    assert_eq!(builds.len(),319);
+
+    let now=Instant::now();
+    let template=BattleTemplate::from_shared(&rows,30,7400,now).unwrap();
+    for (index,batch) in builds.chunks(30).enumerate() {
+        let now=Instant::now();
+        let mut world=template.world.fresh_battle(7401+index as u64,now).unwrap();
+        world.set_expected_actors(batch.len()).unwrap();
+        world.enable_team_base_spawn().unwrap();
+        world.enable_mixed_ammo().unwrap();
+        for (slot,(entry,kind,stock)) in batch.iter().copied().enumerate() {
+            let account=format!("12345678-1234-4234-8234-{slot:012}");
+            let (native,suffix)=vehicle_catalog::by_kind(stock.label()).unwrap().legacy_inventory
+                .unwrap_or((7,"p09e-vehicle:7"));
+            let mount=if kind.descriptor()[10..14]==stock.descriptor()[10..14] {
+                format!("{}-stock",stock.label())
+            } else {
+                let (_,pair)=entry.dispersion_key.split_once('@').unwrap();
+                format!("{}@{pair}",stock.label())
+            };
+            let ammo=entry.gun.shots.iter().take_while(|shot|!shot.is_absent()).enumerate().map(|(i,shot)|{
+                serde_json::json!({"shell_definition_id":format!("shell:{mount}-{}",entry.suffixes[i]),
+                    "shell_compact_id":shot.compact_descr,"family":shot.family.source_name(),"count":u16::from(i==0)})
+            }).collect::<Vec<_>>();
+            let value=serde_json::json!({
+                "kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+                "native_inventory_id":native,"vehicle_inventory_id":format!("{account}:{suffix}"),
+                "max_hp":entry.max_hp,"crew_ids":(0..entry.crew.len()).map(|i|format!("{account}:crew-{i}")).collect::<Vec<_>>(),
+                "capacity":entry.gun.capacity,"ammunition":ammo,"initial_shell_compact_id":entry.gun.shots[0].compact_descr
+            });
+            let sha=format!("{:x}",sha2::Sha256::digest(serde_json::to_vec(&value).unwrap()));
+            let frozen=crate::profile13_v2091::parse_frozen(&value,&account,&sha)
+                .unwrap_or_else(|error|panic!("{} loadout: {error}",kind.label()));
+            let owner=model::Identity{account,database:slot as i32+1,name:format!("legacy build {slot}")};
+            let seated=world.attach_owned_v2(owner,slot as u32+1,&frozen)
+                .unwrap_or_else(|error|panic!("{} seat: {error}",kind.label()));
+            assert_eq!(seated,slot);
+            assert_eq!(world.geometry_for(kind).unwrap().vehicle_kind(),kind);
+        }
+        world.start(now).unwrap();
+        let mut runtime=BatchRuntime::new(rows[0].shared.clone().unwrap(),rows[0].catalog.1.clone());
+        runtime.start(&mut world,now).unwrap();
+        spin(&mut runtime,&mut world,now,|runtime,_|runtime.ready_for_native());
+        world.lifecycle=None;
+        for slot in 0..batch.len() {
+            world.set_ready(slot,slot as u32+1).unwrap();
+        }
+        let deadline=Instant::now()+Duration::from_secs(30);
+        let initial_tick=world.tick;
+        while world.tick==initial_tick || runtime.blocked() {
+            runtime.step(&mut world,Instant::now()).unwrap();
+            assert!(Instant::now()<deadline,"legacy build scene {index}: first Jolt step deadline");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let labels=batch.iter().map(|(_,kind,_)|kind.label()).collect::<Vec<_>>();
+        println!("CONTENT0_LEGACY_BUILDS_SCENE batch={index} ready={} first_step_tick={} labels={labels:?}",
+            batch.len(),world.tick);
+    }
+}
+
 /// BATTLE-ANY stand -11: the stand's own version5 templates (5 curated + 4 pilots), its
 /// physics build and four owned pilot loadouts through the production v2 seating, one IPC7
 /// scene, ready and 60 driven frames. Run explicitly: `--ignored battle_any_stand_four_pilots`

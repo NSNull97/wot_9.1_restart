@@ -126,7 +126,8 @@ fn frozen(v:&Vehicle,native:u64,suffix:&str)->(Value,String){
 #[test] fn content0_build_loadouts_parse_with_their_pair_shells() {
     use crate::gateway091::shared::generated_vehicles as g;
     let registry=g::registry().unwrap();
-    let admitted=|e:&g::Entry|VEHICLES.iter().any(|v|v.vehicle_id==e.vehicle_id&&v.battle_admission!=Admission::None&&v.legacy_inventory.is_none());
+    let admitted=|e:&g::Entry|registry.by_vehicle(&e.vehicle_id).is_some()
+        &&VEHICLES.iter().any(|v|v.vehicle_id==e.vehicle_id&&v.battle_admission!=Admission::None);
     let stock_of=|e:&g::Entry|g::entry(registry.by_vehicle(&e.vehicle_id).unwrap());
     let same=|e:&g::Entry|e.descriptor[10..14]==stock_of(e).descriptor[10..14];
     let pick=|want_same:bool|registry.entries().iter().find(|e|!e.stock&&admitted(e)&&same(e)==want_same).expect("build");
