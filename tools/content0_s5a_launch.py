@@ -8,6 +8,7 @@ from pathlib import Path
 from tools.content0_s5a_stand import ROOT,check_ports,json_unique,no_link,read_stable,write_json
 from tools.content0_s5a_build import checkout_fingerprint,hash_file
 from tools.content0_s5a_bind_projectile import projectile_files
+from tools.content0_s5a_bind_prohorovka import verify_prohorovka_binding
 from tools.content0_s5a_bind_workers import stage_runtime
 from tools.content0_s5a_bind_clean_db import verify_clean_db
 from tools.content0_s5a_process_identity import process_identity
@@ -30,6 +31,13 @@ def wait_line(process,path,pattern,seconds):
 def verify_foliage_binding(stand,config,gateway,profiles=None):
     foliage=gateway.get('foliage_v1',{})
     binding=active_foliage_receipt(config)
+    prohorovka=config.get('prohorovka_foliage')
+    if profiles is not None and profiles.get('map')=='05_prohorovka':
+        if binding is not None:raise ValueError('Malinovka foliage receipt on Prohorovka')
+        if foliage or prohorovka is not None:
+            verify_prohorovka_binding(stand,profiles,foliage,prohorovka)
+        return
+    if prohorovka is not None:raise ValueError('Prohorovka foliage receipt on another map')
     if not foliage and binding is None:return
     no_link(SCENE_DOC,ROOT)
     document=json_unique(read_stable(SCENE_DOC))
@@ -52,12 +60,13 @@ def main():
     verify_clean_db(clean,config['operator'],config['operator_game_db_sha256'])
     for name in ('domain','bridge','gateway'):
         if hashlib.sha256(read_stable(stand/(name+'.json'))).hexdigest()!=config['config_sha256'][name]:raise ValueError('configuration changed after receipt')
-    registry=json.loads(read_stable(ROOT/'server/contracts/map_registry.json'))
-    _,projectile=projectile_files(registry,stand)
-    if hashlib.sha256(projectile['manifest.json']).hexdigest()!=config.get('projectile_manifest_sha256'):raise ValueError('projectile receipt mismatch')
     profile_raw=read_stable(stand/'battle-profiles.json')
     if hashlib.sha256(profile_raw).hexdigest()!=config.get('battle_profiles_sha256'):raise ValueError('battle profile receipt mismatch')
-    profiles=json.loads(profile_raw);checked=set()
+    profiles=json.loads(profile_raw)
+    registry=json.loads(read_stable(ROOT/'server/contracts/map_registry.json'))
+    _,projectile=projectile_files(registry,stand,profiles['map'])
+    if hashlib.sha256(projectile['manifest.json']).hexdigest()!=config.get('projectile_manifest_sha256'):raise ValueError('projectile receipt mismatch')
+    checked=set()
     for profile in profiles['profiles']:
         pool_path=Path(profile['pool']['path']);no_link(pool_path,stand);pool_raw=read_stable(pool_path)
         if hashlib.sha256(pool_raw).hexdigest()!=profile['pool']['sha256']:raise ValueError('pool receipt mismatch')

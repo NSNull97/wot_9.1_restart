@@ -48,11 +48,14 @@ def build_rows(catalog, physics, calibration):
             or not numeric_vector([row['concealment_additive']], 1, 0, 1)
             or (row['concealment_additive'] == 0) != (row['canopy_class'] == 'bare')):
             raise ValueError('fallen foliage crown calibration mismatch')
+    return catalog_crown_rows(trees, physics['instances'], settings)
 
+
+def catalog_crown_rows(trees, instances, settings):
+    """Match each pinned tree to its accepted physics transform and place the crown."""
     result = []
     seen = set()
     last_object_id = 0
-    instances = physics['instances']
     for tree in trees:
         object_id = tree['object_id']
         instance_id = tree['instance_id']

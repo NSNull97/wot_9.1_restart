@@ -1,4 +1,4 @@
-//! Bounded reader and segment query for project-calibrated Malinovka bushes.
+//! Bounded reader and segment query for project-calibrated vegetation.
 //!
 //! Source transforms come from #717. The ellipsoids, coefficients and
 //! spotting policies are project calibration.
@@ -6,9 +6,10 @@ use std::{collections::{BTreeMap, BTreeSet}, fs::File, io::{self, Read}, path::P
 use serde::de::{Deserialize, Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use crate::map_profile091::MapId;
 
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
-// At most 1024 fixed shrubs and 1024 fallen crowns for the six-seat lab.
+// Legacy Malinovka shrubs and total tree crowns per map for the six-seat lab.
 const MAX_INSTANCES: usize = 1024;
 const MAX_COORD: f64 = 10_000.;
 const MAX_EXTENT: f64 = 1000.;
@@ -26,6 +27,18 @@ const RESOURCES: [(&str, u64, &str); 3] = [
     ("speedtree/02_Malinovka/Bush.spt", 13477, "a88d6635fd6ce65c7b4ae01fbd98ccb5695df3cde4d03fe1140879595a6f4118"),
     ("speedtree/02_Malinovka/Shrub_1.spt", 13410, "02c12d819d3b4409f1056563e190b235cf7ff71308f67dd75dfb55c44316d60a"),
     ("speedtree/02_Malinovka/Shrub_2.spt", 13420, "c304486045179ace4810918dc4352a9a96c9ebb6114ac7da29352dae65c0c92e"),
+];
+const PROK_SCHEMA: &str = "content0-s5a-prohorovka-bush-volumes.v1";
+const PROK_CAL_SCHEMA: &str = "content0-s5a-prohorovka-bush-calibration.v1";
+const PROK_MAP_SHA: &str = "05081facbe1451688fd853612a85c725ed7140a4d83ddf134c2283512980cd6d";
+const PROK_CATALOG_SHA: &str = "61ce7951421091427a122e1c3875481f4053f3a6b9c910cb98195a644daff6d6";
+const PROK_TREE_COUNT: usize = 626;
+const PROK_SHRUB_COUNT: usize = 2092;
+const PROK_RESOURCE_COUNTS: [usize; 3] = [723, 598, 771];
+const PROK_RESOURCES: [(&str, u64, &str); 3] = [
+    ("speedtree/05_Prohorovka/Bush.spt", 13459, "9572512c33774ae39060d71e6a9235e7358b9cf8ba486f3928e7e79511b52783"),
+    ("speedtree/05_Prohorovka/Bush_1.spt", 13568, "d1c9f24074cb2c93bdeb56ed0805047b5f92ea109eb161a27da1b10b2b24b5aa"),
+    ("speedtree/05_Prohorovka/Shrub_1.spt", 13424, "a9226745c42c53866a4d0e065e41f975d6b25acd675578719e3f4ff648b9d1e0"),
 ];
 type Point = [f64; 3];
 
@@ -139,7 +152,17 @@ struct FallenTrees {
 }
 
 #[derive(Clone, Debug)]
-pub struct Foliage { pub calibration_sha256:String, pub source_sha256:String, raw:Vec<u8>, volumes:Vec<Volume>, fire_near_m:f64, fire_multiplier:f64, policy:Policy, trees:Option<FallenTrees> }
+pub struct Foliage {
+    pub calibration_sha256: String,
+    pub source_sha256: String,
+    pub(super) map: MapId,
+    raw: Vec<u8>,
+    volumes: Vec<Volume>,
+    fire_near_m: f64,
+    fire_multiplier: f64,
+    policy: Policy,
+    trees: Option<FallenTrees>,
+}
 
 pub(super) struct RayFoliage<'a> {
     source: &'a Foliage,
@@ -171,42 +194,58 @@ impl Foliage {
     fn parse(raw:&[u8])->io::Result<Self> {
         if raw.is_empty() || raw.len() as u64>MAX_BYTES {return Err(bad("foliage input size"));}
         let Strict(doc)=serde_json::from_slice(raw).map_err(|_|bad("foliage JSON"))?;
+        let prok = doc["schema"] == PROK_SCHEMA;
+        let map = MapId::from_asset(if prok { "05_prohorovka" } else { "02_malinovka" })?;
+        let resources = if prok { &PROK_RESOURCES } else { &RESOURCES };
         let mut keys = vec!["schema","map","classification","calibration_schema","calibration_sha256","map_package_pin",
-            "shared_package_pin","selected_resource_pins","chunk_pins","geometry_contract","aabb_contract","effect_contract","instances","fire_near_distance_m","fire_near_multiplier"];
-        let with_trees = doc["schema"] == FALLEN_SCHEMA;
+            "selected_resource_pins","chunk_pins","geometry_contract","aabb_contract","effect_contract","instances","fire_near_distance_m","fire_near_multiplier"];
+        if !prok { keys.push("shared_package_pin"); }
+        let with_trees = prok || doc["schema"] == FALLEN_SCHEMA;
         if with_trees { keys.extend(["fallen_tree_catalog_sha256", "fallen_trees"]); }
         fields(&doc, &keys)?;
         let policy = match doc["schema"].as_str() {
             Some(SCHEMA) => Policy::Strongest,
             Some(STACKED_SCHEMA) if doc["effect_contract"] == STACKED_CONTRACT => Policy::Stacked,
-            Some(FALLEN_SCHEMA) if doc["effect_contract"] == FALLEN_CONTRACT => Policy::Stacked,
+            Some(FALLEN_SCHEMA | PROK_SCHEMA) if doc["effect_contract"] == FALLEN_CONTRACT => Policy::Stacked,
             _ => return Err(bad("foliage policy identity")),
         };
-        if doc["map"]!="02_malinovka" || doc["classification"]!="PROJECT_CALIBRATION_NOT_HISTORICAL"
-            || doc["calibration_schema"]!=CAL_SCHEMA {return Err(bad("foliage identity"));}
+        let calibration_schema = if prok { PROK_CAL_SCHEMA } else { CAL_SCHEMA };
+        if doc["map"] != map.asset() || doc["classification"] != "PROJECT_CALIBRATION_NOT_HISTORICAL"
+            || doc["calibration_schema"] != calibration_schema { return Err(bad("foliage identity")); }
         for key in ["geometry_contract","aabb_contract","effect_contract"] {text(&doc[key],512)?;}
         let calibration_sha256=text(&doc["calibration_sha256"],64)?;
         if !sha(calibration_sha256) {return Err(bad("foliage calibration hash"));}
         let fire_near_m=number(&doc["fire_near_distance_m"],0.,1000.)?;
         let fire_multiplier=number(&doc["fire_near_multiplier"],0.,1.)?;
-        pin(&doc["map_package_pin"],86993684,MAP_SHA)?;pin(&doc["shared_package_pin"],1295549695,SHARED_SHA)?;
-        let rp=&doc["selected_resource_pins"];fields(rp,&RESOURCES.map(|r|r.0))?;
-        for (name,size,digest) in RESOURCES {pin(&rp[name],size,digest)?;}
+        if prok {
+            if fire_near_m != OBSERVER_NEAR_METRES || fire_multiplier != 0.25 {
+                return Err(bad("Prokhorovka foliage fire calibration"));
+            }
+            pin(&doc["map_package_pin"], 87810684, PROK_MAP_SHA)?;
+        } else {
+            pin(&doc["map_package_pin"],86993684,MAP_SHA)?;
+            pin(&doc["shared_package_pin"],1295549695,SHARED_SHA)?;
+        }
+        let rp=&doc["selected_resource_pins"];fields(rp,&resources.map(|r|r.0))?;
+        for &(name,size,digest) in resources {pin(&rp[name],size,digest)?;}
         let chunks=doc["chunk_pins"].as_array().filter(|v|v.len()==144).ok_or_else(||bad("foliage chunk count"))?;
         let mut chunk_set=BTreeSet::new();
         for row in chunks {
             fields(row,&["chunk","sha256"])?;let c=chunk(&row["chunk"])?;let hash=text(&row["sha256"],64)?;
             if !sha(hash) || !chunk_set.insert(c) {return Err(bad("foliage duplicate chunk or hash"));}
         }
-        let rows=doc["instances"].as_array().filter(|a|!a.is_empty() && a.len()<=MAX_INSTANCES).ok_or_else(||bad("foliage instance count"))?;
+        let allowed_count = if prok { PROK_SHRUB_COUNT..=PROK_SHRUB_COUNT } else { 1..=MAX_INSTANCES };
+        let rows=doc["instances"].as_array().filter(|a|allowed_count.contains(&a.len())).ok_or_else(||bad("foliage instance count"))?;
         let mut volumes=BTreeMap::new();
+        let mut counts = [0; 3];
         for row in rows {
             fields(row,&["chunk","speedtree_index","resource","seed","center_world","basis_world_rows","aabb_half_extents_world","concealment_additive"])?;
             let c=chunk(&row["chunk"])?;
             let index=row["speedtree_index"].as_u64().filter(|n|(1..=5000).contains(n)).ok_or_else(||bad("foliage index"))? as u32;
             if !chunk_set.contains(&c) || row["seed"].as_u64().filter(|n|*n<=u32::MAX as u64).is_none() {return Err(bad("foliage identity"));}
             let resource=text(&row["resource"],128)?;
-            if !RESOURCES.iter().any(|r|r.0==resource) {return Err(bad("foliage resource"));}
+            let resource_index = resources.iter().position(|r| r.0 == resource).ok_or_else(||bad("foliage resource"))?;
+            counts[resource_index] += 1;
             let coefficient=number(&row["concealment_additive"],0.,1.)?;
             let center=point(&row["center_world"],-MAX_COORD,MAX_COORD)?;
             let (inverse, extents) = basis_geometry(basis(&row["basis_world_rows"])?)?;
@@ -215,8 +254,9 @@ impl Foliage {
             let v=Volume{chunk:c,index,resource:resource.to_owned(),coefficient,shape:Ellipsoid{center,extents,inverse}};
             if volumes.insert((c,index),v).is_some() {return Err(bad("foliage duplicate instance"));}
         }
-        let trees = if with_trees { Some(FallenTrees::parse(&doc)?) } else { None };
-        Ok(Self{calibration_sha256:calibration_sha256.to_owned(),source_sha256:format!("{:x}",Sha256::digest(raw)),raw:raw.to_vec(),volumes:volumes.into_values().collect(),fire_near_m,fire_multiplier,policy,trees})
+        if prok && counts != PROK_RESOURCE_COUNTS { return Err(bad("Prokhorovka foliage resource counts")); }
+        let trees = if with_trees { Some(FallenTrees::parse(&doc, map)?) } else { None };
+        Ok(Self{calibration_sha256:calibration_sha256.to_owned(),source_sha256:format!("{:x}",Sha256::digest(raw)),map,raw:raw.to_vec(),volumes:volumes.into_values().collect(),fire_near_m,fire_multiplier,policy,trees})
     }
     pub fn len(&self)->usize {self.volumes.len()}
     /// Closed segment, including endpoints/tangencies and a point inside a
@@ -278,7 +318,7 @@ impl Foliage {
 
     pub(super) fn verify_tree_catalog(&self, catalog: Option<&super::fragiles::Catalog>) -> io::Result<()> {
         if let Some(trees) = &self.trees {
-            trees.verify_catalog(catalog.ok_or_else(|| bad("fallen foliage requires the tree catalog"))?)?;
+            trees.verify_catalog(self.map, catalog.ok_or_else(|| bad("fallen foliage requires the tree catalog"))?)?;
         }
         Ok(())
     }
@@ -287,7 +327,9 @@ impl Foliage {
         let mut fallen = Vec::new();
         if let Some(trees) = &self.trees {
             let state = state.ok_or_else(|| bad("fallen foliage requires destructible state"))?;
-            if trees.catalog_sha256 != state.catalog.sha256 { return Err(bad("fallen foliage catalog hash")); }
+            if self.map != state.catalog.map || trees.catalog_sha256 != state.catalog.sha256 {
+                return Err(bad("fallen foliage catalog identity"));
+            }
             for (object, packed) in state.committed_fallen_trees() {
                 let crown = trees.crowns.get(&object.object_id).ok_or_else(|| bad("fallen foliage crown missing"))?;
                 if crown.coefficient > 0.0 { fallen.push((crown.coefficient, crown.fallen_shape(object, packed)?)); }
@@ -298,10 +340,13 @@ impl Foliage {
 }
 
 impl FallenTrees {
-    fn parse(doc: &Value) -> io::Result<Self> {
+    fn parse(doc: &Value, map: MapId) -> io::Result<Self> {
         let digest = text(&doc["fallen_tree_catalog_sha256"], 64)?;
-        if !sha(digest) { return Err(bad("fallen foliage catalog hash")); }
-        let rows = doc["fallen_trees"].as_array().filter(|a| !a.is_empty() && a.len() <= MAX_INSTANCES)
+        let prok = map == MapId::Prohorovka;
+        if !sha(digest) || prok && digest != PROK_CATALOG_SHA { return Err(bad("fallen foliage catalog hash")); }
+        let allowed_count = if prok { PROK_TREE_COUNT..=PROK_TREE_COUNT } else { 1..=MAX_INSTANCES };
+        let resource_prefix = if prok { "speedtree/05_Prohorovka/" } else { "speedtree/02_Malinovka/" };
+        let rows = doc["fallen_trees"].as_array().filter(|a| allowed_count.contains(&a.len()))
             .ok_or_else(|| bad("fallen foliage instance count"))?;
         let mut crowns = BTreeMap::new();
         let mut instances = BTreeSet::new();
@@ -311,7 +356,7 @@ impl FallenTrees {
             let id = read_id(&row["object_id"])?;
             let instance_id = read_id(&row["instance_id"])?;
             let resource = text(&row["resource"], 128)?;
-            if id == 0 || !instances.insert(instance_id) || !resource.starts_with("speedtree/02_Malinovka/") || !resource.ends_with(".spt") {
+            if id == 0 || !instances.insert(instance_id) || !resource.starts_with(resource_prefix) || !resource.ends_with(".spt") {
                 return Err(bad("fallen foliage identity"));
             }
             let basis = basis(&row["basis_world_rows"])?;
@@ -325,8 +370,8 @@ impl FallenTrees {
         Ok(Self { catalog_sha256: digest.to_owned(), crowns })
     }
 
-    fn verify_catalog(&self, catalog: &super::fragiles::Catalog) -> io::Result<()> {
-        if catalog.map.asset() != "02_malinovka" || self.catalog_sha256 != catalog.sha256 {
+    fn verify_catalog(&self, map: MapId, catalog: &super::fragiles::Catalog) -> io::Result<()> {
+        if map != catalog.map || self.catalog_sha256 != catalog.sha256 {
             return Err(bad("fallen foliage catalog identity"));
         }
         let mut count = 0;
@@ -381,8 +426,8 @@ fn aabb_intersects(start:Point,end:Point,center:Point,extent:Point)->bool {
         // the ellipsoid test still uses the unmodified basis.
         let margin=1e-9*(1.+extent[i]);
         let a=center[i]-extent[i]-margin;let b=center[i]+extent[i]+margin;let d=end[i]-start[i];
-        if d==0. {if start[i]<a || start[i]>b{return false;}}
-        else {let t1=(a-start[i])/d;let t2=(b-start[i])/d;low=low.max(t1.min(t2));high=high.min(t1.max(t2));if low>high{return false;}}
+        if start[i].min(end[i]) > b || start[i].max(end[i]) < a { return false; }
+        if d!=0. {let t1=(a-start[i])/d;let t2=(b-start[i])/d;low=low.max(t1.min(t2));high=high.min(t1.max(t2));if low>high{return false;}}
     } true
 }
 fn unit_segment(p:Point,d:Point)->Option<(f64,f64)> {
@@ -423,7 +468,7 @@ mod tests {
         let inverse=[cross(basis[1],basis[2]).map(|x|x/det),cross(basis[2],basis[0]).map(|x|x/det),cross(basis[0],basis[1]).map(|x|x/det)];
         let v=Volume{chunk:[-2,3],index:1,resource:"fixture".into(),coefficient:0.2,
             shape:Ellipsoid{center:[0.;3],extents:[4.,2.4,5_f64.sqrt()],inverse}};
-        let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25,policy:Policy::Strongest,trees:None};
+        let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),map:MapId::from_asset("02_malinovka").unwrap(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25,policy:Policy::Strongest,trees:None};
         let hits=f.intersections([-8.,0.,0.],[8.,0.,0.]).unwrap();
         assert_eq!(hits.len(),1);assert!(hits[0].t_enter<0.5 && hits[0].t_exit>0.5);
         assert!(f.intersections([f64::NAN,0.,0.],[0.;3]).is_err());
@@ -536,6 +581,56 @@ mod tests {
         document["schema"] = SCHEMA.into();
         document["effect_contract"] = "fixture".into();
         assert_eq!(parse_fixture(&document).unwrap().contribution([-2.0, 0.0, 0.0], [30.0, 0.0, 0.0], false).unwrap(), 0.2);
+    }
+
+    #[test]
+    fn prokhorovka_foliage_checks_exact_sources_and_uses_the_stacked_rule() {
+        use serde_json::json;
+        let mut document = fixture();
+        document.as_object_mut().unwrap().remove("shared_package_pin");
+        document["schema"] = PROK_SCHEMA.into();
+        document["map"] = "05_prohorovka".into();
+        document["calibration_schema"] = PROK_CAL_SCHEMA.into();
+        document["effect_contract"] = FALLEN_CONTRACT.into();
+        document["map_package_pin"] = json!({"bytes": 87810684, "sha256": PROK_MAP_SHA});
+        document["selected_resource_pins"] = Value::Object(PROK_RESOURCES.into_iter().map(|(name, bytes, hash)| {
+            (name.to_owned(), json!({"bytes": bytes, "sha256": hash}))
+        }).collect());
+        let template = document["instances"][0].clone();
+        let shrubs = PROK_RESOURCES.into_iter().zip(PROK_RESOURCE_COUNTS)
+            .flat_map(|((name, _, _), count)| std::iter::repeat_n(name, count))
+            .enumerate().map(|(index, name)| {
+                let mut row = template.clone();
+                row["resource"] = name.into();
+                row["speedtree_index"] = (index + 1).into();
+                row["center_world"] = match index {
+                    0 => json!([16, 0, 0]), // Observer within 15 m of entry: transparent.
+                    1 => json!([40, 0, 0]), // Unchanged by a shot.
+                    2 => json!([86, 0, 0]), // Within 15 m of the target: attenuated by a shot.
+                    _ => json!([0, 100, 0]),
+                };
+                row
+            }).collect();
+        document["instances"] = Value::Array(shrubs);
+        document["fallen_tree_catalog_sha256"] = PROK_CATALOG_SHA.into();
+        document["fallen_trees"] = Value::Array((1..=PROK_TREE_COUNT).map(|id| json!({
+            "object_id": id, "instance_id": id, "resource": "speedtree/05_Prohorovka/Maple.spt",
+            "root_world": [0, 0, 0], "center_from_root_world": [0, 4, 0],
+            "basis_world_rows": [[1, 0, 0], [0, 1, 0], [0, 0, 1]], "concealment_additive": 0.2
+        })).collect());
+        let foliage = parse_fixture(&document).unwrap();
+        assert_eq!(foliage.map, MapId::Prohorovka);
+        assert_eq!(foliage.len(), 2092);
+        assert_eq!(foliage.contribution([0.; 3], [100., 0., 0.], false).unwrap(), 0.4);
+        assert_eq!(foliage.contribution([0.; 3], [100., 0., 0.], true).unwrap(), 0.25);
+        document["instances"][0]["resource"] = PROK_RESOURCES[1].0.into();
+        assert!(parse_fixture(&document).is_err());
+        document["instances"][0]["resource"] = PROK_RESOURCES[0].0.into();
+        document["map"] = "02_malinovka".into();
+        assert!(parse_fixture(&document).is_err());
+        document["map"] = "05_prohorovka".into();
+        document["fallen_tree_catalog_sha256"] = "a".repeat(64).into();
+        assert!(parse_fixture(&document).is_err());
     }
 
     #[test]

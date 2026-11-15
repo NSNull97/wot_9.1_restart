@@ -16,5 +16,13 @@ class ProjectileTests(unittest.TestCase):
                   'triangles_sha256':sha(blobs['obstacles.triangles.u32']),'flags_sha256':sha(blobs['obstacles.flags.u16'])}
             registry={'maps':[{'asset':'02_malinovka','projectile':meta}]}
             rel,rows=projectile_files(registry,root);self.assertEqual(rel,Path('evidence/map'));self.assertEqual(rows,blobs)
+            prok = dict(meta, manifest_relative='evidence/prok/manifest.json')
+            registry['maps'].append({'asset':'05_prohorovka','projectile':prok})
+            with self.assertRaises(FileNotFoundError):projectile_files(registry,root,'05_prohorovka')
+            prok_folder = root/'evidence/prok'
+            prok_folder.mkdir()
+            for name,blob in blobs.items():(prok_folder/name).write_bytes(blob)
+            rel,rows=projectile_files(registry,root,'05_prohorovka')
+            self.assertEqual((rel,rows),(Path('evidence/prok'),blobs))
             (folder/'obstacles.flags.u16').write_bytes(b'xx')
             with self.assertRaises(ValueError):projectile_files(registry,root)

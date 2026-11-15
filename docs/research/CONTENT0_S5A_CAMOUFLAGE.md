@@ -132,6 +132,41 @@
   Это основание привязки к состоянию сцены, данные о маскировке оно не содержит.
   [Контракт P06Q](P06Q_TREE_VEHICLE_CONTACT.md).
 
+## «Прохоровка» 05
+
+- **VERIFIED:** пакет `05_prohorovka.pkg` клиента #717 с SHA-256
+  `05081facbe1451688fd853612a85c725ed7140a4d83ddf134c2283512980cd6d`
+  содержит 144 чанка. Из их трансформаций выбраны 2 092 экземпляра трёх
+  кустарниковых ресурсов `Bush` (723), `Bush_1` (598) и `Shrub_1` (771).
+  Все исходные `.spt` для этих кустов и крон лежат в пакете самой карты.
+  `Sedge_1` (225) оставлен вне этой калибровки.
+- **VERIFIED:** каталог MAPS-02 v8 с SHA-256
+  `61ce7951421091427a122e1c3875481f4053f3a6b9c910cb98195a644daff6d6`
+  даёт 626 деревьев с родными идентификаторами. Экспорт сверяет каждое дерево
+  с конкретным экземпляром в принятом физическом манифесте с SHA-256
+  `9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265`.
+  `Fir.spt` содержит ссылки на текстуры хвои. Остальные семь ресурсов
+  `BirchFall`, `BirchFall_1`, `Linden`, `Maple`, `Maple_1`, `Poplar` и `Poplar_1`
+  ссылаются на текстуры листьев. Подтверждённых голых деревьев среди этих
+  восьми ресурсов нет.
+- **PROJECT_CALIBRATION:** эллипсоиды `Bush_1` и `Shrub_1` подобраны по
+  локальным границам BSP. Для пустого `Bush.bsp2` применено предварительное
+  положение и размер по модели малого куста «Малиновки». Масштаб крон выбран
+  по локальным границам BSP, в том числе высоте от 12,8 м у липы до 32,3 м у
+  пихты. Вклад кустарника и лиственной кроны `0,20`, хвойной `0,25`.
+  Точная геометрия листьев и исторический бонус остаются **UNKNOWN**.
+  [Калибровка «Прохоровки»](../../config/rulesets/content0-s5a-prohorovka-bush-calibration.v1.json).
+- **VERIFIED:** `python -B -X utf8 -m tools.prohorovka_foliage` с параметрами
+  `--original`, `--catalog`, `--physics` и `--out` из команд ниже экспортирует
+  схему `content0-s5a-prohorovka-bush-volumes.v1`. Два экспорта в этой среде
+  совпали побайтно. Длина 1 236 634 байта, SHA-256
+  `b5efc1e078b46988ed673d1316604bc5b38445e97f4c404b8907bd8931d9c83d`.
+  Экспорт сам по себе не подтверждает нативную геометрию и пороги.
+
+```powershell
+python -B -X utf8 -m tools.prohorovka_foliage --original C:/WoT_0.9.1_RU_0717_original --catalog D:/WoT_9.1_Server/local/evidence/20261021-maps02-impl01/catalogs/05_prohorovka/manifest.json --physics D:/WoT_9.1_Server/local/evidence/20261005-p02-map-drive/data/obstacle-mesh-04/05_prohorovka/manifest.json --out local/evidence/prok-foliage-01/foliage.json
+```
+
 ## Исходный стенд
 
 **OBSERVED 2026-11-14:** `D:/WoT_9.1_Server/local/stands/content0-step5-equipment-02`

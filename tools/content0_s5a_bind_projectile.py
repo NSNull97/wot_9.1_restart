@@ -3,8 +3,8 @@ import argparse,hashlib,json,os,sys
 from pathlib import Path
 from tools.content0_s5a_stand import ROOT,no_link,read_stable,write_json
 
-def projectile_files(registry,source_local):
-    rows=[row for row in registry['maps'] if row.get('asset')=='02_malinovka']
+def projectile_files(registry,source_local,asset='02_malinovka'):
+    rows=[row for row in registry['maps'] if row.get('asset')==asset]
     if len(rows)!=1:raise ValueError('map registry selection')
     meta=rows[0]['projectile'];rel=Path(meta['manifest_relative'])
     if rel.is_absolute() or '..' in rel.parts:raise ValueError('projectile registry path')
@@ -27,7 +27,9 @@ def main():
     receipt=json.loads(read_stable(stand/'config-receipt.json'));snapshot=json.loads(read_stable(stand/'snapshot-receipt.json'))
     if receipt['status']!='CONFIGURED_NOT_LAUNCHED' or hashlib.sha256(read_stable(stand/'gateway.json')).hexdigest()!=receipt['config_sha256']['gateway']:raise ValueError('gateway config mismatch')
     source_local=Path(snapshot['source_stand']).resolve(strict=True).parent.parent
-    registry=json.loads(read_stable(ROOT/'server/contracts/map_registry.json'));rel,files=projectile_files(registry,source_local)
+    registry=json.loads(read_stable(ROOT/'server/contracts/map_registry.json'))
+    profiles=json.loads(read_stable(stand/'battle-profiles.json'))
+    rel,files=projectile_files(registry,source_local,profiles['map'])
     dest=stand/rel
     if dest.exists():raise ValueError('projectile output exists')
     dest.mkdir(parents=True)
