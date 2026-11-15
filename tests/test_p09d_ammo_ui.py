@@ -1,4 +1,5 @@
 """Isolated native-policy boundary tests, never evidence of native execution."""
+import ast
 import importlib.util
 import hashlib
 from pathlib import Path
@@ -125,6 +126,35 @@ class MountTests(unittest.TestCase):
     def test_loaded_negative_shell_id_rejects(self):
         with self.assertRaises(ValueError):
             ui.flat([2570, 1, -2826, 6, 3082, 7])
+
+    def test_full_garage_with_569_shell_types_is_bounded_independently(self):
+        vehicle = item()
+        turret, gun, _, shells = ui.MOUNTS[vehicle.intCD]
+        loaded = [value for shell in shells for value in (shell, 10)]
+        # 100 owned vehicles, 569 distinct depot types. Garage size and shell
+        # type count are separate dimensions of the native account cache.
+        vehicle_rows = {n: [] for n in range(1, 101)}
+        vehicle_rows[1] = loaded[:]
+        layouts = {n: {} for n in range(1, 101)}
+        layouts[1] = {(turret, gun): loaded[:]}
+        depot = {n: 90 for n in range(1, 567)}
+        depot.update({shell: 90 for shell in shells})
+        self.assertEqual(len(depot), 569)
+        inv = {1: {'shells': vehicle_rows, 'shellsLayout': layouts}, 10: depot}
+        requester = types.SimpleNamespace(getCacheValue=lambda key, default: inv.get(key, default))
+        cache = types.SimpleNamespace(isSynced=lambda: True, items=types.SimpleNamespace(inventory=requester))
+        selected = types.SimpleNamespace(isPresent=lambda: True, item=vehicle)
+        with mock.patch.object(ui.crew_vehicles, 'owned_bound', return_value=256), \
+             mock.patch.dict(sys.modules, {'CurrentVehicle': types.SimpleNamespace(g_currentVehicle=selected),
+                                          'gui.shared': types.SimpleNamespace(g_itemsCache=cache)}):
+            result = ui.observe()
+            self.assertTrue(result['supported'])
+            self.assertEqual(result['loaded'], loaded)
+            self.assertEqual(result['depot'], [[shell, 90] for shell in shells])
+            self.assertEqual(len(inv[10]), 569)
+            inv[10] = {n: 90 for n in range(ui.MAX_SHELL_DEPOT_TYPES + 1)}
+            with self.assertRaisesRegex(ValueError, 'dictionary bound'):
+                ui.observe()
 
 
 class ZeroPriceModuleReloadTests(unittest.TestCase):
@@ -346,10 +376,10 @@ class SnapshotTests(unittest.TestCase):
 class ObserverTests(unittest.TestCase):
     def setUp(self):
         self.events = []
-        self.globals = {name: getattr(ui, name) for name in ('_binding', '_record', '_events', '_truncated')}
+        self.globals = {name: getattr(ui, name) for name in ('_binding', '_record', '_events', '_truncated', '_observer_disabled')}
         ui._binding = types.SimpleNamespace(active=True)
         ui._record = lambda event, **fields: self.events.append((event, fields))
-        ui._events, ui._truncated = 0, False
+        ui._events, ui._truncated, ui._observer_disabled = 0, False, False
 
     def tearDown(self):
         for name, value in self.globals.items():
@@ -377,9 +407,39 @@ class ObserverTests(unittest.TestCase):
             ui.observe_profile(object(), 'return')
         self.assertEqual(self.events, [])
 
-    def test_known_source_mismatch_fails(self):
-        with self.assertRaises(RuntimeError):
-            ui.observe_profile(self.frame(('scripts/client/Account.py', 'update')), 'call')
+    def test_known_source_mismatch_reports_and_disables_only_observer(self):
+        frame = self.frame(('scripts/client/Account.py', 'update'))
+        ui.observe_profile(frame, 'call')
+        ui.observe_profile(frame, 'return')
+        self.assertEqual(len(self.events), 1)
+        self.assertEqual(self.events[0][0], 'p09d_trace_error')
+        self.assertEqual(self.events[0][1]['reason'], 'native ammunition observer source mismatch')
+        self.assertTrue(self.events[0][1]['observer_disabled'])
+        self.assertFalse(self.events[0][1]['native_acceptance_complete'])
+        self.assertTrue(ui._binding.active, 'UI policy is not disabled')
+
+    def test_snapshot_failure_does_not_cancel_other_profiler_hooks(self):
+        source = (ROOT / 'client_patch/native_call_trace.py').read_text(encoding='utf-8')
+        tree = ast.parse(source)
+        fn = next(node for node in tree.body if isinstance(node, ast.FunctionDef) and node.name == 'profile_calls')
+        host = types.SimpleNamespace(_settings={'enable_p09d_ammo_service': True}, _control=None,
+                                     record=lambda event, **fields: self.events.append((event, fields)))
+        namespace = {'_host': host, '_profile_call_id': 0, '_profile_frames': {}, 'sys': sys}
+        exec(compile(ast.Module(body=[fn], type_ignores=[]), '<profile_calls>', 'exec'), namespace)
+        key = ('scripts/client/Account.py', '_update')
+        original = ui.TARGETS[key]
+        ui.TARGETS[key] = (original[0], hashlib.sha256(b'unit-test-source').hexdigest())
+        try:
+            frame = self.frame(key, {'diff': {'rev': 2, 'prevRev': 1}, 'self': object()})
+            frame.f_back = None
+            with mock.patch.object(ui, 'observe', side_effect=ValueError('native ammunition dictionary bound')):
+                namespace['profile_calls'](frame, 'return', None)
+            self.assertEqual([event for event, _ in self.events], ['p09d_trace_error', 'native_account_call'])
+            self.assertEqual(self.events[0][1]['reason'], 'native ammunition dictionary bound')
+            self.assertTrue(ui._binding.active)
+            self.assertTrue(ui._observer_disabled)
+        finally:
+            ui.TARGETS[key] = original
 
     def test_bounded_trace_signals_truncation_once(self):
         ui._events = ui.MAX_EVENTS
@@ -402,8 +462,10 @@ class ObserverTests(unittest.TestCase):
             self.assertEqual(self.events[0][1]['arguments'], args)
             self.assertNotIn('never_log', self.events[0][1])
             frame.f_locals['arr'] = args + [0]
-            with self.assertRaises(ValueError):
-                ui.observe_profile(frame, 'return')
+            ui.observe_profile(frame, 'return')
+            self.assertEqual(self.events[-1][0], 'p09d_trace_error')
+            self.assertTrue(self.events[-1][1]['observer_disabled'])
+            self.assertFalse(self.events[-1][1]['native_acceptance_complete'])
         finally:
             ui.TARGETS[key] = original
 

@@ -668,12 +668,19 @@ class PoolStore(ResultsStore):
         if self.pool_active(): self._ensure_pool_rows(account)
         return super()._save_crew_projection(account, revision, before)
 
-    def _validate_layout(self, layout):
+    def _validate_layout(self, layout, *, _verified_owned=None):
         if not self.pool_active(): return super()._validate_layout(layout)
         shells, equipment = self._layout_sections(layout)
         require(shells and equipment == [0] * 6, "INVALID_INPUT")
         require(layout[0] in (3, 4, 5), "SHOP_REVISION_MISMATCH")
-        owned = next((r for r in self._research(self.pool_account)["vehicles"] if r["native_id"] == layout[1]), None)
+        # layouts() already verified this exact account's research and the set
+        # of native IDs in the same SQLite snapshot. Never retain that map past
+        # the call, and do not use it for an independent command validation.
+        if _verified_owned is None:
+            owned = next((r for r in self._research(self.pool_account)["vehicles"] if r["native_id"] == layout[1]), None)
+        else:
+            require(self.connection.in_transaction, "POOL_TRANSACTION_REQUIRED")
+            owned = _verified_owned.get(layout[1])
         require(owned is not None, "UNKNOWN_VEHICLE")
         require(owned["vehicle_id"] in self.registry.by_vehicle, "UNSUPPORTED_MOUNT")
         mount = self.mounts[self.mount_id_of(owned)]
@@ -717,7 +724,12 @@ class PoolStore(ResultsStore):
         for native, raw in rows:
             require(type(raw) is str and len(raw) <= 128, "CORRUPT_STORE")
             try:
-                layout = json.loads(raw); mount, counts = self._validate_layout([5, native, len(layout), *layout, 6, 0, 0, 0, 0, 0, 0])
+                layout = json.loads(raw)
+                request = [5, native, len(layout), *layout, 6, 0, 0, 0, 0, 0, 0]
+                if self.connection.in_transaction:
+                    mount, counts = self._validate_layout(request, _verified_owned=owned)
+                else:
+                    mount, counts = self._validate_layout(request)
             except (ValueError, TypeError, TransactionError) as error: raise TransactionError("CORRUPT_STORE") from error
             require(ammo[owned[native]["vehicle_inventory_id"]]["loaded"] == counts, "CORRUPT_STORE")
             result[native] = layout

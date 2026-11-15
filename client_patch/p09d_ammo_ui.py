@@ -21,10 +21,14 @@ MOUNTS = {
 SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/TechnicalMaintenance.py'
 NOTICE = u'Ремонт и автоматическое обслуживание пока недоступны.'
 MAX_EVENTS = 4096
+# Shell types are shared across the garage: the verified 0.9.1 inventory has
+# 569 types. This is independent of the 256-owned-vehicle bound.
+MAX_SHELL_DEPOT_TYPES = 1024
 _binding = None
 _record = None
 _events = 0
 _truncated = False
+_observer_disabled = False
 _default_reload = None
 
 _RELOAD_NAME = 'tryToLoadDefaultShellsLayout'
@@ -206,7 +210,7 @@ def observe():
     layouts = _mapping(_mapping(inv.get('shellsLayout', {}), owned).get(item.invID, {}), 8)
     layout = layouts.get((mount['turret_cd'], mount['gun_cd']))
     layout = None if layout is None else flat(layout, signed=True)
-    depot = _mapping(g_itemsCache.items.inventory.getCacheValue(10, {}), crew_vehicles.owned_bound(64))
+    depot = _mapping(g_itemsCache.items.inventory.getCacheValue(10, {}), MAX_SHELL_DEPOT_TYPES)
     shell_items = item.shells
     if type(shell_items) not in (tuple, list) or len(shell_items) != len(mount['compatible_shells']):
         raise ValueError('native GUI shell collection differs from the mount')
@@ -314,7 +318,7 @@ class _LifecycleError(RuntimeError):
 
 
 def init(record, enabled=False, module_reload=False):
-    global _binding, _record, _events, _truncated, _default_reload
+    global _binding, _record, _events, _truncated, _observer_disabled, _default_reload
     if enabled is not True:
         raise ValueError('explicit isolated ammunition service enable required')
     if _binding is not None or not callable(record):
@@ -323,7 +327,7 @@ def init(record, enabled=False, module_reload=False):
     from gui import SystemMessages
     import hangar_capabilities
     _audit_class(TechnicalMaintenance)
-    _record, _events, _truncated = record, 0, False
+    _record, _events, _truncated, _observer_disabled = record, 0, False, False
     _binding = _Bindings(TechnicalMaintenance, SystemMessages, hangar_capabilities, record, selection)
     try:
         _binding.install()
@@ -355,7 +359,28 @@ def fini():
 
 
 def observe_profile(frame, phase):
-    """Call from the existing profiler, which owns profiling lifecycle/errors."""
+    """Isolate diagnostic failure from the active profiler and game callbacks."""
+    global _observer_disabled
+    if _observer_disabled or _binding is None or not _binding.active or _record is None:
+        return
+    try:
+        _observe_profile(frame, phase)
+    except Exception as error:
+        # A diagnostic snapshot or source-pin error must not escape sys.setprofile:
+        # that would disable every profile hook, including unrelated diagnostics.
+        # Keep the UI policy installed; mark this observer incomplete and stop it.
+        _observer_disabled = True
+        known = ('native ammunition dictionary bound', 'native ammunition observer source mismatch')
+        message = str(error)
+        code = getattr(frame, 'f_code', None)
+        _record('p09d_trace_error', error_type=type(error).__name__,
+                reason=message if message in known else 'unclassified',
+                method=getattr(code, 'co_name', None), phase=phase,
+                observer_disabled=True, native_acceptance_complete=False)
+
+
+def _observe_profile(frame, phase):
+    """Collect bounded observations; only observe_profile handles failures."""
     global _events, _truncated
     if _binding is None or not _binding.active or _record is None:
         return

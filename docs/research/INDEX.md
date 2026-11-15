@@ -34,6 +34,8 @@
 ## Общие (клиент, протокол, ресурсы, решения)
 
 - [KV1S_VISUAL_UPSCALE.md](KV1S_VISUAL_UPSCALE.md) — принятый владельцем локальный цветовой пробник КВ-1С; интеграция и перенос материалов/HD не проверены
+- [VISUAL02_SOVIET_TEXTURES.md](VISUAL02_SOVIET_TEXTURES.md) — 85 советских записей, 60 достижимы из МС-1 статически; связи моделей и 98 цветовых DDS, форматы и альфа верхнего mip, исключения; runtime и массовый апскейл NOT_RUN
+- [VISUAL03_ALPHA_MIP.md](VISUAL03_ALPHA_MIP.md) — опытная партия МС-1 и СУ-8: альфа всех mip, сохранение блоков и откат; владелец проверил обе машины в бою, гусеницы не мерцают
 - [BUILD_LEGACY_ENTRYPOINTS.md](BUILD_LEGACY_ENTRYPOINTS.md) — legacy gateway3/physics builds и actual stock+extended IPC7 PASS; native/full legacy NOT_RUN
 - [P04W_SHELL_DEPOT_DISPLAY.md](P04W_SHELL_DEPOT_DISPLAY.md) — шесть original ammo refs/hidden purchases, actual Python9+Web11, native Warehouse NOT_RUN
 - [P04M_GARAGE_FRESH_PUBLICATION.md](P04M_GARAGE_FRESH_PUBLICATION.md) — known reply/readonly Fresh/atomic delta, actual Loss4+Hold5, full1619; native NOT_RUN
@@ -81,6 +83,8 @@
 - [P01_BOOTSTRAP_AND_NATIVE_LOGIN.md](P01_BOOTSTRAP_AND_NATIVE_LOGIN.md) — P01: instance mutex, действующий Python и настоящий native login/rejection
 
 ## P02 вход, шлюз, ангар
+
+- [HANGAR_717_LATENCY.md](HANGAR_717_LATENCY.md) — задержка ангара: candidate, native до/после для семи действий и проверка состояния; полный Python-gate NOT_RUN
 
 - [P02_ACCOUNT_READY.md](P02_ACCOUNT_READY.md) — P02 — минимальный Account: lifecycle и начальная синхронизация
 - [P02_ACCOUNT_SWITCH.md](P02_ACCOUNT_SWITCH.md) — P02 — смена двух аккаунтов в одном клиентском процессе
