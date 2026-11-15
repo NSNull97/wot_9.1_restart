@@ -10,7 +10,7 @@ from contextlib import closing
 from pathlib import Path
 from tools.content0_s5a_stand import ROOT,backup_database,check_ports,json_unique,no_link,read_stable,write_json
 from tools.content0_s5a_stand_lock import StandLock
-from tools.content0_s5a_process_identity import process_identity
+from tools.content0_s5a_process_identity import current_boot_filetime,process_identity
 from tools.content0_s5a_bind_clean_db import verify_clean_db
 from tools.content0_s5a_provenance import verified_owner
 
@@ -103,6 +103,24 @@ def verify_sources(stand,doc,gateway,receipt,foliage_policy):
                           doc['source_pins']['foliage_sha256'],foliage_policy)
 
 def no_own_processes(stand):
+    boot_time=None
+
+    def predates_boot(created):
+        nonlocal boot_time
+        if type(created) is not int or created<=0:return False
+        if boot_time is None:boot_time=current_boot_filetime()
+        return created<boot_time
+
+    def inspect_pid(pid,created):
+        try:return process_identity(pid)
+        except OSError as error:
+            code=getattr(error,'winerror',None)
+            if code==87:return None
+            # An inaccessible PID may have been reused. A process from a
+            # previous boot cannot survive to own it in this boot.
+            if predates_boot(created):return None
+            raise
+
     root=stand/'launches'
     if root.exists():
         for receipt in root.glob('*/processes.json'):
@@ -110,12 +128,11 @@ def no_own_processes(stand):
             if data.get('status') not in ('STARTING','FAILED_STOPPED_OWN_CHILDREN','RUNNING_NOT_NATIVE_VERIFIED'):raise ValueError('unknown process receipt status')
             for row in data['processes']:
                 if not isinstance(row.get('pid'),int):raise ValueError('process receipt lacks PID')
-                try:actual=process_identity(row['pid'])
-                except OSError as e:
-                    if getattr(e,'winerror',None)==87:continue
-                    raise
-                if not isinstance(row.get('creation_filetime'),int):raise ValueError('live process receipt lacks creation identity')
-                if actual['creation_filetime']==row['creation_filetime']:raise ValueError('own stand process remains running')
+                created=row.get('creation_filetime')
+                actual=inspect_pid(row['pid'],created)
+                if actual is None:continue
+                if not isinstance(created,int):raise ValueError('live process receipt lacks creation identity')
+                if actual['creation_filetime']==created:raise ValueError('own stand process remains running')
             gateway=next((row for row in data['processes'] if row.get('kind')=='gateway'),None)
             if gateway is not None:
                 if not isinstance(gateway.get('creation_filetime'),int):
@@ -125,12 +142,11 @@ def no_own_processes(stand):
                 else:gateway_created=gateway['creation_filetime']
                 stdout=Path(gateway['stdout']);no_link(stdout,stand)
                 for match in re.finditer(rb'BW01_WORKER_STARTED pid=(\d+)',read_stable(stdout)):
-                    try:worker=process_identity(int(match.group(1)))
-                    except OSError as e:
-                        if getattr(e,'winerror',None)==87:continue
-                        raise
+                    worker=inspect_pid(int(match.group(1)),gateway_created)
+                    if worker is None:continue
                     if gateway_created is None:raise ValueError('live worker without gateway creation identity')
-                    if worker['image'].lower()==str(Path(gateway['exe']).resolve()).lower() and worker['creation_filetime']>=gateway_created:
+                    if (worker['image'].lower()==str(Path(gateway['exe']).resolve()).lower()
+                        and worker['creation_filetime']>=gateway_created and not predates_boot(gateway_created)):
                         raise ValueError('own battle worker remains running')
     query="Get-CimInstance Win32_Process -Filter \"Name='WorldOfTanks.exe'\" | Select-Object ProcessId,ExecutablePath | ConvertTo-Json -Compress"
     completed=subprocess.run(['powershell','-NoProfile','-Command',query],check=True,capture_output=True,text=True,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))

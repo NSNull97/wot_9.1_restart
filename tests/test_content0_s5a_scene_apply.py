@@ -43,7 +43,7 @@ class SceneTests(unittest.TestCase):
                     if pid==11:raise Gone()
                     if pid==12:return {'creation_filetime':101,'image':str(exe)}
                     raise AssertionError(pid)
-                with patch.object(apply,'process_identity',side_effect=identity):
+                with patch.object(apply,'process_identity',side_effect=identity),patch.object(apply,'current_boot_filetime',return_value=100):
                     with self.assertRaisesRegex(ValueError,'worker remains'):apply.no_own_processes(stand)
 
     def test_legacy_receipt_lacking_creation_refuses_live_pid(self):
@@ -52,6 +52,31 @@ class SceneTests(unittest.TestCase):
             (launch/'processes.json').write_text(json.dumps({'status':'FAILED_STOPPED_OWN_CHILDREN','processes':[{'kind':'domain','pid':11}]}))
             with patch.object(apply,'process_identity',return_value={'creation_filetime':101,'image':'irrelevant'}):
                 with self.assertRaisesRegex(ValueError,'lacks creation identity'):apply.no_own_processes(stand)
+
+    def test_inaccessible_pid_requires_proof_of_previous_boot(self):
+        class Denied(PermissionError):winerror=5
+        class Unqueryable(OSError):winerror=31
+        class Gone(OSError):winerror=87
+
+        for denied_pid in (21,22):
+            for created in (99,100,101,0,None):
+                with self.subTest(denied_pid=denied_pid,created=created),TemporaryDirectory() as raw:
+                    stand=Path(raw);launch_dir=stand/'launches'/'old';launch_dir.mkdir(parents=True)
+                    log=launch_dir/'gateway.stdout.log';log.write_text('BW01_WORKER_STARTED pid=22\n')
+                    gateway={'kind':'gateway','pid':21,'stdout':str(log),'exe':str(stand/'gateway.exe')}
+                    if created is not None:gateway['creation_filetime']=created
+                    (launch_dir/'processes.json').write_text(json.dumps({'status':'FAILED_STOPPED_OWN_CHILDREN','processes':[gateway]}))
+
+                    def identity(pid):
+                        if pid==denied_pid:raise (Denied if pid==21 else Unqueryable)()
+                        raise Gone()
+
+                    with patch.object(apply,'process_identity',side_effect=identity),\
+                         patch.object(apply,'current_boot_filetime',return_value=100),\
+                         patch.object(apply.subprocess,'run',return_value=subprocess.CompletedProcess([],0,stdout='')):
+                        if created==99:apply.no_own_processes(stand)
+                        else:
+                            with self.assertRaises(Denied if denied_pid==21 else Unqueryable):apply.no_own_processes(stand)
 
     def test_scene_run_junction_or_symlink_refused_before_marker(self):
         with TemporaryDirectory() as raw:
