@@ -114,6 +114,32 @@ fn foliage_project_volume_affects_actual_world_rays_only_when_opted_in() {
 }
 
 #[test]
+fn stacked_foliage_changes_the_actual_spotting_decision_before_and_after_fire() {
+    let now = Instant::now();
+    let bushes = [([149.0, 2.0, 0.0], 6.0, 0.2), ([160.0, 2.0, 0.0], 6.0, 0.2)];
+    for diagnostics in [false, true] {
+        let mut world = fixture(now);
+        world.map = crate::map_profile091::MapId::from_asset("02_malinovka").unwrap();
+        let rules = &mut world.original_spotting.as_mut().unwrap().rules;
+        rules.camouflage = true;
+        rules.diagnostics = diagnostics;
+        rules.retention_ms = 0;
+        world.actors[1].position = [165.0, 0.0, 0.0];
+        world.foliage = Some(Arc::new(super::super::foliage::test_stacked_fixture(&bushes[..1])));
+        world.refresh_original_spotting(now).unwrap();
+        assert!(world.own_sightings(0).unwrap()[1]);
+        world.foliage = Some(Arc::new(super::super::foliage::test_stacked_fixture(&bushes)));
+        world.refresh_original_spotting(now + STEP).unwrap();
+        assert!(!world.own_sightings(0).unwrap()[1]);
+        world.actors[1].camouflage_fired_at = Some(now + STEP);
+        world.refresh_original_spotting(now + STEP * 2).unwrap();
+        assert!(world.own_sightings(0).unwrap()[1]);
+        world.refresh_original_spotting(now + STEP * 51).unwrap();
+        assert!(!world.own_sightings(0).unwrap()[1]);
+    }
+}
+
+#[test]
 fn foliage_world_binding_refuses_wrong_map_missing_opt_in_and_large_roster() {
     let now=Instant::now();let foliage=Arc::new(super::super::foliage::test_fixture_at([0.;3],1.));
     let mut world=World::new_for_roster(717,now,crate::map_profile091::MapId::Karelia,2).unwrap();

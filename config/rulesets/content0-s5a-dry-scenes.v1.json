@@ -123,6 +123,19 @@
       "bush_ellipsoid_ray_hits": 14,
       "projectile_aabb_ray_hits": 0
     },
+    "bush142": {
+      "classification": "INFERRED_NOT_JOLT_OR_NATIVE_VERIFIED",
+      "observer": [-432.89163961, 8.06733763, 312.72611410],
+      "target": [-378.31498212, 8.08240306, 443.81916677],
+      "distance_3d_m": 142.0,
+      "terrain_sample_clearance_min_m": 0.251,
+      "projectile_aabb_ray_hits": 0,
+      "predicted_rays": 14,
+      "predicted_bushes_per_ray": 2,
+      "predicted_target_near_bush": {"chunk": [-4, 4], "speedtree_index": 3, "ray_exit_to_target_m": [6.60, 11.47]},
+      "predicted_target_far_bush": {"chunk": [-5, 3], "speedtree_index": 6, "ray_exit_to_target_m": [68.71, 74.02]},
+      "expected": "Net on, ally isolated: project v1 idle foliage 0.20 and direct sight, project v2 idle foliage 0.40 and hidden, v2 after accepted target shot foliage 0.25 and direct sight. Predicted before Jolt settling."
+    },
     "assist6": {
       "observer": [
         343.75,
@@ -220,5 +233,12 @@
       }
     ],
     "description": "test_lab only; server takes aim point from committed target pose, requires committed team visibility and shooter direct=false both at aim and fire; actual ballistic damage NOT_RUN"
+  },
+  "bush_shot": {
+    "classification": "PROJECT_TEST_LAB_NOT_HISTORICAL",
+    "events": [
+      {"tick": 120, "slot": 1, "action": "shoot"}
+    ],
+    "description": "Only the stationary bush142 target fires. Capture direct sight and each ray's foliage before, during and after the authoritative shot window."
   }
 }

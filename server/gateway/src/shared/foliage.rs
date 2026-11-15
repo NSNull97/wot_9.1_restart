@@ -1,9 +1,7 @@
 //! Bounded reader and segment query for project-calibrated Malinovka bushes.
 //!
-//! This is not an original-server law and is not wired into spotting. Source
-//! transforms come from #717; the ellipsoids and coefficients are explicitly
-//! project calibration. Each query reports individual intersections only:
-//! stacking, firing, destruction, and line-of-sight policy remain undecided.
+//! Source transforms come from #717. The ellipsoids, coefficients and
+//! spotting policies are project calibration.
 use std::{collections::{BTreeMap, BTreeSet}, fs::File, io::{self, Read}, path::Path};
 use serde::de::{Deserialize, Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
 use serde_json::Value;
@@ -17,6 +15,9 @@ const MAX_COORD: f64 = 10_000.;
 const MAX_EXTENT: f64 = 1000.;
 const MIN_DETERMINANT: f64 = 1e-8;
 const SCHEMA: &str = "content0-s5a-malinovka-bush-volumes.v1";
+const STACKED_SCHEMA: &str = "content0-s5a-malinovka-bush-volumes.v2";
+const STACKED_CONTRACT: &str = "project v2: sum crossed shrubs; omit observer-near shrubs; while firing add only the strongest target-near shrub after fire attenuation";
+const OBSERVER_NEAR_METRES: f64 = 15.0;
 const CAL_SCHEMA: &str = "content0-s5a-malinovka-bush-calibration.v1";
 const MAP_SHA: &str = "bcefe13bd0a82916292075c976210770fea2d7e2cef81ec2fdaea9b427b197a0";
 const SHARED_SHA: &str = "11b3dd86eef85eb2128c78ec993d259b3f5c1fb187b0ce061f79088b68350025";
@@ -89,8 +90,19 @@ fn sub(a:Point,b:Point)->Point {std::array::from_fn(|i|a[i]-b[i])}
 
 #[derive(Clone, Debug)]
 struct Volume { chunk:[i32;2], index:u32, resource:String, coefficient:f64, center:Point, extents:Point, inverse:[Point;3] }
+impl Volume {
+    fn interval(&self, start: Point, end: Point, direction: Point) -> Option<(f64, f64)> {
+        if !aabb_intersects(start, end, self.center, self.extents) {
+            return None;
+        }
+        let offset = sub(start, self.center);
+        unit_segment(self.inverse.map(|row| dot(row, offset)), self.inverse.map(|row| dot(row, direction)))
+    }
+}
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Policy { Strongest, Stacked }
 #[derive(Clone, Debug)]
-pub struct Foliage { pub calibration_sha256:String, pub source_sha256:String, raw:Vec<u8>, volumes:Vec<Volume>, fire_near_m:f64, fire_multiplier:f64 }
+pub struct Foliage { pub calibration_sha256:String, pub source_sha256:String, raw:Vec<u8>, volumes:Vec<Volume>, fire_near_m:f64, fire_multiplier:f64, policy:Policy }
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hit { pub chunk:[i32;2], pub speedtree_index:u32, pub resource:String,
     pub concealment_additive:f64, pub t_enter:f64, pub t_exit:f64 }
@@ -113,7 +125,12 @@ impl Foliage {
         let Strict(doc)=serde_json::from_slice(raw).map_err(|_|bad("foliage JSON"))?;
         fields(&doc,&["schema","map","classification","calibration_schema","calibration_sha256","map_package_pin",
             "shared_package_pin","selected_resource_pins","chunk_pins","geometry_contract","aabb_contract","effect_contract","instances","fire_near_distance_m","fire_near_multiplier"])?;
-        if doc["schema"]!=SCHEMA || doc["map"]!="02_malinovka" || doc["classification"]!="PROJECT_CALIBRATION_NOT_HISTORICAL"
+        let policy = match doc["schema"].as_str() {
+            Some(SCHEMA) => Policy::Strongest,
+            Some(STACKED_SCHEMA) if doc["effect_contract"] == STACKED_CONTRACT => Policy::Stacked,
+            _ => return Err(bad("foliage policy identity")),
+        };
+        if doc["map"]!="02_malinovka" || doc["classification"]!="PROJECT_CALIBRATION_NOT_HISTORICAL"
             || doc["calibration_schema"]!=CAL_SCHEMA {return Err(bad("foliage identity"));}
         for key in ["geometry_contract","aabb_contract","effect_contract"] {text(&doc[key],512)?;}
         let calibration_sha256=text(&doc["calibration_sha256"],64)?;
@@ -151,7 +168,7 @@ impl Foliage {
             let v=Volume{chunk:c,index,resource:resource.to_owned(),coefficient,center,extents,inverse};
             if volumes.insert((c,index),v).is_some() {return Err(bad("foliage duplicate instance"));}
         }
-        Ok(Self{calibration_sha256:calibration_sha256.to_owned(),source_sha256:format!("{:x}",Sha256::digest(raw)),raw:raw.to_vec(),volumes:volumes.into_values().collect(),fire_near_m,fire_multiplier})
+        Ok(Self{calibration_sha256:calibration_sha256.to_owned(),source_sha256:format!("{:x}",Sha256::digest(raw)),raw:raw.to_vec(),volumes:volumes.into_values().collect(),fire_near_m,fire_multiplier,policy})
     }
     pub fn len(&self)->usize {self.volumes.len()}
     /// Closed segment, including endpoints/tangencies and a point inside a
@@ -159,35 +176,50 @@ impl Foliage {
     /// invalid query returns an error instead of partial results.
     pub fn intersections(&self,start:Point,end:Point)->io::Result<Vec<Hit>> {
         if start.into_iter().chain(end).any(|v|!v.is_finite() || v.abs()>MAX_COORD) {return Err(bad("foliage query bounds"));}
+        let direction = sub(end, start);
         let mut hits=Vec::new();
         for v in &self.volumes {
-            if !aabb_intersects(start,end,v.center,v.extents) {continue;}
-            let p=sub(start,v.center);let d=sub(end,start);
-            let u=v.inverse.map(|r|dot(r,p));let delta=v.inverse.map(|r|dot(r,d));
-            if let Some((t_enter,t_exit))=unit_segment(u,delta) {
+            if let Some((t_enter,t_exit))=v.interval(start, end, direction) {
                 hits.push(Hit{chunk:v.chunk,speedtree_index:v.index,resource:v.resource.clone(),concealment_additive:v.coefficient,t_enter,t_exit});
             }
         }
         Ok(hits)
     }
-    /// Project v1: strongest crossed volume. While the target is in its
-    /// server fire window, only shrubs whose ray-exit point is within the
-    /// calibrated distance of that target control point are attenuated.
+    /// The segment runs from an observer control point to a target point.
+    /// V2 uses the ray entry for the observer and the ray exit for the target.
     pub fn contribution(&self,start:Point,end:Point,fired:bool)->io::Result<f32> {
         if start.into_iter().chain(end).any(|v|!v.is_finite() || v.abs()>MAX_COORD) {return Err(bad("foliage query bounds"));}
-        let d=sub(end,start);let length=dot(d,d).sqrt();let mut best=0_f64;
-        for v in &self.volumes {
-            if !aabb_intersects(start,end,v.center,v.extents) {continue;}
-            let p=sub(start,v.center);let u=v.inverse.map(|r|dot(r,p));let delta=v.inverse.map(|r|dot(r,d));
-            if let Some((_,exit))=unit_segment(u,delta) {
-                // Inclusive project threshold with a small distance-only
-                // tolerance for a boundary derived from quadratic roots.
-                let near=(1.-exit)*length <= self.fire_near_m+1e-9*(1.+length);
-                let effect=if fired && near {v.coefficient*self.fire_multiplier} else {v.coefficient};
-                best=best.max(effect);
+        let direction = sub(end, start);
+        let length = dot(direction, direction).sqrt();
+        // Include a boundary rounded by the quadratic intersection solver.
+        let tolerance = 1e-9 * (1.0 + length);
+        let mut strongest: f64 = 0.0;
+        let mut full_sum: f64 = 0.0;
+        for volume in &self.volumes {
+            let Some((enter, exit)) = volume.interval(start, end, direction) else { continue; };
+            let target_near = fired && (1.0 - exit) * length <= self.fire_near_m + tolerance;
+            match self.policy {
+                Policy::Strongest => {
+                    let effect = if target_near { volume.coefficient * self.fire_multiplier } else { volume.coefficient };
+                    strongest = strongest.max(effect);
+                }
+                Policy::Stacked => {
+                    if enter * length <= OBSERVER_NEAR_METRES + tolerance {
+                        continue;
+                    }
+                    if target_near {
+                        strongest = strongest.max(volume.coefficient);
+                    } else {
+                        full_sum += volume.coefficient;
+                    }
+                }
             }
         }
-        Ok(best as f32)
+        let contribution = match self.policy {
+            Policy::Strongest => strongest,
+            Policy::Stacked => (full_sum + strongest * self.fire_multiplier).min(1.0),
+        };
+        Ok(contribution as f32)
     }
 }
 
@@ -254,7 +286,7 @@ mod tests {
         let det=dot(basis[0],cross(basis[1],basis[2]));
         let inverse=[cross(basis[1],basis[2]).map(|x|x/det),cross(basis[2],basis[0]).map(|x|x/det),cross(basis[0],basis[1]).map(|x|x/det)];
         let v=Volume{chunk:[-2,3],index:1,resource:"fixture".into(),coefficient:0.2,center:[0.;3],extents:[4.,2.4,5_f64.sqrt()],inverse};
-        let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25};
+        let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25,policy:Policy::Strongest};
         let hits=f.intersections([-8.,0.,0.],[8.,0.,0.]).unwrap();
         assert_eq!(hits.len(),1);assert!(hits[0].t_enter<0.5 && hits[0].t_exit>0.5);
         assert!(f.intersections([f64::NAN,0.,0.],[0.;3]).is_err());
@@ -308,6 +340,84 @@ mod tests {
         let boundary=super::test_fixture_at([84.,0.,0.],1.);
         assert!((boundary.contribution(a,b,true).unwrap()-0.05).abs()<1e-6);
     }
+
+    #[test]
+    fn stacked_foliage_combines_distinct_crossings_and_caps_the_sum() {
+        let start = [0.0; 3];
+        let end = [100.0, 0.0, 0.0];
+        let volumes = [([25.0, 0.0, 0.0], 1.0, 0.2), ([50.0, 0.0, 0.0], 1.0, 0.2),
+            ([75.0, 0.0, 0.0], 1.0, 0.2), ([50.0, 5.0, 0.0], 1.0, 0.9)];
+        assert!((test_stacked_fixture(&volumes[..2]).contribution(start, end, false).unwrap() - 0.4).abs() < 1e-6);
+        let stacked = test_stacked_fixture(&volumes);
+        for fired in [false, true] {
+            assert!((stacked.contribution(start, end, fired).unwrap() - 0.6).abs() < 1e-6);
+        }
+        assert_eq!(test_stacked_fixture(&[([40.0, 0.0, 0.0], 1.0, 0.8), ([40.0, 0.0, 0.0], 1.0, 0.7)])
+            .contribution(start, end, false).unwrap(), 1.0);
+    }
+
+    #[test]
+    fn stacked_foliage_fire_keeps_the_strongest_near_and_sums_the_far() {
+        let start = [0.0; 3];
+        let end = [100.0, 0.0, 0.0];
+        let volumes = [([84.0, 0.0, 0.0], 1.0, 0.4), ([95.0, 0.0, 0.0], 1.0, 0.2),
+            ([83.9, 0.0, 0.0], 1.0, 0.2), ([42.0, 0.0, 0.0], 1.0, 0.1)];
+        let near = test_stacked_fixture(&volumes[..2]);
+        assert!((near.contribution(start, end, true).unwrap() - 0.1).abs() < 1e-6);
+        let mixed = test_stacked_fixture(&volumes);
+        assert!((mixed.contribution(start, end, false).unwrap() - 0.9).abs() < 1e-6);
+        assert!((mixed.contribution(start, end, true).unwrap() - 0.4).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stacked_foliage_observer_boundary_is_directional_and_independent_of_fire() {
+        let start = [0.0; 3];
+        let end = [100.0, 0.0, 0.0];
+        let volumes = [([16.0, 0.0, 0.0], 1.0, 0.4), ([16.1, 0.0, 0.0], 1.0, 0.2),
+            ([0.0, 0.0, 0.0], 1.0, 0.5)];
+        let stacked = test_stacked_fixture(&volumes);
+        for fired in [false, true] {
+            assert!((stacked.contribution(start, end, fired).unwrap() - 0.2).abs() < 1e-6);
+        }
+        assert_eq!(stacked.contribution(end, start, false).unwrap(), 1.0);
+        assert!((stacked.contribution(end, start, true).unwrap() - 0.325).abs() < 1e-6);
+    }
+
+    #[test]
+    fn foliage_payload_selects_the_declared_policy_and_rejects_mismatched_contract() {
+        let mut document = fixture();
+        document["schema"] = STACKED_SCHEMA.into();
+        assert!(parse_fixture(&document).is_err());
+        document["effect_contract"] = STACKED_CONTRACT.into();
+        let foliage = parse_fixture(&document).unwrap();
+        let now = std::time::Instant::now();
+        let mut sender = crate::bw_wire::Arcs::new(false);
+        let mut receiver = crate::bw_wire::Arcs::new(true);
+        let wire = crate::bw_wire::encode(&foliage, now, &mut sender).unwrap();
+        let decoded: Foliage = crate::bw_wire::decode(&wire, now, &mut receiver).unwrap();
+        assert_eq!(decoded.contribution([-2.0, 0.0, 0.0], [30.0, 0.0, 0.0], false).unwrap(), 0.0);
+        document["schema"] = SCHEMA.into();
+        document["effect_contract"] = "fixture".into();
+        assert_eq!(parse_fixture(&document).unwrap().contribution([-2.0, 0.0, 0.0], [30.0, 0.0, 0.0], false).unwrap(), 0.2);
+    }
+}
+
+#[cfg(test)]
+pub(super) fn test_stacked_fixture(volumes: &[(Point, f64, f64)]) -> Foliage {
+    let mut document = tests::fixture();
+    document["schema"] = STACKED_SCHEMA.into();
+    document["effect_contract"] = STACKED_CONTRACT.into();
+    let template = document["instances"][0].clone();
+    document["instances"] = Value::Array(volumes.iter().enumerate().map(|(index, &(center, radius, coefficient))| {
+        let mut row = template.clone();
+        row["speedtree_index"] = (index + 1).into();
+        row["center_world"] = serde_json::json!(center);
+        row["basis_world_rows"] = serde_json::json!([[radius, 0., 0.], [0., radius, 0.], [0., 0., radius]]);
+        row["aabb_half_extents_world"] = serde_json::json!([radius, radius, radius]);
+        row["concealment_additive"] = serde_json::json!(coefficient);
+        row
+    }).collect());
+    Foliage::parse(&serde_json::to_vec(&document).unwrap()).unwrap()
 }
 
 #[cfg(test)]

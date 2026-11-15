@@ -15,13 +15,61 @@ from tools.content0_s5a_bind_clean_db import verify_clean_db
 from tools.content0_s5a_provenance import verified_owner
 
 DOC=ROOT/'config/rulesets/content0-s5a-dry-scenes.v1.json'
+SCENES=('field180','field200','bush180','bush142','assist6')
+SCRIPTS=('static','cycle','bush-shot','assist-shot')
+FOLIAGE_SCHEMA_V1='content0-s5a-malinovka-bush-volumes.v1'
+FOLIAGE_SCHEMA_V2='content0-s5a-malinovka-bush-volumes.v2'
+FOLIAGE_STACKED_EFFECT='project v2: sum crossed shrubs; omit observer-near shrubs; while firing add only the strongest target-near shrub after fire attenuation'
+FOLIAGE_STACKED_SHA256='f509e3555cded527c2dabb8d191a51489ae37f5a7123ca0b16971f89ba845e07'
+
+
+def verify_foliage(stand, foliage, previous, legacy_sha, policy):
+    """Verify the configured input and plan an explicit policy switch if requested."""
+    if set(foliage) != {'version','file','sha256'} or type(foliage['version']) is not int or foliage['version'] != 1:
+        raise ValueError('invalid configured foliage binding')
+    active=Path(foliage['file'])
+    if not active.is_absolute():raise ValueError('configured foliage path must be absolute')
+    no_link(active,stand)
+    active_raw=read_stable(active)
+    if hashlib.sha256(active_raw).hexdigest()!=foliage['sha256']:
+        raise ValueError('configured foliage hash mismatch')
+
+    if previous is None:
+        if foliage['sha256']!=legacy_sha:raise ValueError('configured legacy foliage pin mismatch')
+        if policy is None:return None
+        legacy,legacy_raw=active,active_raw
+    else:
+        legacy=Path(previous['legacy_file'])
+        if not legacy.is_absolute():raise ValueError('legacy foliage path must be absolute')
+        no_link(legacy,stand)
+        legacy_raw=read_stable(legacy)
+
+    if hashlib.sha256(legacy_raw).hexdigest()!=legacy_sha:
+        raise ValueError('legacy foliage source hash mismatch')
+    document=json_unique(legacy_raw)
+    if document.get('schema')!=FOLIAGE_SCHEMA_V1:
+        raise ValueError('legacy foliage source schema mismatch')
+    document['schema']=FOLIAGE_SCHEMA_V2
+    document['effect_contract']=FOLIAGE_STACKED_EFFECT
+    stacked_raw=(json.dumps(document,ensure_ascii=False,sort_keys=True,separators=(',',':'),allow_nan=False)+'\n').encode('utf8')
+    if hashlib.sha256(stacked_raw).hexdigest()!=FOLIAGE_STACKED_SHA256:
+        raise ValueError('derived stacked foliage pin mismatch')
+    binding={'schema':FOLIAGE_SCHEMA_V2,'legacy_file':str(legacy),'legacy_sha256':legacy_sha,'sha256':FOLIAGE_STACKED_SHA256}
+    if previous is not None:
+        binding['file']=str(active)
+        if previous!=binding or foliage['sha256']!=FOLIAGE_STACKED_SHA256 or active_raw!=stacked_raw:
+            raise ValueError('active stacked foliage receipt mismatch')
+    if policy=='legacy':return {'schema':FOLIAGE_SCHEMA_V1,'file':str(legacy),'sha256':legacy_sha},None
+    return binding,stacked_raw if previous is None else None
 
 def make_scenario(document,name,net,ally,script):
     if document.get('schema')!='content0-s5a-dry-scenes.v1' or document.get('classification')!='INFERRED_NOT_JOLT_OR_NATIVE_VERIFIED' or document.get('map')!='02_malinovka':raise ValueError('scene document identity')
-    if name not in ('field180','field200','bush180','assist6') or type(net) is not bool or ally not in ('team','isolated') or script not in ('static','cycle','assist-shot'):raise ValueError('explicit scene choices required')
+    if name not in SCENES or type(net) is not bool or ally not in ('team','isolated') or script not in SCRIPTS:raise ValueError('explicit scene choices required')
     if name=='assist6':
         if not net or ally!='team' or script!='assist-shot':raise ValueError('assist6 requires net on, team ally, and assist-shot')
     elif script=='assist-shot':raise ValueError('assist-shot requires assist6')
+    if (name=='bush142' and script not in ('static','bush-shot')) or (script=='bush-shot' and name!='bush142'):
+        raise ValueError('bush142 requires static or bush-shot; bush-shot requires bush142')
     scene=document['scenes'][name];common=document['common_positions'];positions=[scene['observer'],scene['target'],common['ally' if ally=='team' else 'ally_isolated'],common['enemy_2']]
     yaw=[document['yaw_observer_and_ally_rad'],document['yaw_enemies_rad'],document['yaw_observer_and_ally_rad'],document['yaw_enemies_rad']]
     kinds=['human','china-Ch17_WZ131_1_WZ132','france-AMX_13_75','usa-T71'];seats=[]
@@ -33,26 +81,26 @@ def make_scenario(document,name,net,ally,script):
         for previous in seats:
             if math.hypot(position[0]-previous['position'][0],position[2]-previous['position'][2])<10:raise ValueError('overlapping seats')
         seats.append({'kind':kinds[i],'position':position,'yaw':orientation,'net':False if i==0 else net,'crew_percent':None if i==0 else 100})
-    events=[] if script=='static' else copy.deepcopy(document['assist_shot']['events'] if script=='assist-shot' else document['scripted_cycle']['events'])
+    event_key={'cycle':'scripted_cycle','bush-shot':'bush_shot','assist-shot':'assist_shot'}.get(script)
+    events=[] if event_key is None else copy.deepcopy(document[event_key]['events'])
     expected=[{'tick':120,'slot':1,'action':'forward'},{'tick':130,'slot':1,'action':'stop'},{'tick':240,'slot':1,'action':'left'},{'tick':250,'slot':1,'action':'stop'},{'tick':360,'slot':1,'action':'shoot'}]
     if script=='cycle' and events!=expected:raise ValueError('unrecognised scripted cycle')
+    if script=='bush-shot' and events!=[{'tick':120,'slot':1,'action':'shoot'}]:raise ValueError('unrecognised bush shot')
     if script=='assist-shot' and events!=[{'tick':40,'slot':4,'action':'aim_target','target_slot':1},{'tick':100,'slot':4,'action':'shoot_shared','target_slot':1}]:raise ValueError('unrecognised assist script')
     return {'version':1,'map':'02_malinovka','seats':seats,'events':events}
 
-def verify_sources(stand,doc):
-    gateway=json_unique(read_stable(stand/'gateway.json'))
-    foliage=gateway.get('foliage_v1',{})
-    if foliage.get('sha256')!=doc['source_pins']['foliage_sha256']:raise ValueError('configured foliage pin mismatch')
+def verify_sources(stand,doc,gateway,receipt,foliage_policy):
     files={'terrain_vertices_sha256':stand/'resources/evidence/20261020-maps01/final01/packages/02_malinovka/terrain/terrain.vertices.f32',
         'physics_manifest_sha256':stand/'resources/evidence/20261020-maps01/final01/packages/02_malinovka/physics/manifest.json',
         'projectile_manifest_sha256':stand/'evidence/20261020-maps01/final01/packages/02_malinovka/projectile/manifest.json',
-        'foliage_sha256':Path(foliage['file']),
         'camouflage_rules_sha256':ROOT/'config/rulesets/content0-s5a-camouflage.v1.json',
         'spotting_rules_sha256':ROOT/'config/rulesets/p07b-original-no-camo.v1.json'}
     for name,path in files.items():
         if name.endswith('rules_sha256'):no_link(path,ROOT)
         else:no_link(path,stand)
         if hashlib.sha256(read_stable(path)).hexdigest()!=doc['source_pins'][name]:raise ValueError('scene source pin mismatch: '+name)
+    return verify_foliage(stand,gateway.get('foliage_v1',{}),receipt.get('stacked_foliage'),
+                          doc['source_pins']['foliage_sha256'],foliage_policy)
 
 def no_own_processes(stand):
     root=stand/'launches'
@@ -93,7 +141,11 @@ def no_own_processes(stand):
             if Path(row['ExecutablePath']).resolve().is_relative_to(client_root):raise ValueError('own client remains running')
 
 def main():
-    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--stand',required=True,type=Path);parser.add_argument('--scene',required=True,choices=('field180','field200','bush180','assist6'));parser.add_argument('--net',required=True,choices=('on','off'));parser.add_argument('--ally',required=True,choices=('team','isolated'));parser.add_argument('--script',required=True,choices=('static','cycle','assist-shot'));args=parser.parse_args()
+    parser=argparse.ArgumentParser(description=__doc__);parser.add_argument('--stand',required=True,type=Path);parser.add_argument('--scene',required=True,choices=SCENES);parser.add_argument('--net',required=True,choices=('on','off'));parser.add_argument('--ally',required=True,choices=('team','isolated'));parser.add_argument('--script',required=True,choices=SCRIPTS)
+    foliage_options=parser.add_mutually_exclusive_group()
+    foliage_options.add_argument('--stacked-foliage',dest='foliage_policy',action='store_const',const='stacked',help='activate the verified v2 foliage on this stopped stand')
+    foliage_options.add_argument('--legacy-foliage',dest='foliage_policy',action='store_const',const='legacy',help='use the verified v1 foliage with a fresh backup of the current game database')
+    args=parser.parse_args()
     local=(ROOT/'local').resolve(strict=True);no_link(args.stand,local);stand=args.stand.resolve(strict=True)
     if not stand.is_relative_to(local/'stands'):raise ValueError('stand outside checkout')
     snapshot=json_unique(read_stable(stand/'snapshot-receipt.json'))
@@ -109,9 +161,10 @@ def main():
             if hashlib.sha256(raw).hexdigest()!=receipt['config_sha256'][name]:raise ValueError('configuration pin mismatch')
         profile_raw=read_stable(stand/'battle-profiles.json')
         if hashlib.sha256(profile_raw).hexdigest()!=receipt['battle_profiles_sha256']:raise ValueError('battle profile pin mismatch')
-        document_raw=read_stable(DOC);document=json_unique(document_raw);verify_sources(stand,document)
-        scenario=make_scenario(document,args.scene,args.net=='on',args.ally,args.script)
         domain,bridge,gateway=[json_unique(originals[n]) for n in ('domain','bridge','gateway')]
+        document_raw=read_stable(DOC);document=json_unique(document_raw)
+        foliage=verify_sources(stand,document,gateway,receipt,args.foliage_policy)
+        scenario=make_scenario(document,args.scene,args.net=='on',args.ally,args.script)
         source=Path(domain['database']);no_link(source,stand)
         if Path(bridge['game_database']).resolve()!=source.resolve() or not source.is_file():raise ValueError('database binding mismatch')
         lineage=verified_owner(stand,source,receipt['operator'],receipt,allow_legacy_scene=True)
@@ -132,6 +185,17 @@ def main():
         domain['database']=str(backup);bridge['game_database']=str(backup);gateway['fixed_scout_v1']=scenario
         gateway['battle_players']=len(scenario['seats']);gateway['connection_capacity']=len(scenario['seats'])
         gateway['bots']['kinds']=list(dict.fromkeys(s['kind'] for s in scenario['seats'][1:]))
+        if foliage is not None:
+            binding,stacked_raw=foliage
+            if stacked_raw is not None:
+                foliage_path=dest/'foliage-stacked.v2.json';no_link(foliage_path,stand)
+                with foliage_path.open('xb') as file:file.write(stacked_raw)
+                if hashlib.sha256(read_stable(foliage_path)).hexdigest()!=binding['sha256']:
+                    raise ValueError('written stacked foliage hash mismatch')
+                binding['file']=str(foliage_path)
+            gateway['foliage_v1']={'version':1,'file':binding['file'],'sha256':binding['sha256']}
+            if binding['schema']==FOLIAGE_SCHEMA_V2:receipt['stacked_foliage']=binding
+            else:receipt.pop('stacked_foliage',None)
         for name,value in (('domain',domain),('bridge',bridge),('gateway',gateway)):
             tmp=stand/(name+'.scene-next.json')
             if tmp.exists():raise ValueError('scene temporary already exists')
@@ -140,6 +204,7 @@ def main():
         receipt['operator_game_db_sha256']=backup_result['sha256']
         receipt['scene']={'schema':document['schema'],'document_sha256':hashlib.sha256(document_raw).hexdigest(),'name':args.scene,'net':args.net,'ally':args.ally,'script':args.script,'classification':'INFERRED_NOT_JOLT_OR_NATIVE_VERIFIED','update_id':new_id}
         proof={'status':'PREPARED_NOT_RUN','scene':receipt['scene'],'scenario':scenario,'backup':backup_result,'prior_database':str(source),'backup_provenance':'OBSERVED_SQLITE_BACKUP_NO_ATOMIC_SOURCE_WAL_DIGEST','new_database':str(backup),'source_pins':document['source_pins'],'config_sha256':receipt['config_sha256'],'native':'NOT_RUN','new_run_required':True,'client_reprepare_required':True,'invocation':sys.argv}
+        if foliage is not None:proof['foliage']=binding
         write_json(dest/'scene-receipt.json',proof)
         provenance={'schema':'content0-s5a-scene-operator.v1','account_id':receipt['operator'],'game_database':str(backup),'backup_sha256':backup_result['sha256'],'integrity_check':'ok','foreign_keys':'ok','ownership':'single_verified','scene_receipt_sha256':hashlib.sha256(read_stable(dest/'scene-receipt.json')).hexdigest(),**lineage}
         write_json(dest/'receipt.json',provenance)
