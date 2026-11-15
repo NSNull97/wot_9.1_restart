@@ -1686,7 +1686,8 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template.world.enable_bots(plan.clone()).map_err(|_|io::Error::other("BOT-01 bots: kinds not bound by the battle profiles or map unsupported"))?;
         if let Some(scenario)=&config.fixed_scout_v1 {
             battle_template.world.enable_fixed_scout(scenario.clone())?;
-            println!("FIXED_SCOUT_BOUND map=02_malinovka seats={} policy=project_test_lab events={}",scenario.seats.len(),scenario.events.len());
+            println!("FIXED_SCOUT_BOUND map={} seats={} policy=project_test_lab events={}",
+                scenario.map.asset(),scenario.seats.len(),scenario.events.len());
         }
         if config.bots_turret_test{
             battle_template.world.enable_bot_turret_test().map_err(|_|io::Error::other("TURPHYS-01 turret test needs mixed ammo and ammo detonation"))?;
