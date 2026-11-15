@@ -247,7 +247,7 @@ impl World {
     pub fn enable_fixed_scout(&mut self,scenario:super::super::fixed_scout::Scenario)->io::Result<()> {
         scenario.validate()?;
         let bots=self.bots.as_mut().ok_or_else(bad)?;
-        if self.started.is_some() || self.map.asset()!="02_malinovka" || self.expected_actors!=scenario.seats.len()
+        if self.started.is_some() || self.map!=scenario.map || self.expected_actors!=scenario.seats.len()
             || bots.plan.human_places!=1 || bots.turret_test || bots.fixed_scout.is_some() || !bots.brains.is_empty()
             || scenario.seats.iter().skip(1).any(|seat|seat.kind.is_none_or(|kind|!bots.plan.kinds.contains(&kind))) {return Err(bad());}
         bots.fixed_scout=Some(scenario);Ok(())

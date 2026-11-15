@@ -2,6 +2,7 @@
 //! Poses are proposed scene inputs, not historical spawns or proof of settling.
 use std::io;
 use super::{team_spawn::Spot,vehicle_profile::VehicleKind};
+use crate::map_profile091::MapId;
 use serde_json::Value;
 
 #[derive(Clone,Debug,PartialEq)]
@@ -17,15 +18,16 @@ impl crate::bw_wire::Wire for Event {
     fn get(r:&mut crate::bw_wire::Dec)->io::Result<Self>{use crate::bw_wire::Wire;Ok(Self{tick:Wire::get(r)?,slot:Wire::get(r)?,action:Wire::get(r)?,target:Wire::get(r)?})}
 }
 #[derive(Clone,Debug,PartialEq)]
-pub(crate) struct Scenario {pub seats:Vec<Seat>,pub events:Vec<Event>}
+pub(crate) struct Scenario {pub map:MapId,pub seats:Vec<Seat>,pub events:Vec<Event>}
 impl crate::bw_wire::Wire for Scenario {
-    fn put(&self,w:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire;self.seats.put(w);self.events.put(w);}
-    fn get(r:&mut crate::bw_wire::Dec)->io::Result<Self>{use crate::bw_wire::Wire;let value=Self{seats:Wire::get(r)?,events:Wire::get(r)?};value.validate()?;Ok(value)}
+    fn put(&self,w:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire;self.map.put(w);self.seats.put(w);self.events.put(w);}
+    fn get(r:&mut crate::bw_wire::Dec)->io::Result<Self>{use crate::bw_wire::Wire;let value=Self{map:Wire::get(r)?,seats:Wire::get(r)?,events:Wire::get(r)?};value.validate()?;Ok(value)}
 }
 fn bad()->io::Error{io::Error::new(io::ErrorKind::InvalidData,"fixed scout scenario invalid")}
 impl Scenario {
     pub(crate) fn parse(v:&Value)->io::Result<Self>{
-        let m=v.as_object().filter(|m|m.len()==4&&m.get("version")==Some(&Value::from(1))&&m.get("map").and_then(Value::as_str)==Some("02_malinovka")).ok_or_else(bad)?;
+        let m=v.as_object().filter(|m|m.len()==4&&m.get("version")==Some(&Value::from(1))).ok_or_else(bad)?;
+        let map=m.get("map").and_then(Value::as_str).and_then(|asset|MapId::from_asset(asset).ok()).ok_or_else(bad)?;
         let rows=m.get("seats").and_then(Value::as_array).ok_or_else(bad)?;
         let mut seats=Vec::new();
         for (index,row) in rows.iter().enumerate(){
@@ -47,9 +49,10 @@ impl Scenario {
             let target=if action>=6 {if r.len()!=4{return Err(bad());}Some(u8::try_from(r.get("target_slot").and_then(Value::as_u64).ok_or_else(bad)?).map_err(|_|bad())?)}else{if r.len()!=3{return Err(bad());}None};
             events.push(Event{tick,slot,action,target});
         }
-        let value=Self{seats,events};value.validate()?;Ok(value)
+        let value=Self{map,seats,events};value.validate()?;Ok(value)
     }
     pub(crate) fn validate(&self)->io::Result<()> {
+        if self.map != MapId::Prohorovka && Some(self.map) != MapId::from_asset("02_malinovka").ok() {return Err(bad());}
         if !matches!(self.seats.len(),4|6)||self.seats[0].kind.is_some()||self.seats[0].net||self.seats[0].crew_percent.is_some()||self.seats[1..].iter().any(|s|s.kind.is_none()||s.crew_percent!=Some(100)) {return Err(bad());}
         if self.events.len()>64{return Err(bad());}
         let mut moving=[None;6];let mut aimed=[None;6];let mut previous=None;
@@ -86,6 +89,8 @@ mod tests {
         let value=Scenario::parse(&good).unwrap();assert_eq!(value.seats.len(),4);assert!(value.seats[0].kind.is_none());
         let mut invalid=good.clone();invalid["seats"][1]["position"]=serde_json::json!([2,0,0]);assert!(Scenario::parse(&invalid).is_err());
         let mut invalid=good.clone();invalid["map"]="01_karelia".into();assert!(Scenario::parse(&invalid).is_err());
+        let mut prokhorovka=good.clone();prokhorovka["map"]="05_prohorovka".into();
+        assert_eq!(Scenario::parse(&prokhorovka).unwrap().map.asset(),"05_prohorovka");
         let mut invalid=good.clone();invalid["seats"][1]["kind"]="human".into();assert!(Scenario::parse(&invalid).is_err());
         let mut invalid=good.clone();invalid["seats"][1]["yaw"]=4.into();assert!(Scenario::parse(&invalid).is_err());
     }

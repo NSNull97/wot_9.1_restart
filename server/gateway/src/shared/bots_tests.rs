@@ -98,19 +98,26 @@ fn content0_s5a_ready_bot_has_direct_sight_and_shares_until_inactive_retention_e
 
 #[test]
 fn content0_s5a_fixed_scout_preserves_bot_health_and_never_drives(){
-    let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,4,1,now);
-    assert!(w.fixed_scout().is_none(),"default off");
-    let seats=(0..4).map(|slot|super::super::super::fixed_scout::Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
-    w.enable_fixed_scout(super::super::super::fixed_scout::Scenario{seats,events:vec![]}).unwrap();w.fill_bots().unwrap();
-    assert!(w.actors.iter().skip(1).all(|a|a.vehicle_kind()==VehicleKind::Ms1&&a.health==VehicleKind::Ms1.max_health()));
-    assert_eq!(w.actors[1].optional_devices(),[super::super::super::camouflage::NET,0,0]);
-    assert_eq!(w.actors[2].optional_devices(),[0;3]);
-    assert!(w.actors.iter().skip(1).all(|a|a.owned_v2.is_none()),"lab setup does not forge owned loadouts");
-    assert!(w.actors[1].equipment_mass()>w.actors[2].equipment_mass());
-    assert!(!w.bot_turret_test());let at=begin(&mut w,now);
-    for k in 1..=10 {assert_eq!(w.drive_bots(at+STEP*k).unwrap(),0);}
-    assert!(w.actors.iter().skip(1).all(|a|a.input==Input::STOP&&a.health==VehicleKind::Ms1.max_health()));
-    assert_eq!((0..4).map(|slot|w.team(slot).unwrap()).collect::<Vec<_>>(),vec![1,2,1,2]);
+    use super::super::super::fixed_scout::{Scenario,Seat};
+    let malinovka=MapId::from_asset("02_malinovka").unwrap();
+    let prokhorovka=MapId::from_asset("05_prohorovka").unwrap();
+    for (map,other) in [(malinovka,prokhorovka),(prokhorovka,malinovka)] {
+        let now=Instant::now();let mut w=fixture_on(map,1,4,1,now);
+        assert!(w.fixed_scout().is_none(),"default off");
+        let seats=(0..4).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
+        let scenario=Scenario{map,seats,events:vec![]};
+        assert!(w.enable_fixed_scout(Scenario{map:other,..scenario.clone()}).is_err());
+        w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();
+        assert!(w.actors.iter().skip(1).all(|a|a.vehicle_kind()==VehicleKind::Ms1&&a.health==VehicleKind::Ms1.max_health()));
+        assert_eq!(w.actors[1].optional_devices(),[super::super::super::camouflage::NET,0,0]);
+        assert_eq!(w.actors[2].optional_devices(),[0;3]);
+        assert!(w.actors.iter().skip(1).all(|a|a.owned_v2.is_none()),"lab setup does not forge owned loadouts");
+        assert!(w.actors[1].equipment_mass()>w.actors[2].equipment_mass());
+        assert!(!w.bot_turret_test());let at=begin(&mut w,now);
+        for k in 1..=10 {assert_eq!(w.drive_bots(at+STEP*k).unwrap(),0);}
+        assert!(w.actors.iter().skip(1).all(|a|a.input==Input::STOP&&a.health==VehicleKind::Ms1.max_health()));
+        assert_eq!((0..4).map(|slot|w.team(slot).unwrap()).collect::<Vec<_>>(),vec![1,2,1,2]);
+    }
 }
 
 #[test]
@@ -119,7 +126,7 @@ fn content0_s5a_fixed_scout_script_uses_authoritative_input_and_fire_once(){
     let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,4,1,now);
     let seats=(0..4).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
     let events=vec![Event{tick:1,slot:1,action:1,target:None},Event{tick:3,slot:1,action:4,target:None},Event{tick:4,slot:1,action:2,target:None},Event{tick:5,slot:1,action:4,target:None},Event{tick:6,slot:1,action:5,target:None}];
-    let scenario=Scenario{seats,events};scenario.validate().unwrap();
+    let scenario=Scenario{map:MapId::from_asset("02_malinovka").unwrap(),seats,events};scenario.validate().unwrap();
     let mut invalid=scenario.clone();invalid.events.remove(1);assert!(invalid.validate().is_err());
     let mut invalid=scenario.clone();invalid.events[0].slot=0;assert!(invalid.validate().is_err());
     w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();let at=begin(&mut w,now);
@@ -138,7 +145,7 @@ fn content0_s5a_shared_only_script_uses_committed_sight_and_server_pose(){
     let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,6,1,now);
     let seats=(0..6).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:false,crew_percent:(slot!=0).then_some(100)}).collect();
     let events=vec![Event{tick:1,slot:4,action:6,target:Some(1)},Event{tick:31,slot:4,action:7,target:Some(1)}];
-    let scenario=Scenario{seats,events};scenario.validate().unwrap();
+    let scenario=Scenario{map:MapId::from_asset("02_malinovka").unwrap(),seats,events};scenario.validate().unwrap();
     let mut invalid=scenario.clone();invalid.events[0].target=Some(2);assert!(invalid.validate().is_err(),"cannot aim at ally");
     let mut invalid=scenario.clone();invalid.events[1].tick=30;assert!(invalid.validate().is_err(),"requires three seconds after aim");
     let mut invalid=scenario.clone();invalid.events[1].target=Some(3);assert!(invalid.validate().is_err(),"fire target must equal aimed target");
@@ -162,7 +169,7 @@ fn content0_s5a_shared_only_script_refuses_direct_or_missing_team_sight(){
         let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,6,1,now);
         let seats=(0..6).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:false,crew_percent:(slot!=0).then_some(100)}).collect();
         let events=vec![Event{tick:1,slot:4,action:6,target:Some(1)},Event{tick:31,slot:4,action:7,target:Some(1)}];
-        w.enable_fixed_scout(Scenario{seats,events}).unwrap();w.fill_bots().unwrap();
+        w.enable_fixed_scout(Scenario{map:MapId::from_asset("02_malinovka").unwrap(),seats,events}).unwrap();w.fill_bots().unwrap();
         place(&mut w,0,[400.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);place(&mut w,2,[420.,0.,0.],0.);
         place(&mut w,3,[-400.,0.,-400.],0.);place(&mut w,4,if mode==0{[450.,0.,0.]}else{[0.,0.,0.]},0.);place(&mut w,5,[-300.,0.,-400.],0.);
         if mode==1 {place(&mut w,0,[0.,0.,-300.],0.);place(&mut w,2,[0.,0.,300.],0.);}
