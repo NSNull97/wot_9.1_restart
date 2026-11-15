@@ -1,5 +1,7 @@
 use super::*;
 
+const FOLIAGE_DIAGNOSTIC_MODES: &[bool] = if cfg!(feature = "test_lab") { &[false, true] } else { &[false] };
+
 pub(super) fn fixture(now:Instant)->World {
     let mut world=World::new_for_vehicle(717,now,crate::map_profile091::MapId::Karelia,VehicleKind::Ms1).unwrap();
     world.enable_lifecycle(super::super::lifecycle::Rules::prohorovka()).unwrap();
@@ -117,7 +119,7 @@ fn foliage_project_volume_affects_actual_world_rays_only_when_opted_in() {
 fn stacked_foliage_changes_the_actual_spotting_decision_before_and_after_fire() {
     let now = Instant::now();
     let bushes = [([149.0, 2.0, 0.0], 6.0, 0.2), ([160.0, 2.0, 0.0], 6.0, 0.2)];
-    for diagnostics in [false, true] {
+    for &diagnostics in FOLIAGE_DIAGNOSTIC_MODES {
         let mut world = fixture(now);
         world.map = crate::map_profile091::MapId::from_asset("02_malinovka").unwrap();
         let rules = &mut world.original_spotting.as_mut().unwrap().rules;
@@ -143,7 +145,7 @@ fn stacked_foliage_changes_the_actual_spotting_decision_before_and_after_fire() 
 fn fallen_foliage_changes_world_sight_only_after_contact_state_is_committed() {
     let now = Instant::now();
     let (foliage, catalog) = super::super::foliage::test_fallen_fixture();
-    for diagnostics in [false, true] {
+    for &diagnostics in FOLIAGE_DIAGNOSTIC_MODES {
         let mut world = fixture(now);
         world.map = catalog.map;
         let rules = &mut world.original_spotting.as_mut().unwrap().rules;
