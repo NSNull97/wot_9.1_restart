@@ -412,6 +412,16 @@ def prepare(args):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     network = network_options(args, profile13_battle, p06t_mixed_ammo)
     visibility_debug = visibility_debug_options(args, profile13_battle, network, copy_info, paths)
+    foliage_file = getattr(args, 'foliage_debug', None)
+    foliage_catalog = getattr(args, 'foliage_debug_catalog', None)
+    foliage_debug = None
+    if foliage_file is not None or foliage_catalog is not None:
+        if (foliage_file is None or foliage_catalog is None or not profile13_battle or copy_info is None
+                or network.get('network_policy') is not None or not network['endpoint'].startswith('127.0.0.1:')):
+            raise ValueError('foliage preview requires both artifacts, an isolated profile13 copy and a loopback endpoint')
+        import foliage_debug_payload
+        foliage_bytes, foliage_debug, foliage_evidence = foliage_debug_payload.payload(
+            local_path(foliage_file, paths), local_path(foliage_catalog, paths))
     sixth_sense = sixth_sense_option(args, profile13_battle, bool(args.enable_map_drive))
     endpoint = network['endpoint']
     public = local_path(args.public_key, paths)
@@ -591,6 +601,10 @@ def prepare(args):
         settings['enable_profile13_battle'] = True
     if visibility_debug is not None:
         settings['visibility_debug'] = visibility_debug
+    if foliage_debug is not None:
+        settings['foliage_debug'] = foliage_debug
+        payloads[foliage_debug_payload.TARGET] = foliage_bytes
+        resource_evidence['project_foliage_preview'] = foliage_evidence
     if p06t_mixed_ammo:
         settings['enable_p06t_mixed_ammo'] = True
     if training_rooms:
@@ -658,7 +672,7 @@ def prepare(args):
         settings['battle_feed'] = battle_feed_policy().prepare_settings(feed_view)
     if history_view is not None:
         settings['battle_history'] = battle_history_policy().prepare_settings(history_view)
-    if feed_view is not None or history_view is not None or visibility_debug is not None:
+    if feed_view is not None or history_view is not None or visibility_debug is not None or foliage_debug is not None:
         # One res_mods copy of the native battle movie, pinned to the #717 bytes:
         # a source that differs refuses the whole prepare.
         import battle_ui_native_flash
@@ -666,7 +680,8 @@ def prepare(args):
         # messages) goes with the project markers.
         movie, resource_evidence['project_battle_native_movie'] = battle_ui_native_flash.payload(
             original, feed_view is not None, history_view is not None, getattr(args, 'battle_icons', None),
-            palette=not getattr(args, 'native_vehicle_markers', False), with_visibility=visibility_debug is not None)
+            palette=not getattr(args, 'native_vehicle_markers', False), with_visibility=visibility_debug is not None,
+            with_foliage=foliage_debug is not None)
         payloads[battle_ui_native_flash.TARGET] = movie
     if getattr(args, 'battle_settings', False):
         # UI-05 owner order 2026-11-01: the tab of the native settings windows.
@@ -707,7 +722,12 @@ def prepare(args):
             'native_audio_check':'NOT_RUN'}
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
-    for module in MODULES + (('project_visibility_debug',) if visibility_debug is not None else ()) + (('profile13_fight_test',) if fight_test else ()):
+    optional_modules = tuple(module for enabled, module in (
+        (visibility_debug is not None, 'project_visibility_debug'),
+        (fight_test, 'profile13_fight_test'),
+        (foliage_debug is not None, 'project_foliage_debug'),
+    ) if enabled)
+    for module in MODULES + optional_modules:
         source = ROOT/'client_patch'/f'{module}.py'
         if module == 'catalog_v1_hints' and getattr(args, 'test_vehicle_label', False):
             # TESTVEH-01 stand flag: a test_lab client carries the test_lab CAT-01 hints.
@@ -941,6 +961,8 @@ def main():
     prep.add_argument('--visibility-debug-run', help='Exact test stand run UUID; required with --visibility-debug')
     prep.add_argument('--visibility-debug-account', help='Exact test operator account UUID; required with --visibility-debug')
     prep.add_argument('--visibility-debug-grant-file', help='Ignored local operator grant file; required with --visibility-debug')
+    prep.add_argument('--foliage-debug', help='Admitted Prokhorovka geometry for the local Ctrl+Alt+F preview')
+    prep.add_argument('--foliage-debug-catalog', help='Matching local Prokhorovka contact catalog for fallen crowns')
     prep.add_argument('--profile13-fight-test', action='store_true',
                       help='Explicit one-shot native FightButton test and diagnostic screenshot; requires operator debug/control')
     prep.add_argument('--profile13-fight-stand-receipt',

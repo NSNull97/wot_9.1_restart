@@ -313,6 +313,15 @@ def install_optional_visibility_debug():
         record('visibility_debug_unavailable', error_type=type(error).__name__)
 
 
+def install_optional_foliage_debug():
+    try:
+        import project_foliage_debug
+        project_foliage_debug.validate_settings(_settings)
+        project_foliage_debug.install(record, _settings['foliage_debug'])
+    except Exception as error:
+        record('foliage_debug_unavailable', error_type=type(error).__name__)
+
+
 def init(*args):
     global _ready
     record('init', sys_version=sys.version, pointer_bytes=struct.calcsize('P'),
@@ -388,6 +397,8 @@ def init(*args):
             project_battle_history.install(record, _settings[project_battle_history.SETTING], project_hit_indicator.policy())
         if 'visibility_debug' in _settings:
             install_optional_visibility_debug()
+        if 'foliage_debug' in _settings:
+            install_optional_foliage_debug()
         if _settings.get(project_battle_settings.SETTING) is not None:
             # Project policy, not original #717 behaviour: see the module docstring.
             project_battle_settings.install(
@@ -1591,6 +1602,12 @@ def handleKeyEvent(*args):
             module.handle_operator_key(args[0])
         except Exception as error:
             record('visibility_debug_pair_key_failed', error_type=type(error).__name__)
+    module = sys.modules.get('project_foliage_debug')
+    if module is not None and len(args) == 1:
+        try:
+            module.handle_key(args[0])
+        except Exception as error:
+            record('foliage_debug_key_failed', error_type=type(error).__name__)
     return _input('handleKeyEvent', *args)
 
 
@@ -1714,6 +1731,8 @@ def fini():
             sys.modules['project_battle_settings'].restore(record)
         if 'project_visibility_debug' in sys.modules:
             sys.modules['project_visibility_debug'].restore(record)
+        if 'project_foliage_debug' in sys.modules:
+            sys.modules['project_foliage_debug'].restore(record)
         if 'project_battle_history' in sys.modules:
             sys.modules['project_battle_history'].restore(record)
         if 'project_battle_feed' in sys.modules:

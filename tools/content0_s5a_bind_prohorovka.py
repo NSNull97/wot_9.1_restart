@@ -15,9 +15,10 @@ LIMIT = 2 * 1024 * 1024
 
 
 def checked_artifact(stand, profiles, raw):
-    from tools.prohorovka_foliage import PROHOROVKA_FOLIAGE_SHA256
+    from tools.prohorovka_foliage import BASE_PROHOROVKA_FOLIAGE_SHA256, PROHOROVKA_FOLIAGE_SHA256
 
-    if profiles.get('map') != ASSET or digest(raw) != PROHOROVKA_FOLIAGE_SHA256:
+    sha256 = digest(raw)
+    if profiles.get('map') != ASSET or sha256 not in (BASE_PROHOROVKA_FOLIAGE_SHA256, PROHOROVKA_FOLIAGE_SHA256):
         raise ValueError('Prohorovka foliage map or canonical artifact digest mismatch')
     document = json_unique(raw)
     catalog_pin = document['fallen_tree_catalog_sha256']
@@ -30,7 +31,7 @@ def checked_artifact(stand, profiles, raw):
     no_link(catalog_path, stand)
     if digest(read_stable(catalog_path)) != catalog_pin:
         raise ValueError('Prohorovka contact catalog bytes differ from the foliage pin')
-    return {'schema': SCHEMA, 'sha256': PROHOROVKA_FOLIAGE_SHA256, 'catalog_sha256': catalog_pin}
+    return {'schema': SCHEMA, 'sha256': sha256, 'catalog_sha256': catalog_pin}
 
 
 def verify_prohorovka_binding(stand, profiles, foliage, receipt):

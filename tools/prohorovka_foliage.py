@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 
 from tools.content0_s5a_fallen_foliage import catalog_crown_rows, numeric_vector, pinned_json
+from tools.content0_s5a_foliage_geometry import RADIUS_SCALE, scaled_export
 from tools.content0_s5a_stand import ROOT, json_unique, read_stable
 from tools.malinovka_bush_volumes import volume
 from tools.map_package import decode, file_digest, member, no_links, open_archive, signed16, walk
@@ -24,7 +25,8 @@ PACKAGE_PIN = {'bytes': 87810684, 'sha256': '05081facbe1451688fd853612a85c725ed7
 CATALOG_SHA256 = '61ce7951421091427a122e1c3875481f4053f3a6b9c910cb98195a644daff6d6'
 PHYSICS_SHA256 = '9d358a48da303abaf15572f478dddc16971864960d9341943cc6d207b32b3265'
 PROJECTILE_SHA256 = '3db1ad3859ae2f5fed678ac5f148005cff38a3c915bb33dde3303de22e22bef7'
-PROHOROVKA_FOLIAGE_SHA256 = 'b5efc1e078b46988ed673d1316604bc5b38445e97f4c404b8907bd8931d9c83d'
+BASE_PROHOROVKA_FOLIAGE_SHA256 = 'b5efc1e078b46988ed673d1316604bc5b38445e97f4c404b8907bd8931d9c83d'
+PROHOROVKA_FOLIAGE_SHA256 = '227a8e391ce00d1827806cd0c92ae060d773cd2aa890ecaa1c1ce30748c4d0d3'
 CHUNK = re.compile(r'spaces/05_prohorovka/([0-9a-f]{4})([0-9a-f]{4})o\.chunk\Z')
 BUSH_COUNTS = {PREFIX + name + '.spt': count for name, count in (('Bush', 723), ('Bush_1', 598), ('Shrub_1', 771))}
 TREE_COUNTS = {PREFIX + name + '.spt': count for name, count in (
@@ -166,13 +168,17 @@ def main():
     out = no_links(args.out).resolve()
     if not out.is_relative_to(evidence) or out.suffix != '.json' or not out.parent.is_dir():
         raise ValueError('output must be a new JSON file under local/evidence')
-    raw = build(args.original, args.catalog, args.physics)
+    base = build(args.original, args.catalog, args.physics)
+    if digest(base) != BASE_PROHOROVKA_FOLIAGE_SHA256:
+        raise ValueError('base Prokhorovka foliage differs from the approved export')
+    raw = scaled_export(base)
     sha256 = digest(raw)
     if sha256 != PROHOROVKA_FOLIAGE_SHA256:
         raise ValueError('Prokhorovka foliage export differs from the accepted source and calibration')
     with out.open('xb') as stream:
         stream.write(raw)
     print(json.dumps({'output': str(out), 'sha256': sha256, 'bytes': len(raw),
+                      'source_sha256': BASE_PROHOROVKA_FOLIAGE_SHA256, 'radius_scale': RADIUS_SCALE,
                       'calibration_sha256': json_unique(raw)['calibration_sha256'],
                       'shrubs': sum(BUSH_COUNTS.values()), 'crowns': sum(TREE_COUNTS.values())}))
 

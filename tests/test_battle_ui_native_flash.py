@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(ROOT / 'client_patch'))
 import battle_ui_feed_flash as feed
+import battle_ui_foliage_flash as foliage
 import battle_ui_history_flash as history
 import battle_ui_hit_flash as flash
 import battle_ui_native_flash as native
@@ -134,9 +135,42 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual((len(codes), codes.count(12), codes[-3:]), (native.SOURCE_TAGS + 1, 4, [12, 1, 0]))
         feed_only = native.payload(ORIGINAL, True, False)[1]
         self.assertEqual(feed_only['callbacks'], [feed.CALLBACK, feed.PLACE_CALLBACK])
+        foliage_only = native.payload(ORIGINAL, False, False, with_foliage=True)[1]
+        self.assertEqual(foliage_only['callbacks'], [foliage.CLEAR, foliage.POLYGON])
+        self.assertTrue(foliage_only['foliage_debug'])
+        self.assertFalse(foliage_only['visibility_debug'])
 
 
 class SetupTests(unittest.TestCase):
+    def test_foliage_painter_draws_filled_closed_polygon_on_its_own_clip(self):
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine = Machine(root)
+        machine.run(native.actions(False, False, with_foliage=True), [scope])
+        self.assertEqual(set(delegate.callbacks), {foliage.CLEAR, foliage.POLYGON})
+        self.assertNotIn('projectVisibility', root.members)
+        holder = root.members['projectFoliage']
+        self.assertFalse(holder.members['_visible'])
+        machine.invoke(scope['_projectFoliageClear'], root, [True])
+        self.assertTrue(holder.members['_visible'])
+        polygon = scope['_projectFoliagePolygon']
+        coordinates = [11, 21, 31, 41, 51, 61] + [0] * (2 * foliage.MAX_VERTICES - 6)
+        colour, alpha = 0x65BC4A, 28
+        machine.invoke(polygon, root, [colour, alpha, 3] + coordinates)
+        self.assertEqual(holder.calls, [
+            ('clear',), ('lineStyle', 1, colour, 70), ('beginFill', colour, alpha),
+            ('moveTo', 11, 21), ('lineTo', 31, 41), ('lineTo', 51, 61),
+            ('lineTo', 11, 21), ('endFill',),
+        ])
+        original_calls = list(holder.calls)
+        for count in (2, foliage.MAX_VERTICES + 1):
+            machine.invoke(polygon, root, [colour, alpha, count] + coordinates)
+        self.assertEqual(holder.calls, original_calls)
+        machine.invoke(scope['_projectFoliageClear'], root, [False])
+        self.assertFalse(holder.members['_visible'])
+        self.assertEqual(holder.calls[-1], ('clear',))
+
     def test_visibility_callbacks_draw_and_mark_only_when_requested(self):
         root, delegate = Clip(), Delegate()
         root.members['getNextHighestDepth'] = lambda: 300

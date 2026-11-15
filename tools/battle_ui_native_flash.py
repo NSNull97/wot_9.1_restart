@@ -30,6 +30,7 @@ import battle_ui_ears_flash as ears_tool
 import battle_ui_minimap_look as minimap_tool
 import battle_ui_panels_flash as panels_tool
 import battle_ui_feed_flash as feed
+import battle_ui_foliage_flash as foliage
 import battle_ui_history_flash as history
 import battle_ui_visibility_flash as visibility
 from battle_ui_hit_flash import stmt, tag, tags, var
@@ -65,12 +66,12 @@ def layout(body):
     return rows
 
 
-def actions(with_feed=True, with_history=True, art=False, palette=False, with_visibility=False):
+def actions(with_feed=True, with_history=True, art=False, palette=False, with_visibility=False, with_foliage=False):
     """One frame action: the shared text and glyph functions, the widgets' own;
     `palette` (owner round 13): the ears' icons from the project sets
     (battle_ui_ears_flash), the panel backgrounds (battle_ui_panels_flash) and the
     minimap icons (battle_ui_minimap_look)."""
-    if not (with_feed or with_history or with_visibility):
+    if not (with_feed or with_history or with_visibility or with_foliage):
         raise ValueError('nothing to add to the battle movie')
     delegate = ('get', ('get', var('gfx'), 'io'), 'GameDelegate')
     depth = var('projectDepth')
@@ -85,6 +86,9 @@ def actions(with_feed=True, with_history=True, art=False, palette=False, with_vi
     if with_visibility:
         code += visibility.sources()
         setup += visibility.setup(delegate, ('+', depth, 5))
+    if with_foliage:
+        code += foliage.sources()
+        setup += foliage.setup(delegate, ('+', depth, 6))
     if palette:
         code += ears_tool.sources() + panels_tool.sources() + minimap_tool.sources()
         setup += (ears_tool.setup(('+', depth, 2)) + panels_tool.setup(('+', depth, 3))
@@ -134,7 +138,8 @@ def sprites(with_feed, with_history):
     return (art_tool.FEED_SPRITES if with_feed else ()) + (art_tool.HISTORY_SPRITES if with_history else ())
 
 
-def payload(original, with_feed=True, with_history=True, icons=None, palette=False, with_visibility=False):
+def payload(original, with_feed=True, with_history=True, icons=None, palette=False, with_visibility=False,
+            with_foliage=False):
     with zipfile.ZipFile(Path(original) / 'res/packages/gui.pkg') as package:
         info = package.getinfo(MEMBER)
         if info.file_size > MAX_BYTES:
@@ -144,8 +149,8 @@ def payload(original, with_feed=True, with_history=True, icons=None, palette=Fal
     if source != SOURCE_SHA256:
         raise ValueError('native battle movie differs from the pinned #717 bytes')
     images, missing = art_tool.load(icons, sprites(with_feed, with_history)) if icons is not None else ({}, [])
-    result = art_tool.embed(build(raw, actions(with_feed, with_history, bool(images), palette, with_visibility), palette), images,
-                            SOURCE_ACTIONS + 1)
+    added = actions(with_feed, with_history, bool(images), palette, with_visibility, with_foliage)
+    result = art_tool.embed(build(raw, added, palette), images, SOURCE_ACTIONS + 1)
     if len(result) > MAX_BYTES:
         raise ValueError('battle movie with the project panels is oversized')
     layout_after = [row[0] for row in tags(expanded(result), ((5 + 4 * (expanded(result)[0] >> 3) + 7) // 8) + 4)]
@@ -154,10 +159,12 @@ def payload(original, with_feed=True, with_history=True, icons=None, palette=Fal
     return result, {'source_member': MEMBER, 'source_sha256': source, 'target': TARGET,
                     'target_sha256': hashlib.sha256(result).hexdigest(), 'feed': with_feed, 'history': with_history,
                     'palette': palette, 'visibility_debug': with_visibility,
+                    **({'foliage_debug': True} if with_foliage else {}),
                     'callbacks': ([feed.CALLBACK, feed.PLACE_CALLBACK] if with_feed else [])
                     + ([history.CALLBACK, history.PLACE_CALLBACK] if with_history else [])
                     + ([visibility.CLEAR, visibility.LINE, visibility.PANEL, visibility.MARKER,
-                        visibility.LAMP, visibility.NATIVE_LAMP] if with_visibility else []),
+                        visibility.LAMP, visibility.NATIVE_LAMP] if with_visibility else [])
+                    + ([foliage.CLEAR, foliage.POLYGON] if with_foliage else []),
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     'icons': 'embedded' if images else 'absent' if icons is not None else 'not_requested',
                     'icon_sprites': sorted(images), 'icons_missing': missing, 'native_render_check': 'NOT_RUN'}

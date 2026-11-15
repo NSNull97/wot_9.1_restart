@@ -31,7 +31,8 @@ class LaunchTests(unittest.TestCase):
             pin = digest(artifact.read_bytes())
             receipt = {'schema':SCHEMA,'file':str(artifact),'sha256':pin,'catalog_sha256':catalog_pin}
             gateway = {'foliage_v1':{'version':1,'file':str(artifact),'sha256':pin}}
-            with patch.dict(sys.modules, {'tools.prohorovka_foliage':SimpleNamespace(PROHOROVKA_FOLIAGE_SHA256=pin)}):
+            with patch.dict(sys.modules, {'tools.prohorovka_foliage':SimpleNamespace(
+                    BASE_PROHOROVKA_FOLIAGE_SHA256='0'*64, PROHOROVKA_FOLIAGE_SHA256=pin)}):
                 verify_foliage_binding(stand, {'prohorovka_foliage':receipt}, gateway, profiles)
                 with self.assertRaisesRegex(ValueError, 'launch receipt'):
                     verify_foliage_binding(stand, {}, gateway, profiles)
