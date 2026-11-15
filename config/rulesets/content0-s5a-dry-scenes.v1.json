@@ -136,6 +136,29 @@
       "predicted_target_far_bush": {"chunk": [-5, 3], "speedtree_index": 6, "ray_exit_to_target_m": [68.71, 74.02]},
       "expected": "Net on, ally isolated: project v1 idle foliage 0.20 and direct sight, project v2 idle foliage 0.40 and hidden, v2 after accepted target shot foliage 0.25 and direct sight. Predicted before Jolt settling."
     },
+    "treefall": {
+      "classification": "INFERRED_NOT_JOLT_OR_NATIVE_VERIFIED",
+      "observer": [-298.03955643, 13.17093947, 360.10307343],
+      "target": [-126.67853657, 24.22400978, 421.41702674],
+      "rammer": [-127.89322641, 23.46799106, 398.66606442],
+      "rammer_yaw_rad": -0.3436116964863838,
+      "distance_3d_m": 182.335,
+      "predicted_scene_tree": {
+        "object_id": 2778,
+        "instance_id": 2777,
+        "native_index": 6,
+        "chunk_id": 32131,
+        "resource": "speedtree/02_Malinovka/Spruce.spt",
+        "root_world": [-130.75679016, 23.22198296, 406.66918898],
+        "fall_yaw_bin": 28,
+        "crown_center_after_planned_fall": [-135.62320519, 23.29252984, 418.21657314]
+      },
+      "predicted_terrain_sample_clearance_min_m": 1.058,
+      "predicted_projectile_aabb_ray_hits": 0,
+      "predicted_shrub_hits": 0,
+      "predicted_fallen_crown_rays": 14,
+      "expected": "Net on, ally isolated: direct sight before any committed fall. After the planned fall, all 14 rays are expected to gain 0.25 foliage and direct sight to stop. Marker retention can outlast direct sight. Candidates use sampled terrain and a projected 90-degree fall; actual Jolt contact, accepted packed yaw, animation, and visibility are not established by this scene definition."
+    },
     "assist6": {
       "observer": [
         343.75,
@@ -240,5 +263,13 @@
       {"tick": 120, "slot": 1, "action": "shoot"}
     ],
     "description": "Only the stationary bush142 target fires. Capture direct sight and each ray's foliage before, during and after the authoritative shot window."
+  },
+  "tree_fall": {
+    "classification": "PROJECT_TEST_LAB_NOT_HISTORICAL",
+    "events": [
+      {"tick": 120, "slot": 3, "action": "forward"},
+      {"tick": 160, "slot": 3, "action": "stop"}
+    ],
+    "description": "Only the treefall T71 rammer moves. Capture the real authoritative hull contact, every worker acknowledgement, packed fall publication, and paired sighting before and after commit."
   }
 }

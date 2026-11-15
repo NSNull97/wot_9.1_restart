@@ -12,7 +12,7 @@ from tools.content0_s5a_bind_workers import stage_runtime
 from tools.content0_s5a_bind_clean_db import verify_clean_db
 from tools.content0_s5a_process_identity import process_identity
 from tools.content0_s5a_stand_lock import StandLock
-from tools.content0_s5a_scene_apply import DOC as SCENE_DOC,FOLIAGE_STACKED_SHA256,verify_foliage
+from tools.content0_s5a_scene_apply import DOC as SCENE_DOC,active_foliage_receipt,load_fallen_sources,verify_foliage
 
 CREATE_FLAGS=getattr(subprocess,'CREATE_NO_WINDOW',0)|getattr(subprocess,'CREATE_NEW_PROCESS_GROUP',0)
 def wait_line(process,path,pattern,seconds):
@@ -27,14 +27,16 @@ def wait_line(process,path,pattern,seconds):
         time.sleep(0.1)
     raise TimeoutError('owned process startup deadline')
 
-def verify_stacked_foliage_binding(stand,config,gateway):
+def verify_foliage_binding(stand,config,gateway,profiles=None):
     foliage=gateway.get('foliage_v1',{})
-    if 'stacked_foliage' not in config and foliage.get('sha256')!=FOLIAGE_STACKED_SHA256:return
-    binding=config.get('stacked_foliage')
-    if not isinstance(binding,dict):raise ValueError('stacked foliage configuration receipt missing')
+    binding=active_foliage_receipt(config)
+    if not foliage and binding is None:return
     no_link(SCENE_DOC,ROOT)
-    source_pin=json_unique(read_stable(SCENE_DOC))['source_pins']['foliage_sha256']
-    verify_foliage(stand,foliage,binding,source_pin,None)
+    document=json_unique(read_stable(SCENE_DOC))
+    source_pin=document['source_pins']['foliage_sha256']
+    if binding is None and foliage.get('sha256')!=source_pin:
+        raise ValueError('derived foliage configuration receipt missing')
+    verify_foliage(stand,foliage,binding,source_pin,None,lambda:load_fallen_sources(stand,document,profiles))
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--stand',type=Path,required=True);p.add_argument('--build',type=Path,required=True);a=p.parse_args()
@@ -77,7 +79,7 @@ def main():
         if (stand/'scene-update-in-progress.json').exists() or read_stable(stand/'config-receipt.json')!=config_raw:raise ValueError('stand changed during launch preparation')
         for name in ('domain','bridge','gateway'):
             if hashlib.sha256(read_stable(stand/(name+'.json'))).hexdigest()!=config['config_sha256'][name]:raise ValueError('configuration changed during launch preparation')
-        verify_stacked_foliage_binding(stand,config,json_unique(read_stable(stand/'gateway.json')))
+        verify_foliage_binding(stand,config,json_unique(read_stable(stand/'gateway.json')),profiles)
         verify_clean_db(clean,config['operator'],config['operator_game_db_sha256'])
         if read_stable(stand/'battle-profiles.json')!=profile_raw:raise ValueError('battle profiles changed during launch preparation')
         run_dir=stand/'launches'/str(uuid.uuid4());run_dir.mkdir(parents=True)

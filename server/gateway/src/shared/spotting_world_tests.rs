@@ -140,6 +140,30 @@ fn stacked_foliage_changes_the_actual_spotting_decision_before_and_after_fire() 
 }
 
 #[test]
+fn fallen_foliage_changes_world_sight_only_after_contact_state_is_committed() {
+    let now = Instant::now();
+    let (foliage, catalog) = super::super::foliage::test_fallen_fixture();
+    for diagnostics in [false, true] {
+        let mut world = fixture(now);
+        world.map = catalog.map;
+        let rules = &mut world.original_spotting.as_mut().unwrap().rules;
+        rules.camouflage = true;
+        rules.diagnostics = diagnostics;
+        rules.retention_ms = 0;
+        world.actors[1].position = [165.0, 0.0, 0.0];
+        world.foliage = Some(Arc::new(foliage.clone()));
+        world.fragiles = Some(super::super::fragiles::State::new(catalog.clone()));
+        let mut candidate = world.fragiles.clone().unwrap();
+        candidate.ram_contact(1, 0, 1001, 1, [0.0; 3], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], 10_000.0, "hull".into()).unwrap().unwrap();
+        world.refresh_original_spotting(now).unwrap();
+        assert!(world.own_sightings(0).unwrap()[1]);
+        world.fragiles = Some(candidate);
+        world.refresh_original_spotting(now + STEP).unwrap();
+        assert!(!world.own_sightings(0).unwrap()[1]);
+    }
+}
+
+#[test]
 fn foliage_world_binding_refuses_wrong_map_missing_opt_in_and_large_roster() {
     let now=Instant::now();let foliage=Arc::new(super::super::foliage::test_fixture_at([0.;3],1.));
     let mut world=World::new_for_roster(717,now,crate::map_profile091::MapId::Karelia,2).unwrap();

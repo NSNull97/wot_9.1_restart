@@ -884,12 +884,13 @@ impl World {
         self.original_spotting=Some(super::spotting::State::new(rules)?); Ok(())
     }
     pub fn original_spotting_enabled(&self) -> bool { self.original_spotting.is_some() }
-    /// Explicit local lab only: immutable project-calibrated Malinovka shrubs.
-    /// The static volumes do not follow destructible or fallen vegetation.
+    /// Explicit local lab only: Malinovka shrubs and optional fallen crowns
+    /// bound to the authoritative destructible catalog.
     pub fn enable_foliage(&mut self, foliage: Arc<super::foliage::Foliage>) -> io::Result<()> {
         if self.map.asset()!="02_malinovka" || self.expected_actors>6 || self.started.is_some()
             || !self.actors.is_empty() || self.foliage.is_some()
             || self.original_spotting.as_ref().is_none_or(|state|!state.rules.camouflage) {return Err(bad());}
+        foliage.verify_tree_catalog(self.fragiles.as_ref().map(|state| state.catalog.as_ref()))?;
         self.foliage=Some(foliage);Ok(())
     }
     pub fn camouflage_enabled(&self) -> bool { self.original_spotting.as_ref().is_some_and(|state|state.rules.camouflage) }
@@ -950,6 +951,7 @@ impl World {
         let previous_scan=state.diagnostics().and_then(|v|v.get("scan_ms")).and_then(serde_json::Value::as_u64);
         let mut next=state.clone();
         let _span=super::step_profile::span(super::step_profile::Part::SpotRays);
+        let foliage = self.foliage.as_ref().map(|input| input.rays(self.fragiles.as_ref())).transpose()?;
         if state.rules.diagnostics {
             if self.expected_actors>6 || !state.rules.camouflage {return Err(bad());}
             if self.foliage.is_some() && self.map.asset()!="02_malinovka" {return Err(bad());}
@@ -958,13 +960,13 @@ impl World {
                     let kind=match hit.surface {terrain::Surface::Ground=>"terrain",terrain::Surface::StaticObstacle{..}=>"object"};
                     return Ok(super::spotting::RayOutcome::Blocked{kind,hit_point:Some(hit.point)});
                 }
-                let contribution=match &self.foliage {
+                let contribution=match &foliage {
                     Some(foliage)=>foliage.contribution(start.map(f64::from),end.map(f64::from),fired)?,
                     None=>0.,
                 };
                 Ok(super::spotting::RayOutcome::Clear(contribution))
             })?;
-        } else if let Some(foliage)=&self.foliage {
+        } else if let Some(foliage)=&foliage {
             if self.map.asset()!="02_malinovka" || self.expected_actors>6 || !state.rules.camouflage {return Err(bad());}
             next.refresh_foliage_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end,fired| {
                 if terrain.any_hit_excluding_many(start,end,&excluded)? {return Ok(None);}

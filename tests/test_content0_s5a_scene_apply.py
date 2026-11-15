@@ -4,6 +4,7 @@ from unittest.mock import patch
 import contextlib,copy,hashlib,io,json,math,os,socket,sqlite3,subprocess,sys,unittest
 from tools import content0_s5a_launch as launch
 from tools import content0_s5a_scene_apply as apply
+from tools import content0_s5a_fallen_foliage as crowns
 from tools.content0_s5a_stand_lock import StandLock
 
 DOC=json.loads(apply.DOC.read_text(encoding='utf8'))
@@ -112,6 +113,52 @@ class SceneTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError,'unrecognised bush shot'):
             apply.make_scenario(broken,'bush142',True,'isolated','bush-shot')
 
+    def test_treefall_drives_only_the_approved_t71_and_needs_verified_foliage_v3(self):
+        scene=apply.make_scenario(DOC,'treefall',True,'isolated','tree-fall')
+        self.assertEqual(scene['seats'][3],{'kind':'usa-T71','position':DOC['scenes']['treefall']['rammer'],
+                                          'yaw':DOC['scenes']['treefall']['rammer_yaw_rad'],'net':True,'crew_percent':100})
+        self.assertEqual(scene['events'],[{'tick':120,'slot':3,'action':'forward'},
+                                         {'tick':160,'slot':3,'action':'stop'}])
+        for net,ally,script in ((False,'isolated','tree-fall'),(True,'team','tree-fall'),(True,'isolated','static')):
+            with self.assertRaisesRegex(ValueError,'treefall requires'):
+                apply.make_scenario(DOC,'treefall',net,ally,script)
+        with self.assertRaisesRegex(ValueError,'tree-fall requires'):
+            apply.make_scenario(DOC,'field180',True,'isolated','tree-fall')
+        with TemporaryDirectory() as raw:
+            root=Path(raw);stand,_=self.fixture(root,self.ports())
+            args=['scene','--stand',str(stand),'--scene','treefall','--net','on','--ally','isolated','--script','tree-fall']
+            with patch.object(apply,'ROOT',root),patch.object(apply,'verify_sources',return_value=None),\
+                 patch.object(apply,'no_own_processes'),patch.object(sys,'argv',args),\
+                 self.assertRaisesRegex(ValueError,'requires verified fallen foliage v3'):
+                apply.main()
+            self.assertFalse((stand/'scene-update-in-progress.json').exists())
+
+    def test_fallen_crown_join_preserves_affine_pose_and_zero_bare_bonus(self):
+        leafy='speedtree/02_Malinovka/Leafy.spt';bare='speedtree/02_Malinovka/Bare.spt'
+        chunk=[-4,3];chunk_id=((chunk[0]+127)<<8)|(chunk[1]+127)
+        transform=[2,0,0,0.5,3,0,0,0,4,20,10,30]
+        catalog={'map':'02_malinovka','contacts':True,'version':8,'objects':[
+            {'kind':'tree','object_id':8,'instance_id':0,'resource':leafy,'chunk_id':chunk_id,'physics_first_triangle':5,'physics_triangle_count':2},
+            {'kind':'tree','object_id':9,'instance_id':1,'resource':bare,'chunk_id':chunk_id,'physics_first_triangle':7,'physics_triangle_count':1}]}
+        physics={'map':'02_malinovka','instances':[
+            {'kind':'speedtree','resource':leafy,'chunk':chunk,'transform':transform,'first_triangle':5,'triangles':2},
+            {'kind':'speedtree','resource':bare,'chunk':chunk,'transform':transform,'first_triangle':7,'triangles':1}]}
+        shape={'sha256':'f'*64,'bytes':32,'center_local':[0,2,0],'radii_local':[1,2,3]}
+        calibration={'schema':crowns.CALIBRATION_SCHEMA,'map':'02_malinovka','classification':'PROJECT_CALIBRATION_NOT_HISTORICAL',
+                     'resources':{leafy:{**shape,'canopy_class':'leafy','concealment_additive':0.25},
+                                  bare:{**shape,'canopy_class':'bare','concealment_additive':0}}}
+        with patch.object(crowns,'TREE_COUNT',2):
+            result=crowns.build_rows(catalog,physics,calibration)
+            self.assertEqual(result[0],{'object_id':8,'instance_id':0,'resource':leafy,'root_world':[-380,10,330],
+                'center_from_root_world':[1,6,0],'basis_world_rows':[[2,0,0],[1,6,0],[0,0,12]],'concealment_additive':0.25})
+            self.assertEqual(result[1]['concealment_additive'],0)
+            bad=copy.deepcopy(physics);bad['instances'][1]['first_triangle']=6
+            with self.assertRaisesRegex(ValueError,'does not match physics'):
+                crowns.build_rows(catalog,bad,calibration)
+            calibration['resources'][bare]['concealment_additive']=0.1
+            with self.assertRaisesRegex(ValueError,'crown calibration mismatch'):
+                crowns.build_rows(catalog,physics,calibration)
+
     def fixture(self,root,ports):
         local=root/'local';stand=local/'stands'/'test';stand.mkdir(parents=True)
         database=stand/'game.sqlite'
@@ -175,14 +222,16 @@ class SceneTests(unittest.TestCase):
             config['config_sha256']['gateway']=digest(gateway_raw);config_path.write_text(json.dumps(config))
             args=['scene','--stand',str(stand),'--scene','bush180','--net','on','--ally','isolated','--script','static']
             pinned_doc=root/'source.json';pinned_doc.write_text(json.dumps({'source_pins':{'foliage_sha256':digest(legacy_raw)}}))
+            fallen_sources=({'fallen_tree_catalog_sha256':'a'*64,'fallen_trees':[]},'b'*64)
 
-            def verify(stand_path, doc, gateway_data, receipt, enable):
-                return apply.verify_foliage(stand_path,gateway_data['foliage_v1'],receipt.get('stacked_foliage'),digest(legacy_raw),enable)
+            def verify(stand_path, doc, gateway_data, receipt, policy, profiles):
+                return apply.verify_foliage(stand_path,gateway_data['foliage_v1'],apply.active_foliage_receipt(receipt),
+                                            digest(legacy_raw),policy,lambda:fallen_sources)
 
             with patch.object(apply,'ROOT',root),patch.object(apply,'verify_sources',side_effect=verify),\
                  patch.object(apply,'FOLIAGE_STACKED_SHA256',digest(expected)),patch.object(apply,'no_own_processes'),\
                  patch.object(launch,'ROOT',root),patch.object(launch,'SCENE_DOC',pinned_doc),\
-                 patch.object(launch,'FOLIAGE_STACKED_SHA256',digest(expected)),contextlib.redirect_stdout(io.StringIO()):
+                 patch.object(launch,'load_fallen_sources',return_value=fallen_sources),contextlib.redirect_stdout(io.StringIO()):
                 with patch.object(sys,'argv',args+['--stacked-foliage','--legacy-foliage']),\
                      contextlib.redirect_stderr(io.StringIO()),self.assertRaises(SystemExit):apply.main()
                 with patch.object(sys,'argv',args):apply.main()
@@ -197,9 +246,9 @@ class SceneTests(unittest.TestCase):
                 activation_proof=json.loads((active_file.parent/'scene-receipt.json').read_bytes())
                 self.assertEqual(activation_proof['foliage'],activation_config['stacked_foliage'])
                 self.assertEqual(activation_config['stacked_foliage']['legacy_file'],str(legacy))
-                launch.verify_stacked_foliage_binding(stand,activation_config,{'foliage_v1':activated})
+                launch.verify_foliage_binding(stand,activation_config,{'foliage_v1':activated})
                 with self.assertRaisesRegex(ValueError,'configuration receipt missing'):
-                    launch.verify_stacked_foliage_binding(stand,{}, {'foliage_v1':activated})
+                    launch.verify_foliage_binding(stand,{}, {'foliage_v1':activated})
 
                 with patch.object(sys,'argv',args):apply.main()
                 self.assertEqual(json.loads(gateway_path.read_bytes())['foliage_v1'],activated)
@@ -209,7 +258,7 @@ class SceneTests(unittest.TestCase):
                 with patch.object(sys,'argv',args),self.assertRaisesRegex(ValueError,'foliage hash mismatch'):
                     apply.main()
                 with self.assertRaisesRegex(ValueError,'foliage hash mismatch'):
-                    launch.verify_stacked_foliage_binding(stand,activation_config,{'foliage_v1':activated})
+                    launch.verify_foliage_binding(stand,activation_config,{'foliage_v1':activated})
                 self.assertFalse((stand/'scene-update-in-progress.json').exists())
                 active_file.write_bytes(expected)
 
@@ -231,6 +280,27 @@ class SceneTests(unittest.TestCase):
                 self.assertEqual(Path(reactivated['file']).read_bytes(),expected)
                 self.assertEqual(active_file.read_bytes(),expected)
                 self.assertEqual(legacy.read_bytes(),legacy_raw)
+
+                with patch.object(sys,'argv',args+['--fallen-foliage']):apply.main()
+                promoted=json.loads(gateway_path.read_bytes())['foliage_v1']
+                promoted_config=json.loads(config_path.read_bytes())
+                self.assertNotIn('stacked_foliage',promoted_config)
+                self.assertEqual(promoted_config['fallen_foliage']['crown_calibration_sha256'],'b'*64)
+                body=json.loads(Path(promoted['file']).read_bytes())
+                self.assertEqual((body['schema'],body['fallen_tree_catalog_sha256']),(apply.FOLIAGE_SCHEMA_V3,'a'*64))
+                launch.verify_foliage_binding(stand,promoted_config,{'foliage_v1':promoted})
+                with self.assertRaisesRegex(ValueError,'configuration receipt missing'):
+                    launch.verify_foliage_binding(stand,{}, {'foliage_v1':promoted})
+                with patch.object(sys,'argv',args+['--stacked-foliage']):apply.main()
+                restored=json.loads(gateway_path.read_bytes())['foliage_v1']
+                self.assertNotIn('fallen_foliage',json.loads(config_path.read_bytes()))
+                self.assertEqual(Path(restored['file']).read_bytes(),expected)
+                self.assertTrue(Path(promoted['file']).is_file())
+
+                with patch.object(sys,'argv',args+['--fallen-foliage']):apply.main()
+                with patch.object(sys,'argv',args+['--legacy-foliage']):apply.main()
+                self.assertNotIn('fallen_foliage',json.loads(config_path.read_bytes()))
+                self.assertEqual(json.loads(gateway_path.read_bytes())['foliage_v1'],legacy_binding)
 
     def test_assist_apply_sets_six_seats_and_unique_bot_plan(self):
         with TemporaryDirectory() as raw:

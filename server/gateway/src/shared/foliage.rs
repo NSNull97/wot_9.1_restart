@@ -8,8 +8,7 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 
 const MAX_BYTES: u64 = 2 * 1024 * 1024;
-// Maximum 6 actors, 2*7 rays per pair and 1024 volumes: at most 430,080
-// broad-phase volume checks per scan. Runtime latency is platform-dependent.
+// At most 1024 fixed shrubs and 1024 fallen crowns for the six-seat lab.
 const MAX_INSTANCES: usize = 1024;
 const MAX_COORD: f64 = 10_000.;
 const MAX_EXTENT: f64 = 1000.;
@@ -17,6 +16,8 @@ const MIN_DETERMINANT: f64 = 1e-8;
 const SCHEMA: &str = "content0-s5a-malinovka-bush-volumes.v1";
 const STACKED_SCHEMA: &str = "content0-s5a-malinovka-bush-volumes.v2";
 const STACKED_CONTRACT: &str = "project v2: sum crossed shrubs; omit observer-near shrubs; while firing add only the strongest target-near shrub after fire attenuation";
+const FALLEN_SCHEMA: &str = "content0-s5a-malinovka-bush-volumes.v3";
+const FALLEN_CONTRACT: &str = "project v3: stacked shrubs and authoritative fallen tree crowns";
 const OBSERVER_NEAR_METRES: f64 = 15.0;
 const CAL_SCHEMA: &str = "content0-s5a-malinovka-bush-calibration.v1";
 const MAP_SHA: &str = "bcefe13bd0a82916292075c976210770fea2d7e2cef81ec2fdaea9b427b197a0";
@@ -87,10 +88,27 @@ impl<'de> Deserialize<'de> for Strict {
 fn cross(a:Point,b:Point)->Point {[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]]}
 fn dot(a:Point,b:Point)->f64 {a.into_iter().zip(b).map(|(x,y)|x*y).sum()}
 fn sub(a:Point,b:Point)->Point {std::array::from_fn(|i|a[i]-b[i])}
+fn add(a: Point, b: Point) -> Point { std::array::from_fn(|i| a[i] + b[i]) }
+
+fn basis(value: &Value) -> io::Result<[Point; 3]> {
+    let rows = value.as_array().filter(|a| a.len() == 3).ok_or_else(|| bad("foliage basis"))?;
+    Ok([point(&rows[0], -MAX_EXTENT, MAX_EXTENT)?, point(&rows[1], -MAX_EXTENT, MAX_EXTENT)?,
+        point(&rows[2], -MAX_EXTENT, MAX_EXTENT)?])
+}
+
+fn basis_geometry(basis: [Point; 3]) -> io::Result<([Point; 3], Point)> {
+    let [a, b, c] = basis;
+    let det = dot(a, cross(b, c));
+    if !det.is_finite() || det.abs() < MIN_DETERMINANT { return Err(bad("foliage degenerate basis")); }
+    let inverse = [cross(b, c), cross(c, a), cross(a, b)].map(|row| row.map(|x| x / det));
+    let extents = std::array::from_fn(|axis| basis.iter().map(|row| row[axis].powi(2)).sum::<f64>().sqrt());
+    if extents.into_iter().any(|x| x <= 0.0 || x > MAX_EXTENT) { return Err(bad("foliage extent bounds")); }
+    Ok((inverse, extents))
+}
 
 #[derive(Clone, Debug)]
-struct Volume { chunk:[i32;2], index:u32, resource:String, coefficient:f64, center:Point, extents:Point, inverse:[Point;3] }
-impl Volume {
+struct Ellipsoid { center: Point, extents: Point, inverse: [Point; 3] }
+impl Ellipsoid {
     fn interval(&self, start: Point, end: Point, direction: Point) -> Option<(f64, f64)> {
         if !aabb_intersects(start, end, self.center, self.extents) {
             return None;
@@ -99,10 +117,40 @@ impl Volume {
         unit_segment(self.inverse.map(|row| dot(row, offset)), self.inverse.map(|row| dot(row, direction)))
     }
 }
+#[derive(Clone, Debug)]
+struct Volume { chunk:[i32;2], index:u32, resource:String, coefficient:f64, shape:Ellipsoid }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Policy { Strongest, Stacked }
+
 #[derive(Clone, Debug)]
-pub struct Foliage { pub calibration_sha256:String, pub source_sha256:String, raw:Vec<u8>, volumes:Vec<Volume>, fire_near_m:f64, fire_multiplier:f64, policy:Policy }
+struct TreeCrown {
+    instance_id: u32,
+    resource: String,
+    root: Point,
+    offset: Point,
+    basis: [Point; 3],
+    coefficient: f64,
+}
+
+#[derive(Clone, Debug)]
+struct FallenTrees {
+    catalog_sha256: String,
+    crowns: BTreeMap<u32, TreeCrown>,
+}
+
+#[derive(Clone, Debug)]
+pub struct Foliage { pub calibration_sha256:String, pub source_sha256:String, raw:Vec<u8>, volumes:Vec<Volume>, fire_near_m:f64, fire_multiplier:f64, policy:Policy, trees:Option<FallenTrees> }
+
+pub(super) struct RayFoliage<'a> {
+    source: &'a Foliage,
+    fallen: Vec<(f64, Ellipsoid)>,
+}
+
+impl RayFoliage<'_> {
+    pub(super) fn contribution(&self, start: Point, end: Point, fired: bool) -> io::Result<f32> {
+        self.source.contribution_with_fallen(start, end, fired, &self.fallen)
+    }
+}
 #[derive(Clone, Debug, PartialEq)]
 pub struct Hit { pub chunk:[i32;2], pub speedtree_index:u32, pub resource:String,
     pub concealment_additive:f64, pub t_enter:f64, pub t_exit:f64 }
@@ -123,11 +171,15 @@ impl Foliage {
     fn parse(raw:&[u8])->io::Result<Self> {
         if raw.is_empty() || raw.len() as u64>MAX_BYTES {return Err(bad("foliage input size"));}
         let Strict(doc)=serde_json::from_slice(raw).map_err(|_|bad("foliage JSON"))?;
-        fields(&doc,&["schema","map","classification","calibration_schema","calibration_sha256","map_package_pin",
-            "shared_package_pin","selected_resource_pins","chunk_pins","geometry_contract","aabb_contract","effect_contract","instances","fire_near_distance_m","fire_near_multiplier"])?;
+        let mut keys = vec!["schema","map","classification","calibration_schema","calibration_sha256","map_package_pin",
+            "shared_package_pin","selected_resource_pins","chunk_pins","geometry_contract","aabb_contract","effect_contract","instances","fire_near_distance_m","fire_near_multiplier"];
+        let with_trees = doc["schema"] == FALLEN_SCHEMA;
+        if with_trees { keys.extend(["fallen_tree_catalog_sha256", "fallen_trees"]); }
+        fields(&doc, &keys)?;
         let policy = match doc["schema"].as_str() {
             Some(SCHEMA) => Policy::Strongest,
             Some(STACKED_SCHEMA) if doc["effect_contract"] == STACKED_CONTRACT => Policy::Stacked,
+            Some(FALLEN_SCHEMA) if doc["effect_contract"] == FALLEN_CONTRACT => Policy::Stacked,
             _ => return Err(bad("foliage policy identity")),
         };
         if doc["map"]!="02_malinovka" || doc["classification"]!="PROJECT_CALIBRATION_NOT_HISTORICAL"
@@ -157,18 +209,14 @@ impl Foliage {
             if !RESOURCES.iter().any(|r|r.0==resource) {return Err(bad("foliage resource"));}
             let coefficient=number(&row["concealment_additive"],0.,1.)?;
             let center=point(&row["center_world"],-MAX_COORD,MAX_COORD)?;
-            let basis=row["basis_world_rows"].as_array().filter(|a|a.len()==3).ok_or_else(||bad("foliage basis"))?;
-            let basis=[point(&basis[0],-MAX_EXTENT,MAX_EXTENT)?,point(&basis[1],-MAX_EXTENT,MAX_EXTENT)?,point(&basis[2],-MAX_EXTENT,MAX_EXTENT)?];
-            let det=dot(basis[0],cross(basis[1],basis[2]));
-            if !det.is_finite() || det.abs()<MIN_DETERMINANT {return Err(bad("foliage degenerate basis"));}
-            let inverse=[cross(basis[1],basis[2]).map(|x|x/det),cross(basis[2],basis[0]).map(|x|x/det),cross(basis[0],basis[1]).map(|x|x/det)];
-            let extents=std::array::from_fn::<_,3,_>(|j|basis.iter().map(|r|r[j]*r[j]).sum::<f64>().sqrt());
+            let (inverse, extents) = basis_geometry(basis(&row["basis_world_rows"])?)?;
             let supplied=point(&row["aabb_half_extents_world"],0.,MAX_EXTENT)?;
-            if extents.into_iter().zip(supplied).any(|(a,b)|a<=0. || a>MAX_EXTENT || (a-b).abs()>1e-9*(1.+a)) {return Err(bad("foliage aabb mismatch"));}
-            let v=Volume{chunk:c,index,resource:resource.to_owned(),coefficient,center,extents,inverse};
+            if extents.into_iter().zip(supplied).any(|(a,b)|(a-b).abs()>1e-9*(1.+a)) {return Err(bad("foliage aabb mismatch"));}
+            let v=Volume{chunk:c,index,resource:resource.to_owned(),coefficient,shape:Ellipsoid{center,extents,inverse}};
             if volumes.insert((c,index),v).is_some() {return Err(bad("foliage duplicate instance"));}
         }
-        Ok(Self{calibration_sha256:calibration_sha256.to_owned(),source_sha256:format!("{:x}",Sha256::digest(raw)),raw:raw.to_vec(),volumes:volumes.into_values().collect(),fire_near_m,fire_multiplier,policy})
+        let trees = if with_trees { Some(FallenTrees::parse(&doc)?) } else { None };
+        Ok(Self{calibration_sha256:calibration_sha256.to_owned(),source_sha256:format!("{:x}",Sha256::digest(raw)),raw:raw.to_vec(),volumes:volumes.into_values().collect(),fire_near_m,fire_multiplier,policy,trees})
     }
     pub fn len(&self)->usize {self.volumes.len()}
     /// Closed segment, including endpoints/tangencies and a point inside a
@@ -179,7 +227,7 @@ impl Foliage {
         let direction = sub(end, start);
         let mut hits=Vec::new();
         for v in &self.volumes {
-            if let Some((t_enter,t_exit))=v.interval(start, end, direction) {
+            if let Some((t_enter,t_exit))=v.shape.interval(start, end, direction) {
                 hits.push(Hit{chunk:v.chunk,speedtree_index:v.index,resource:v.resource.clone(),concealment_additive:v.coefficient,t_enter,t_exit});
             }
         }
@@ -187,7 +235,12 @@ impl Foliage {
     }
     /// The segment runs from an observer control point to a target point.
     /// V2 uses the ray entry for the observer and the ray exit for the target.
-    pub fn contribution(&self,start:Point,end:Point,fired:bool)->io::Result<f32> {
+    #[cfg(test)]
+    fn contribution(&self, start: Point, end: Point, fired: bool) -> io::Result<f32> {
+        self.contribution_with_fallen(start, end, fired, &[])
+    }
+
+    fn contribution_with_fallen(&self, start: Point, end: Point, fired: bool, fallen: &[(f64, Ellipsoid)]) -> io::Result<f32> {
         if start.into_iter().chain(end).any(|v|!v.is_finite() || v.abs()>MAX_COORD) {return Err(bad("foliage query bounds"));}
         let direction = sub(end, start);
         let length = dot(direction, direction).sqrt();
@@ -195,12 +248,13 @@ impl Foliage {
         let tolerance = 1e-9 * (1.0 + length);
         let mut strongest: f64 = 0.0;
         let mut full_sum: f64 = 0.0;
-        for volume in &self.volumes {
-            let Some((enter, exit)) = volume.interval(start, end, direction) else { continue; };
+        for (coefficient, shape) in self.volumes.iter().map(|volume| (&volume.coefficient, &volume.shape))
+            .chain(fallen.iter().map(|(coefficient, shape)| (coefficient, shape))) {
+            let Some((enter, exit)) = shape.interval(start, end, direction) else { continue; };
             let target_near = fired && (1.0 - exit) * length <= self.fire_near_m + tolerance;
             match self.policy {
                 Policy::Strongest => {
-                    let effect = if target_near { volume.coefficient * self.fire_multiplier } else { volume.coefficient };
+                    let effect = if target_near { coefficient * self.fire_multiplier } else { *coefficient };
                     strongest = strongest.max(effect);
                 }
                 Policy::Stacked => {
@@ -208,9 +262,9 @@ impl Foliage {
                         continue;
                     }
                     if target_near {
-                        strongest = strongest.max(volume.coefficient);
+                        strongest = strongest.max(*coefficient);
                     } else {
-                        full_sum += volume.coefficient;
+                        full_sum += coefficient;
                     }
                 }
             }
@@ -220,6 +274,88 @@ impl Foliage {
             Policy::Stacked => (full_sum + strongest * self.fire_multiplier).min(1.0),
         };
         Ok(contribution as f32)
+    }
+
+    pub(super) fn verify_tree_catalog(&self, catalog: Option<&super::fragiles::Catalog>) -> io::Result<()> {
+        if let Some(trees) = &self.trees {
+            trees.verify_catalog(catalog.ok_or_else(|| bad("fallen foliage requires the tree catalog"))?)?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn rays<'a>(&'a self, state: Option<&super::fragiles::State>) -> io::Result<RayFoliage<'a>> {
+        let mut fallen = Vec::new();
+        if let Some(trees) = &self.trees {
+            let state = state.ok_or_else(|| bad("fallen foliage requires destructible state"))?;
+            if trees.catalog_sha256 != state.catalog.sha256 { return Err(bad("fallen foliage catalog hash")); }
+            for (object, packed) in state.committed_fallen_trees() {
+                let crown = trees.crowns.get(&object.object_id).ok_or_else(|| bad("fallen foliage crown missing"))?;
+                if crown.coefficient > 0.0 { fallen.push((crown.coefficient, crown.fallen_shape(object, packed)?)); }
+            }
+        }
+        Ok(RayFoliage { source: self, fallen })
+    }
+}
+
+impl FallenTrees {
+    fn parse(doc: &Value) -> io::Result<Self> {
+        let digest = text(&doc["fallen_tree_catalog_sha256"], 64)?;
+        if !sha(digest) { return Err(bad("fallen foliage catalog hash")); }
+        let rows = doc["fallen_trees"].as_array().filter(|a| !a.is_empty() && a.len() <= MAX_INSTANCES)
+            .ok_or_else(|| bad("fallen foliage instance count"))?;
+        let mut crowns = BTreeMap::new();
+        let mut instances = BTreeSet::new();
+        let read_id = |v: &Value| v.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| bad("fallen foliage id"));
+        for row in rows {
+            fields(row, &["object_id", "instance_id", "resource", "root_world", "center_from_root_world", "basis_world_rows", "concealment_additive"])?;
+            let id = read_id(&row["object_id"])?;
+            let instance_id = read_id(&row["instance_id"])?;
+            let resource = text(&row["resource"], 128)?;
+            if id == 0 || !instances.insert(instance_id) || !resource.starts_with("speedtree/02_Malinovka/") || !resource.ends_with(".spt") {
+                return Err(bad("fallen foliage identity"));
+            }
+            let basis = basis(&row["basis_world_rows"])?;
+            basis_geometry(basis)?;
+            let crown = TreeCrown { instance_id, resource: resource.to_owned(), basis,
+                root: point(&row["root_world"], -MAX_COORD, MAX_COORD)?,
+                offset: point(&row["center_from_root_world"], -MAX_EXTENT, MAX_EXTENT)?,
+                coefficient: number(&row["concealment_additive"], 0.0, 1.0)? };
+            if crowns.insert(id, crown).is_some() { return Err(bad("duplicate fallen foliage object")); }
+        }
+        Ok(Self { catalog_sha256: digest.to_owned(), crowns })
+    }
+
+    fn verify_catalog(&self, catalog: &super::fragiles::Catalog) -> io::Result<()> {
+        if catalog.map.asset() != "02_malinovka" || self.catalog_sha256 != catalog.sha256 {
+            return Err(bad("fallen foliage catalog identity"));
+        }
+        let mut count = 0;
+        for object in catalog.objects.iter().filter(|o| o.kind == super::fragiles::ObjectKind::Tree) {
+            let crown = self.crowns.get(&object.object_id).ok_or_else(|| bad("fallen foliage crown missing"))?;
+            if crown.instance_id != object.instance_id || crown.resource != object.resource { return Err(bad("fallen foliage crown identity")); }
+            count += 1;
+        }
+        if count != self.crowns.len() { return Err(bad("fallen foliage catalog coverage")); }
+        Ok(())
+    }
+}
+
+impl TreeCrown {
+    fn fallen_shape(&self, object: &super::fragiles::Object, packed: u32) -> io::Result<Ellipsoid> {
+        use std::f64::consts::{PI, TAU};
+        if packed >> 24 != u32::from(object.native_index) { return Err(bad("fallen foliage native index")); }
+        let yaw = f64::from((packed >> 18) & 0x3f) * TAU / 64.0 - PI;
+        let pitch = f64::from(packed & 0xffff) * TAU / 65536.0 - PI;
+        let (sin_yaw, cos_yaw) = yaw.sin_cos();
+        let (sin_pitch, cos_pitch) = pitch.sin_cos();
+        let rotate = |[x, y, z]: Point| {
+            let forward = x * sin_yaw + z * cos_yaw;
+            let delta = forward * (cos_pitch - 1.0) + y * sin_pitch;
+            [x + delta * sin_yaw, y * cos_pitch - forward * sin_pitch, z + delta * cos_yaw]
+        };
+        let center = add(self.root, rotate(self.offset));
+        let (inverse, extents) = basis_geometry(self.basis.map(rotate))?;
+        Ok(Ellipsoid { center, extents, inverse })
     }
 }
 
@@ -285,8 +421,9 @@ mod tests {
         let basis=[[0.,0.,2.],[0.,2.4,0.],[-4.,0.,1.]];
         let det=dot(basis[0],cross(basis[1],basis[2]));
         let inverse=[cross(basis[1],basis[2]).map(|x|x/det),cross(basis[2],basis[0]).map(|x|x/det),cross(basis[0],basis[1]).map(|x|x/det)];
-        let v=Volume{chunk:[-2,3],index:1,resource:"fixture".into(),coefficient:0.2,center:[0.;3],extents:[4.,2.4,5_f64.sqrt()],inverse};
-        let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25,policy:Policy::Strongest};
+        let v=Volume{chunk:[-2,3],index:1,resource:"fixture".into(),coefficient:0.2,
+            shape:Ellipsoid{center:[0.;3],extents:[4.,2.4,5_f64.sqrt()],inverse}};
+        let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25,policy:Policy::Strongest,trees:None};
         let hits=f.intersections([-8.,0.,0.],[8.,0.,0.]).unwrap();
         assert_eq!(hits.len(),1);assert!(hits[0].t_enter<0.5 && hits[0].t_exit>0.5);
         assert!(f.intersections([f64::NAN,0.,0.],[0.;3]).is_err());
@@ -400,6 +537,92 @@ mod tests {
         document["effect_contract"] = "fixture".into();
         assert_eq!(parse_fixture(&document).unwrap().contribution([-2.0, 0.0, 0.0], [30.0, 0.0, 0.0], false).unwrap(), 0.2);
     }
+
+    #[test]
+    fn fallen_leafy_and_sparse_crowns_follow_the_server_packed_rotation() {
+        use super::super::fragiles::State;
+        let (foliage, catalog) = test_fallen_fixture();
+        foliage.verify_tree_catalog(Some(&catalog)).unwrap();
+        let a = [0.0, 2.0, 0.0];
+        let b = [165.0, 2.0, 0.0];
+        let mut state = State::new(catalog.clone());
+        assert_eq!(foliage.rays(Some(&state)).unwrap().contribution(a, b, false).unwrap(), 0.0);
+        let mut across = state.clone();
+        across.ram_contact(1, 0, 1001, 1, [0.0; 3], [0.0, 0.0, 1.0], [0.0, 0.0, 4.0], 10_000.0, "hull".into()).unwrap().unwrap();
+        assert_eq!(foliage.rays(Some(&across)).unwrap().contribution(a, b, false).unwrap(), 0.0);
+        state.ram_contact(1, 0, 1001, 1, [0.0; 3], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], 10_000.0, "hull".into()).unwrap().unwrap();
+        let leafy = foliage.rays(Some(&state)).unwrap();
+        assert_eq!(leafy.contribution(a, b, false).unwrap(), 0.25);
+        assert_eq!(leafy.contribution(a, [110.0, 2.0, 0.0], true).unwrap(), 0.0625);
+        assert_eq!(leafy.contribution([94.0, 2.0, 0.0], b, false).unwrap(), 0.0);
+        state.ram_contact(2, 0, 1002, 1, [0.0; 3], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], 10_000.0, "hull".into()).unwrap().unwrap();
+        let both = foliage.rays(Some(&state)).unwrap();
+        assert!((both.contribution(a, b, false).unwrap() - 0.30).abs() < 1e-6);
+        assert_eq!(both.contribution([105.0, 2.0, 0.0], b, false).unwrap(), 0.05);
+        let mut document: Value = serde_json::from_slice(&foliage.raw).unwrap();
+        document["instances"][0]["center_world"] = serde_json::json!([50.0, 2.0, 0.0]);
+        let combined = parse_fixture(&document).unwrap();
+        assert_eq!(combined.rays(Some(&state)).unwrap().contribution(a, b, false).unwrap(), 0.5);
+        document["fallen_trees"][1]["concealment_additive"] = serde_json::json!(0.0);
+        let bare = parse_fixture(&document).unwrap();
+        assert_eq!(bare.rays(Some(&state)).unwrap().contribution([105.0, 2.0, 0.0], b, false).unwrap(), 0.0);
+    }
+
+    #[test]
+    fn fallen_foliage_requires_complete_matching_catalog_and_revalidates_after_wire() {
+        let (foliage, catalog) = test_fallen_fixture();
+        assert!(foliage.verify_tree_catalog(None).is_err());
+        let mut wrong = (*catalog).clone();
+        wrong.sha256 = "a".repeat(64);
+        assert!(foliage.verify_tree_catalog(Some(&wrong)).is_err());
+        wrong.sha256 = catalog.sha256.clone();
+        wrong.objects[0].instance_id += 1;
+        assert!(foliage.verify_tree_catalog(Some(&wrong)).is_err());
+        wrong.objects.pop();
+        assert!(foliage.verify_tree_catalog(Some(&wrong)).is_err());
+        let mut invalid: Value = serde_json::from_slice(&foliage.raw).unwrap();
+        invalid["fallen_trees"][1]["object_id"] = 1.into();
+        assert!(parse_fixture(&invalid).is_err());
+        invalid["fallen_trees"][1]["object_id"] = 2.into();
+        invalid["fallen_trees"][1]["basis_world_rows"][0] = serde_json::json!([0,0,0]);
+        assert!(parse_fixture(&invalid).is_err());
+
+        let now = std::time::Instant::now();
+        let mut sender = crate::bw_wire::Arcs::new(false);
+        let mut receiver = crate::bw_wire::Arcs::new(true);
+        let wire = crate::bw_wire::encode(&foliage, now, &mut sender).unwrap();
+        let decoded: Foliage = crate::bw_wire::decode(&wire, now, &mut receiver).unwrap();
+        assert!(decoded.verify_tree_catalog(None).is_err());
+        assert!(decoded.verify_tree_catalog(Some(&catalog)).is_ok());
+    }
+}
+
+#[cfg(test)]
+pub(super) fn test_fallen_fixture() -> (Foliage, std::sync::Arc<super::fragiles::Catalog>) {
+    use super::fragiles::{Catalog, Object, ObjectKind};
+    use serde_json::json;
+    let mut document = tests::fixture();
+    document["schema"] = FALLEN_SCHEMA.into();
+    document["effect_contract"] = FALLEN_CONTRACT.into();
+    document["instances"][0]["center_world"] = json!([100.0, 100.0, 100.0]);
+    let digest = "d".repeat(64);
+    document["fallen_tree_catalog_sha256"] = digest.clone().into();
+    let rows = [(1u32, 11u32, "speedtree/02_Malinovka/Maple.spt", 95.0, 0.25),
+        (2, 12, "speedtree/02_Malinovka/BirchFall_2.spt", 120.0, 0.05)];
+    document["fallen_trees"] = Value::Array(rows.iter().map(|&(id, instance, resource, x, coefficient)| json!({
+        "object_id": id, "instance_id": instance, "resource": resource,
+        "root_world": [x, 0.0, 0.0], "center_from_root_world": [0.0, 6.0, 0.0],
+        "basis_world_rows": [[4.0, 0.0, 0.0], [0.0, 5.0, 0.0], [0.0, 0.0, 4.0]], "concealment_additive": coefficient
+    })).collect());
+    let objects = rows.into_iter().map(|(id, instance, resource, _, _)| Object {
+        object_id: id, instance_id: instance, resource: resource.to_owned(), chunk_id: 32639, native_index: id as u8,
+        health: 40, material_kind: 71, projectile_first_triangle: 0, projectile_triangle_count: 0,
+        physics_first_triangle: id, physics_triangle_count: 1, object_revision: "e".repeat(64), kind: ObjectKind::Tree, falling: None,
+    }).collect();
+    let catalog = std::sync::Arc::new(Catalog {map: crate::map_profile091::MapId::from_asset("02_malinovka").unwrap(),
+        sha256: digest, worker_file: "physics-removals.json".to_owned(), worker_sha256: "c".repeat(64),
+        contacts: true, objects, version: 5, area_chunks: vec![32639] });
+    (Foliage::parse(&serde_json::to_vec(&document).unwrap()).unwrap(), catalog)
 }
 
 #[cfg(test)]
