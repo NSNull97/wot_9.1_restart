@@ -156,7 +156,8 @@ def payload(original, with_feed=True, with_history=True, icons=None, palette=Fal
                     'palette': palette, 'visibility_debug': with_visibility,
                     'callbacks': ([feed.CALLBACK, feed.PLACE_CALLBACK] if with_feed else [])
                     + ([history.CALLBACK, history.PLACE_CALLBACK] if with_history else [])
-                    + ([visibility.CLEAR, visibility.LINE, visibility.PANEL, visibility.MARKER] if with_visibility else []),
+                    + ([visibility.CLEAR, visibility.LINE, visibility.PANEL, visibility.MARKER,
+                        visibility.LAMP, visibility.NATIVE_LAMP] if with_visibility else []),
                     'tool_sha256': hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                     'icons': 'embedded' if images else 'absent' if icons is not None else 'not_requested',
                     'icon_sprites': sorted(images), 'icons_missing': missing, 'native_render_check': 'NOT_RUN'}

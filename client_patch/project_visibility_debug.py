@@ -35,6 +35,7 @@ CHALLENGE_WINDOW = 256
 RECOVERY_DELAY = 31.0
 RECOVERY_COOLDOWN = 60.0
 SNAPSHOT_DEADLINE = 30.0
+MAP_NAMES = {'02_malinovka': 'Malinovka', '05_prohorovka': 'Prokhorovka'}
 UUID = re.compile(r'\A[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\Z')
 try:
     INTEGER = (int, long)
@@ -197,7 +198,8 @@ def decode_snapshot(raw, selected):
         raise ValueError('debug publication source')
     if pub['spotter'] is not None: _integer(pub['spotter'],0,5)
     world=value['map']
-    if type(world) is not dict or set(world)!=set(('asset','actors','direct','publications')) or world['asset']!='02_malinovka':
+    if (type(world) is not dict or set(world)!=set(('asset','actors','direct','publications'))
+            or type(world['asset']) not in TEXT or world['asset'] not in MAP_NAMES):
         raise ValueError('debug map identity')
     actors=world['actors']
     if type(actors) is not list or not 1<=len(actors)<=6:raise ValueError('debug map actors')
@@ -307,6 +309,22 @@ class Reassembler(object):
 # UNKNOWN/unexamined rays are grey; no ray is recomputed locally.
 COLORS = {'terrain':0xff6666,'object':0xffa040,'clear':0x60e080,'coincident':0x60e080,'not_checked':0x808080}
 CALL_CLEAR, CALL_LINE, CALL_PANEL, CALL_MARKER = 'ProjectVisibility.clear', 'ProjectVisibility.line', 'ProjectVisibility.panel', 'ProjectVisibility.marker'
+CALL_LAMP = 'ProjectVisibility.lamp'
+# Six-seat entity layout in shared/wire.rs. The active avatar exposes its own vehicle ID.
+VEHICLE_SLOTS = {0x09100003: 0, 0x09100005: 1, 0x09110003: 2,
+                 0x09110005: 3, 0x09110007: 4, 0x09110009: 5}
+LIVE_SPOTTING_SOURCES = ('direct', 'team', 'direct_retained', 'team_retained')
+
+
+def own_spotting(snapshot, vehicle_id):
+    if type(vehicle_id) not in INTEGER:
+        return None
+    own_slot = VEHICLE_SLOTS.get(vehicle_id)
+    world = snapshot['map']
+    if not any(actor['slot'] == own_slot for actor in world['actors']):
+        return None
+    return any(row['target'] == own_slot and row['visible'] and row['source'] in LIVE_SPOTTING_SOURCES
+               for row in world['publications'])
 CAMERA_CONTRACT = ('scripts/client/AvatarInputHandler/cameras.py', 'getViewProjectionMatrix', 173, (),
                    'b9ff840c934e586fc4a9a4315bcf99c51db5762600def73723fb83c4e760acf1')
 _installed = None
@@ -408,7 +426,7 @@ def map_overlay(snapshot,width):
         lines.extend(((x0,y0,endx,endy,colour),
                       (endx,endy,endx-7*ux+3*uy,endy-7*uy-3*ux,colour),
                       (endx,endy,endx-7*ux-3*uy,endy-7*uy+3*ux,colour)))
-    markers.append((12,int(left),int(top-18),'Malinovka plot: direct sight ->',0xffffff))
+    markers.append((12,int(left),int(top-18),MAP_NAMES[world['asset']]+' plot: direct sight ->',0xffffff))
     return lines,markers
 
 
@@ -421,11 +439,17 @@ class Runtime(object):
         self.selection_world=None;self.awaiting_since=None
         self.battle,self.snapshot,self.received,self.active,self.timer,self.run=None,None,0.,True,None,None
         self.rendered=None;self.keys_down=set()
+        self.spotting_lamp = None
     def attach(self,window): self.battle=window
     def detach(self):
         if self.battle is not None:
+            try:
+                self.set_spotting_lamp(None)
+            except Exception as error:
+                self.record('visibility_debug_lamp_clear_failed', error_type=type(error).__name__)
             try:self.battle.call(CALL_CLEAR,[False])
             except Exception as error:self.record('visibility_debug_clear_failed',error_type=type(error).__name__)
+        self.spotting_lamp = None
         self.battle=None;self.decoder.reset();self.snapshot=None;self.run=None;self.rendered=None;self.selection_world=None;self.awaiting_since=None;self.auth_at=None
     def ready(self): self.decoder.reset();self.snapshot=None;self.run=None;self.rendered=None;self.responded=False;self.hello_pending=False;self.selection_world=None;self.awaiting_since=None;self.auth_at=None;self.keys_down.clear()
     def frame(self,data):
@@ -465,12 +489,28 @@ class Runtime(object):
             if self.retry is not None:self.retry()
             return True
         return False
+    def set_spotting_lamp(self, state, tick=None):
+        if state == self.spotting_lamp:
+            return
+        mode = 'native' if state is None else 'spotted' if state else 'hidden'
+        self.battle.call(CALL_LAMP, [mode])
+        self.spotting_lamp = state
+        self.record('visibility_debug_lamp', spotted=state, tick=tick)
     def draw(self):
         if self.battle is None:return
-        current=getattr(self.engine.player(),'arenaUniqueID',None)
+        player=self.engine.player()
+        current=getattr(player,'arenaUniqueID',None)
         if self.snapshot is not None and (type(current) not in INTEGER or str(current)!=self.snapshot['battle']):
             self.ready()
         self.expire_snapshot()
+        # The map's own-vehicle publications remain relevant while changing the displayed pair.
+        lamp_snapshot = self.snapshot or self.selection_world
+        if (lamp_snapshot is not None and str(current) == lamp_snapshot['battle']
+                and self.engine.time() - self.received <= 15.):
+            self.set_spotting_lamp(own_spotting(lamp_snapshot, getattr(player, 'playerVehicleID', None)),
+                                   lamp_snapshot['tick'])
+        else:
+            self.set_spotting_lamp(None)
         if self.snapshot is None:
             if self.recover_tick is not None:self.recover_tick()
             self.battle.call(CALL_CLEAR,[False]);return

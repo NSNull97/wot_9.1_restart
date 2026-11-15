@@ -5,6 +5,8 @@ CLEAR = 'ProjectVisibility.clear'
 LINE = 'ProjectVisibility.line'
 PANEL = 'ProjectVisibility.panel'
 MARKER = 'ProjectVisibility.marker'
+LAMP = 'ProjectVisibility.lamp'
+NATIVE_LAMP = 'sixthSenseIndicator.show'
 ROWS = 8
 
 
@@ -21,13 +23,29 @@ def sources():
     marker = function('_projectVisibilityMarker', ['slot','x','y','text','colour'], [
         ('do',('fn','_projectFeedField',[mc,('+','visibilityMarker',var('slot')),('+',200,var('slot')),
                  var('x'),var('y'),256,12,var('colour'),'left',var('text'),False,100]))])
-    return clear + line + panel + marker
+    indicator = var('sixthSenseIndicator')
+    timer = var('sixthSenseStart')
+    mode = var('projectVisibilityLampMode')
+    # The original active sequence stops on its lit frame once the fade timer is cancelled.
+    lamp = function('_projectVisibilityLamp', ['mode'], [
+        ('assign', 'projectVisibilityLampMode', var('mode')),
+        ('if', ('<', -1, timer), [('do', ('fn', 'clearInterval', [timer])),
+                                  ('assign', 'sixthSenseStart', -1)]),
+        ('if', ('==', mode, 'spotted'), [method(indicator, 'gotoAndPlay', 'active'), ('return', None)]),
+        method(indicator, 'gotoAndStop', 'inactive')])
+    # Preserve the underlying native function and route its visual calls when diagnostics are inactive.
+    native_lamp = function('_projectVisibilityNativeLamp', ['shown'], [
+        ('if', ('==', mode, 'native'), [('do', ('fn', 'onShowSixthSense', [var('shown')]))])])
+    return clear + line + panel + marker + lamp + native_lamp
 
 
 def setup(delegate, depth):
     return [('assign','visibilityMC',('call',var('this'),'createEmptyMovieClip',['projectVisibility',depth])),
             ('set',var('visibilityMC'),'_visible',False),
+            ('assign', 'projectVisibilityLampMode', 'native'),
             ('do',('call',delegate,'addCallBack',[CLEAR,var('this'),'_projectVisibilityClear'])),
             ('do',('call',delegate,'addCallBack',[LINE,var('this'),'_projectVisibilityLine'])),
             ('do',('call',delegate,'addCallBack',[PANEL,var('this'),'_projectVisibilityPanel'])),
-            ('do',('call',delegate,'addCallBack',[MARKER,var('this'),'_projectVisibilityMarker']))]
+            ('do',('call',delegate,'addCallBack',[MARKER,var('this'),'_projectVisibilityMarker'])),
+            ('do',('call',delegate,'addCallBack',[LAMP,var('this'),'_projectVisibilityLamp'])),
+            ('do',('call',delegate,'addCallBack',[NATIVE_LAMP,var('this'),'_projectVisibilityNativeLamp']))]

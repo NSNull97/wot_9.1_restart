@@ -144,7 +144,8 @@ class SetupTests(unittest.TestCase):
                  'gfx': {'io': {'GameDelegate': delegate}}}
         machine=Machine(root)
         machine.run(native.actions(False,False,with_visibility=True),[scope])
-        self.assertEqual(set(delegate.callbacks),{visibility.CLEAR,visibility.LINE,visibility.PANEL,visibility.MARKER})
+        self.assertEqual(set(delegate.callbacks),{visibility.CLEAR,visibility.LINE,visibility.PANEL,
+                                                  visibility.MARKER,visibility.LAMP,visibility.NATIVE_LAMP})
         holder=root.members['projectVisibility']
         machine.invoke(scope['_projectVisibilityClear'],root,[True])
         self.assertTrue(holder.members['_visible'])
@@ -160,6 +161,34 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(marker_call[5],256)
         machine.invoke(scope['_projectVisibilityClear'],root,[False])
         self.assertFalse(holder.members['_visible'])
+
+    def test_visibility_lamp_cancels_native_fade_and_returns_control_on_expiry(self):
+        root, delegate, indicator = Clip(), Delegate(), Clip('sixthSenseIndicator')
+        root.members['getNextHighestDepth'] = lambda: 300
+        cancelled, native_calls = [], []
+        scope = {'this': root, 'gfx': {'io': {'GameDelegate': delegate}},
+                 'sixthSenseIndicator': indicator, 'sixthSenseStart': 42,
+                 'clearInterval': cancelled.append, 'onShowSixthSense': native_calls.append}
+        machine = Machine(root)
+        machine.run(native.actions(False, False, with_visibility=True), [scope])
+        diagnostic_lamp = scope['_projectVisibilityLamp']
+        native_lamp = scope['_projectVisibilityNativeLamp']
+
+        machine.invoke(native_lamp, root, [True])
+        self.assertEqual(native_calls, [True])
+        machine.invoke(diagnostic_lamp, root, ['spotted'])
+        self.assertEqual(cancelled, [42])
+        self.assertEqual(scope['sixthSenseStart'], -1)
+        self.assertEqual(indicator.calls, [('gotoAndPlay', 'active')])
+        machine.invoke(native_lamp, root, [True])
+        self.assertEqual(native_calls, [True])
+        machine.invoke(diagnostic_lamp, root, ['hidden'])
+        self.assertEqual(indicator.calls[-1], ('gotoAndStop', 'inactive'))
+        machine.invoke(native_lamp, root, [True])
+        self.assertEqual(native_calls, [True])
+        machine.invoke(diagnostic_lamp, root, ['native'])
+        machine.invoke(native_lamp, root, [False])
+        self.assertEqual(native_calls, [True, False])
 
     def test_holders_on_the_root_and_four_callbacks(self):
         machine, scope, root, delegate = loaded()

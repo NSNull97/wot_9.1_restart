@@ -60,6 +60,61 @@ def frames(value, seq=7, size=120, epoch=EPOCH):
 
 
 class VisibilityDebugTests(unittest.TestCase):
+    def test_prokhorovka_uses_the_same_validated_snapshot_and_its_own_label(self):
+        value = snapshot()
+        value['map']['asset'] = '05_prohorovka'
+        decoded = diag.decode_snapshot(json.dumps(value).encode('ascii'), (0, 1))
+        _, markers = diag.map_overlay(decoded, 1920)
+        self.assertEqual(markers[-1][3], 'Prokhorovka plot: direct sight ->')
+        value['map']['asset'] = 'unsupported'
+        with self.assertRaises(ValueError):
+            diag.decode_snapshot(json.dumps(value).encode('ascii'), (0, 1))
+
+    def test_lamp_tracks_own_enemy_publication_including_retention(self):
+        value = snapshot()
+        own = 0x09100003
+        incoming = value['map']['publications'][1]
+        self.assertFalse(diag.own_spotting(value, own))
+        for source in ('direct', 'team', 'direct_retained', 'team_retained'):
+            incoming.update(source=source, visible=True)
+            self.assertTrue(diag.own_spotting(value, own), source)
+        incoming.update(source='wreck', visible=True)
+        self.assertFalse(diag.own_spotting(value, own))
+        self.assertIsNone(diag.own_spotting(value, 0x09110009))
+
+    def test_lamp_stays_lit_between_samples_and_releases_on_stale_or_new_battle(self):
+        value = snapshot()
+        clock = [20.]
+        player = SimpleNamespace(arenaUniqueID=int(value['battle']), playerVehicleID=0x09100003)
+        engine = SimpleNamespace(player=lambda: player, time=lambda: clock[0])
+        calls = []
+        runtime = diag.Runtime({'observer':0,'target':1,'run':RUN,'account':ACCOUNT}, engine,
+                               None, None, None, lambda *a,**k:None, GRANT)
+        runtime.battle = SimpleNamespace(call=lambda name,args:calls.append((name,args)))
+        # A pair reauthorization hides the rays, while its last map remains fresh.
+        runtime.selection_world = value
+        runtime.received = clock[0]
+        incoming = value['map']['publications'][1]
+        incoming.update(source='team_retained', visible=True)
+        runtime.draw()
+        clock[0] += 4.
+        runtime.draw()
+        incoming.update(source='hidden', visible=False)
+        runtime.draw()
+        incoming.update(source='direct', visible=True)
+        runtime.draw()
+        clock[0] = 36.
+        runtime.draw()
+        expected = ['spotted', 'hidden', 'spotted', 'native']
+        self.assertEqual([args[0] for name,args in calls if name == diag.CALL_LAMP], expected)
+
+        runtime.received = clock[0]
+        runtime.draw()
+        player.arenaUniqueID += 1
+        runtime.draw()
+        self.assertEqual([args[0] for name,args in calls if name == diag.CALL_LAMP],
+                         expected + ['spotted', 'native'])
+
     def test_screenshot_receipt_requires_fresh_current_snapshot_sent_to_movie(self):
         value=snapshot();player=SimpleNamespace(arenaUniqueID=int(value['battle']))
         clock=[10.];engine=SimpleNamespace(player=lambda:player,time=lambda:clock[0])
