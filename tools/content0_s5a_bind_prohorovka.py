@@ -15,10 +15,10 @@ LIMIT = 2 * 1024 * 1024
 
 
 def checked_artifact(stand, profiles, raw):
-    from tools.prohorovka_foliage import BASE_PROHOROVKA_FOLIAGE_SHA256, PROHOROVKA_FOLIAGE_SHA256
+    from tools.prohorovka_foliage import APPROVED_PROHOROVKA_FOLIAGE_PINS
 
     sha256 = digest(raw)
-    if profiles.get('map') != ASSET or sha256 not in (BASE_PROHOROVKA_FOLIAGE_SHA256, PROHOROVKA_FOLIAGE_SHA256):
+    if profiles.get('map') != ASSET or sha256 not in APPROVED_PROHOROVKA_FOLIAGE_PINS:
         raise ValueError('Prohorovka foliage map or canonical artifact digest mismatch')
     document = json_unique(raw)
     catalog_pin = document['fallen_tree_catalog_sha256']

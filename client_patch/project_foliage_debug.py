@@ -20,6 +20,7 @@ DRAW_INTERVAL_S = .10
 TREE_REFRESH_S = .50
 POINTS = 16
 SCREEN_DIRECTIONS = tuple((math.cos(i * math.pi / 8.), math.sin(i * math.pi / 8.)) for i in range(POINTS))
+BOX_CORNERS = tuple((x, y, z) for x in (-1., 1.) for y in (-1., 1.) for z in (-1., 1.))
 DIGEST = re.compile(r'\A[0-9a-f]{64}\Z')
 CAMERA_CONTRACT = ('scripts/client/AvatarInputHandler/cameras.py', 'getViewProjectionMatrix', 173, (),
                    'b9ff840c934e586fc4a9a4315bcf99c51db5762600def73723fb83c4e760acf1')
@@ -93,8 +94,11 @@ def read_geometry(settings):
         raise ValueError('foliage preview count')
     shrubs, trees = [], {}
     for row in instances:
+        shape = row.get('shape', 'ellipsoid')
+        if shape not in ('ellipsoid', 'box'):
+            raise ValueError('foliage preview shrub shape')
         shrubs.append((_vector(row['center_world'], 10000.), _basis(row['basis_world_rows']),
-                       _colour(_number(row['concealment_additive'], 0., 1.))))
+                       _colour(_number(row['concealment_additive'], 0., 1.)), shape))
     for row in crowns:
         chunk, index = row['chunk_id'], row['native_index']
         if (type(chunk) not in INTEGER or not 0 <= chunk <= 65535 or type(index) not in INTEGER
@@ -118,7 +122,8 @@ def fallen_geometry(tree, packed):
         delta = forward * (cos_pitch - 1.) + y * sin_pitch
         return (x + delta * sin_yaw, y * cos_pitch - forward * sin_pitch, z + delta * cos_yaw)
 
-    return (tuple(x + dx for x, dx in zip(root, rotate(offset))), tuple(rotate(row) for row in basis), colour)
+    return (tuple(x + dx for x, dx in zip(root, rotate(offset))), tuple(rotate(row) for row in basis), colour,
+            'ellipsoid')
 
 
 def _dot(a, b):
@@ -144,16 +149,19 @@ def _viewport(points, width, height):
     return points
 
 
-def project(matrix, math_api, center, basis, width, height):
-    # In homogeneous coordinates each projected silhouette support point is
-    # the maximum of a linear numerator divided by the positive camera w.
-    # Solve that quadratic for 16 directions around the projected ellipsoid.
+def _projected_basis(matrix, math_api, center, basis):
     def clip(row, w):
         value = matrix.applyV4Point(math_api.Vector4(row[0], row[1], row[2], w))
         return value.x, value.y, value.w
 
-    cx, cy, cw = clip(center, 1.)
-    bx, by, bw = zip(*(clip(row, 0.) for row in basis))
+    return clip(center, 1.), tuple(zip(*(clip(row, 0.) for row in basis)))
+
+
+def project(matrix, math_api, center, basis, width, height):
+    # In homogeneous coordinates each projected silhouette support point is
+    # the maximum of a linear numerator divided by the positive camera w.
+    # Solve that quadratic for 16 directions around the projected ellipsoid.
+    (cx, cy, cw), (bx, by, bw) = _projected_basis(matrix, math_api, center, basis)
     norm_w = math.sqrt(_dot(bw, bw))
     # Suppress a projection that cuts across the camera plane, including
     # sniper views with the camera inside a bush.
@@ -185,6 +193,42 @@ def project(matrix, math_api, center, basis, width, height):
     if len(points) > POINTS:
         points = [points[i * len(points) // POINTS] for i in range(POINTS)]
     return points
+
+
+def _convex_hull(points):
+    points = sorted(set(points))
+    if len(points) < 3:
+        return []
+
+    def half(ordered):
+        hull = []
+        for point in ordered:
+            x, y = point
+            while len(hull) >= 2:
+                a, b = hull[-2], hull[-1]
+                if (b[0] - a[0]) * (y - a[1]) > (b[1] - a[1]) * (x - a[0]):
+                    break
+                hull.pop()
+            hull.append(point)
+        return hull[:-1]
+
+    return half(points) + half(reversed(points))
+
+
+def project_box(matrix, math_api, center, basis, width, height):
+    (cx, cy, cw), (bx, by, bw) = _projected_basis(matrix, math_api, center, basis)
+    # Match the ellipsoid preview when the volume straddles the camera plane.
+    if not cw - sum(abs(axis) for axis in bw) > 1e-4:
+        return []
+    points = []
+    for corner in BOX_CORNERS:
+        w = cw + _dot(bw, corner)
+        x = (1. + (cx + _dot(bx, corner)) / w) * width / 2.
+        y = (1. - (cy + _dot(by, corner)) / w) * height / 2.
+        if math.isnan(x) or math.isinf(x) or math.isnan(y) or math.isinf(y):
+            return []
+        points.append((x, y))
+    return _viewport(_convex_hull(points), width, height)
 
 
 class Preview(object):
@@ -287,11 +331,14 @@ class Preview(object):
             return
         matrix = self.cameras.getViewProjectionMatrix()
         polygons = []
-        for _, (center, basis, colour) in nearby:
-            points = project(matrix, self.math, center, basis, width, height)
+        boxes = 0
+        for _, (center, basis, colour, shape) in nearby:
+            draw_shape = project_box if shape == 'box' else project
+            points = draw_shape(matrix, self.math, center, basis, width, height)
             if len(points) >= 3:
                 coordinates = [int(round(value)) for point in points for value in point]
                 polygons.append([colour, 27, len(points)] + coordinates + [0] * (POINTS * 2 - len(coordinates)))
+                boxes += int(shape == 'box')
                 if len(polygons) == MAX_POLYGONS:
                     break
         self.window.call(CLEAR, [True])
@@ -300,7 +347,7 @@ class Preview(object):
             self.window.call(POLYGON, polygon)
         if polygons and self.first_draw:
             self.first_draw = False
-            self.record('foliage_debug_rendered', map=MAP, polygons=len(polygons),
+            self.record('foliage_debug_rendered', map=MAP, polygons=len(polygons), box_polygons=boxes,
                         native_fallen=len(self.fallen), source_sha256=self.source, projection='screen_space')
 
     def tick(self):

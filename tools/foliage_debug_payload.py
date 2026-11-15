@@ -4,9 +4,7 @@ import hashlib
 
 from tools.content0_s5a_foliage_geometry import encode
 from tools.content0_s5a_stand import json_unique, read_stable
-from tools.prohorovka_foliage import (
-    ASSET, BASE_PROHOROVKA_FOLIAGE_SHA256, CATALOG_SHA256, MAX_OUTPUT, PROHOROVKA_FOLIAGE_SHA256,
-)
+from tools.prohorovka_foliage import APPROVED_PROHOROVKA_FOLIAGE_PINS, ASSET, CATALOG_SHA256, MAX_OUTPUT
 
 
 TARGET = 'sr_foliage_debug.json'
@@ -15,7 +13,7 @@ TARGET = 'sr_foliage_debug.json'
 def payload(geometry_file, catalog_file):
     raw = read_stable(geometry_file, MAX_OUTPUT)
     source_sha256 = hashlib.sha256(raw).hexdigest()
-    if source_sha256 not in (BASE_PROHOROVKA_FOLIAGE_SHA256, PROHOROVKA_FOLIAGE_SHA256):
+    if source_sha256 not in APPROVED_PROHOROVKA_FOLIAGE_PINS:
         raise ValueError('foliage preview requires an admitted geometry artifact')
     catalog_raw = read_stable(catalog_file)
     if hashlib.sha256(catalog_raw).hexdigest() != CATALOG_SHA256:

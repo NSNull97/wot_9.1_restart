@@ -22,6 +22,14 @@ def scale_basis(basis, factor):
     return [[component * factor for component in row] for row in basis]
 
 
+def world_aabb_half_extents(basis, shape=None):
+    if shape == 'box':
+        return [sum(abs(component) for component in axis) for axis in zip(*basis)]
+    if shape is not None:
+        raise ValueError('unknown foliage volume shape')
+    return [math.sqrt(sum(component ** 2 for component in axis)) for axis in zip(*basis)]
+
+
 def scaled_export(raw, factor=RADIUS_SCALE):
     """Grow shrubs and crowns around their existing centers with one factor.
 
@@ -36,8 +44,7 @@ def scaled_export(raw, factor=RADIUS_SCALE):
     for row in document['instances']:
         basis = scale_basis(row['basis_world_rows'], factor)
         row['basis_world_rows'] = basis
-        row['aabb_half_extents_world'] = [math.sqrt(sum(basis[i][axis] ** 2 for i in range(3)))
-                                            for axis in range(3)]
+        row['aabb_half_extents_world'] = world_aabb_half_extents(basis, row.get('shape'))
     for row in document.get('fallen_trees', []):
         row['basis_world_rows'] = scale_basis(row['basis_world_rows'], factor)
     origin = {

@@ -1,6 +1,6 @@
 //! Bounded reader and segment query for project-calibrated vegetation.
 //!
-//! Source transforms come from #717. The ellipsoids, coefficients and
+//! Source transforms come from #717. The volumes, coefficients and
 //! spotting policies are project calibration.
 use std::{collections::{BTreeMap, BTreeSet}, fs::File, io::{self, Read}, path::Path};
 use serde::{de::{Deserialize, Deserializer, Error as _, MapAccess, SeqAccess, Visitor},
@@ -110,29 +110,40 @@ fn basis(value: &Value) -> io::Result<[Point; 3]> {
         point(&rows[2], -MAX_EXTENT, MAX_EXTENT)?])
 }
 
-fn basis_geometry(basis: [Point; 3]) -> io::Result<([Point; 3], Point)> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ShapeKind { Ellipsoid, Box }
+
+fn basis_geometry(basis: [Point; 3], kind: ShapeKind) -> io::Result<([Point; 3], Point)> {
     let [a, b, c] = basis;
     let det = dot(a, cross(b, c));
     if !det.is_finite() || det.abs() < MIN_DETERMINANT { return Err(bad("foliage degenerate basis")); }
     let inverse = [cross(b, c), cross(c, a), cross(a, b)].map(|row| row.map(|x| x / det));
-    let extents = std::array::from_fn(|axis| basis.iter().map(|row| row[axis].powi(2)).sum::<f64>().sqrt());
+    let extents = std::array::from_fn(|axis| match kind {
+        ShapeKind::Ellipsoid => basis.iter().map(|row| row[axis].powi(2)).sum::<f64>().sqrt(),
+        ShapeKind::Box => basis.iter().map(|row| row[axis].abs()).sum(),
+    });
     if extents.into_iter().any(|x| x <= 0.0 || x > MAX_EXTENT) { return Err(bad("foliage extent bounds")); }
     Ok((inverse, extents))
 }
 
 #[derive(Clone, Debug)]
-struct Ellipsoid { center: Point, extents: Point, inverse: [Point; 3] }
-impl Ellipsoid {
+struct Shape { kind: ShapeKind, center: Point, extents: Point, inverse: [Point; 3] }
+impl Shape {
     fn interval(&self, start: Point, end: Point, direction: Point) -> Option<(f64, f64)> {
         if !aabb_intersects(start, end, self.center, self.extents) {
             return None;
         }
         let offset = sub(start, self.center);
-        unit_segment(self.inverse.map(|row| dot(row, offset)), self.inverse.map(|row| dot(row, direction)))
+        let position = self.inverse.map(|row| dot(row, offset));
+        let direction = self.inverse.map(|row| dot(row, direction));
+        match self.kind {
+            ShapeKind::Ellipsoid => unit_segment(position, direction),
+            ShapeKind::Box => unit_box_segment(position, direction),
+        }
     }
 }
 #[derive(Clone, Debug)]
-struct Volume { chunk:[i32;2], index:u32, resource:String, coefficient:f64, shape:Ellipsoid }
+struct Volume { chunk:[i32;2], index:u32, resource:String, coefficient:f64, shape:Shape }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Policy { Strongest, Stacked }
 
@@ -220,7 +231,7 @@ struct FallenCrown<'a> {
     packed_tree: u32,
     resource: &'a str,
     coefficient: f64,
-    shape: Ellipsoid,
+    shape: Shape,
 }
 
 pub(super) struct RayFoliage<'a> {
@@ -310,8 +321,19 @@ impl Foliage {
         let rows=doc["instances"].as_array().filter(|a|allowed_count.contains(&a.len())).ok_or_else(||bad("foliage instance count"))?;
         let mut volumes=BTreeMap::new();
         let mut counts = [0; 3];
+        let shrub_fields = ["chunk", "speedtree_index", "resource", "seed", "center_world", "basis_world_rows",
+            "aabb_half_extents_world", "concealment_additive"];
+        let mut box_fields = shrub_fields.to_vec();
+        box_fields.push("shape");
         for row in rows {
-            fields(row,&["chunk","speedtree_index","resource","seed","center_world","basis_world_rows","aabb_half_extents_world","concealment_additive"])?;
+            let kind = if prok && row.get("shape").is_some() {
+                fields(row, &box_fields)?;
+                if row["shape"].as_str() != Some("box") { return Err(bad("foliage shrub shape")); }
+                ShapeKind::Box
+            } else {
+                fields(row, &shrub_fields)?;
+                ShapeKind::Ellipsoid
+            };
             let c=chunk(&row["chunk"])?;
             let index=row["speedtree_index"].as_u64().filter(|n|(1..=5000).contains(n)).ok_or_else(||bad("foliage index"))? as u32;
             if !chunk_set.contains(&c) || row["seed"].as_u64().filter(|n|*n<=u32::MAX as u64).is_none() {return Err(bad("foliage identity"));}
@@ -320,10 +342,10 @@ impl Foliage {
             counts[resource_index] += 1;
             let coefficient=number(&row["concealment_additive"],0.,1.)?;
             let center=point(&row["center_world"],-MAX_COORD,MAX_COORD)?;
-            let (inverse, extents) = basis_geometry(basis(&row["basis_world_rows"])?)?;
+            let (inverse, extents) = basis_geometry(basis(&row["basis_world_rows"])?, kind)?;
             let supplied=point(&row["aabb_half_extents_world"],0.,MAX_EXTENT)?;
             if extents.into_iter().zip(supplied).any(|(a,b)|(a-b).abs()>1e-9*(1.+a)) {return Err(bad("foliage aabb mismatch"));}
-            let v=Volume{chunk:c,index,resource:resource.to_owned(),coefficient,shape:Ellipsoid{center,extents,inverse}};
+            let v=Volume{chunk:c,index,resource:resource.to_owned(),coefficient,shape:Shape{kind,center,extents,inverse}};
             if volumes.insert((c,index),v).is_some() {return Err(bad("foliage duplicate instance"));}
         }
         if prok && counts != PROK_RESOURCE_COUNTS { return Err(bad("Prokhorovka foliage resource counts")); }
@@ -460,7 +482,7 @@ impl FallenTrees {
                 return Err(bad("fallen foliage identity"));
             }
             let basis = basis(&row["basis_world_rows"])?;
-            basis_geometry(basis)?;
+            basis_geometry(basis, ShapeKind::Ellipsoid)?;
             let crown = TreeCrown { instance_id, resource: resource.to_owned(), basis,
                 root: point(&row["root_world"], -MAX_COORD, MAX_COORD)?,
                 offset: point(&row["center_from_root_world"], -MAX_EXTENT, MAX_EXTENT)?,
@@ -486,7 +508,7 @@ impl FallenTrees {
 }
 
 impl TreeCrown {
-    fn fallen_shape(&self, object: &super::fragiles::Object, packed: u32) -> io::Result<Ellipsoid> {
+    fn fallen_shape(&self, object: &super::fragiles::Object, packed: u32) -> io::Result<Shape> {
         use std::f64::consts::{PI, TAU};
         if packed >> 24 != u32::from(object.native_index) { return Err(bad("fallen foliage native index")); }
         let yaw = f64::from((packed >> 18) & 0x3f) * TAU / 64.0 - PI;
@@ -499,8 +521,9 @@ impl TreeCrown {
             [x + delta * sin_yaw, y * cos_pitch - forward * sin_pitch, z + delta * cos_yaw]
         };
         let center = add(self.root, rotate(self.offset));
-        let (inverse, extents) = basis_geometry(self.basis.map(rotate))?;
-        Ok(Ellipsoid { center, extents, inverse })
+        let kind = ShapeKind::Ellipsoid;
+        let (inverse, extents) = basis_geometry(self.basis.map(rotate), kind)?;
+        Ok(Shape { kind, center, extents, inverse })
     }
 }
 
@@ -523,7 +546,7 @@ fn aabb_intersects(start:Point,end:Point,center:Point,extent:Point)->bool {
     let (mut low,mut high)=(0_f64,1_f64);
     for i in 0..3 {
         // Expand only the broad phase for floating-point boundary rounding;
-        // the ellipsoid test still uses the unmodified basis.
+        // the exact shape test still uses the unmodified basis.
         let margin=1e-9*(1.+extent[i]);
         let a=center[i]-extent[i]-margin;let b=center[i]+extent[i]+margin;let d=end[i]-start[i];
         if start[i].min(end[i]) > b || start[i].max(end[i]) < a { return false; }
@@ -537,6 +560,22 @@ fn unit_segment(p:Point,d:Point)->Option<(f64,f64)> {
     if disc<0. {return None;}
     let root=disc.sqrt();let enter=((-b-root)/a).max(0.);let exit=((-b+root)/a).min(1.);
     (enter<=exit).then_some((enter,exit))
+}
+
+fn unit_box_segment(position: Point, direction: Point) -> Option<(f64, f64)> {
+    let (mut enter, mut exit) = (0_f64, 1_f64);
+    for (p, d) in position.into_iter().zip(direction) {
+        if d == 0. {
+            if !(-1. ..=1.).contains(&p) { return None; }
+        } else {
+            let a = (-1. - p) / d;
+            let b = (1. - p) / d;
+            enter = enter.max(a.min(b));
+            exit = exit.min(a.max(b));
+            if enter > exit { return None; }
+        }
+    }
+    Some((enter, if direction == [0.; 3] { 0. } else { exit }))
 }
 
 #[cfg(test)]
@@ -573,12 +612,33 @@ mod tests {
         assert_eq!(unit_segment([2.,0.,0.],[0.,0.,0.]),None);
         assert_eq!(unit_segment([-2.,2.,0.],[4.,0.,0.]),None);
     }
+    #[test]
+    fn box_slabs_keep_rotated_corners_and_closed_segment_bounds() {
+        assert_eq!(unit_box_segment([-2., 1., 1.], [4., 0., 0.]), Some((0.25, 0.75)));
+        assert_eq!(unit_box_segment([1., 1., 1.], [1., 0., 0.]), Some((0., 0.)));
+        assert_eq!(unit_box_segment([1., 1., 1.], [0.; 3]), Some((0., 0.)));
+        assert_eq!(unit_box_segment([0., 1.1, 0.], [1., 0., 0.]), None);
+        assert_eq!(unit_box_segment([2., 0., 0.], [0.; 3]), None);
+
+        let basis = [[2., 0., 1.], [0., 3., 0.], [-1., 0., 2.]];
+        let world = |[a, b, c]: Point| [2. * a - c, 3. * b, a + 2. * c];
+        let (inverse, extents) = basis_geometry(basis, ShapeKind::Box).unwrap();
+        assert_eq!(extents, [3., 3., 3.]);
+        let shape = Shape { kind: ShapeKind::Box, center: [0.; 3], extents, inverse };
+        let start = world([-2., 0.9, 0.9]);
+        let end = world([2., 0.9, 0.9]);
+        let (enter, exit) = shape.interval(start, end, sub(end, start)).unwrap();
+        assert!((enter - 0.25).abs() < 1e-12 && (exit - 0.75).abs() < 1e-12);
+        let (inverse, extents) = basis_geometry(basis, ShapeKind::Ellipsoid).unwrap();
+        let legacy = Shape { kind: ShapeKind::Ellipsoid, center: [0.; 3], extents, inverse };
+        assert_eq!(legacy.interval(start, end, sub(end, start)), None);
+    }
     #[test] fn rotated_sheared_ellipsoid_keeps_aabb_and_stable_order() {
         let basis=[[0.,0.,2.],[0.,2.4,0.],[-4.,0.,1.]];
         let det=dot(basis[0],cross(basis[1],basis[2]));
         let inverse=[cross(basis[1],basis[2]).map(|x|x/det),cross(basis[2],basis[0]).map(|x|x/det),cross(basis[0],basis[1]).map(|x|x/det)];
         let v=Volume{chunk:[-2,3],index:1,resource:"fixture".into(),coefficient:0.2,
-            shape:Ellipsoid{center:[0.;3],extents:[4.,2.4,5_f64.sqrt()],inverse}};
+            shape:Shape{kind:ShapeKind::Ellipsoid,center:[0.;3],extents:[4.,2.4,5_f64.sqrt()],inverse}};
         let f=Foliage{calibration_sha256:"fixture".into(),source_sha256:"fixture".into(),map:MapId::from_asset("02_malinovka").unwrap(),raw:vec![],volumes:vec![v],fire_near_m:15.,fire_multiplier:0.25,policy:Policy::Strongest,trees:None};
         let hits=f.intersections([-8.,0.,0.],[8.,0.,0.]).unwrap();
         assert_eq!(hits.len(),1);assert!(hits[0].t_enter<0.5 && hits[0].t_exit>0.5);
@@ -603,6 +663,7 @@ mod tests {
         let mut v=original.clone();v["instances"][0]["aabb_half_extents_world"][0]=0.01.into();assert!(parse_fixture(&v).is_err());
         let mut v=original.clone();v["map_package_pin"]["sha256"]="0".repeat(64).into();assert!(parse_fixture(&v).is_err());
         let mut v=original.clone();v["instances"][0]["chunk"]=serde_json::json!([40,40]);assert!(parse_fixture(&v).is_err());
+        let mut v=original.clone();v["instances"][0]["shape"]="box".into();assert!(parse_fixture(&v).is_err());
         let mut v=original;v["instances"][0]["concealment_additive"]=2.into();assert!(parse_fixture(&v).is_err());
     }
     #[test] fn foliage_bw_arc_sends_content_once_per_connection() {
@@ -765,6 +826,20 @@ mod tests {
         assert_eq!(foliage.len(), 2092);
         assert_eq!(foliage.contribution([0.; 3], [100., 0., 0.], false).unwrap(), 0.4);
         assert_eq!(foliage.contribution([0.; 3], [100., 0., 0.], true).unwrap(), 0.25);
+        let a = [0., 0.8, 0.8];
+        let b = [100., 0.8, 0.8];
+        assert_eq!(foliage.contribution(a, b, false).unwrap(), 0.);
+        let row = &mut document["instances"][1];
+        row["shape"] = "box".into();
+        row["basis_world_rows"] = json!([[1, 0, 0], [0, 1, 0], [0.5, 0, 1]]);
+        assert!(parse_fixture(&document).is_err()); // Old ellipsoid bounds are too small.
+        document["instances"][1]["aabb_half_extents_world"] = json!([1.5, 1, 1]);
+        let boxed = parse_fixture(&document).unwrap();
+        assert_eq!(boxed.contribution(a, b, false).unwrap(), 0.2);
+        assert_eq!(boxed.contribution(a, b, true).unwrap(), 0.2);
+        document["instances"][1]["shape"] = "unsupported".into();
+        assert!(parse_fixture(&document).is_err());
+        document["instances"][1]["shape"] = "box".into();
         document["instances"][0]["resource"] = PROK_RESOURCES[1].0.into();
         assert!(parse_fixture(&document).is_err());
         document["instances"][0]["resource"] = PROK_RESOURCES[0].0.into();
