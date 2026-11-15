@@ -1660,6 +1660,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         battle_template.world.enable_result_spots()?;
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
+        if model::prohorovka_owner_spotting_log_enabled() && !rules.diagnostics
+            && config.battle_players == model::MAX_ACTORS && config.foliage_v1.is_some()
+            && battle_template.world.map == crate::map_profile091::MapId::Prohorovka {
+            println!("SPOTTING_OWNER_SCAN_ENABLED map=05_prohorovka roster=30 target=single_native_player period_ms=1000");
+        }
     }
     if config.results_ledger{
         if !profile13_mode{return Err(model::bad().into());}

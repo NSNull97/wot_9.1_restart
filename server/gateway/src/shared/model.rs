@@ -1,6 +1,6 @@
 //! Two temporary allied laboratory actors. No native IDs, client poses, clocks
 //! or garage inventory enter the simulation. Kinematics are deliberately not P05.
-use std::{io, sync::Arc, time::{Duration, Instant}};
+use std::{io::{self, Write}, sync::{Arc, OnceLock}, time::{Duration, Instant}};
 use crate::battle091::fire;
 use super::{ram_proof,aim, ap, destructible, fragiles, geometry, impact, terrain, materials::MaterialFacts, projectile::Projectile, vehicle_profile::VehicleKind};
 
@@ -578,6 +578,11 @@ impl crate::bw_wire::Wire for World {
 
 /// A scan at full range can pass the 100 ms step on one core (PERF-02, tier X).
 const SPOTTING_THREADS: usize = 4;
+pub(super) fn prohorovka_owner_spotting_log_enabled() -> bool {
+    static ENABLED: OnceLock<bool> = OnceLock::new();
+    cfg!(feature = "test_lab")
+        && *ENABLED.get_or_init(|| std::env::var_os("WOT091_PROK_OWNER_RAY_LOG").is_some_and(|value| value == "1"))
+}
 impl World {
     pub(super) fn death_cause(&self,target:usize)->io::Result<Option<DeathCause>> {
         let actor=self.actors.get(target).ok_or_else(bad)?;
@@ -994,6 +999,60 @@ impl World {
                 fired,observer_active,commander_active,wreck:actor.health<=0})
         }).collect()
     }
+    fn owner_spotting_log_target(&self) -> Option<usize> {
+        if self.map != crate::map_profile091::MapId::Prohorovka || self.expected_actors != MAX_ACTORS
+            || !prohorovka_owner_spotting_log_enabled() {
+            return None;
+        }
+        let mut players = self.actors.iter().enumerate().filter(|(_, actor)| {
+            actor.bot.is_none() && actor.session.is_some()
+        });
+        let (slot, actor) = players.next()?;
+        (players.next().is_none() && actor.ready && actor.alive()).then_some(slot)
+    }
+
+    fn log_owner_spotting_scan(&self, target: usize, previous: &super::spotting::State,
+        next: &super::spotting::State, mut pairs: Vec<serde_json::Value>) -> io::Result<()> {
+        let Some(scan_ms) = next.last_scan_ms() else { return Ok(()); };
+        if previous.last_scan_ms() == Some(scan_ms) { return Ok(()); }
+        let team = self.team(target)?;
+        let mut direct_observers = Vec::new();
+        let mut published_to = Vec::new();
+        let mut direct_changed = false;
+        let mut publication_changed = false;
+        for slot in 0..self.actors.len() {
+            if self.team(slot)? == team { continue; }
+            let direct = next.direct(slot)?[target];
+            let published = next.desired(slot)?[target];
+            if direct { direct_observers.push(slot); }
+            if published { published_to.push(slot); }
+            direct_changed |= direct != previous.direct(slot)?[target];
+            publication_changed |= published != previous.desired(slot)?[target];
+        }
+        if !direct_changed && !publication_changed
+            && previous.last_scan_ms().is_some_and(|ms| ms / 1000 == scan_ms / 1000) {
+            return Ok(());
+        }
+        for pair in &mut pairs {
+            if let Some(observer) = pair["observer"].as_u64().and_then(|slot| self.actors.get(slot as usize)) {
+                pair["observer_vehicle"] = observer.vehicle_kind().name().into();
+            }
+        }
+        let actor = &self.actors[target];
+        let value = serde_json::json!({
+            "schema": "prohorovka-owner-spotting.v1", "battle": self.id.to_string(), "map": self.map.asset(),
+            "tick": self.tick, "scan_ms": scan_ms, "scene_version": self.fragiles.as_ref().map(fragiles::State::scene_version),
+            "target": target, "target_vehicle": actor.vehicle_kind().name(), "target_position": actor.position,
+            "direct_changed": direct_changed, "publication_changed": publication_changed,
+            "direct_observers": direct_observers, "published_to": published_to, "retention_ms": next.rules.retention_ms,
+            "pairs": pairs,
+        });
+        if let Err(error) = writeln!(io::stdout().lock(), "SPOTTING_OWNER_SCAN {value}") {
+            let _ = writeln!(io::stderr().lock(), "SPOTTING_OWNER_SCAN_WRITE_FAILED battle={} tick={} error={error}", self.id, self.tick);
+        }
+        Ok(())
+    }
+
     pub fn refresh_original_spotting(&mut self, now: Instant) -> io::Result<()> {
         let Some(state)=self.original_spotting.as_ref() else { return Ok(()); };
         if self.actors.is_empty() { return Ok(()); }
@@ -1025,10 +1084,32 @@ impl World {
                 Ok(super::spotting::RayOutcome::Clear(contribution))
             })?;
         } else if let Some(foliage)=&foliage {
-            next.refresh_foliage_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end,fired| {
-                if terrain.any_hit_excluding_many(start,end,&excluded)? {return Ok(None);}
-                Ok(Some(foliage.contribution(start.map(f64::from),end.map(f64::from),fired)?))
-            })?;
+            if let Some(target) = self.owner_spotting_log_target() {
+                use super::spotting::RayOutcome;
+                let pairs = next.refresh_server_trace_parallel(ms, &actors, SPOTTING_THREADS, target, |_, slot, start, end, fired| {
+                    if slot == target {
+                        if let Some(hit) = terrain.nearest_excluding_many(start, end, &excluded)? {
+                            let kind = match hit.surface {
+                                terrain::Surface::Ground => "terrain",
+                                terrain::Surface::StaticObstacle { .. } => "object",
+                            };
+                            return Ok((RayOutcome::Blocked { kind, hit_point: Some(hit.point) }, None));
+                        }
+                        let (value, hits) = foliage.contribution_traced(start.map(f64::from), end.map(f64::from), fired)?;
+                        return Ok((RayOutcome::Clear(value), Some(serde_json::json!(hits))));
+                    }
+                    if terrain.any_hit_excluding_many(start, end, &excluded)? {
+                        return Ok((RayOutcome::Blocked { kind: "terrain_or_object", hit_point: None }, None));
+                    }
+                    Ok((RayOutcome::Clear(foliage.contribution(start.map(f64::from), end.map(f64::from), fired)?), None))
+                })?;
+                self.log_owner_spotting_scan(target, state, &next, pairs)?;
+            } else {
+                next.refresh_foliage_parallel(ms, &actors, SPOTTING_THREADS, |_, _, start, end, fired| {
+                    if terrain.any_hit_excluding_many(start, end, &excluded)? { return Ok(None); }
+                    Ok(Some(foliage.contribution(start.map(f64::from), end.map(f64::from), fired)?))
+                })?;
+            }
         } else {
             next.refresh_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end|Ok(!terrain.any_hit_excluding_many(start,end,&excluded)?))?;
         }

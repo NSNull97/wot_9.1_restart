@@ -3,7 +3,8 @@
 //! Source transforms come from #717. The ellipsoids, coefficients and
 //! spotting policies are project calibration.
 use std::{collections::{BTreeMap, BTreeSet}, fs::File, io::{self, Read}, path::Path};
-use serde::de::{Deserialize, Deserializer, Error as _, MapAccess, SeqAccess, Visitor};
+use serde::{de::{Deserialize, Deserializer, Error as _, MapAccess, SeqAccess, Visitor},
+    ser::SerializeMap, Serialize, Serializer};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use crate::map_profile091::MapId;
@@ -164,14 +165,80 @@ pub struct Foliage {
     trees: Option<FallenTrees>,
 }
 
+#[derive(Debug)]
+enum FoliageIdentity<'a> {
+    Shrub { chunk: [i32; 2], speedtree_index: u32, resource: &'a str },
+    FallenCrown { object_id: u32, packed_tree: u32, resource: &'a str },
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FoliageZone { ObserverNear, TargetNear, Far }
+
+#[derive(Debug)]
+pub(super) struct FoliageHit<'a> {
+    identity: FoliageIdentity<'a>,
+    zone: FoliageZone,
+    observer_distance_m: f64,
+    target_distance_m: f64,
+    coefficient: f64,
+    applied: f64,
+}
+
+impl Serialize for FoliageHit<'_> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut map = serializer.serialize_map(Some(9))?;
+        match &self.identity {
+            FoliageIdentity::Shrub { chunk, speedtree_index, resource } => {
+                map.serialize_entry("kind", "shrub")?;
+                map.serialize_entry("chunk", chunk)?;
+                map.serialize_entry("speedtree_index", speedtree_index)?;
+                map.serialize_entry("resource", resource)?;
+            }
+            FoliageIdentity::FallenCrown { object_id, packed_tree, resource } => {
+                map.serialize_entry("kind", "fallen_crown")?;
+                map.serialize_entry("object_id", object_id)?;
+                map.serialize_entry("packed_tree", packed_tree)?;
+                map.serialize_entry("resource", resource)?;
+            }
+        }
+        let zone = match self.zone {
+            FoliageZone::ObserverNear => "observer_near",
+            FoliageZone::TargetNear => "target_near",
+            FoliageZone::Far => "far",
+        };
+        map.serialize_entry("zone", zone)?;
+        map.serialize_entry("observer_distance_m", &self.observer_distance_m)?;
+        map.serialize_entry("target_distance_m", &self.target_distance_m)?;
+        map.serialize_entry("coefficient", &self.coefficient)?;
+        map.serialize_entry("applied", &self.applied)?;
+        map.end()
+    }
+}
+
+struct FallenCrown<'a> {
+    object_id: u32,
+    packed_tree: u32,
+    resource: &'a str,
+    coefficient: f64,
+    shape: Ellipsoid,
+}
+
 pub(super) struct RayFoliage<'a> {
     source: &'a Foliage,
-    fallen: Vec<(f64, Ellipsoid)>,
+    fallen: Vec<FallenCrown<'a>>,
 }
 
 impl RayFoliage<'_> {
     pub(super) fn contribution(&self, start: Point, end: Point, fired: bool) -> io::Result<f32> {
-        self.source.contribution_with_fallen(start, end, fired, &self.fallen)
+        self.source.contribution_with_fallen::<false>(start, end, fired, &self.fallen, &mut Vec::new())
+    }
+
+    /// Report crossed volumes in source order, including suppressed contributions.
+    pub(super) fn contribution_traced(&self, start: Point, end: Point, fired: bool)
+        -> io::Result<(f32, Vec<FoliageHit<'_>>)> {
+        let mut hits = Vec::new();
+        let contribution = self.source.contribution_with_fallen::<true>(start, end, fired, &self.fallen, &mut hits)?;
+        Ok((contribution, hits))
     }
 }
 #[derive(Clone, Debug, PartialEq)]
@@ -282,36 +349,61 @@ impl Foliage {
     /// V2 uses the ray entry for the observer and the ray exit for the target.
     #[cfg(test)]
     fn contribution(&self, start: Point, end: Point, fired: bool) -> io::Result<f32> {
-        self.contribution_with_fallen(start, end, fired, &[])
+        self.contribution_with_fallen::<false>(start, end, fired, &[], &mut Vec::new())
     }
 
-    fn contribution_with_fallen(&self, start: Point, end: Point, fired: bool, fallen: &[(f64, Ellipsoid)]) -> io::Result<f32> {
+    fn contribution_with_fallen<'a, const TRACE: bool>(&'a self, start: Point, end: Point, fired: bool,
+        fallen: &'a [FallenCrown<'_>], hits: &mut Vec<FoliageHit<'a>>) -> io::Result<f32> {
         if start.into_iter().chain(end).any(|v|!v.is_finite() || v.abs()>MAX_COORD) {return Err(bad("foliage query bounds"));}
         let direction = sub(end, start);
         let length = dot(direction, direction).sqrt();
         // Include a boundary rounded by the quadratic intersection solver.
         let tolerance = 1e-9 * (1.0 + length);
         let mut strongest: f64 = 0.0;
+        let mut strongest_hit = None;
         let mut full_sum: f64 = 0.0;
-        for (coefficient, shape) in self.volumes.iter().map(|volume| (&volume.coefficient, &volume.shape))
-            .chain(fallen.iter().map(|(coefficient, shape)| (coefficient, shape))) {
+        let shrubs = self.volumes.iter().map(|volume| (volume.coefficient, &volume.shape, FoliageIdentity::Shrub {
+            chunk: volume.chunk, speedtree_index: volume.index, resource: &volume.resource,
+        }));
+        let crowns = fallen.iter().map(|crown| (crown.coefficient, &crown.shape, FoliageIdentity::FallenCrown {
+            object_id: crown.object_id, packed_tree: crown.packed_tree, resource: crown.resource,
+        }));
+        for (coefficient, shape, identity) in shrubs.chain(crowns) {
             let Some((enter, exit)) = shape.interval(start, end, direction) else { continue; };
-            let target_near = fired && (1.0 - exit) * length <= self.fire_near_m + tolerance;
-            match self.policy {
+            let observer_distance_m = enter * length;
+            let target_distance_m = (1.0 - exit) * length;
+            let observer_near = observer_distance_m <= OBSERVER_NEAR_METRES + tolerance;
+            let target_near = target_distance_m <= self.fire_near_m + tolerance;
+            let mut applied = 0.0;
+            let strongest_candidate = match self.policy {
                 Policy::Strongest => {
-                    let effect = if target_near { coefficient * self.fire_multiplier } else { *coefficient };
-                    strongest = strongest.max(effect);
+                    Some(if fired && target_near { coefficient * self.fire_multiplier } else { coefficient })
                 }
+                Policy::Stacked if observer_near => None,
+                Policy::Stacked if fired && target_near => Some(coefficient),
                 Policy::Stacked => {
-                    if enter * length <= OBSERVER_NEAR_METRES + tolerance {
-                        continue;
-                    }
-                    if target_near {
-                        strongest = strongest.max(*coefficient);
-                    } else {
-                        full_sum += coefficient;
-                    }
+                    if TRACE { applied = coefficient.min((1.0 - full_sum).max(0.0)); }
+                    full_sum += coefficient;
+                    None
                 }
+            };
+            if let Some(candidate) = strongest_candidate {
+                if TRACE && candidate > strongest { strongest_hit = Some(hits.len()); }
+                strongest = strongest.max(candidate);
+            }
+            if TRACE {
+                let zone = if observer_near { FoliageZone::ObserverNear }
+                    else if target_near { FoliageZone::TargetNear } else { FoliageZone::Far };
+                hits.push(FoliageHit { identity, zone, observer_distance_m, target_distance_m, coefficient, applied });
+            }
+        }
+        if TRACE {
+            if let Some(index) = strongest_hit {
+                // Far volumes fill the stack before the attenuated target-near term.
+                hits[index].applied = match self.policy {
+                    Policy::Strongest => strongest,
+                    Policy::Stacked => (strongest * self.fire_multiplier).min((1.0 - full_sum).max(0.0)),
+                };
             }
         }
         let contribution = match self.policy {
@@ -337,7 +429,10 @@ impl Foliage {
             }
             for (object, packed) in state.committed_fallen_trees() {
                 let crown = trees.crowns.get(&object.object_id).ok_or_else(|| bad("fallen foliage crown missing"))?;
-                if crown.coefficient > 0.0 { fallen.push((crown.coefficient, crown.fallen_shape(object, packed)?)); }
+                if crown.coefficient > 0.0 {
+                    fallen.push(FallenCrown { object_id: object.object_id, packed_tree: packed, resource: &crown.resource,
+                        coefficient: crown.coefficient, shape: crown.fallen_shape(object, packed)? });
+                }
             }
         }
         Ok(RayFoliage { source: self, fallen })
@@ -568,6 +663,37 @@ mod tests {
     }
 
     #[test]
+    fn traced_shrubs_explain_fire_suppression_and_the_total_cap() {
+        let source = test_stacked_fixture(&[
+            ([10.0, 0.0, 0.0], 1.0, 0.5), ([40.0, 0.0, 0.0], 1.0, 0.95),
+            ([85.0, 0.0, 0.0], 1.0, 0.4), ([95.0, 0.0, 0.0], 1.0, 0.2),
+        ]);
+        let foliage = source.rays(None).unwrap();
+        let start = [0.0; 3];
+        let end = [100.0, 0.0, 0.0];
+        let (total, hits) = foliage.contribution_traced(start, end, true).unwrap();
+        assert_eq!(total, foliage.contribution(start, end, true).unwrap());
+        assert_eq!(total, 1.0);
+        assert_eq!(hits.len(), 4);
+        let encoded = serde_json::to_value(&hits).unwrap();
+        assert_eq!(encoded[0]["kind"], "shrub");
+        assert_eq!(encoded[0]["chunk"], serde_json::json!([0, 0]));
+        assert_eq!(encoded[0]["speedtree_index"], 1);
+        assert_eq!(encoded[0]["resource"], RESOURCES[0].0);
+        assert_eq!(hits[0].zone, FoliageZone::ObserverNear);
+        assert!((hits[0].observer_distance_m - 9.0).abs() < 1e-6);
+        assert_eq!(hits[0].applied, 0.0);
+        assert_eq!(hits[1].zone, FoliageZone::Far);
+        assert_eq!(hits[1].applied, 0.95);
+        assert_eq!(hits[2].zone, FoliageZone::TargetNear);
+        assert!((hits[2].target_distance_m - 14.0).abs() < 1e-6);
+        assert_eq!(hits[2].coefficient, 0.4);
+        assert!((hits[2].applied - 0.05).abs() < 1e-6);
+        assert_eq!(hits[3].applied, 0.0);
+        assert!((hits.iter().map(|hit| hit.applied).sum::<f64>() - f64::from(total)).abs() < 1e-6);
+    }
+
+    #[test]
     fn stacked_foliage_observer_boundary_is_directional_and_independent_of_fire() {
         let start = [0.0; 3];
         let end = [100.0, 0.0, 0.0];
@@ -666,6 +792,17 @@ mod tests {
         assert_eq!(leafy.contribution(a, b, false).unwrap(), 0.25);
         assert_eq!(leafy.contribution(a, [110.0, 2.0, 0.0], true).unwrap(), 0.0625);
         assert_eq!(leafy.contribution([94.0, 2.0, 0.0], b, false).unwrap(), 0.0);
+        let (total, hits) = leafy.contribution_traced(a, [110.0, 2.0, 0.0], true).unwrap();
+        assert_eq!(total, 0.0625);
+        assert_eq!(hits.len(), 1);
+        let encoded = serde_json::to_value(&hits[0]).unwrap();
+        assert_eq!(encoded["kind"], "fallen_crown");
+        let (_, packed) = state.committed_fallen_trees().next().unwrap();
+        assert_eq!(encoded["object_id"], 1);
+        assert_eq!(encoded["packed_tree"], packed);
+        assert_eq!(encoded["resource"], catalog.objects[0].resource);
+        assert_eq!(hits[0].zone, FoliageZone::TargetNear);
+        assert_eq!(hits[0].applied, 0.0625);
         state.ram_contact(2, 0, 1002, 1, [0.0; 3], [1.0, 0.0, 0.0], [4.0, 0.0, 0.0], 10_000.0, "hull".into()).unwrap().unwrap();
         let both = foliage.rays(Some(&state)).unwrap();
         assert!((both.contribution(a, b, false).unwrap() - 0.30).abs() < 1e-6);

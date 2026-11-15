@@ -160,14 +160,19 @@ impl crate::bw_wire::Wire for State {
 /// One observer's direct sightings of this scan.
 #[derive(Clone,Copy,Debug,PartialEq)]
 pub enum RayOutcome { Clear(f32), Blocked { kind:&'static str, hit_point:Option<Point> } }
-fn scan_observer<F>(rules: Rules, observer: &Actor, actors: &[Actor], clear: &mut F) -> io::Result<([bool; MAX_ACTORS],Vec<serde_json::Value>)>
-where F: FnMut(usize, usize, Point, Point, bool) -> io::Result<RayOutcome> {
+type RayTrace = (RayOutcome, Option<serde_json::Value>);
+type ScanRow = ([bool; MAX_ACTORS], Vec<serde_json::Value>);
+
+fn scan_observer<F>(rules: Rules, observer: &Actor, actors: &[Actor], server_target: Option<usize>, clear: &mut F) -> io::Result<ScanRow>
+where F: FnMut(&Actor, &Actor, [usize; 2], Point, Point) -> io::Result<RayTrace> {
     let mut row = [false; MAX_ACTORS];
     let mut records=Vec::new();
     for target in actors.iter().filter(|a| a.team != observer.team) {
         let distance = distance2(observer.position, target.position);
         let limit=if rules.camouflage { super::camouflage::threshold(observer.view_range,rules.max_detection_m,rules.proximity_m,target.camouflage)? }
             else { observer.view_range.min(rules.max_detection_m) };
+        let server_trace = server_target == Some(target.slot);
+        let trace = rules.diagnostics || server_trace;
         let mut rays=Vec::new();
         let mut reason="no_clear_ray";
         if distance <= f64::from(rules.proximity_m).powi(2) {row[target.slot]=true;reason="proximity";}
@@ -175,7 +180,8 @@ where F: FnMut(usize, usize, Point, Point, bool) -> io::Result<RayOutcome> {
         else {
             'ray: for (observer_point, start) in observer.points.observers.into_iter().enumerate() {
                 for (target_point, end) in target.points.checks.into_iter().enumerate() {
-                    let result=if start==end {RayOutcome::Clear(0.)} else {clear(observer_point,target_point,start,end,target.fired)?};
+                    let (result, foliage_hits) = if start==end { (RayOutcome::Clear(0.), None) }
+                        else { clear(observer, target, [observer_point, target_point], start, end)? };
                     let mut ray_limit=limit;
                     if let RayOutcome::Clear(foliage)=result {
                         if !foliage.is_finite() || !(0. ..=1.).contains(&foliage) {return Err(bad("spotting foliage coefficient"));}
@@ -183,28 +189,44 @@ where F: FnMut(usize, usize, Point, Point, bool) -> io::Result<RayOutcome> {
                             super::camouflage::threshold(observer.view_range,rules.max_detection_m,rules.proximity_m,(target.camouflage+foliage).min(1.))?
                         } else if foliage==0. {limit} else {return Err(bad("foliage requires camouflage"));};
                     }
-                    if rules.diagnostics {
+                    let direct = matches!(result, RayOutcome::Clear(_)) && distance <= f64::from(ray_limit).powi(2);
+                    if trace {
                         let (label,foliage,hit_point)=match result {
                             RayOutcome::Clear(foliage)=>(if start==end {"coincident"} else {"clear"},Some(foliage),None),
                             RayOutcome::Blocked{kind,hit_point}=>(kind,None,hit_point),
                         };
-                        rays.push(serde_json::json!({"observer_point":observer_point,"target_point":target_point,
+                        let mut ray = serde_json::json!({"observer_point":observer_point,"target_point":target_point,
                             "start":start,"end":end,"result":label,"hit_point":hit_point,
-                            "foliage":foliage,"threshold_m":if foliage.is_some(){Some(ray_limit)}else{None}}));
+                            "foliage":foliage,"threshold_m":if foliage.is_some(){Some(ray_limit)}else{None}});
+                        if server_trace {
+                            ray["direct"] = direct.into();
+                            ray["foliage_hits"] = foliage_hits.unwrap_or_default();
+                        }
+                        rays.push(ray);
                     }
-                    if matches!(result,RayOutcome::Clear(_)) && distance <= f64::from(ray_limit).powi(2) {row[target.slot]=true;reason="direct_ray";break 'ray;}
+                    if direct {row[target.slot]=true;reason="direct_ray";break 'ray;}
                     if matches!(result,RayOutcome::Clear(_)) {reason="foliage_threshold";}
                 }
             }
         }
-        if rules.diagnostics {
-            let unchecked=(rays.len()..14).map(|i|serde_json::json!({"observer_point":i/7,"target_point":i%7,
-                "start":observer.points.observers[i/7],"end":target.points.checks[i%7],"result":"not_checked"})).collect::<Vec<_>>();
-            records.push(serde_json::json!({"observer":observer.slot,"target":target.slot,"distance_m":distance.sqrt(),
+        if trace {
+            let checked_ray_count = rays.len();
+            let unchecked_ray_count = 14 - checked_ray_count;
+            let mut pair = serde_json::json!({"observer":observer.slot,"target":target.slot,"distance_m":distance.sqrt(),
             "view_m":observer.view_range,"base":target.base,"base_stationary":target.base_stationary,"movement_delta":target.base-target.base_stationary,"moving":target.moving,"net":target.net,
             "fire_multiplier":target.fire_multiplier,"fired":target.fired,"effective":target.camouflage,
             "net_remaining_ms":target.net_remaining_ms,"threshold_m":limit,"direct":row[target.slot],"reason":reason,
-            "unchecked_ray_count":unchecked.len(),"unchecked_rays":unchecked,"rays":rays}));}
+            "unchecked_ray_count":unchecked_ray_count,"rays":rays});
+            if rules.diagnostics {
+                pair["unchecked_rays"] = serde_json::Value::Array((checked_ray_count..14).map(|i|serde_json::json!({"observer_point":i/7,"target_point":i%7,
+                    "start":observer.points.observers[i/7],"end":target.points.checks[i%7],"result":"not_checked"})).collect());
+            } else {
+                pair["observer_position"] = serde_json::json!(observer.position);
+                pair["target_position"] = serde_json::json!(target.position);
+                pair["target_wreck"] = target.wreck.into();
+            }
+            records.push(pair);
+        }
     }
     Ok((row,records))
 }
@@ -240,9 +262,14 @@ impl State {
     where F: FnMut(usize, usize, Point, Point) -> io::Result<bool> {
         self.refresh_with(ms, actors, |rules, observers| {
             let mut rows = Vec::with_capacity(observers.len());
-            for observer in observers { rows.push(scan_observer(rules, observer, actors, &mut |a,b,c,d,_|Ok(if clear(a,b,c,d)? {RayOutcome::Clear(0.)}else{RayOutcome::Blocked{kind:"terrain_or_object",hit_point:None}}))?); }
+            for observer in observers {
+                rows.push(scan_observer(rules, observer, actors, None, &mut |_, _, [a, b], c, d| {
+                    let outcome = if clear(a,b,c,d)? {RayOutcome::Clear(0.)}else{RayOutcome::Blocked{kind:"terrain_or_object",hit_point:None}};
+                    Ok((outcome, None))
+                })?);
+            }
             Ok(rows)
-        })
+        }).map(|_| ())
     }
     /// `refresh` over a pure `clear`, the rays spread on up to `threads`
     /// threads. Each observer's row depends only on its own rays, so the
@@ -262,6 +289,25 @@ impl State {
     }
     pub fn refresh_trace_parallel<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, clear:F)->io::Result<()>
     where F: Fn(usize, usize, Point, Point, bool) -> io::Result<RayOutcome> + Sync {
+        self.refresh_parallel_with(ms, actors, threads, None, |_, target, [a, b], start, end| {
+            Ok((clear(a, b, start, end, target.fired)?, None))
+        }).map(|_| ())
+    }
+
+    /// Ephemeral, server-only records of the actual scan toward one target.
+    /// The callback serves the whole scan so ordinary visibility still updates.
+    pub fn refresh_server_trace_parallel<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, target:usize, clear:F)
+        -> io::Result<Vec<serde_json::Value>>
+    where F: Fn(usize, usize, Point, Point, bool) -> io::Result<RayTrace> + Sync {
+        if self.rules.diagnostics || target >= MAX_ACTORS { return Err(bad("server spotting trace target or diagnostics")); }
+        self.refresh_parallel_with(ms, actors, threads, Some(target), |observer, target, _, start, end| {
+            clear(observer.slot, target.slot, start, end, target.fired)
+        })
+    }
+
+    fn refresh_parallel_with<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, server_target:Option<usize>, clear:F)
+        -> io::Result<Vec<serde_json::Value>>
+    where F: Fn(&Actor, &Actor, [usize; 2], Point, Point) -> io::Result<RayTrace> + Sync {
         self.refresh_with(ms, actors, |rules, observers| {
             let (next, clear) = (AtomicUsize::new(0), &clear);
             let work = || {
@@ -269,7 +315,9 @@ impl State {
                 loop {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     let Some(observer) = observers.get(index) else { return done; };
-                    done.push((index, scan_observer(rules, observer, actors, &mut |a, b, c, d, f| clear(a, b, c, d, f))));
+                    done.push((index, scan_observer(rules, observer, actors, server_target, &mut |o, t, points, start, end| {
+                        clear(o, t, points, start, end)
+                    })));
                 }
             };
             let mut done = std::thread::scope(|scope| {
@@ -282,8 +330,8 @@ impl State {
             done.into_iter().map(|row| row.1).collect()
         })
     }
-    fn refresh_with<S>(&mut self, ms: u64, actors: &[Actor], scan_rows: S) -> io::Result<()>
-    where S: FnOnce(Rules, &[Actor]) -> io::Result<Vec<([bool; MAX_ACTORS],Vec<serde_json::Value>)>> {
+    fn refresh_with<S>(&mut self, ms: u64, actors: &[Actor], scan_rows: S) -> io::Result<Vec<serde_json::Value>>
+    where S: FnOnce(Rules, &[Actor]) -> io::Result<Vec<ScanRow>> {
         validate_actors(actors)?; self.rules.validate()?;
         if self.rules.diagnostics && actors.len()>6 {return Err(bad("spotting diagnostic actor bound"));}
         if ms > 3_600_000 || self.last_ms.is_some_and(|old| ms < old) { return Err(bad("spotting clock")); }
@@ -316,8 +364,8 @@ impl State {
             if observed[actor.slot] && !next.observed[actor.slot] && next.pending[actor.slot].is_none() { next.pending[actor.slot] = Some(ms.checked_add(next.rules.sixth_sense_delay_ms).ok_or_else(|| bad("sixth sense clock"))?); }
             if next.pending[actor.slot].is_some_and(|due| ms >= due) { next.sixth_generation[actor.slot] = next.sixth_generation[actor.slot].checked_add(1).ok_or_else(|| bad("sixth sense sequence"))?; next.pending[actor.slot] = None; }
         }
+        diagnostic_pairs.sort_by_key(|v|(v["observer"].as_u64().unwrap_or(u64::MAX),v["target"].as_u64().unwrap_or(u64::MAX)));
         if scan && next.rules.diagnostics {
-            diagnostic_pairs.sort_by_key(|v|(v["observer"].as_u64().unwrap_or(u64::MAX),v["target"].as_u64().unwrap_or(u64::MAX)));
             let mut ordered=actors.to_vec();ordered.sort_by_key(|a|a.slot);
             let map_actors=ordered.iter().map(|a|serde_json::json!({"slot":a.slot,"team":a.team,"position":a.position})).collect::<Vec<_>>();
             let mut publications=Vec::new();
@@ -331,9 +379,9 @@ impl State {
                 publications.push(serde_json::json!({"recipient":recipient.slot,"target":target.slot,"visible":next.desired[recipient.slot][target.slot],"source":source,"spotter":spotter}));
             }}
             next.diagnostic_snapshot=Some(serde_json::json!({"schema":"content0-s5a-spotting-trace.v1","scan_ms":ms,
-                "next_scan_ms":ms+next.rules.scan_period_ms,"actors":map_actors,"pairs":diagnostic_pairs,"publications":publications}));
+                "next_scan_ms":ms+next.rules.scan_period_ms,"actors":map_actors,"pairs":std::mem::take(&mut diagnostic_pairs),"publications":publications}));
         } else if !next.rules.diagnostics {next.diagnostic_snapshot=None;}
-        next.observed = observed; next.last_ms = Some(ms); *self = next; Ok(())
+        next.observed = observed; next.last_ms = Some(ms); *self = next; Ok(diagnostic_pairs)
     }
 }
 
@@ -363,6 +411,52 @@ mod tests {
         let old=state.clone();
         assert!(state.refresh_foliage_parallel(200,&actors,1,|_,_,_,_,_|Ok(Some(f32::NAN))).is_err());
         assert_eq!(state,old);
+    }
+    #[test] fn server_trace_collects_only_actual_target_rays_in_a_thirty_actor_scan() {
+        let mut rules=Rules::selected().unwrap();
+        rules.camouflage=true;
+        let mut actors=(0..30).map(|slot|actor(slot, 1+(slot%2) as u8, 115. + slot as f32 * 8.)).collect::<Vec<_>>();
+        actors[0]=actor(0, 1, 0.);
+        actors[0].points.checks[0][1]=2.;
+        actors[0].points.checks[1][1]=3.;
+        actors[0].points.checks[2][1]=4.;
+        actors[29]=actor(29, 2, 1000.);
+        actors[27].observer_active=false;
+        actors[27].commander_active=false;
+        let ray=|end:Point|match end[1] {
+            2. => RayOutcome::Blocked{kind:"object",hit_point:Some([30.,1.2,0.])},
+            3. => RayOutcome::Clear(0.9),
+            _ => RayOutcome::Clear(0.),
+        };
+        let mut plain=State::new(rules).unwrap();
+        let mut traced=plain.clone();
+        for ms in [0,50,100,3100,8100] {
+            plain.refresh_trace_parallel(ms,&actors,4,|_,_,_,end,_|Ok(ray(end))).unwrap();
+            let pairs=traced.refresh_server_trace_parallel(ms,&actors,4,0,|observer,target,_,end,_| {
+                let hits=(target==0).then(||serde_json::json!({"observer":observer}));
+                Ok((ray(end),hits))
+            }).unwrap();
+            assert_eq!(traced,plain);
+            assert!(traced.diagnostics().is_none());
+            if ms==50 {
+                assert!(pairs.is_empty());
+                continue;
+            }
+            assert_eq!(pairs.len(),14);
+            assert!(pairs.iter().all(|pair|pair["target"]==0 && pair["observer"]!=27));
+            let nearest=&pairs[0];
+            assert_eq!(nearest["observer"],1);
+            assert_eq!(nearest["reason"],"direct_ray");
+            assert_eq!(nearest["unchecked_ray_count"],11);
+            let rays=nearest["rays"].as_array().unwrap();
+            assert_eq!(rays.len(),3);
+            assert_eq!(rays[0]["result"],"object");
+            assert_eq!(rays[1]["foliage_hits"]["observer"],1);
+            assert_eq!(rays[1]["direct"],false);
+            assert_eq!(rays[2]["direct"],true);
+            assert_eq!(pairs.last().unwrap()["reason"],"outside_base_threshold");
+            assert!(pairs.last().unwrap()["rays"].as_array().unwrap().is_empty());
+        }
     }
     #[cfg(feature="test_lab")]
     #[test] fn operator_trace_is_only_committed_actual_rays_and_survives_bw() {
