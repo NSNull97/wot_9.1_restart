@@ -135,6 +135,53 @@ mod p06t;
 mod tests {
     use super::*;
     use std::time::{Duration,Instant};
+    #[test] fn content0_s5a_last_crew_authoritative_impact_reaches_live_and_result() {
+        let now=Instant::now();let mut w=model::p06t_world_tests::last_crew_pending(now);
+        w.advance(now+Duration::from_millis(2100)).unwrap();
+        assert_eq!(w.damage_events.len(),1);let event=&w.damage_events[0];
+        assert!(event.crew_before&&!event.crew_after&&event.direct&&event.pierced);
+        assert_eq!(event.spotting.unwrap().direct_mask,1<<2);
+        assert!(w.device_events.iter().any(|(slot,e)|*slot==1&&matches!(e.change,
+            crate::p06t_device_state::Change::Crew{seat:1,before_active:true,after_active:false,..})));
+        assert!(!w.actors[1].alive());let hp=(event.health_before-event.health_after) as u16;assert!(hp>0);
+        super::super::server::ui03_tests::assert_last_crew_live_assist(&w,now+Duration::from_millis(2100),hp);
+        w.force_result_ledger_for_test();
+        let participants=(0..3).map(|slot|Participant{vehicle_id:super::super::wire::vehicle_id(slot).unwrap(),team:w.team(slot).unwrap(),
+            direct_hits:u16::from(slot==0),piercings:u16::from(slot==0),damage_dealt:if slot==0{u32::from(hp)}else{0},
+            damage_received:if slot==1{u32::from(hp)}else{0},kills:u8::from(slot==0),
+            killer_id:if slot==1{super::super::wire::vehicle_id(0).unwrap()}else{0},
+            death_reason:if slot==1{0}else{-1},..Default::default()}).collect::<Vec<_>>();
+        let (details,ledger)=project_interactions(&w,&participants).unwrap();
+        assert_eq!(ledger.unwrap().rows[2].assist_spot,u32::from(hp));
+        let row=details.rows.iter().find(|r|r.attacker_vehicle_id==participants[2].vehicle_id).unwrap();
+        assert_eq!(row.targets.iter().find(|t|t.vehicle_id==participants[1].vehicle_id).unwrap().damage_assisted_radio,hp);
+    }
+    #[test] fn content0_s5a_shared_spot_assist_reaches_native_result_details_and_ledger() {
+        let now=Instant::now();let mut w=model::tests::terrain_world(now,1000.);
+        w.apply(0,1,&[model::Command::Fire(crate::battle091::fire::Command::Shoot)],now).unwrap();
+        w.advance(now+model::STEP).unwrap();assert_eq!(w.impacts.len(),1);
+        let clone=w.actors[0].clone();for _ in 0..3 {w.actors.push(clone.clone());}
+        w.lifecycle=Some(super::super::lifecycle::State::new(super::super::lifecycle::Rules::prohorovka()).unwrap());
+        w.force_result_ledger_for_test();
+        let hp=(w.impacts[0].health_before-w.impacts[0].health_after) as u16;assert!(hp>0);
+        w.impacts[0].spotting=Some(model::result_spots::AssistEvidence{scan_tick:Some(1000),direct_mask:(1<<2)|(1<<4),track_mask:0});
+        let after_shot=w.impacts[0].health_after;assert!(after_shot>1);
+        w.ram_damage_events.push(model::RamDamageRecord{sequence:1,tick:1,domain_tick:w.impacts[0].tick,
+            attacker:0,target:1,pair:(0,1),energy_j:1.,closing_speed:1.,health_before:after_shot,health_after:after_shot-1,
+            spotting:Some(model::result_spots::AssistEvidence{scan_tick:Some(1000),direct_mask:(1<<2)|(1<<4),track_mask:0})});
+        let pierced=matches!(w.impacts[0].outcome,ImpactOutcome::Ap(ref r) if r.outcome==ap::Outcome::Pierced);
+        let participants=(0..5).map(|slot|Participant{vehicle_id:super::super::wire::vehicle_id(slot).unwrap(),team:w.team(slot).unwrap(),
+            direct_hits:u16::from(slot==0),piercings:u16::from(slot==0&&pierced),damage_dealt:if slot==0{u32::from(hp)+1}else{0},
+            damage_received:if slot==1{u32::from(hp)+1}else{0},death_reason:-1,..Default::default()}).collect::<Vec<_>>();
+        let (details,ledger)=project_interactions(&w,&participants).unwrap();let ledger=ledger.unwrap();
+        let first=(hp/2)+(hp%2)+1;let second=hp/2;
+        assert_eq!(ledger.rows[2].assist_spot,u32::from(first));assert_eq!(ledger.rows[4].assist_spot,u32::from(second));
+        let target=participants[1].vehicle_id;
+        for (slot,expected) in [(2,first),(4,second)] {
+            let row=details.rows.iter().find(|r|r.attacker_vehicle_id==participants[slot].vehicle_id).unwrap();
+            assert_eq!(row.targets.iter().find(|t|t.vehicle_id==target).unwrap().damage_assisted_radio,expected);
+        }
+    }
     fn roster()->Vec<super::super::lifecycle_details::Summary>{vec![
         super::super::lifecycle_details::Summary{vehicle_id:10,team:1,direct_hits:1,piercings:1,damage_dealt:90,damage_received:0,kills:1,killer_id:0,death_reason:-1},
         super::super::lifecycle_details::Summary{vehicle_id:20,team:2,direct_hits:0,piercings:0,damage_dealt:0,damage_received:90,kills:0,killer_id:10,death_reason:0},

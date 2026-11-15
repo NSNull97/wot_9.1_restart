@@ -104,4 +104,6 @@ fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
 fn content0_s5_stereoscope_owner_callback_uses_raw_source_id_and_bool() {
     assert_eq!(crate::armament_wire091::stereoscope_status(false), [0x13, 0x3d, 4, 0]);
     assert_eq!(crate::armament_wire091::stereoscope_status(true), [0x13, 0x3d, 4, 1]);
+    assert_eq!(crate::armament_wire091::camouflage_net_status(false), [0x13, 0x3d, 6, 0]);
+    assert_eq!(crate::armament_wire091::camouflage_net_status(true), [0x13, 0x3d, 6, 1]);
 }

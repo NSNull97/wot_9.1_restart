@@ -11,7 +11,7 @@ fn contact(world:&mut World,speed:f32,sequence:u32){
 }
 fn shot_damage(world:&mut World,target:usize,after:i16){
     let before=world.actors[target].health;world.actors[target].health=after;
-    {let next_sequence=world.damage_events.len() as u32+1;world.damage_events.push(model::DamageRecord{sequence:next_sequence,tick:1001,
+    {let next_sequence=world.damage_events.len() as u32+1;world.damage_events.push(model::DamageRecord{spotting:None,sequence:next_sequence,tick:1001,
         attacker:1-target,target,shot:1,reason:0,health_before:before,health_after:after,
         crew_before:true,crew_after:after>0,direct:true,pierced:true});}
 }
@@ -93,7 +93,7 @@ fn p05c_ram_publication_later_crew_knockout_keeps_projectile_terminal_reason(){
         crate::p06t_device_state::ModuleHit{cause,ordinal:1,at_ms:100,target:crate::p06t_lab_proxy::Target::Seat(1),shell,ignition_roll:0.9}],
         crate::p06t_device_state::Health{hp:hp as u16,max_hp:90,terminal:false}).unwrap();
     assert!(!world.actors[0].crew_active());world.device_events.extend(events.into_iter().map(|event|(0,event)));
-    world.damage_events.push(model::DamageRecord{sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
+    world.damage_events.push(model::DamageRecord{spotting:None,sequence:1,tick:1001,attacker:1,target:0,shot:1,reason:0,
         health_before:hp,health_after:hp,crew_before:true,crew_after:false,direct:true,pierced:true});
     publish(s.shared.as_mut().unwrap(),&mut s.outbox,&world,now).unwrap();
     assert_current_health(&s,&world,0,Some(1),0);

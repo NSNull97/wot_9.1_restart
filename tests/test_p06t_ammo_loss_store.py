@@ -169,6 +169,113 @@ class AmmoLossStoreTests(unittest.TestCase):
             self.assertEqual(response["reservation"]["result"]["terminal_state"]["devices"][0], engine)
             self.assertEqual(self.send(finish), dict(response,replayed=True))
 
+    def test_camouflage_net_stays_closed_without_coordinated_server_capability(self):
+        """A disabled net must not reach stock, equipment or a frozen loadout."""
+        from content0_equipment_catalog import DEVICE_EFFECTS, live_items, MANIFEST, MANIFEST_SHA256, MAX_MANIFEST
+        from destructible_catalog import read
+        from p09e_research_store import ECONOMY_POLICY
+
+        # Hash-pinned #717 catalogue facts; this is not a claim that the item is enabled.
+        manifest = json.loads(read(MANIFEST, MAX_MANIFEST, MANIFEST_SHA256))
+        rows = [row for row in manifest["items"] if row["compact_id"] == 1785]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["source_id"], rows[0]["source_name"], rows[0]["removable"], rows[0]["filters"]),
+                         (6, "camouflageNet", True, []))
+        self.assertEqual(rows[0]["effect"], {"weight": 100, "activateWhenStillSec": "3.0"})
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        self.assertNotIn(1785, DEVICE_EFFECTS)
+        self.assertNotIn(1785, live_items())
+        before = self.state()
+        for label, command, arguments in (
+            ("buy", 302, [5, 1785, 1, 0]),
+            ("install", 102, [5, 1, 1785, 0, 0]),
+            ("buy-and-install", 308, [5, 1785, 1, 0, 0, 0]),
+        ):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key="net-disabled:" + label, expected_revision=self.profile()["revision"],
+                wire_revision=1, command=command, arguments=arguments)
+            response = native_service(self.store, request, authenticated_account_id=account)
+            self.assertEqual(response["status"], "rejected", label)
+            self.assertEqual(response["result_code"], -10, label)
+            self.assertEqual(self.state(), before, label)
+        self.fx.load((0, 4, 10))
+        self.send(self.request("run_open"))
+        frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
+        self.assertNotIn(1785, frozen.get("artefacts", {}).get("optional_devices", []))
+
+    def test_scoped_camouflage_net_store_and_frozen_loadout(self):
+        """Isolated trusted-scope exercise; it is not a Domain/gateway handshake."""
+        from unittest.mock import patch
+        from content0_equipment_catalog import live_items, trusted_camouflage_test_scope
+        from content0_equipment_store import battle_loadout, installed_descriptor, validate_installed_devices
+        from p09e_research_store import ECONOMY_POLICY, assembly
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        vehicle = next(row for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)
+        vehicle_id = vehicle["vehicle_inventory_id"]
+        self.assertNotIn(1785, live_items())
+        with trusted_camouflage_test_scope():
+            item = live_items()[1785]
+            self.assertEqual(item.weight_grams, 100_000)
+            self.assertTrue(item.removable)
+            self.assertTrue(item.compatible(self.store.catalog.vehicles[vehicle["vehicle_id"]]))
+            base = assembly(self.store.catalog, vehicle["vehicle_id"], vehicle["modules"])
+            for delta, accepted in ((100_000, True), (99_999, False)):
+                with patch("p09e_research_store.assembly", return_value=dict(base, max_load_grams=base["mass_grams"] + delta)):
+                    if accepted:
+                        validate_installed_devices(self.store.catalog, vehicle, [1785, 0, 0])
+                    else:
+                        self.reject("CHASSIS_OVERLOAD", lambda: validate_installed_devices(self.store.catalog, vehicle, [1785, 0, 0]))
+            def apply(command, args, label):
+                request = dict(account_id=account, native_database_id=self.fx.native_id,
+                    command_key="net-scoped:" + label, expected_revision=self.profile()["revision"],
+                    wire_revision=1, command=command, arguments=args)
+                result = native_service(self.store, request, authenticated_account_id=account)
+                self.assertEqual(result["status"], "researched")
+                return request, result
+            buy, bought = apply(302, [5, 1785, 1, 0], "buy")
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            apply(102, [5, 1, 1785, 0, 0], "install")
+            self.assertEqual(battle_loadout(self.store.connection, account, vehicle_id), ((1785, 0, 0), (0, 0, 0)))
+            self.assertEqual(self.profile()["artefacts"]["depot"], {})
+            from p09e_research_projection import descriptor
+            plain = descriptor(self.store.catalog, vehicle)
+            self.assertEqual(installed_descriptor(plain, [1785, 0, 0]), plain[:-1] + bytes.fromhex("040600"))
+            apply(102, [5, 1, 0, 0, 0], "demount")
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            apply(308, [5, 1785, 1, 0, 0, 0], "buy-install")
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            self.assertEqual(native_service(self.store, buy, authenticated_account_id=account), dict(bought, replayed=True))
+            self.fx.load((0, 4, 10))
+            self.send(self.request("run_open"))
+            frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
+            self.assertEqual(frozen["artefacts"]["optional_devices"], [1785, 0, 0])
+            self.fx.store.close()
+            self.fx.store = self.factory()
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            self.assertEqual(self.store._active_mixed(account)[0]["native_inventory_id"], 1)
+        self.assertNotIn(1785, live_items())
+        with self.assertRaises(TransactionError):
+            self.profile()
+
+    def test_camouflage_scope_resets_after_error_and_does_not_cross_threads(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from content0_equipment_catalog import live_items, trusted_camouflage_test_scope
+        self.assertNotIn(1785, live_items())
+        with self.assertRaisesRegex(RuntimeError, "abort"):
+            with trusted_camouflage_test_scope():
+                self.assertIn(1785, live_items())
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    self.assertFalse(executor.submit(lambda: 1785 in live_items()).result())
+                raise RuntimeError("abort")
+        self.assertNotIn(1785, live_items())
+
     def test_native_maintenance_buys_shells_and_consumables_atomically(self):
         from p09e_research_service import existing_service
         from p09e_research_store import ECONOMY_POLICY

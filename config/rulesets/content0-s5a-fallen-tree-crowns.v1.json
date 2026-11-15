@@ -1,0 +1,72 @@
+{
+  "schema": "content0-s5a-fallen-tree-crowns.v1",
+  "classification": "PROJECT_CALIBRATION_NOT_HISTORICAL",
+  "map": "02_malinovka",
+  "description": "Post-fall crown ellipsoids in standing source-local coordinates. Scale is guided by pinned collision spans, not reconstructed leaf geometry. Sparse classification is tentative.",
+  "resources": {
+    "speedtree/02_Malinovka/AppleTree.spt": {
+      "bytes": 17066,
+      "sha256": "2fb9e498416e636bebe61a7243392aca4d2fa99c93a42cf4ea3f25202feec028",
+      "canopy_class": "leafy",
+      "center_local": [0.4, 4.3, 0.3],
+      "radii_local": [3.0, 1.9, 2.4],
+      "concealment_additive": 0.20
+    },
+    "speedtree/02_Malinovka/AppleTree_1.spt": {
+      "bytes": 18436,
+      "sha256": "223ec6a611122e93fc04656983a19a1c34c49a15723603ad1d1f6b0cb8e7cbea",
+      "canopy_class": "leafy",
+      "center_local": [-1.5, 4.6, -0.4],
+      "radii_local": [3.2, 2.0, 3.5],
+      "concealment_additive": 0.20
+    },
+    "speedtree/02_Malinovka/BirchFall.spt": {
+      "bytes": 16226,
+      "sha256": "df5dda9eed1f694c74a2a1f5828dc3a47fd6dc1c6a786ef04b84ae8713df37dd",
+      "canopy_class": "leafy",
+      "center_local": [-0.3, 13.0, -0.6],
+      "radii_local": [2.0, 5.1, 2.6],
+      "concealment_additive": 0.20
+    },
+    "speedtree/02_Malinovka/BirchFall_1.spt": {
+      "bytes": 16224,
+      "sha256": "0c2383890b820f074bcd0a9a72b4382bec0aba7e12cc9195089db38927b96dd9",
+      "canopy_class": "leafy",
+      "center_local": [1.4, 6.9, 0.2],
+      "radii_local": [1.9, 2.7, 1.8],
+      "concealment_additive": 0.20
+    },
+    "speedtree/02_Malinovka/BirchFall_2.spt": {
+      "bytes": 16483,
+      "sha256": "054aa3bb944cd5895370fd8c63d9bc465c7014dec88bfa30b92598d5cb5ddbcb",
+      "canopy_class": "sparse_unknown",
+      "center_local": [0.2, 9.7, 0.0],
+      "radii_local": [2.8, 3.4, 2.6],
+      "concealment_additive": 0.05
+    },
+    "speedtree/02_Malinovka/Maple.spt": {
+      "bytes": 16588,
+      "sha256": "f8fa23c9cbe06c4590d9ea264765ffbfc244885412176948df9faaba0e9aff99",
+      "canopy_class": "leafy",
+      "center_local": [1.2, 13.0, 1.5],
+      "radii_local": [5.7, 5.1, 5.3],
+      "concealment_additive": 0.20
+    },
+    "speedtree/02_Malinovka/Maple_1.spt": {
+      "bytes": 16532,
+      "sha256": "0b191994580e7cd42db787a695f861a200d9939c7239396aba658757fe78c958",
+      "canopy_class": "leafy",
+      "center_local": [-0.8, 8.2, 0.3],
+      "radii_local": [3.1, 3.4, 2.9],
+      "concealment_additive": 0.20
+    },
+    "speedtree/02_Malinovka/Spruce.spt": {
+      "bytes": 13432,
+      "sha256": "8a87eb05e7ba62fd393743e36a9073c1dac7cb39b2b7f9a03bcb59cfab183331",
+      "canopy_class": "needle",
+      "center_local": [-0.1, 12.0, 0.0],
+      "radii_local": [3.7, 10.2, 3.7],
+      "concealment_additive": 0.25
+    }
+  }
+}

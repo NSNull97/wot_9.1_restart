@@ -18,7 +18,7 @@ from p04m_stock_registry import mixed_admission
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST
 from p08c_battle_results import results_value
 from destructible_catalog import json_value, no_links
-from content0_equipment_catalog import CONSUMABLE_EFFECTS, CREW_FOOD, DEVICE_EFFECTS, SLOT_COUNT, VENTILATION_BONUS
+from content0_equipment_catalog import CONSUMABLE_EFFECTS, CREW_FOOD, active_device_effects, SLOT_COUNT, VENTILATION_BONUS
 from content0_equipment_store import battle_loadout, consume_battle, validate_installed_consumables, validate_installed_devices
 
 # CONTENT-0 2.6: one stack of a vehicle's load (gateway model.rs MAX_AMMO_PER_ACTOR); M2 light carries 1800.
@@ -306,7 +306,7 @@ class MixedAmmoStore(PoolStore):
             fields.add("artefacts")
             items = f["artefacts"]
             require(type(items) is dict and set(items) == {"optional_devices", "consumables"}, "CORRUPT_STORE")
-            for key, supported in (("optional_devices", DEVICE_EFFECTS), ("consumables", CONSUMABLE_EFFECTS)):
+            for key, supported in (("optional_devices", active_device_effects()), ("consumables", CONSUMABLE_EFFECTS)):
                 slots = items[key]
                 require(type(slots) is list and len(slots) == SLOT_COUNT and all(type(cd) is int and (cd == 0 or cd in supported) for cd in slots), "CORRUPT_STORE")
                 equipped = [cd for cd in slots if cd]

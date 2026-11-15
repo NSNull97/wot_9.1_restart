@@ -1,0 +1,12 @@
+{
+  "schema": "content0-s5a-malinovka-bush-calibration.v1",
+  "classification": "PROJECT_CALIBRATION_NOT_HISTORICAL",
+  "description": "Unmeasured local ellipsoids and additive concealment trial values; replace after native observation.",
+  "fire_near_distance_m": 15.0,
+  "fire_near_multiplier": 0.25,
+  "resources": {
+    "speedtree/02_Malinovka/Bush.spt": {"center_local": [0, 0.8, 0], "radii_local": [1, 0.8, 1], "concealment_additive": 0.2},
+    "speedtree/02_Malinovka/Shrub_1.spt": {"center_local": [0, 0.7, 0], "radii_local": [0.8, 0.7, 0.8], "concealment_additive": 0.2},
+    "speedtree/02_Malinovka/Shrub_2.spt": {"center_local": [0, 1, 0], "radii_local": [1.2, 1, 1.2], "concealment_additive": 0.2}
+  }
+}

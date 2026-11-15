@@ -13,6 +13,63 @@ pub(super) struct ShotDeviation{pub(super) angle:f64,pub(super) gun:super::super
 const MODULE_ROLL_ORDINAL:u8=0x40;
 /// SHELL-04: battle-RNG ordinals of the explosion chance rolls of external modules (0x60 + index).
 const EXPLOSION_ROLL_ORDINAL:u8=0x60;
+
+#[cfg(test)]
+mod assist_tests {
+    use super::*;
+    #[test] fn content0_s5a_last_crew_hit_keeps_preimpact_direct_snapshot() {
+        let now=Instant::now();let mut world=super::super::spotting_world_tests::fixture(now);
+        let extra=world.actors[0].clone();world.actors.push(extra.clone());world.actors.push(extra);
+        world.set_test_teams(&[1,2,1,2]);
+        world.actors[0].position=[0.,0.,0.];world.actors[1].position=[100.,0.,0.];
+        world.actors[2].position=[500.,0.,0.];world.actors[3].position=[700.,0.,0.];
+        world.actors[1].devices=Some(device::State::new(caps::Profile::Ms1).unwrap());
+        let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
+        let cause=device::Cause{shot:1,attacker_slot:2};
+        let hit=|ordinal,target|device::ModuleHit{cause,ordinal,at_ms:0,target:crate::p06t_lab_proxy::Target::Seat(target),shell,ignition_roll:0.9};
+        let health=device::Health{hp:90,max_hp:90,terminal:false};
+        world.actors[1].devices.as_mut().unwrap().apply_hits(&[hit(0,0)],health).unwrap();
+        assert!(world.actors[1].alive());world.refresh_original_spotting(now).unwrap();
+        let mut staged=world.actors.clone();let pre=world.assist_evidence(&staged,2,1,1000).unwrap();
+        assert_eq!(pre.unwrap().direct_mask,1);
+        staged[1].devices.as_mut().unwrap().apply_hits(&[hit(1,1)],health).unwrap();
+        assert!(!staged[1].alive());
+        assert_eq!(world.assist_evidence(&staged,2,1,1000).unwrap().unwrap().direct_mask,0);
+        let hp=staged[1].health;
+        assert!(world.record_damage_with_direct_snapshot(&mut staged,1,2,0,1000,0,25,true,true,true,pre).is_err());
+        assert_eq!(staged[1].health,hp);assert!(world.damage_events.is_empty());
+        // A track event produced after the direct snapshot still belongs to the
+        // HP event; the shooter's own track damage is never credited to them.
+        let track=caps::Device::LeftTrack;
+        world.device_events.push((1,device::Transition{sequence:1,at_ms:0,cause,from_fire:false,
+            change:device::Change::Device{device:track,extra_index:track.extra(),max_health:100,before:100,after:0,
+                before_condition:device::Condition::Normal,after_condition:device::Condition::Destroyed,repair:false}}));
+        world.record_damage_with_direct_snapshot(&mut staged,1,2,1,1000,0,25,true,true,true,pre).unwrap();
+        let event=&world.damage_events[0];assert_eq!(event.health_after,hp-25);
+        assert!(event.crew_before);assert!(!event.crew_after);assert_eq!(event.spotting.unwrap().direct_mask,1);
+        assert_eq!(event.spotting.unwrap().track_mask,1<<2);
+        world.actors=staged;world.mixed_ammo=true;
+        let credits=super::super::super::server::battle_ledger::credits(&world).unwrap();
+        assert_eq!(credits.iter().map(|c|(c.recipient,c.amount)).collect::<Vec<_>>(),vec![(0,25)]);
+    }
+    #[test] fn content0_s5a_assist_mask_is_frozen_at_actual_hp_transition_and_crosses_bw() {
+        let now=Instant::now();let mut world=super::super::spotting_world_tests::fixture(now);
+        let extra=world.actors[0].clone();world.actors.push(extra.clone());world.actors.push(extra.clone());world.actors.push(extra);
+        world.set_test_teams(&[1,2,1,2,1]);
+        world.actors[0].position=[0.,0.,0.];world.actors[1].position=[100.,0.,0.];
+        world.actors[2].position=[500.,0.,0.];world.actors[3].position=[700.,0.,0.];world.actors[4].position=[10.,0.,0.];
+        world.refresh_original_spotting(now).unwrap();
+        let mut staged=world.actors.clone();let before=staged[1].health;
+        world.record_damage(&mut staged,1,2,1,1000,0,25,true,true,true).unwrap();
+        let record=world.damage_events[0].clone();assert_eq!(record.health_before,before);assert_eq!(record.health_after,before-25);
+        assert_eq!(record.spotting.unwrap().direct_mask,(1<<0)|(1<<4));
+        world.actors=staged;world.actors[1].position=[900.,0.,0.];world.refresh_original_spotting(now+STEP).unwrap();
+        assert_eq!(world.damage_events[0],record,"later sighting state must not rewrite credited mask");
+        let mut encoder=crate::bw_wire::Arcs::new(false);let mut decoder=crate::bw_wire::Arcs::new(true);
+        let data=crate::bw_wire::encode(&record,now,&mut encoder).unwrap();
+        let decoded:DamageRecord=crate::bw_wire::decode(&data,now,&mut decoder).unwrap();assert_eq!(decoded,record);
+    }
+}
 /// SHELL-04: the module group of a LAB target (#717 common/vehicle.xml MaterialInfo).
 pub(super) fn module_class(target:crate::p06t_lab_proxy::Target)->crate::gateway091::shared::shell_rules::ModuleClass{
     use crate::gateway091::shared::shell_rules::ModuleClass as M;
@@ -108,14 +165,25 @@ impl World {
     }
     fn record_damage(&mut self,actors:&mut[Actor],target:usize,attacker:usize,shot:u32,tick:u32,
         reason:u8,amount:u16,crew_before:bool,direct:bool,pierced:bool)->io::Result<()> {
+        self.record_damage_with_direct_snapshot(actors,target,attacker,shot,tick,reason,amount,crew_before,direct,pierced,None)
+    }
+    fn record_damage_with_direct_snapshot(&mut self,actors:&mut[Actor],target:usize,attacker:usize,shot:u32,tick:u32,
+        reason:u8,amount:u16,crew_before:bool,direct:bool,pierced:bool,
+        direct_snapshot:Option<result_spots::AssistEvidence>)->io::Result<()> {
         if target>=actors.len()||attacker>=actors.len()||shot==0||shot as usize>self.shot_limit()||tick<1000
             ||reason>10||self.damage_events.len()>=MAX_DAMAGE_EVENTS{return Err(bad());}
+        let mut spotting=self.assist_evidence(actors,attacker,target,tick)?;
+        // Direct sight is frozen before this impact can kill the last crewman;
+        // track authors still reflect events committed during the same impact.
+        if let (Some(now),Some(before))=(&mut spotting,direct_snapshot) {
+            now.scan_tick=before.scan_tick;now.direct_mask=before.direct_mask;
+        }
         let actor=&mut actors[target];let before=actor.health;
         let after=i32::from(before).saturating_sub(i32::from(amount)).max(0)as i16;
         actor.health=after;let crew_after=actor.alive();
         if before!=after||crew_before!=crew_after {
             {let next_sequence=self.damage_events.len() as u32+1;self.damage_events.push(DamageRecord{sequence:next_sequence,tick,attacker,target,shot,reason,
-                health_before:before,health_after:after,crew_before,crew_after,direct,pierced});}
+                health_before:before,health_after:after,crew_before,crew_after,direct,pierced,spotting});}
         }
         if !crew_after {actor.input=Input::STOP;actor.speed=0.;actor.aim.park();
             if let Some(state)=&mut actor.devices{state.freeze();}}
@@ -192,6 +260,7 @@ impl World {
         contact:&Contact,bundle:&geometry::Bundle)->io::Result<crate::p06t_damage::Resolution>{
         let shell=projectile.shell.ok_or_else(||bad())?;let slot=contact.target_slot;
         let before=actors.get(slot).ok_or_else(||bad())?.health;let crew_before=actors[slot].alive();
+        let direct_snapshot=self.assist_evidence(actors,projectile.slot,slot,contact.tick)?;
         let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
         let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(projectile.origin[i])).powi(2)).sum::<f64>().sqrt();
         // SHELL-02: track armour this shot already passed (0 without a TrackContact).
@@ -292,8 +361,8 @@ impl World {
         // HP/death record includes only the residual HP that detonation removes.
         // Even a simultaneous final-seat wound must not create a second kill.
         let damage=resolution.damage_hp.saturating_add(additional).min(before as u16);
-        self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
-            crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced)?;
+        self.record_damage_with_direct_snapshot(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
+            crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced,direct_snapshot)?;
         let at_ms=u64::from(contact.tick.checked_sub(1000).ok_or_else(bad)?)*100;
         let events=Self::extinguish_automatically(&mut actors[slot],at_ms,slot)?;
         if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}

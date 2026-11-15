@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
+from contextvars import ContextVar
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
@@ -81,6 +83,30 @@ CONSUMABLE_EFFECTS = {
     RPM_LIMITER: "removedRpmLimiter",
 } | CREW_FOOD | FUELS
 SUPPORTED_ITEMS = DEVICE_EFFECTS | CONSUMABLE_EFFECTS
+CAMOUFLAGE_NET = 1785
+_NET_SCOPE = ContextVar("content0_s5a_net_enabled", default=False)
+
+
+@contextmanager
+def trusted_camouflage_test_scope():
+    """Internal preparation seam, not a gateway handshake or an authorization.
+
+    There is intentionally no Domain/config/command entry point to this scope.
+    Before production wiring, the caller MUST validate the live Domain and
+    gateway capabilities on the authenticated channel for the whole request.
+    A request body, client flag, environment variable or config file alone is
+    not such proof. ContextVar keeps concurrent threads/tasks independent and
+    restores the previous value on every exit, including exceptions.
+    """
+    token = _NET_SCOPE.set(True)
+    try:
+        yield
+    finally:
+        _NET_SCOPE.reset(token)
+
+
+def active_device_effects():
+    return DEVICE_EFFECTS | ({CAMOUFLAGE_NET: "camouflageNet"} if _NET_SCOPE.get() else {})
 
 
 def canonical(value):
@@ -193,8 +219,14 @@ class LiveItem:
         return not inclusions or any(row.matches(vehicle, engine_tags) for row in inclusions)
 
 
-@lru_cache(maxsize=1)
 def live_items():
+    """Active set; absence of a trusted scope always means legacy closed."""
+    return _live_items(_NET_SCOPE.get())
+
+
+@lru_cache(maxsize=2)
+def _live_items(net_enabled):
+    supported = DEVICE_EFFECTS | CONSUMABLE_EFFECTS | ({CAMOUFLAGE_NET: "camouflageNet"} if net_enabled else {})
     raw = read(MANIFEST, MAX_MANIFEST, MANIFEST_SHA256)
     document = json.loads(raw)
     if document["schema"] != SCHEMA or document["source_build"] != SOURCE_BUILD:
@@ -202,14 +234,17 @@ def live_items():
     result = {}
     for row in document["items"]:
         cd = row["compact_id"]
-        if cd in SUPPORTED_ITEMS:
+        if cd in supported:
             effect = row["effect"]
             weight = effect.get("weight", 0)
             fraction = effect.get("vehicleWeightFraction", "0")
             expected_fraction = "0.01" if cd in WET_AMMO_RACKS else "0"
             suspension = cd in ENHANCED_SUSPENSIONS
-            if (row["source_name"] != SUPPORTED_ITEMS[cd] or type(weight) is not int or not 0 <= weight <= 1500
+            if (row["source_name"] != supported[cd] or type(weight) is not int or not 0 <= weight <= 1500
                     or fraction != expected_fraction or effect.get("chassisMaxLoadFactor") != ("1.1" if suspension else None)
+                    or cd == CAMOUFLAGE_NET and (row["kind"] != 9 or row["source_id"] != 6
+                        or not row["removable"] or row["filters"] or row["tags"] or row["incompatible_tags"]
+                        or row["script"] != "CamouflageNet" or effect != {"weight": 100, "activateWhenStillSec": "3.0"})
                     or suspension and (row["script"] != "EnhancedSuspension" or weight != 0 or row["removable"]
                                        or effect.get("chassisHealthFactor") != "1.2"
                                        or effect.get("vehicleByChassisDamageFactor") != "0.5")):
@@ -221,7 +256,7 @@ def live_items():
                                   frozenset(row["tags"]), frozenset(conflicts), weight * 1000,
                                   int(fraction == "0.01"),
                                   tuple(_vehicle_filter(mode, entry) for mode, entry in row["filters"]))
-    if set(result) != set(SUPPORTED_ITEMS):
+    if set(result) != set(supported):
         raise ValueError("incomplete artefact catalogue binding")
     return MappingProxyType(result)
 

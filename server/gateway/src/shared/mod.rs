@@ -3,6 +3,7 @@
 pub(crate) mod model;
 pub(crate) mod p10b_team_plan;
 pub(crate) mod team_spawn;
+pub(crate) mod fixed_scout;
 pub(crate) mod matchmaker;
 
 /// One Driving record length, or None for an ID outside the #717 table.
@@ -46,6 +47,9 @@ fn unframed_record(payload: &[u8], own: usize) -> io::Result<Option<(usize, u8)>
 mod spawn15_wire_tests;
 pub(crate) mod visibility;
 pub(crate) mod spotting;
+pub(crate) mod visibility_debug;
+pub(crate) mod camouflage;
+pub(crate) mod foliage;
 pub(crate) mod step_profile;
 pub(crate) mod net01;
 pub(crate) mod journal;
@@ -193,6 +197,7 @@ pub(super) struct Client {
     consumables_sent:[u16;3],
     rpm_limiter_sent:Option<bool>,
     stereoscope_sent:Option<bool>,
+    camouflage_net_sent:Option<bool>,
     devices_snapshot_sent:bool,
     health_sent: [Option<i16>; model::MAX_ACTORS],
     owner_health_sent: Option<i16>,
@@ -210,6 +215,13 @@ pub(super) struct Client {
     /// and the channel a prepared client opened in this battle.
     battle_events_enabled: bool,
     battle_events: Option<battle_events::Channel>,
+    visibility_debug_owner: Option<String>,
+    visibility_debug_run: Option<String>,
+    visibility_debug_grant: Option<std::sync::Arc<Vec<u8>>>,
+    visibility_debug_challenge: Option<visibility_debug::Challenge>,
+    visibility_debug_last_frame: Option<Instant>,
+    visibility_debug_last_challenge: Option<Instant>,
+    visibility_debug: Option<visibility_debug::Channel>,
     /// UI-03: gateway.json `battle_events.feed`.
     battle_feed_enabled: bool,
     /// UI-04: gateway.json `battle_events.history`.
@@ -242,8 +254,8 @@ impl Client {
             private_pending: VecDeque::new(), turrets:turret_publication::State::new(), last_pose_tick: None,
             pose_delivery: net01::PoseDelivery::Reliable, poses_out: Vec::new(), pose_stats: net01::PoseStats::default(),
             area_creation: None, pending_area_scene: false, pending_entity_requests: VecDeque::new(), pending_area_requests: VecDeque::new(), area_scene_sent: 0,areas:Vec::new(),tree_areas:Vec::new(),column_areas:Vec::new(), binding: None, correction: false, ready_sent: [false; model::MAX_ACTORS], commands: Vec::new(), entered: None,
-            hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:std::array::from_fn(|_|None),armament_sent:None,consumables_sent:[0;3],rpm_limiter_sent:None,stereoscope_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: tracer_flags(),
-            tracer_stopped: tracer_flags(), engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
+            hangar_since: None, shot_cursor: 0, impact_cursor: 0, sixth_sense_sent: 0, damage_cursor:0,ram_cursor:0,device_cursor:0,crew_sent:[None;model::MAX_ACTORS],fire_sent:std::array::from_fn(|_|None),armament_sent:None,consumables_sent:[0;3],rpm_limiter_sent:None,stereoscope_sent:None,camouflage_net_sent:None,devices_snapshot_sent:false,health_sent: [None; model::MAX_ACTORS], owner_health_sent: None, tracer_started: tracer_flags(),
+            tracer_stopped: tracer_flags(), engine_sent: [None; model::MAX_ACTORS], stickers_sent: std::array::from_fn(|_| None), scout_cursor: 0, battle_events_enabled: false, battle_events: None, visibility_debug_owner: None, visibility_debug_run: None, visibility_debug_grant: None, visibility_debug_challenge: None, visibility_debug_last_frame: None, visibility_debug_last_challenge: None, visibility_debug: None, battle_feed_enabled: false, battle_history_enabled: false, team_score_sent: [(0,false); model::MAX_ACTORS], team_score_journals: None, return_generation: 0, return_mask: 0, join_requested: true, queue_announced: false, profile13: None, return_source_revision: 1, lifecycle_view: None, natural_result: None, result_committed: false, result_stream_queued: false, result_leave_requested: false, result_delivery_at: None }
     }
     /// A new battle gets fresh entity/publication state while the Account
     /// return epoch remains monotonic on its existing authenticated channel.
@@ -255,11 +267,21 @@ impl Client {
         let spotting_enabled = self.spotting_enabled;
         let pose_delivery = self.pose_delivery;
         let battle_events_enabled = self.battle_events_enabled;
+        let visibility_debug_owner = self.visibility_debug_owner.take();
+        let visibility_debug_run = self.visibility_debug_run.take();
+        let visibility_debug_grant = self.visibility_debug_grant.take();
+        let visibility_debug_last_frame = self.visibility_debug_last_frame;
+        let visibility_debug_last_challenge = self.visibility_debug_last_challenge;
         let battle_feed_enabled = self.battle_feed_enabled;
         let battle_history_enabled = self.battle_history_enabled;
         *self = Self::new(slot);
         self.pose_delivery = pose_delivery;
         self.battle_events_enabled = battle_events_enabled;
+        self.visibility_debug_owner = visibility_debug_owner;
+        self.visibility_debug_run = visibility_debug_run;
+        self.visibility_debug_grant = visibility_debug_grant;
+        self.visibility_debug_last_frame = visibility_debug_last_frame;
+        self.visibility_debug_last_challenge = visibility_debug_last_challenge;
         self.battle_feed_enabled = battle_feed_enabled;
         self.battle_history_enabled = battle_history_enabled;
         self.return_generation = generation;
@@ -889,6 +911,9 @@ impl Session {
                 // UI-03: a scene load is a new channel. The client says hello
                 // again, nothing of the time it was away is replayed.
                 c.battle_events = None;
+                // A newly loaded scene must explicitly request diagnostics again;
+                // never resume a partially delivered prior-scene snapshot.
+                c.visibility_debug = None; c.visibility_debug_challenge=None;
                 // UI-06: the arena of a loaded scene is new and empty; unlike
                 // the feed, standing facts are sent again in full.
                 c.team_score_sent = [(0,false); model::MAX_ACTORS]; c.team_score_journals = None;
@@ -916,6 +941,29 @@ impl Session {
             // INPUT-01: unframed IDs were already refused by the pre-scan.
             let size = record_size(payload, at)?.ok_or_else(|| bad())?;
             let raw = payload.get(at..at+size).ok_or_else(|| bad())?; at += size;
+            if id==0xa1 && visibility_debug::is_auth(raw) {
+                // Consume every response once; never log supplied proofs or secrets.
+                let challenge=c.visibility_debug_challenge.take();
+                let valid=challenge.as_ref().zip(c.visibility_debug_owner.as_ref()).zip(c.visibility_debug_grant.as_ref()).zip(c.visibility_debug_run.as_ref())
+                    .is_some_and(|(((challenge,owner),grant),run)|self.identity.as_ref().is_some_and(|id|&id.account_id==owner)
+                        && challenge.verify(raw,grant,owner,run,world.id,self.id,now));
+                if valid {let challenge=challenge.as_ref().unwrap();let mut channel=visibility_debug::Channel::new(challenge.epoch());channel.select(challenge.pair());c.visibility_debug=Some(channel);}
+                continue;
+            }
+            if id==0xa1 && c.visibility_debug_owner.as_ref().is_some_and(|owner|self.identity.as_ref().is_some_and(|id|&id.account_id==owner)) && c.visibility_debug_grant.is_some() {
+                if let Some(pair)=visibility_debug::hello(raw) {
+                    if c.visibility_debug_challenge.as_ref().is_none_or(|challenge|challenge.expired(now)) && self.outbox.is_empty()
+                        && c.pending_private_len()==0 && self.tx.len()<3
+                        && c.visibility_debug_last_challenge.is_none_or(|at|now.saturating_duration_since(at)>=std::time::Duration::from_secs(1)) {
+                        if let Some(run)=c.visibility_debug_run.as_deref() {
+                            if let Ok((challenge,frame))=visibility_debug::Challenge::new(run,world.id,self.id,pair,now) {
+                                c.visibility_debug=None;c.visibility_debug_challenge=Some(challenge);c.visibility_debug_last_challenge=Some(now);self.outbox.push_back(frame);
+                            }
+                        }
+                    }
+                    continue;
+                }
+            }
             if let Some(version)=(id==0xa1&&c.battle_events_enabled).then(||battle_events::hello(raw)).flatten() {
                 // UI-02: only this name from a prepared client opens the channel;
                 // without the gateway key the record stays an unsupported one.

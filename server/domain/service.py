@@ -14,6 +14,8 @@ Usage: python -B -X utf8 server/domain/service.py --config <domain.json>
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 from pathlib import Path
@@ -33,6 +35,7 @@ from server.domain.protocol import SCHEMA, ProtocolError  # noqa: E402
 import p08b_battle_service as worker  # noqa: E402
 import p08c_late_results_service as late_worker  # noqa: E402
 import int_user_settings  # noqa: E402
+from content0_equipment_catalog import trusted_camouflage_test_scope  # noqa: E402
 from p09d_ammo_projection import canonical  # noqa: E402
 from destructible_catalog import json_value, no_links, CatalogError  # noqa: E402
 
@@ -88,10 +91,26 @@ class Config:
     def __init__(self, raw):
         try: value = json_value(raw.removeprefix(b"\xef\xbb\xbf"), limit=MAX_CONFIG, nodes=1024, depth=4)
         except CatalogError as error: raise ConfigError("bounded unique JSON config") from error
-        _require(type(value) is dict and set(value) == self.FIELDS and value["version"] == VERSION
-            and type(value["version"]) is int, "domain config fields/version")
+        _require(type(value) is dict and self.FIELDS <= set(value)
+            and not set(value) - self.FIELDS - {"camouflage_v1", "camouflage_guard"}
+            and value["version"] == VERSION and type(value["version"]) is int, "domain config fields/version")
+        camouflage = value.get("camouflage_v1", False)
+        _require(type(camouflage) is bool, "camouflage_v1 must be boolean")
+        _require(not camouflage or os.environ.get("WOT091_TEST_LAB") == "1", "camouflage_v1 requires test_lab")
+        self.camouflage_v1 = camouflage
         self.host, self.port = _endpoint(value["endpoint"])
         self.secret = protocol.load_secret(_path(value["secret_file"]))
+        guard = value.get("camouflage_guard")
+        if camouflage:
+            _require(type(guard) is dict and set(guard) == {"version", "endpoint", "secret_file"}
+                     and type(guard["version"]) is int and guard["version"] == 1, "camouflage_guard required")
+            self.camouflage_guard_endpoint = _endpoint(guard["endpoint"])
+            _require(self.camouflage_guard_endpoint[1] != 0, "camouflage_guard port")
+            self.camouflage_guard_secret = protocol.load_secret(_path(guard["secret_file"]))
+            _require(not hmac.compare_digest(self.secret, self.camouflage_guard_secret), "camouflage guard secret must be distinct")
+        else:
+            _require(guard is None, "camouflage_guard requires camouflage_v1")
+            self.camouflage_guard_endpoint = self.camouflage_guard_secret = None
         self.database = _path(value["database"])
         self.bundle = _path(value["bundle"], directory=True)
         self.original_root = _path(value["original_root"], directory=True)
@@ -132,6 +151,38 @@ class Config:
         path = _path(str(Path(path).resolve()))
         with open(path, "rb") as stream: raw = stream.read(MAX_CONFIG + 1)
         return cls(raw)
+
+
+def check_camouflage_gateway(config, generation):
+    """Challenge the live, separately keyed gateway immediately before an operation.
+
+    This is bounded liveness evidence at the instant of the answer. It cannot
+    prove the process survives between the answer and a later SQLite commit.
+    """
+    if not config.camouflage_v1 or type(generation) is not str or not _SHA.fullmatch(generation):
+        return False
+    nonce = secrets.token_bytes(32)
+    expected = hmac.new(config.camouflage_guard_secret,
+        b"wot091-domain.v1:camouflage-live.v1\0" + generation.encode("ascii") + nonce,
+        hashlib.sha256).digest()
+    deadline = time.monotonic() + 0.5
+    try:
+        with socket.create_connection(config.camouflage_guard_endpoint, timeout=max(0.001, deadline - time.monotonic())) as stream:
+            remaining_time = deadline - time.monotonic()
+            if remaining_time <= 0: return False
+            stream.settimeout(remaining_time)
+            stream.sendall(nonce)
+            chunks, remaining = [], 32
+            while remaining:
+                remaining_time = deadline - time.monotonic()
+                if remaining_time <= 0: return False
+                stream.settimeout(remaining_time)
+                part = stream.recv(remaining)
+                if not part: return False
+                chunks.append(part); remaining -= len(part)
+            return hmac.compare_digest(expected, b"".join(chunks))
+    except OSError:
+        return False
 
 
 class Busy(Exception):
@@ -202,6 +253,8 @@ class Watchdog(threading.Thread):
 class Domain:
     def __init__(self, config, catalog=None):
         self.config = config
+        # New random generation on every Domain instance; never carried across a restart.
+        self.camouflage_generation = secrets.token_hex(32) if config.camouflage_v1 else None
         if config.catalog_sha256 is not None:
             import catalog_v1
             catalog_v1.activate(config.catalog_sha256)
@@ -239,6 +292,7 @@ class Domain:
 
     def describe(self):
         return {"schema": SCHEMA, "version": VERSION, "catalog_sha256": self.config.catalog_sha256,
+            "camouflage_v1": self.config.camouflage_v1, "camouflage_generation": self.camouflage_generation,
             "accounts": [{"account_id": a, "native_database_id": self.native_ids[a], **f,
                           "catalog": self.config.catalog_sha256 is not None} for a, f in self.config.accounts.items()],
             "operations": [*worker.OPERATIONS, "late-append", "late-pending", SETTINGS_OPERATION]}
@@ -256,6 +310,8 @@ class Domain:
         try:
             with self.lanes[account]:
                 with self.slots:
+                    if self.config.camouflage_v1 and not check_camouflage_gateway(self.config, self.camouflage_generation):
+                        return 503, "unavailable", b""
                     token = self.watchdog.begin(SETTINGS_OPERATION)
                     try: return 200, None, canonical(int_user_settings.execute(self.config.database, account, body))
                     except Exception as error:  # A failed write must reach the client as refused.
@@ -267,13 +323,27 @@ class Domain:
 
     def handle(self, header, body):
         """-> (status, error, reply bytes). Never raises for request content."""
-        if set(header) != REQUEST_FIELDS: return 400, "invalid_request", b""
+        fields = set(header)
+        cap_fields = {"camouflage_generation", "camouflage_nonce", "camouflage_request_proof"}
+        if fields not in (REQUEST_FIELDS, REQUEST_FIELDS | cap_fields): return 400, "invalid_request", b""
         op, account, key = header["op"], header["account_id"], header["key"]
+        # Describe is the authenticated bootstrap. Every other enabled request is
+        # bound to this specific Domain generation before any worker or mutation.
+        generation = header.get("camouflage_generation")
+        if op == "describe":
+            if fields != REQUEST_FIELDS and generation != "-": return 400, "invalid_request", b""
+        elif self.config.camouflage_v1:
+            if type(generation) is not str or not _SHA.fullmatch(generation) or generation != self.camouflage_generation:
+                return 403, "forbidden", b""
+        elif "camouflage_generation" in header:
+            return 403, "forbidden", b""
         if type(header["id"]) is not int or not 1 <= header["id"] < 2**32 or type(op) is not str:
             return 400, "invalid_request", b""
         if key is not None and (type(key) is not str or not _KEY.fullmatch(key)): return 400, "invalid_request", b""
         if op in SERVICE_OPERATIONS:
             if account is not None or key is not None or body: return 400, "invalid_request", b""
+            if op == "ping" and self.config.camouflage_v1 and not check_camouflage_gateway(self.config, self.camouflage_generation):
+                return 503, "unavailable", b""
             return 200, None, canonical({"status": "ok"} if op == "ping" else self.describe())
         if op == SETTINGS_OPERATION: return self.int_settings(account, key, body)
         if op not in worker.OPERATIONS and op not in LATE_OPERATIONS: return 404, "not_found", b""
@@ -305,8 +375,19 @@ class Domain:
                     token = self.watchdog.begin(op)
                     started = time.perf_counter()
                     try:
-                        result = (late_worker.execute(context, LATE_OPERATIONS[op], body) if late
-                                  else worker.execute(context, op, lambda limit: body[:limit + 1]))
+                        if self.config.camouflage_v1:
+                            # Check after the lane/worker wait and before entering the
+                            # scoped store, never from a client-supplied assertion.
+                            if not check_camouflage_gateway(self.config, self.camouflage_generation):
+                                return 503, "unavailable", b""
+                            # Authorization above was checked against the live generation;
+                            # scope is local to this worker thread and always unwinds.
+                            with trusted_camouflage_test_scope():
+                                result = (late_worker.execute(context, LATE_OPERATIONS[op], body) if late
+                                          else worker.execute(context, op, lambda limit: body[:limit + 1]))
+                        else:
+                            result = (late_worker.execute(context, LATE_OPERATIONS[op], body) if late
+                                      else worker.execute(context, op, lambda limit: body[:limit + 1]))
                         return 200, None, canonical(result)
                     except Exception as error:  # Worker exit 1 today; never a fake success.
                         log("DOMAIN_OPERATION_FAILED", operation=op, error=type(error).__name__ + ": " + str(error)[:200])
@@ -351,12 +432,32 @@ class Server:
                 log("DOMAIN_AUTH_REFUSED"); return
             protocol.write_frame(stream, {"schema": SCHEMA, "status": 200})
             rate = Rate(CONNECTION_RATE)
+            seen_cap_nonces = set()
             while not self.stopping.is_set():
                 header, body = protocol.read_frame(stream, IDLE_SECONDS)
+                cap_fields = {"camouflage_generation", "camouflage_nonce", "camouflage_request_proof"}
+                signed = bool(cap_fields & set(header))
+                request_proof = None
+                if signed:
+                    if set(header) != REQUEST_FIELDS | cap_fields: raise ProtocolError("capability header")
+                    client_nonce = header["camouflage_nonce"]
+                    request_proof = header["camouflage_request_proof"]
+                    expected = protocol.capability_request_proof(self.config.secret, nonce, header, body)
+                    if type(request_proof) is not str or not secrets.compare_digest(expected, request_proof):
+                        raise ProtocolError("capability request authentication")
+                    if client_nonce in seen_cap_nonces or len(seen_cap_nonces) >= 256:
+                        raise ProtocolError("capability nonce replay or limit")
+                    seen_cap_nonces.add(client_nonce)
                 if not rate.take(): status, error, reply = 503, "rate_limited", b""
                 else: status, error, reply = self.domain.handle(header, body)
-                protocol.write_frame(stream, {"schema": SCHEMA, "id": header.get("id") if type(header.get("id")) is int else 0,
-                    "status": status, "error": error}, reply)
+                response = {"schema": SCHEMA, "id": header.get("id") if type(header.get("id")) is int else 0,
+                    "status": status, "error": error}
+                if signed:
+                    actual_generation = self.domain.camouflage_generation or "-"
+                    response["camouflage_generation"] = actual_generation
+                    response["camouflage_proof"] = protocol.capability_response_proof(
+                        self.config.secret, request_proof, actual_generation, status, reply)
+                protocol.write_frame(stream, response, reply)
         except (ConnectionError, ProtocolError, OSError):
             pass  # Closed or malformed peer: the connection ends, the service continues.
         finally:

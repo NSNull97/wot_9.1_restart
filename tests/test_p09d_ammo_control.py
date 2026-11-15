@@ -16,6 +16,8 @@ from tests.test_p09d_ammo_scenario import expected
 
 
 def functions(names, namespace):
+    # Match sr_interactive's module initializer when loading functions alone.
+    namespace.setdefault('_profile13_fight_scenario', None)
     path = ROOT / 'client_patch/sr_interactive.py'
     nodes = [v for v in ast.parse(path.read_bytes()).body if isinstance(v, ast.FunctionDef) and v.name in names]
     assert len(nodes) == len(names)

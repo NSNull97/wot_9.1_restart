@@ -50,6 +50,8 @@
 - [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
 - [P07B_ORIGINAL_SOURCES.md](P07B_ORIGINAL_SOURCES.md) — bounded #717 source ledger for six static points, dynamic gunner point, mounted ranges and Sixth Sense
+- [CONTENT0_S5A_CAMOUFLAGE.md](CONTENT0_S5A_CAMOUFLAGE.md) — источник 5a, неизвестные параметры и изоляция стенда; приёмка NOT_RUN
+- [CONTENT0_S5A_ASSIST.md](CONTENT0_S5A_ASSIST.md) — проектное деление ассиста между прямыми наблюдателями, ограничения и проверки
 - [P07B_PUBLICATION_BOUNDARY.md](P07B_PUBLICATION_BOUNDARY.md) — recipient publication gate for hidden-shooter terrain FX and current integration boundary
 - [P07B_AUDIO_BOUNDARY_20261018.md](P07B_AUDIO_BOUNDARY_20261018.md) — лампа 6-го чувства в #717 без звука (VERIFIED); проектный FX за флагом `--sixth-sense-sound`, native NOT_RUN
 - [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN

@@ -68,6 +68,10 @@ pub(super) fn stereoscope_status(active: bool) -> Vec<u8> {
     vec![0x13, 0x3d, item_id, u8::from(active)]
 }
 
+pub(super) fn camouflage_net_status(active: bool) -> Vec<u8> {
+    vec![0x13, 0x3d, (crate::gateway091::shared::camouflage::NET >> 8) as u8, u8::from(active)]
+}
+
 fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact&&!s.is_absent()).ok_or_else(||bad("P06T shell not mounted"))}
 /// quantity includes the clip under the explicitly documented server lab policy.
 /// timeRemaining=0 is intentional: original shell consumer ignores this field.

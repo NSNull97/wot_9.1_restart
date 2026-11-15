@@ -276,7 +276,7 @@ export async function createIdentityBridge(options, { now = Date.now } = {}) {
   const domainOption = options.domain_service === undefined ? null : domainConfiguration(options.domain_service);
   if (domainOption !== null && (options.battle_service === undefined
       || options.room_selection_service !== undefined || options.room_selection_loss_service !== undefined)) throw new Error('Domain service requires profile13 battle without spawned selection writers');
-  const domain = domainOption === null ? null : createDomainClient({ host: domainOption.host, port: domainOption.port, secret: readSecret(domainOption.secretFile) });
+  const domain = domainOption === null ? null : createDomainClient({ host: domainOption.host, port: domainOption.port, secret: readSecret(domainOption.secretFile), camouflage: domainOption.camouflage });
   const secret = readSecret(options.token_file);
   const webPath = localPath(options.web_database);
   const nativePath = localPath(options.native_descriptors);

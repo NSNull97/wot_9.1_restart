@@ -207,7 +207,9 @@ impl BatchRuntime {
         // TURRET-01: this battle has a scene worker, so detached turrets are Jolt bodies.
         world.enable_turret_jolt()?;
         // SPAWN-15: each team on its own base formation; otherwise LAB lanes.
-        let spots=if world.team_base_spawn() {
+        let spots=if let Some(scenario)=world.fixed_scout() {
+            Some((0..world.actors.len()).map(|slot|scenario.spot(slot)).collect::<io::Result<Vec<_>>>()?)
+        } else if world.team_base_spawn() {
             let teams=(0..world.actors.len()).map(|slot|world.team(slot)).collect::<io::Result<Vec<_>>>()?;
             Some(super::super::team_spawn::placement(world.map,&teams)?)
         } else {None};
@@ -252,7 +254,7 @@ impl BatchRuntime {
         })?;
         self.startup=Some(rx);self.started_at=Some(now);
         println!("P05C_SCENE_START battle={} actors={} generation={} one_scene=true",world.id,world.actors.len(),generation);
-        if spots.is_some() {println!("SPAWN15_PLACEMENT battle={} map={} policy={} actors={} manifest_sha256={sha_log}",
+        if spots.is_some() && world.fixed_scout().is_none() {println!("SPAWN15_PLACEMENT battle={} map={} policy={} actors={} manifest_sha256={sha_log}",
             world.id,world.map.asset(),super::super::team_spawn::POLICY,world.actors.len());}
         Ok(())
     }
@@ -319,6 +321,17 @@ impl BatchRuntime {
             drop(clone_span);
             if frame.sequence==0 {
                 candidate.import_external_poses(&rows)?;
+                if let Some(scenario)=candidate.fixed_scout() {
+                    for (slot,actor) in candidate.actors.iter().enumerate() {
+                        let expected=scenario.seats.get(slot).ok_or_else(||model::bad())?;
+                        if expected.kind.is_some_and(|kind|kind!=actor.vehicle_kind()) || candidate.team(slot)?!=(1+(slot%2)) as u8
+                            || (actor.position[0]-expected.position[0]).hypot(actor.position[2]-expected.position[2])>2.
+                            || (actor.position[1]-expected.position[1]).abs()>3.
+                            || super::super::aim::wrap(actor.direction[0]-expected.yaw).abs()>0.15 {return Err(model::bad());}
+                        println!("FIXED_SCOUT_SETTLED battle={} slot={} team={} kind={} position={:?} yaw={} scope=test_lab",
+                            candidate.id,slot,candidate.team(slot)?,actor.vehicle_kind().label(),actor.position,actor.direction[0]);
+                    }
+                }
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
                 for actor in &frame.actors{candidate.bind_contact_source(actor.slot,ram_proof::Source{session:self.sessions[actor.slot],generation:self.generation,
                     config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:spec.actors[actor.slot].physical_profile()?})?;}

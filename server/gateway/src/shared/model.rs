@@ -104,8 +104,16 @@ pub struct Actor {
     rpm_limiter: (Option<u64>, u16),
     /// Anchor pose, first observed still instant and committed armed status.
     stereoscope_rest: Option<([f32; 3], [f32; 3], Instant, bool)>,
+    /// Net has its own anchor and reset policy; it never changes the scope timer.
+    camouflage_rest: Option<([f32; 3], [f32; 3], Instant, bool)>,
+    /// Project movement classification from the committed previous/current hull pose.
+    camouflage_moving: bool,
+    /// Actual accepted shot time, using the authoritative battle clock.
+    camouflage_fired_at: Option<Instant>,
     /// BOT-01: server bot ordinal; such an actor has no Session and no account.
     pub bot:Option<u8>,
+    /// Server-only fixed-scout equipment; never claims an owned inventory receipt.
+    pub(super) fixed_scout_net:bool,
     /// #717 VEHICLE_SETTING.AUTOROTATION_ENABLED, sent by the client's control modes.
     pub autorotation:bool,
     /// Hull steer of the follow-the-aim turn in progress (0: none).
@@ -113,8 +121,8 @@ pub struct Actor {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Actor
 impl crate::bw_wire::Wire for Actor {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,rpm_limiter,stereoscope_rest,bot,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(rpm_limiter,bw_o);W::put(stereoscope_rest,bw_o);W::put(bot,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,rpm_limiter:W::get(bw_i)?,stereoscope_rest:W::get(bw_i)?,bot:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{identity,session,ready,health,position,direction,yaw,speed,input,fire,aim,dispersion,mileage_metres,origin,vehicle_kind,owned_loadout,owned_v2,owned_loss,owned_hold,devices,consumables,rpm_limiter,stereoscope_rest,camouflage_rest,camouflage_moving,camouflage_fired_at,bot,fixed_scout_net,autorotation,hull_follow}=self;W::put(identity,bw_o);W::put(session,bw_o);W::put(ready,bw_o);W::put(health,bw_o);W::put(position,bw_o);W::put(direction,bw_o);W::put(yaw,bw_o);W::put(speed,bw_o);W::put(input,bw_o);W::put(fire,bw_o);W::put(aim,bw_o);W::put(dispersion,bw_o);W::put(mileage_metres,bw_o);W::put(origin,bw_o);W::put(vehicle_kind,bw_o);W::put(owned_loadout,bw_o);W::put(owned_v2,bw_o);W::put(owned_loss,bw_o);W::put(owned_hold,bw_o);W::put(devices,bw_o);W::put(consumables,bw_o);W::put(rpm_limiter,bw_o);W::put(stereoscope_rest,bw_o);W::put(camouflage_rest,bw_o);W::put(camouflage_moving,bw_o);W::put(camouflage_fired_at,bw_o);W::put(bot,bw_o);W::put(fixed_scout_net,bw_o);W::put(autorotation,bw_o);W::put(hull_follow,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{identity:W::get(bw_i)?,session:W::get(bw_i)?,ready:W::get(bw_i)?,health:W::get(bw_i)?,position:W::get(bw_i)?,direction:W::get(bw_i)?,yaw:W::get(bw_i)?,speed:W::get(bw_i)?,input:W::get(bw_i)?,fire:W::get(bw_i)?,aim:W::get(bw_i)?,dispersion:W::get(bw_i)?,mileage_metres:W::get(bw_i)?,origin:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,owned_loadout:W::get(bw_i)?,owned_v2:W::get(bw_i)?,owned_loss:W::get(bw_i)?,owned_hold:W::get(bw_i)?,devices:W::get(bw_i)?,consumables:W::get(bw_i)?,rpm_limiter:W::get(bw_i)?,stereoscope_rest:W::get(bw_i)?,camouflage_rest:W::get(bw_i)?,camouflage_moving:W::get(bw_i)?,camouflage_fired_at:W::get(bw_i)?,bot:W::get(bw_i)?,fixed_scout_net:W::get(bw_i)?,autorotation:W::get(bw_i)?,hull_follow:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -126,7 +134,7 @@ impl Actor {
     pub fn vehicle_kind(&self) -> VehicleKind { self.vehicle_kind }
 
     pub fn optional_devices(&self)->[u16;3] {
-        self.owned_v2.as_ref().map_or([0;3],|loadout|loadout.optional_devices)
+        self.owned_v2.as_ref().map_or_else(|| if self.bot.is_some() && self.fixed_scout_net {[super::camouflage::NET,0,0]}else{[0;3]},|loadout|loadout.optional_devices)
     }
 
     pub(super) fn equipment_mass(&self)->f32 {
@@ -240,6 +248,19 @@ impl Actor {
         })
     }
 
+    pub(super) fn camouflage_net_status(&self) -> Option<bool> {
+        self.optional_devices().contains(&super::camouflage::NET).then(|| {
+            self.ready && self.session.is_some() && self.alive()
+                && self.camouflage_rest.is_some_and(|(_, _, _, active)| active)
+        })
+    }
+
+    fn update_camouflage_moving(&mut self, previous_position:[f32;3], previous_direction:[f32;3]) {
+        let displacement=(0..3).map(|i|(self.position[i]-previous_position[i]).powi(2)).sum::<f32>();
+        let rotated=(0..3).any(|i|aim::wrap(self.direction[i]-previous_direction[i]).abs()>0.001);
+        self.camouflage_moving=self.speed.abs()>0.1 || displacement>0.005*0.005 || rotated;
+    }
+
     fn update_stereoscope(&mut self, now: Instant) {
         if self.stereoscope_status().is_none() { return; }
         // #717 exposes the 3 s delay. The pose tolerances are our physics policy
@@ -261,6 +282,20 @@ impl Actor {
         } else {
             Some((self.position, self.direction, now, false))
         };
+    }
+
+    fn update_camouflage_net(&mut self,now:Instant){
+        if self.camouflage_net_status().is_none(){return;}
+        const POSITION_EPSILON_SQUARED:f32=0.05*0.05;
+        const DIRECTION_EPSILON:f32=0.01;
+        self.camouflage_rest=if self.camouflage_moving {
+            Some((self.position,self.direction,now,false))
+        }else if let Some((position,direction,since,_))=self.camouflage_rest {
+            let displacement=(0..3).map(|axis|(self.position[axis]-position[axis]).powi(2)).sum::<f32>();
+            let rotated=(0..3).any(|axis|aim::wrap(self.direction[axis]-direction[axis]).abs()>DIRECTION_EPSILON);
+            if displacement>POSITION_EPSILON_SQUARED||rotated {Some((self.position,self.direction,now,false))}
+            else {Some((position,direction,since,now.saturating_duration_since(since)>=Duration::from_secs(3)))}
+        }else {Some((self.position,self.direction,now,false))};
     }
 
     pub(super) fn aiming_spec(&self)->super::vehicle_profile::AimSpec {
@@ -322,12 +357,12 @@ pub enum Command { Move(Input), Aim(aim::Intent), Fire(fire::Command), Armament(
 pub struct DamageRecord {
     pub sequence:u32,pub tick:u32,pub attacker:usize,pub target:usize,pub shot:u32,pub reason:u8,
     pub health_before:i16,pub health_after:i16,pub crew_before:bool,pub crew_after:bool,
-    pub direct:bool,pub pierced:bool,
+    pub direct:bool,pub pierced:bool,pub spotting:Option<result_spots::AssistEvidence>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): DamageRecord
 impl crate::bw_wire::Wire for DamageRecord {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,tick,attacker,target,shot,reason,health_before,health_after,crew_before,crew_after,direct,pierced}=self;W::put(sequence,bw_o);W::put(tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(shot,bw_o);W::put(reason,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(crew_before,bw_o);W::put(crew_after,bw_o);W::put(direct,bw_o);W::put(pierced,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,shot:W::get(bw_i)?,reason:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,crew_before:W::get(bw_i)?,crew_after:W::get(bw_i)?,direct:W::get(bw_i)?,pierced:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,tick,attacker,target,shot,reason,health_before,health_after,crew_before,crew_after,direct,pierced,spotting}=self;W::put(sequence,bw_o);W::put(tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(shot,bw_o);W::put(reason,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(crew_before,bw_o);W::put(crew_after,bw_o);W::put(direct,bw_o);W::put(pierced,bw_o);W::put(spotting,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,shot:W::get(bw_i)?,reason:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,crew_before:W::get(bw_i)?,crew_after:W::get(bw_i)?,direct:W::get(bw_i)?,pierced:W::get(bw_i)?,spotting:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl DamageRecord {pub fn lethal(&self)->bool{self.crew_before&&(!self.crew_after||self.health_after==0)}}
@@ -342,11 +377,11 @@ pub(crate) mod extended;
 pub(crate) mod bots;
 
 #[derive(Clone, Debug, PartialEq)]
-pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub domain_tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16 }
+pub struct RamDamageRecord { pub sequence:u32,pub tick:u32,pub domain_tick:u32,pub attacker:usize,pub target:usize,pub pair:(usize,usize),pub energy_j:f64,pub closing_speed:f64,pub health_before:i16,pub health_after:i16,pub spotting:Option<result_spots::AssistEvidence> }
 // BW-01 wire codec (tools/bw01_wire_gen.py): RamDamageRecord
 impl crate::bw_wire::Wire for RamDamageRecord {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,tick,domain_tick,attacker,target,pair,energy_j,closing_speed,health_before,health_after}=self;W::put(sequence,bw_o);W::put(tick,bw_o);W::put(domain_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(pair,bw_o);W::put(energy_j,bw_o);W::put(closing_speed,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,tick:W::get(bw_i)?,domain_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,pair:W::get(bw_i)?,energy_j:W::get(bw_i)?,closing_speed:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{sequence,tick,domain_tick,attacker,target,pair,energy_j,closing_speed,health_before,health_after,spotting}=self;W::put(sequence,bw_o);W::put(tick,bw_o);W::put(domain_tick,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(pair,bw_o);W::put(energy_j,bw_o);W::put(closing_speed,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(spotting,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{sequence:W::get(bw_i)?,tick:W::get(bw_i)?,domain_tick:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,pair:W::get(bw_i)?,energy_j:W::get(bw_i)?,closing_speed:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,spotting:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 /// Terminal cause shared by HP publication, writer state and Results8. The tick
@@ -417,12 +452,12 @@ pub struct AppliedImpact {
     pub shot: u32, pub attacker: usize, pub target: usize, pub tick: u32,
     pub outcome: ImpactOutcome,
     pub health_before: i16, pub health_after: i16,
-    pub segment: Option<geometry::ImpactSegment>,
+    pub segment: Option<geometry::ImpactSegment>, pub spotting:Option<result_spots::AssistEvidence>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): AppliedImpact
 impl crate::bw_wire::Wire for AppliedImpact {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,attacker,target,tick,outcome,health_before,health_after,segment}=self;W::put(shot,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(tick,bw_o);W::put(outcome,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(segment,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,tick:W::get(bw_i)?,outcome:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,segment:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{shot,attacker,target,tick,outcome,health_before,health_after,segment,spotting}=self;W::put(shot,bw_o);W::put(attacker,bw_o);W::put(target,bw_o);W::put(tick,bw_o);W::put(outcome,bw_o);W::put(health_before,bw_o);W::put(health_after,bw_o);W::put(segment,bw_o);W::put(spotting,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{shot:W::get(bw_i)?,attacker:W::get(bw_i)?,target:W::get(bw_i)?,tick:W::get(bw_i)?,outcome:W::get(bw_i)?,health_before:W::get(bw_i)?,health_after:W::get(bw_i)?,segment:W::get(bw_i)?,spotting:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -497,6 +532,7 @@ pub struct World {
     result_spots:Option<Vec<result_spots::SpotRecord>>,
     result_spot_tick:Option<u32>,
     original_spotting: Option<super::spotting::State>,
+    foliage: Option<Arc<super::foliage::Foliage>>,
     mixed_ammo:bool,
     ammo_detonation:Option<super::ammo_detonation::Ledger>,
     turret_flights:Vec<super::ammo_detonation::Flight>,
@@ -535,8 +571,8 @@ pub struct World {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): World
 impl crate::bw_wire::Wire for World {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{id,vehicle_kind,expected_actors,team_plan,mixed_profiles,map,actors,started,last,tick,shots,projectiles,impact,lifecycle,lifecycle_created_unix,result_spots,result_spot_tick,original_spotting,mixed_ammo,ammo_detonation,turret_flights,turret_visual_ms,turret_jolt,extended_lab,owner_hold,team_base_spawn,result_ledger,team_score,lab_loadouts,damage_events,device_events,rng_state,rng_draws,geometry,geometries,generated_geometries,contacts,ap_test_lab,impacts,terrain,terrain_contacts,ram_damage_events,active_ram_pairs,destructible,fragiles,contact_sources,contact_sequences,bots}=self;W::put(id,bw_o);W::put(vehicle_kind,bw_o);W::put(expected_actors,bw_o);W::put(team_plan,bw_o);W::put(mixed_profiles,bw_o);W::put(map,bw_o);W::put(actors,bw_o);W::put(started,bw_o);W::put(last,bw_o);W::put(tick,bw_o);W::put(shots,bw_o);W::put(projectiles,bw_o);W::put(impact,bw_o);W::put(lifecycle,bw_o);W::put(lifecycle_created_unix,bw_o);W::put(result_spots,bw_o);W::put(result_spot_tick,bw_o);W::put(original_spotting,bw_o);W::put(mixed_ammo,bw_o);W::put(ammo_detonation,bw_o);W::put(turret_flights,bw_o);W::put(turret_visual_ms,bw_o);W::put(turret_jolt,bw_o);W::put(extended_lab,bw_o);W::put(owner_hold,bw_o);W::put(team_base_spawn,bw_o);W::put(result_ledger,bw_o);W::put(team_score,bw_o);W::put(lab_loadouts,bw_o);W::put(damage_events,bw_o);W::put(device_events,bw_o);W::put(rng_state,bw_o);W::put(rng_draws,bw_o);W::put(geometry,bw_o);W::put(geometries,bw_o);W::put(generated_geometries,bw_o);W::put(contacts,bw_o);W::put(ap_test_lab,bw_o);W::put(impacts,bw_o);W::put(terrain,bw_o);W::put(terrain_contacts,bw_o);W::put(ram_damage_events,bw_o);W::put(active_ram_pairs,bw_o);W::put(destructible,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_sequences,bw_o);W::put(bots,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{id:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,expected_actors:W::get(bw_i)?,team_plan:W::get(bw_i)?,mixed_profiles:W::get(bw_i)?,map:W::get(bw_i)?,actors:W::get(bw_i)?,started:W::get(bw_i)?,last:W::get(bw_i)?,tick:W::get(bw_i)?,shots:W::get(bw_i)?,projectiles:W::get(bw_i)?,impact:W::get(bw_i)?,lifecycle:W::get(bw_i)?,lifecycle_created_unix:W::get(bw_i)?,result_spots:W::get(bw_i)?,result_spot_tick:W::get(bw_i)?,original_spotting:W::get(bw_i)?,mixed_ammo:W::get(bw_i)?,ammo_detonation:W::get(bw_i)?,turret_flights:W::get(bw_i)?,turret_visual_ms:W::get(bw_i)?,turret_jolt:W::get(bw_i)?,extended_lab:W::get(bw_i)?,owner_hold:W::get(bw_i)?,team_base_spawn:W::get(bw_i)?,result_ledger:W::get(bw_i)?,team_score:W::get(bw_i)?,lab_loadouts:W::get(bw_i)?,damage_events:W::get(bw_i)?,device_events:W::get(bw_i)?,rng_state:W::get(bw_i)?,rng_draws:W::get(bw_i)?,geometry:W::get(bw_i)?,geometries:W::get(bw_i)?,generated_geometries:W::get(bw_i)?,contacts:W::get(bw_i)?,ap_test_lab:W::get(bw_i)?,impacts:W::get(bw_i)?,terrain:W::get(bw_i)?,terrain_contacts:W::get(bw_i)?,ram_damage_events:W::get(bw_i)?,active_ram_pairs:W::get(bw_i)?,destructible:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_sequences:W::get(bw_i)?,bots:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{id,vehicle_kind,expected_actors,team_plan,mixed_profiles,map,actors,started,last,tick,shots,projectiles,impact,lifecycle,lifecycle_created_unix,result_spots,result_spot_tick,original_spotting,foliage,mixed_ammo,ammo_detonation,turret_flights,turret_visual_ms,turret_jolt,extended_lab,owner_hold,team_base_spawn,result_ledger,team_score,lab_loadouts,damage_events,device_events,rng_state,rng_draws,geometry,geometries,generated_geometries,contacts,ap_test_lab,impacts,terrain,terrain_contacts,ram_damage_events,active_ram_pairs,destructible,fragiles,contact_sources,contact_sequences,bots}=self;W::put(id,bw_o);W::put(vehicle_kind,bw_o);W::put(expected_actors,bw_o);W::put(team_plan,bw_o);W::put(mixed_profiles,bw_o);W::put(map,bw_o);W::put(actors,bw_o);W::put(started,bw_o);W::put(last,bw_o);W::put(tick,bw_o);W::put(shots,bw_o);W::put(projectiles,bw_o);W::put(impact,bw_o);W::put(lifecycle,bw_o);W::put(lifecycle_created_unix,bw_o);W::put(result_spots,bw_o);W::put(result_spot_tick,bw_o);W::put(original_spotting,bw_o);W::put(foliage,bw_o);W::put(mixed_ammo,bw_o);W::put(ammo_detonation,bw_o);W::put(turret_flights,bw_o);W::put(turret_visual_ms,bw_o);W::put(turret_jolt,bw_o);W::put(extended_lab,bw_o);W::put(owner_hold,bw_o);W::put(team_base_spawn,bw_o);W::put(result_ledger,bw_o);W::put(team_score,bw_o);W::put(lab_loadouts,bw_o);W::put(damage_events,bw_o);W::put(device_events,bw_o);W::put(rng_state,bw_o);W::put(rng_draws,bw_o);W::put(geometry,bw_o);W::put(geometries,bw_o);W::put(generated_geometries,bw_o);W::put(contacts,bw_o);W::put(ap_test_lab,bw_o);W::put(impacts,bw_o);W::put(terrain,bw_o);W::put(terrain_contacts,bw_o);W::put(ram_damage_events,bw_o);W::put(active_ram_pairs,bw_o);W::put(destructible,bw_o);W::put(fragiles,bw_o);W::put(contact_sources,bw_o);W::put(contact_sequences,bw_o);W::put(bots,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{id:W::get(bw_i)?,vehicle_kind:W::get(bw_i)?,expected_actors:W::get(bw_i)?,team_plan:W::get(bw_i)?,mixed_profiles:W::get(bw_i)?,map:W::get(bw_i)?,actors:W::get(bw_i)?,started:W::get(bw_i)?,last:W::get(bw_i)?,tick:W::get(bw_i)?,shots:W::get(bw_i)?,projectiles:W::get(bw_i)?,impact:W::get(bw_i)?,lifecycle:W::get(bw_i)?,lifecycle_created_unix:W::get(bw_i)?,result_spots:W::get(bw_i)?,result_spot_tick:W::get(bw_i)?,original_spotting:W::get(bw_i)?,foliage:W::get(bw_i)?,mixed_ammo:W::get(bw_i)?,ammo_detonation:W::get(bw_i)?,turret_flights:W::get(bw_i)?,turret_visual_ms:W::get(bw_i)?,turret_jolt:W::get(bw_i)?,extended_lab:W::get(bw_i)?,owner_hold:W::get(bw_i)?,team_base_spawn:W::get(bw_i)?,result_ledger:W::get(bw_i)?,team_score:W::get(bw_i)?,lab_loadouts:W::get(bw_i)?,damage_events:W::get(bw_i)?,device_events:W::get(bw_i)?,rng_state:W::get(bw_i)?,rng_draws:W::get(bw_i)?,geometry:W::get(bw_i)?,geometries:W::get(bw_i)?,generated_geometries:W::get(bw_i)?,contacts:W::get(bw_i)?,ap_test_lab:W::get(bw_i)?,impacts:W::get(bw_i)?,terrain:W::get(bw_i)?,terrain_contacts:W::get(bw_i)?,ram_damage_events:W::get(bw_i)?,active_ram_pairs:W::get(bw_i)?,destructible:W::get(bw_i)?,fragiles:W::get(bw_i)?,contact_sources:W::get(bw_i)?,contact_sequences:W::get(bw_i)?,bots:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 
@@ -628,6 +664,7 @@ impl World {
             })).collect::<Vec<_>>(),
             "geometry_sha256":self.geometry.as_ref().map(|g|g.bundle_sha256()),
             "scene_version":self.scene_version(),"ram_damage_event_count":self.ram_damage_events.len(),
+            "assist_policy":self.original_spotting.as_ref().map(|_|result_spots::ASSIST_POLICY),
             "fragiles":self.fragiles.as_ref().map(|state|state.failure_snapshot()),
             "destructible_fixture":self.destructible.as_ref().map(|state|format!("{state:?}")),
             "trace_event_count":events.len(),"trace_omitted_prefix":trace_from,
@@ -844,7 +881,7 @@ impl World {
             mixed_ammo:false,ammo_detonation:None,turret_flights:Vec::new(),turret_visual_ms:None,turret_jolt:false,
             extended_lab:false,owner_hold:false,team_base_spawn:false,result_ledger:false,team_score:false,lab_loadouts:[None;MAX_ACTORS],
             damage_events:Vec::new().into(),device_events:Vec::new().into(),rng_state:id,rng_draws:Vec::new().into(),
-            result_spots:None,result_spot_tick:None,original_spotting:None,
+            result_spots:None,result_spot_tick:None,original_spotting:None,foliage:None,
             geometry: None,geometries:std::array::from_fn(|_|None),generated_geometries:std::collections::BTreeMap::new(),contacts: Vec::new().into(), ap_test_lab: false, impacts: Vec::new().into(),
             terrain: None, terrain_contacts: Vec::new().into(), ram_damage_events:Vec::new().into(), active_ram_pairs:std::collections::BTreeSet::new(), destructible: None,fragiles:None,
             contact_sources:std::array::from_fn(|_|None),contact_sequences:[0;MAX_ACTORS],bots:None })
@@ -895,10 +932,20 @@ impl World {
     pub(super) fn force_team_score_for_test(&mut self){self.team_score=true;}
     pub fn enable_original_spotting(&mut self, rules: super::spotting::Rules) -> io::Result<()> {
         if self.original_spotting.is_some() || self.started.is_some() || !self.actors.is_empty()
-            || self.terrain.is_none() { return Err(bad()); }
+            || self.terrain.is_none() || rules.diagnostics && self.expected_actors>6 { return Err(bad()); }
         self.original_spotting=Some(super::spotting::State::new(rules)?); Ok(())
     }
     pub fn original_spotting_enabled(&self) -> bool { self.original_spotting.is_some() }
+    /// Explicit local lab only: Malinovka shrubs and optional fallen crowns
+    /// bound to the authoritative destructible catalog.
+    pub fn enable_foliage(&mut self, foliage: Arc<super::foliage::Foliage>) -> io::Result<()> {
+        if self.map.asset()!="02_malinovka" || self.expected_actors>6 || self.started.is_some()
+            || !self.actors.is_empty() || self.foliage.is_some()
+            || self.original_spotting.as_ref().is_none_or(|state|!state.rules.camouflage) {return Err(bad());}
+        foliage.verify_tree_catalog(self.fragiles.as_ref().map(|state| state.catalog.as_ref()))?;
+        self.foliage=Some(foliage);Ok(())
+    }
+    pub fn camouflage_enabled(&self) -> bool { self.original_spotting.as_ref().is_some_and(|state|state.rules.camouflage) }
     fn spotting_excluded(&self) -> io::Result<Vec<u32>> {
         let mut excluded=if let Some(state)=&self.fragiles {state.projectile_excluded()}
             else {self.destructible.as_ref().and_then(|state|state.excluded_instance()).into_iter().collect()};
@@ -910,7 +957,7 @@ impl World {
         let actor=self.actors.get(slot).ok_or_else(bad)?;
         self.geometry_for(actor.vehicle_kind())?.spotting_parts().world(actor.position,actor.direction,actor.aim.yaw)
     }
-    fn spotting_actors(&self) -> io::Result<Vec<super::spotting::Actor>> {
+    fn spotting_actors(&self, now: Instant) -> io::Result<Vec<super::spotting::Actor>> {
         let terrain=self.terrain.as_ref().ok_or_else(bad)?;
         self.actors.iter().enumerate().map(|(slot,actor)| {
             if actor.position.into_iter().any(|v|!v.is_finite()||v.abs()>10_000.)
@@ -927,8 +974,22 @@ impl World {
             }
             let observer_active=actor.alive()&&actor.ready&&actor.session.is_some();
             let commander_active=observer_active&&actor.devices.as_ref().is_none_or(|state|state.crew().first()==Some(&true));
+            let (camouflage,fired,base,base_stationary,net,fire_multiplier,net_remaining_ms)=if self.original_spotting.as_ref().is_some_and(|state|state.rules.camouflage) {
+                let (_,class)=actor.vehicle_kind().queue_profile()?.ok_or_else(bad)?;
+                let calibration=super::camouflage::calibration()?;
+                let fired=actor.camouflage_fired_at.is_some_and(|shot|now.checked_duration_since(shot)
+                    .is_some_and(|elapsed|elapsed < Duration::from_millis(calibration.fire_window_ms)));
+                let c=super::camouflage::components(class, actor.camouflage_moving, actor.camouflage_net_status()==Some(true), fired)?;
+                let remaining=actor.camouflage_net_status().map(|active|if active {0} else {
+                    let elapsed=actor.camouflage_rest.and_then(|(_,_,since,_)|now.checked_duration_since(since)).unwrap_or_default();
+                    calibration.net_delay_ms.saturating_sub(elapsed.as_millis().min(u128::from(u64::MAX)) as u64)
+                });
+                let stationary=super::camouflage::components(class,false,actor.camouflage_net_status()==Some(true),fired)?.base;
+                (c.effective,fired,c.base,stationary,c.net,c.fire_multiplier,remaining)
+            } else {(0.,false,0.,0.,0.,1.,None)};
             Ok(super::spotting::Actor{slot,team:self.team(slot)?,position:actor.position,points,
-                view_range:actor.view_range()?,observer_active,commander_active,wreck:actor.health<=0})
+                view_range:actor.view_range()?,camouflage,base,base_stationary,moving:actor.camouflage_moving,net,fire_multiplier,net_remaining_ms,
+                fired,observer_active,commander_active,wreck:actor.health<=0})
         }).collect()
     }
     pub fn refresh_original_spotting(&mut self, now: Instant) -> io::Result<()> {
@@ -937,15 +998,49 @@ impl World {
         let start=self.started.ok_or_else(bad)?;
         let ms=u64::try_from(now.checked_duration_since(start).ok_or_else(bad)?.as_millis()).map_err(|_|bad())?;
         let actors_span=super::step_profile::span(super::step_profile::Part::SpotActors);
-        let actors=self.spotting_actors()?; let excluded=self.spotting_excluded()?; let terrain=self.terrain.as_ref().ok_or_else(bad)?;
+        let actors=self.spotting_actors(now)?; let excluded=self.spotting_excluded()?; let terrain=self.terrain.as_ref().ok_or_else(bad)?;
         drop(actors_span);
+        let previous_scan=state.diagnostics().and_then(|v|v.get("scan_ms")).and_then(serde_json::Value::as_u64);
         let mut next=state.clone();
         let _span=super::step_profile::span(super::step_profile::Part::SpotRays);
-        next.refresh_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end|Ok(!terrain.any_hit_excluding_many(start,end,&excluded)?))?;
+        let foliage = self.foliage.as_ref().map(|input| input.rays(self.fragiles.as_ref())).transpose()?;
+        if state.rules.diagnostics {
+            if self.expected_actors>6 || !state.rules.camouflage {return Err(bad());}
+            if self.foliage.is_some() && self.map.asset()!="02_malinovka" {return Err(bad());}
+            next.refresh_trace_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end,fired| {
+                if let Some(hit)=terrain.nearest_excluding_many(start,end,&excluded)? {
+                    let kind=match hit.surface {terrain::Surface::Ground=>"terrain",terrain::Surface::StaticObstacle{..}=>"object"};
+                    return Ok(super::spotting::RayOutcome::Blocked{kind,hit_point:Some(hit.point)});
+                }
+                let contribution=match &foliage {
+                    Some(foliage)=>foliage.contribution(start.map(f64::from),end.map(f64::from),fired)?,
+                    None=>0.,
+                };
+                Ok(super::spotting::RayOutcome::Clear(contribution))
+            })?;
+        } else if let Some(foliage)=&foliage {
+            if self.map.asset()!="02_malinovka" || self.expected_actors>6 || !state.rules.camouflage {return Err(bad());}
+            next.refresh_foliage_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end,fired| {
+                if terrain.any_hit_excluding_many(start,end,&excluded)? {return Ok(None);}
+                Ok(Some(foliage.contribution(start.map(f64::from),end.map(f64::from),fired)?))
+            })?;
+        } else {
+            next.refresh_parallel(ms,&actors,SPOTTING_THREADS,|_,_,start,end|Ok(!terrain.any_hit_excluding_many(start,end,&excluded)?))?;
+        }
+        let new_scan=next.diagnostics().and_then(|v|v.get("scan_ms")).and_then(serde_json::Value::as_u64);
+        if state.rules.diagnostics && new_scan!=previous_scan {
+            let vehicles=self.actors.iter().map(|actor|actor.vehicle_kind().name()).collect::<Vec<_>>();
+            next.bind_diagnostic_tick(self.tick,&vehicles,self.map.asset())?;
+        }
         self.original_spotting=Some(next); Ok(())
     }
     pub fn sixth_sense_generation(&self, slot: usize) -> io::Result<u32> {
         self.original_spotting.as_ref().map_or(Ok(0),|state|state.sixth_generation(slot))
+    }
+    /// Most recent successfully committed scan only. No ordinary client
+    /// publication reads this; a separately authenticated operator must opt in.
+    pub fn spotting_diagnostics(&self)->Option<&serde_json::Value> {
+        self.original_spotting.as_ref().and_then(|state|state.diagnostics())
     }
     pub fn sixth_sense_eligible(&self, slot: usize) -> io::Result<bool> {
         let actor=self.actors.get(slot).ok_or_else(bad)?;
@@ -976,6 +1071,8 @@ impl World {
     pub(super) fn set_test_teams(&mut self,teams:&[u8]){
         self.team_plan=Some(super::p10b_team_plan::TeamPlan::new(teams).unwrap());
     }
+    #[cfg(test)]
+    pub(super) fn clear_test_team_plan(&mut self){self.team_plan=None;}
     #[cfg(test)]
     pub(super) fn push_test_spot(&mut self,observer:usize,target:usize,tick:u32){
         self.result_spots.get_or_insert_with(Vec::new).push(result_spots::SpotRecord::for_test(observer,target,tick));
@@ -1023,7 +1120,7 @@ impl World {
     pub(super) fn desired_visibility(&self, own:usize)->io::Result<[bool;MAX_ACTORS]> {
         if own>=self.actors.len()||self.actors.len()>MAX_ACTORS{return Err(bad());}
         if let Some(state)=&self.original_spotting {
-            let actors=self.spotting_actors()?;
+            let actors=self.spotting_actors(self.last)?;
             if state.initialized() { return state.desired(own); }
             let team=self.team(own)?; let mut row=[false;MAX_ACTORS];
             for actor in actors { row[actor.slot]=actor.slot==own||actor.team==team; }
@@ -1233,9 +1330,13 @@ impl World {
             if self.active_ram_pairs.contains(&(contact.slot_a,contact.slot_b)){continue;}
             let Some(result)=result else{continue;};let before_a=next.actors[contact.slot_a].health;let before_b=next.actors[contact.slot_b].health;
             if !next.actors[contact.slot_a].alive()||!next.actors[contact.slot_b].alive(){continue;}
+            // One pre-contact snapshot for both simultaneous directional HP
+            // events: neither death may erase the other side's observation.
+            let spotting_b=next.assist_evidence(&next.actors,result.attacker,result.target,next.tick)?;
+            let spotting_a=next.assist_evidence(&next.actors,result.target,result.attacker,next.tick)?;
             let after_a=(i32::from(before_a)-i32::from(result.damage_a).min(i32::from(before_a))).max(0)as i16;let after_b=(i32::from(before_b)-i32::from(result.damage_b).min(i32::from(before_b))).max(0)as i16;
             next.actors[contact.slot_a].health=after_a;next.actors[contact.slot_b].health=after_b;
-            for (attacker,target,before,after) in [(result.attacker,result.target,before_b,after_b),(result.target,result.attacker,before_a,after_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,domain_tick:next.tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after});}
+            for (attacker,target,before,after,spotting) in [(result.attacker,result.target,before_b,after_b,spotting_b),(result.target,result.attacker,before_a,after_a,spotting_a)]{next.ram_damage_events.push(RamDamageRecord{sequence,tick,domain_tick:next.tick,attacker,target,pair:(contact.slot_a,contact.slot_b),energy_j:result.energy_j,closing_speed:result.closing_speed,health_before:before,health_after:after,spotting});}
             for slot in [contact.slot_a,contact.slot_b]{if next.actors[slot].health==0{
                 let actor=&mut next.actors[slot];actor.input=Input::STOP;actor.speed=0.;actor.aim.park();
                 if let Some(devices)=&mut actor.devices{devices.freeze();}
@@ -1294,6 +1395,7 @@ impl World {
     }
     fn attach_owned_v2_inner(&mut self,identity:Identity,session:u32,loadout:&crate::profile13_v2091::Frozen)->io::Result<usize>{
         loadout.validate_owned(&identity.account)?;
+        if loadout.optional_devices.contains(&super::camouflage::NET) && !self.camouflage_enabled() {return Err(bad());}
         if !self.mixed_ammo||!self.mixed_profiles||self.extended_lab||loadout.kind.is_extended(){return Err(bad());}
         let profile=crate::p06t_device_caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
         let existing=self.actors.iter().position(|actor|actor.identity.account==identity.account);
@@ -1351,7 +1453,7 @@ impl World {
         }
         self.actors.push(Actor { identity, session: Some(session), ready: false, health: kind.max_health(), vehicle_kind:kind,
             autorotation: true, hull_follow: 0, position: origin, direction: [0.; 3], origin, yaw: 0., speed: 0., input: Input::STOP,
-            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],rpm_limiter:(None,0),stereoscope_rest:None,bot:None });
+            fire, aim: aim::State::new(), dispersion: None, mileage_metres: 0., owned_loadout:loadout,owned_v2:None,owned_loss:None,owned_hold:None,devices:None,consumables:[0;3],rpm_limiter:(None,0),stereoscope_rest:None,camouflage_rest:None,camouflage_moving:false,camouflage_fired_at:None,bot:None,fixed_scout_net:false });
         Ok(slot)
     }
     pub fn start(&mut self, now: Instant) -> io::Result<()> {
@@ -1439,7 +1541,7 @@ impl World {
     }
     pub fn detach(&mut self, session: u32) -> io::Result<()> {
         let a = self.actors.iter_mut().find(|a| a.session == Some(session)).ok_or_else(|| bad())?;
-        a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); a.stereoscope_rest = None; Ok(())
+        a.session = None; a.ready = false; a.input = Input::STOP; a.speed = 0.; a.aim.park(); a.stereoscope_rest = None; a.camouflage_rest=None; Ok(())
     }
     pub fn owned(&self, slot: usize, session: u32) -> io::Result<&Actor> {
         self.actors.get(slot).filter(|a| a.session == Some(session)).ok_or_else(|| bad())
@@ -1529,7 +1631,7 @@ impl World {
                 },
                 Command::Leave => {
                     if at + 1 != commands.len() { return Err(bad()); }
-                    next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.; next.aim.park(); next.stereoscope_rest = None;
+                    next.session = None; next.ready = false; next.input = Input::STOP; next.speed = 0.; next.aim.park(); next.stereoscope_rest = None; next.camouflage_rest=None;
                 },
             }
         }
@@ -1564,6 +1666,7 @@ impl World {
             let (hull_yaw,turret_yaw)=(next.direction[0],next.aim.yaw);
             next.dispersion.get_or_insert_with(||super::dispersion::State::new(hull_yaw,turret_yaw)).after_shot(&spec,d.gun,speed,factors);
         }
+        next.camouflage_fired_at=Some(now);
         shots.push(Shot { sequence, slot, tick: launch_tick, burst });
         projectiles.push(projectile);
         Ok(())
@@ -1652,14 +1755,18 @@ impl World {
             let dt = now.duration_since(self.last).as_secs_f32().min(0.2);
             let layered_circle=self.impact.layers();
             for (slot, a) in next_actors.iter_mut().enumerate() {
+                let previous_position = a.position;
+                let previous_direction = a.direction;
                 if !a.ready || a.session.is_none() || !a.alive() {
                     // A parked/wreck body stays in the single physical scene and
                     // can be pushed. No disconnected controller gains authority.
                     if self.mixed_profiles {if let Some(rows)=external {let(_,position,direction,speed)=rows.iter().find(|(row,..)|*row==slot).ok_or_else(||bad())?;
                         a.position=*position;a.direction=*direction;a.yaw=direction[0];a.speed=*speed;}}
+                    a.update_camouflage_moving(previous_position,previous_direction);
+                    a.stereoscope_rest=None;
+                    a.camouflage_rest=None;
                     continue;
                 }
-                let previous_position = a.position;
                 if let Some(rows) = external {
                     if let Some((_, position, direction, speed)) = rows.iter().find(|(row, ..)| *row == slot) {
                         a.position = *position; a.direction = *direction; a.yaw = direction[0]; a.speed = *speed;
@@ -1676,7 +1783,9 @@ impl World {
                     a.speed = if before != a.position { a.input.throttle as f32 } else { 0. };
                 }
                 a.direction[0] = a.yaw;
+                a.update_camouflage_moving(previous_position,previous_direction);
                 a.update_stereoscope(now);
+                a.update_camouflage_net(now);
                 if self.lifecycle.as_ref().is_some_and(|state| state.allows_actions()) && a.alive() {
                     let distance = (0..3).map(|i| (f64::from(a.position[i]) - f64::from(previous_position[i])).powi(2)).sum::<f64>().sqrt();
                     a.mileage_metres += distance;
@@ -1836,7 +1945,7 @@ impl World {
                                     let segment=bundle.impact_segment(&contact).ok();
                                     impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
                                         outcome:ImpactOutcome::Mixed(resolution),health_before:next_actors[target_slot].health,
-                                        health_after:next_actors[target_slot].health,segment});
+                                        health_after:next_actors[target_slot].health,segment,spotting:None});
                                     projectile.terminal=point;projectile.stopped=true;
                                     // HE detonates on the spaced plate; HEAT/absorbed/ricochet end the shot.
                                     self.explode_mixed(&mut next_actors,&mut impact_trace,projectile,point,tick,None,next_fragiles.as_ref())?;
@@ -1852,7 +1961,7 @@ impl World {
                                 if impacts.iter().filter(|e|e.is_track()).count()>=2*self.shot_limit(){return Err(bad());}
                                 impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
                                     outcome:ImpactOutcome::Track(TrackImpact{device,stopped:pass.stopped,segment}),
-                                    health_before:next_actors[target_slot].health,health_after:next_actors[target_slot].health,segment:None});
+                                    health_before:next_actors[target_slot].health,health_after:next_actors[target_slot].health,segment:None,spotting:None});
                                 if pass.stopped {
                                     let point=std::array::from_fn(|i|start_point[i]+crossing.t*(end_point[i]-start_point[i]));
                                     projectile.terminal=point;projectile.stopped=true;
@@ -1926,7 +2035,7 @@ impl World {
                                         else{Some(bundle.impact_segment(&contact)?)};
                                     impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
                                         outcome:ImpactOutcome::Mixed(resolution),health_before:before,
-                                        health_after:before.saturating_sub(resolution.damage_hp as i16).max(0),segment});
+                                        health_after:before.saturating_sub(resolution.damage_hp as i16).max(0),segment,spotting:None});
                                     terminal_reason=impact::TerminalReason::TestLabMixedImpact;
                                 }else if self.ap_test_lab && target.alive() {
                                     if body_impacts(&impacts) >= self.shot_limit() { return Err(bad()); }
@@ -1946,10 +2055,11 @@ impl World {
                                         else { Some(bundle.impact_segment(&contact)?) };
                                     impact_trace.ap_resolution(self.id, projectile.sequence, tick,
                                         projectile.slot, target_slot, &resolution, before, after)?;
+                                    let spotting=self.assist_evidence(&next_actors,projectile.slot,target_slot,tick)?;
                                     impacts.push(AppliedImpact { shot: projectile.sequence,
                                         attacker: projectile.slot, target: target_slot, tick,
                                         outcome: ImpactOutcome::Ap(resolution),
-                                        health_before: before, health_after: after, segment });
+                                        health_before: before, health_after: after, segment,spotting });
                                     let damaged = next_actors.get_mut(target_slot).ok_or_else(|| bad())?;
                                     damaged.health = after;
                                     if after == 0 {
@@ -1962,7 +2072,7 @@ impl World {
                                     impact_trace.wreck_inactive(self.id,projectile.sequence,tick,projectile.slot,target_slot,
                                         target.health,target.health,&target)?;
                                     impacts.push(AppliedImpact{shot:projectile.sequence,attacker:projectile.slot,target:target_slot,tick,
-                                        outcome:ImpactOutcome::WreckBlocked,health_before:target.health,health_after:target.health,segment});
+                                        outcome:ImpactOutcome::WreckBlocked,health_before:target.health,health_after:target.health,segment,spotting:None});
                                     terminal_reason=impact::TerminalReason::TestLabWreckImpact;
                                 } else if self.ap_test_lab && target.health == 0 {
                                     if body_impacts(&impacts) >= self.shot_limit() { return Err(bad()); }
@@ -1975,7 +2085,7 @@ impl World {
                                     impacts.push(AppliedImpact { shot: projectile.sequence,
                                         attacker: projectile.slot, target: target_slot, tick,
                                         outcome: ImpactOutcome::WreckBlocked,
-                                        health_before: 0, health_after: 0, segment });
+                                        health_before: 0, health_after: 0, segment,spotting:None });
                                     terminal_reason = impact::TerminalReason::TestLabWreckImpact;
                                 }
                                 contacts.push(contact);

@@ -1,6 +1,6 @@
 //! Local website identity boundary. No credential registry or native object loader.
 use std::{collections::BTreeMap, fs, fmt, io::{self,Read,Write}, net::{Ipv4Addr,SocketAddrV4,TcpStream},
-          path::{Path,PathBuf}, time::{Duration,Instant}};
+          path::{Path,PathBuf}, sync::Arc, time::{Duration,Instant}};
 use serde::{Deserialize,Deserializer,de::{self,MapAccess,Visitor}};
 use serde_json::Value;
 use rsa::rand_core::{OsRng,RngCore};
@@ -17,6 +17,8 @@ pub(crate) mod room_selection_loss;
 pub(crate) mod game_network;
 #[path="domain_client.rs"]
 pub(crate) mod domain_client;
+#[path="camouflage_live.rs"]
+pub(crate) mod camouflage_live;
 
 fn invalid(message:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,message)}
 
@@ -272,6 +274,12 @@ pub struct Config {
     game_network:game_network::Network,
     pub ammo_service:bool,pub crew_service:bool,pub crew_transfer:bool,pub crew_cross_vehicle:bool,pub crew_roster_recruitment:bool,pub crew_progression:bool,pub crew_dismissal:bool,pub crew_barracks_recruitment:bool,
     pub research_service:bool,pub profile13_battle:bool,pub battle_run_id:String,pub battle_players:usize,pub visibility_v1:bool,pub p04m_pool:bool,pub p06t_mixed_ammo:bool,pub p06t_ammo_rack_detonation:bool,
+    pub camouflage_v1:bool,
+    /// Closed test-lab operator allowed to request private visibility diagnostics.
+    pub visibility_debug_operator:Option<String>,
+    pub(crate) visibility_debug_grant:Option<Arc<Vec<u8>>>,
+    camouflage_guard:Option<camouflage_live::Config>,
+    pub foliage_v1:Option<Arc<crate::gateway091::shared::foliage::Foliage>>,
     pub p08c_late_results:bool,pub p08c_late_results_accounts:Vec<String>,pub p08c_late_notice_experimental:bool,
     pub late_bots:bool,
     pub training_rooms:bool,
@@ -291,6 +299,7 @@ pub struct Config {
     pub bots:Option<crate::gateway091::shared::model::bots::Plan>,
     /// TURPHYS-01 test_lab: passive bots with stepped racks and a 1 HP ammo bay (`bots.turret_test`).
     pub bots_turret_test:bool,
+    pub fixed_scout_v1:Option<crate::gateway091::shared::fixed_scout::Scenario>,
     /// MM-01: "В бой" queues; rules match players into arenas (absent: fixed roster, old path).
     pub matchmaker:Option<crate::gateway091::shared::matchmaker::Rules>,
     /// NET-01: `pose_delivery` (absent: reliable poses, one reliable body per loop — the old path).
@@ -384,6 +393,19 @@ impl Config {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("visibility_v1 must be explicit boolean")),
         };
         if visibility_v1&&!profile13_battle{return Err(invalid("visibility_v1 requires profile13 battle"));}
+        let camouflage_v1=match value.remove("camouflage_v1") {
+            None|Some(Value::Bool(false))=>false,
+            Some(Value::Bool(true)) if cfg!(feature="test_lab") && visibility_v1=>true,
+            _=>return Err(invalid("camouflage_v1 requires test_lab and visibility_v1")),
+        };
+        if camouflage_v1 { crate::gateway091::shared::camouflage::calibration()?; }
+        let visibility_debug_operator=match value.remove("visibility_debug_operator") {
+            None=>None,
+            Some(Value::String(id)) if camouflage_v1 && cfg!(feature="test_lab") && late_results_owner_id(&id)=>Some(id),
+            _=>return Err(invalid("visibility_debug_operator requires closed test_lab, camouflage and a canonical test account UUID")),
+        };
+        let visibility_debug_grant_file=value.remove("visibility_debug_grant_file");
+        if visibility_debug_operator.is_some()!=visibility_debug_grant_file.is_some() {return Err(invalid("visibility diagnostics requires separate operator grant file"));}
         let p06t_ammo_rack_detonation=match value.remove("p06t_ammo_rack_detonation"){
             None=>false,Some(Value::Bool(v))=>v,_=>return Err(invalid("p06t_ammo_rack_detonation must be explicit boolean")),
         };
@@ -418,6 +440,7 @@ impl Config {
             _=>return Err(invalid("battle_players must be integer")),
         };
         if battle_players!=2&&!profile13_battle{return Err(invalid("variable roster requires profile13"));}
+        if visibility_debug_operator.is_some() && battle_players>6 {return Err(invalid("visibility diagnostics requires at most six actors"));}
         let training_rooms=match value.remove("training_rooms") {
             None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("training_rooms must be explicit boolean")),
         };
@@ -512,6 +535,13 @@ impl Config {
         if matchmaker.is_some()&&(bots.is_none()||!p04m_pool){
             return Err(invalid("matchmaker requires bots (timeout fill) and the P04M pool (vehicle tiers)"));
         }
+        let fixed_scout_v1=value.remove("fixed_scout_v1").map(|v|crate::gateway091::shared::fixed_scout::Scenario::parse(&v)).transpose()?;
+        if let Some(scenario)=&fixed_scout_v1 {
+            if !cfg!(feature="test_lab") || !camouflage_v1 || !p06t_mixed_ammo || bots_turret_test || matchmaker.is_some()
+                || scenario.seats.len()!=battle_players || bots.as_ref().is_none_or(|plan|plan.human_places!=1) {
+                return Err(invalid("fixed_scout_v1 requires closed camouflage test_lab, one human, mixed bots and no matchmaker/turret test"));
+            }
+        }
         let pose_delivery=match value.remove("pose_delivery"){
             None=>crate::gateway091::shared::net01::PoseDelivery::Reliable,
             Some(Value::String(mode))=>crate::gateway091::shared::net01::PoseDelivery::parse(Some(&mode))
@@ -575,13 +605,20 @@ impl Config {
         if shell_layers&&(!profile13_battle||!p06t_mixed_ammo){return Err(invalid("shell_rules applies to the owned mixed profile13 battle only"));}
         let int_user_settings=match value.remove("int_user_settings") {None=>false,Some(Value::Bool(value))=>value,_=>return Err(invalid("int user settings must be explicit boolean"))};
         let domain_value=value.remove("domain_service");
+        let camouflage_guard_value=value.remove("camouflage_guard");
+        if !camouflage_v1 && camouflage_guard_value.is_some(){return Err(invalid("camouflage_guard requires camouflage_v1"));}
         if int_user_settings&&domain_value.is_none(){return Err(invalid("int user settings require domain_service"));}
         if domain_value.is_some()&&(!profile13_battle||training_rooms){
             return Err(invalid("domain_service requires profile13 battle; training-room selection keeps its bridge writer"));
         }
+        let foliage_value=value.remove("foliage_v1");
+        if foliage_value.is_some() && (!camouflage_v1 || !cfg!(feature="test_lab") || battle_players>6) {
+            return Err(invalid("foliage_v1 requires camouflage test_lab and at most six battle places"));
+        }
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
         let game_network=game_network::Network::parse(text(&value,"login_bind")?,text(&value,"base_bind")?,network)?;
+        if camouflage_v1 && game_network.is_lan(){return Err(invalid("camouflage_v1 requires loopback test lab"));}
         if game_network.is_lan()&&(!profile13_battle||!p04m_pool||!p06t_mixed_ammo){return Err(invalid("LAN game network requires the complete mixed profile13 writer"));}
         let login_bind=game_network.login_bind();let base_bind=game_network.base_bind();
         let identity_endpoint=local_address(text(&value,"identity_endpoint")?)?;
@@ -590,11 +627,44 @@ impl Config {
         if !root.is_absolute() {return Err(invalid("absolute local root required"));}
         let local_root=root.canonicalize()?;
         if !local_root.is_dir() {return Err(invalid("local root directory required"));}
+        let visibility_debug_grant=if let Some(v)=visibility_debug_grant_file {
+            let input=Path::new(v.as_str().ok_or_else(||invalid("operator grant path"))?);
+            if !input.is_absolute(){return Err(invalid("absolute operator grant path required"));}
+            let path=input.canonicalize()?;if !path.starts_with(&local_root)||path==local_root{return Err(invalid("operator grant escapes local root"));}
+            let secret=bounded_file(&path,43)?;
+            if secret.len()!=43 || !secret.iter().all(|b|b.is_ascii_alphanumeric()||*b==b'_'||*b==b'-'){return Err(invalid("operator grant must be exactly 43 base64url characters"));}
+            Some(Arc::new(secret))
+        }else{None};
+        let foliage_v1=if let Some(v)=foliage_value {
+            let m=v.as_object().filter(|m|m.len()==3 && m.get("version")==Some(&Value::from(1))
+                && m.contains_key("file") && m.contains_key("sha256")).ok_or_else(||invalid("foliage_v1 requires version, file and sha256"))?;
+            let input=Path::new(m["file"].as_str().ok_or_else(||invalid("foliage file path"))?);
+            if !input.is_absolute() {return Err(invalid("foliage path must be absolute"));}
+            let input=input.canonicalize()?;
+            if !input.starts_with(&local_root) || input==local_root {return Err(invalid("foliage file escapes local root"));}
+            let digest=m["sha256"].as_str().ok_or_else(||invalid("foliage sha256"))?;
+            Some(Arc::new(crate::gateway091::shared::foliage::Foliage::load(&input,digest)?))
+        } else {None};
         let token_path=Path::new(text(&value,"identity_token_file")?).canonicalize()?;
         if !token_path.starts_with(&local_root) {return Err(invalid("identity token file escapes local root"));}
         let token=String::from_utf8(bounded_file(&token_path,43)?).map_err(|_|invalid("service token encoding"))?;
         if token.len()!=43 || !token.bytes().all(|b|b.is_ascii_alphanumeric() || b==b'_' || b==b'-') {return Err(invalid("service token must be exactly 43 base64url characters"));}
         let domain=domain_value.map(|v|domain_client::Endpoint::parse(&v,&local_root)).transpose()?;
+        let camouflage_guard=camouflage_guard_value.map(|v|camouflage_live::Config::parse(&v,&local_root)).transpose()?;
+        if camouflage_v1 && camouflage_guard.is_none(){return Err(invalid("camouflage_v1 requires camouflage_guard"));}
+        if let Some(grant)=&visibility_debug_grant {
+            use subtle::ConstantTimeEq;
+            if bool::from(grant.as_slice().ct_eq(token.as_bytes())) || domain.as_ref().is_some_and(|d|d.secret_matches(grant))
+                || camouflage_guard.as_ref().is_some_and(|g|g.is_secret(grant)) {
+                return Err(invalid("operator grant must differ from service secrets"));
+            }
+        }
+        if let Some(guard)=&camouflage_guard {
+            if [login_bind,base_bind,identity_endpoint].contains(&guard.address()) || domain.as_ref().is_some_and(|d|d.address()==guard.address()) {
+                return Err(invalid("camouflage guard service ports must be distinct"));
+            }
+            if domain.as_ref().is_some_and(|d|guard.secret_matches(d)){return Err(invalid("camouflage guard secret must differ from domain secret"));}
+        }
         if domain.as_ref().is_some_and(|d|[login_bind,base_bind,identity_endpoint].contains(&d.address())){return Err(invalid("service ports must be distinct"));}
         let seconds=value["session_duration_seconds"].as_u64().ok_or_else(||invalid("session duration integer"))?;
         if !(600..=7200).contains(&seconds) {return Err(invalid("session duration must be 600..7200 seconds"));}
@@ -603,10 +673,24 @@ impl Config {
             let hex=raw.iter().map(|byte|format!("{byte:02x}")).collect::<String>();
             format!("{}-{}-{}-{}-{}",&hex[..8],&hex[8..12],&hex[12..16],&hex[16..20],&hex[20..])
         }else{String::new()};
-        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,bots_turret_test,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,shell_layers,battle_worker})
+        Ok(Self {int_user_settings,login_bind,base_bind,identity_endpoint,token,game_network,local_root,session_duration:Duration::from_secs(seconds),ammo_service,crew_service,crew_transfer,crew_cross_vehicle,crew_roster_recruitment,crew_progression,crew_dismissal,crew_barracks_recruitment,research_service,profile13_battle,battle_run_id,battle_players,visibility_v1,camouflage_v1,visibility_debug_operator,visibility_debug_grant,camouflage_guard,foliage_v1,p04m_pool,p06t_mixed_ammo,p06t_ammo_rack_detonation,p08c_late_results,p08c_late_results_accounts,p08c_late_notice_experimental,late_bots,training_rooms,p08b_owner_battle_hold,catalog_v1,domain,connection_capacity,arenas,team_base_spawn,bots,bots_turret_test,fixed_scout_v1,matchmaker,pose_delivery,battle_events,battle_feed,battle_history,results_ledger,team_score,shell_layers,battle_worker})
     }
     pub(crate) fn game_network(&self)->&game_network::Network{&self.game_network}
     pub fn domain_endpoint(&self)->Option<SocketAddrV4>{self.domain.as_ref().map(domain_client::Endpoint::address)}
+    /// The experimental network must not seat players until the authenticated
+    /// Domain confirms the same capability and a per-process generation.
+    pub(crate) fn bind_camouflage_domain(&mut self)->io::Result<()> {
+        if self.camouflage_v1 {
+            self.domain.as_mut().ok_or_else(||invalid("camouflage_v1 requires domain_service"))?.bind_camouflage()?;
+        }
+        Ok(())
+    }
+    pub(crate) fn start_camouflage_guard(&self)->io::Result<Option<camouflage_live::Guard>> {
+        if !self.camouflage_v1 {return Ok(None);}
+        let guard=self.camouflage_guard.as_ref().ok_or_else(||invalid("camouflage guard required"))?;
+        let generation=self.domain.as_ref().and_then(|d|d.camouflage_generation()).ok_or_else(||invalid("camouflage domain not bound"))?;
+        Ok(Some(guard.start(generation)?))
+    }
     pub(crate) fn require_game_network(&self,runtime:game_network::Runtime)->io::Result<()>{
         self.game_network.require_runtime(runtime,self.login_bind,self.base_bind)?;
         if self.game_network.is_lan()&&(!self.profile13_battle||!self.p04m_pool||!self.p06t_mixed_ammo){return Err(invalid("LAN game network requires the complete mixed profile13 writer"));}Ok(())
@@ -1384,6 +1468,37 @@ mod tests {
         enabled["battle_players"]=6.into();enabled["visibility_v1"]=true.into();
         assert_eq!(enabled.as_object().unwrap().len(),18);
         let selected=load(&enabled).unwrap();assert!(selected.visibility_v1);assert_eq!(selected.battle_players,6);
+        assert!(!selected.camouflage_v1);
+        let mut calibrated=enabled.clone();calibrated["camouflage_v1"]=true.into();
+        assert!(load(&calibrated).is_err(),"enabled mode requires a private gateway guard");
+        let guard_secret=root.join("guard-secret.txt");fs::write(&guard_secret,"b".repeat(43)).unwrap();
+        calibrated["camouflage_guard"]=serde_json::json!({"version":1,"bind":"127.0.0.1:23016","secret_file":guard_secret});
+        let mut disabled_guard=enabled.clone();disabled_guard["camouflage_guard"]=calibrated["camouflage_guard"].clone();assert!(load(&disabled_guard).is_err());
+        let domain_secret=root.join("domain-secret.txt");fs::write(&domain_secret,"d".repeat(43)).unwrap();
+        let mut with_domain=calibrated.clone();with_domain["domain_service"]=serde_json::json!({"version":1,"endpoint":"127.0.0.1:23017","secret_file":domain_secret});
+        let mut same_secret=with_domain.clone();same_secret["camouflage_guard"]["secret_file"]=same_secret["domain_service"]["secret_file"].clone();
+        assert!(load(&same_secret).is_err(),"the bridge RPC secret cannot authorize gateway liveness");
+        let mut same_port=with_domain.clone();same_port["camouflage_guard"]["bind"]="127.0.0.1:23017".into();assert!(load(&same_port).is_err());
+        let mut debug=calibrated.clone();debug["visibility_debug_operator"]="788fa1bf-8a21-4bdb-84de-a63310e390a3".into();
+        assert!(load(&debug).is_err(),"operator UUID alone must never open diagnostics");
+        let grant_secret=root.join("operator-secret.txt");fs::write(&grant_secret,"c".repeat(43)).unwrap();
+        debug["visibility_debug_grant_file"]=serde_json::json!(grant_secret.clone());
+        assert_eq!(load(&debug).is_ok(),cfg!(feature="test_lab"));
+        let mut reused=debug.clone();reused["visibility_debug_grant_file"]=serde_json::json!(root.join("token.txt"));assert!(load(&reused).is_err());
+        reused["visibility_debug_grant_file"]=serde_json::json!(guard_secret.clone());assert!(load(&reused).is_err());
+        let mut orphan=calibrated.clone();orphan["visibility_debug_grant_file"]=serde_json::json!(grant_secret);assert!(load(&orphan).is_err());
+        assert_eq!(load(&calibrated).map(|c|c.camouflage_v1).ok(),cfg!(feature="test_lab").then_some(true));
+        if cfg!(feature="test_lab") {
+            assert!(load(&calibrated).unwrap().bind_camouflage_domain().is_err(),"enabled camouflage must not start without Domain");
+        }
+        let (raw,digest)=crate::gateway091::shared::foliage::test_document();let file=root.join("foliage.json");fs::write(&file,raw).unwrap();
+        let mut trees=calibrated.clone();trees["foliage_v1"]=serde_json::json!({"version":1,"file":file,"sha256":digest});
+        assert_eq!(load(&trees).map(|c|c.foliage_v1.unwrap().len()).ok(),cfg!(feature="test_lab").then_some(1));
+        let mut wrong=trees.clone();wrong["foliage_v1"]["sha256"]="0".repeat(64).into();assert!(load(&wrong).is_err());
+        let mut wrong=trees.clone();wrong["camouflage_v1"]=false.into();assert!(load(&wrong).is_err());
+        let mut wrong=trees.clone();wrong["battle_players"]=30.into();assert!(load(&wrong).is_err());
+        let mut no_visibility=calibrated.clone();no_visibility["visibility_v1"]=false.into();assert!(load(&no_visibility).is_err());
+        for invalid in [Value::Null,0.into(),"true".into()] {let mut row=enabled.clone();row["camouflage_v1"]=invalid;assert!(load(&row).is_err());}
         for bad in [Value::Null,0.into(),1.into(),"true".into(),serde_json::json!([]),serde_json::json!({})]{
             let mut row=enabled.clone();row["visibility_v1"]=bad;assert!(load(&row).is_err());}
         let mut without_battle=enabled.clone();without_battle["profile13_battle"]=false.into();assert!(load(&without_battle).is_err());

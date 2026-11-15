@@ -84,6 +84,12 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         outbox.push_back(native::stereoscope_status(active));
         c.stereoscope_sent = Some(active);
     }
+    if world.camouflage_enabled() {
+        if let Some(active) = owner.camouflage_net_status().filter(|active| Some(*active) != c.camouflage_net_sent) {
+            outbox.push_back(native::camouflage_net_status(active));
+            c.camouflage_net_sent = Some(active);
+        }
+    }
     owner_snapshot(c,outbox,world)?;
     for event in world.damage_events.iter().skip(c.damage_cursor){
         let primary=world.impacts.iter().find(|impact|impact.shot==event.shot).map(|impact|impact.target);
