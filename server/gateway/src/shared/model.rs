@@ -939,9 +939,11 @@ impl World {
     /// Explicit local lab only: map-specific shrubs and optional fallen crowns
     /// bound to the authoritative destructible catalog.
     pub fn enable_foliage(&mut self, foliage: Arc<super::foliage::Foliage>) -> io::Result<()> {
-        if self.map != foliage.map || self.expected_actors>6 || self.started.is_some()
+        if self.map != foliage.map || !foliage.allows_roster(self.expected_actors) || self.started.is_some()
             || !self.actors.is_empty() || self.foliage.is_some()
-            || self.original_spotting.as_ref().is_none_or(|state|!state.rules.camouflage) {return Err(bad());}
+            || self.original_spotting.as_ref().is_none_or(|state| {
+                !state.rules.camouflage || (self.expected_actors > 6 && state.rules.diagnostics)
+            }) {return Err(bad());}
         foliage.verify_tree_catalog(self.fragiles.as_ref().map(|state| state.catalog.as_ref()))?;
         self.foliage=Some(foliage);Ok(())
     }
@@ -1004,7 +1006,9 @@ impl World {
         let mut next=state.clone();
         let _span=super::step_profile::span(super::step_profile::Part::SpotRays);
         let foliage = self.foliage.as_ref().map(|input| {
-            if input.map != self.map || self.expected_actors > 6 || !state.rules.camouflage { return Err(bad()); }
+            if input.map != self.map || !input.allows_roster(self.expected_actors) || !state.rules.camouflage {
+                return Err(bad());
+            }
             input.rays(self.fragiles.as_ref())
         }).transpose()?;
         if state.rules.diagnostics {

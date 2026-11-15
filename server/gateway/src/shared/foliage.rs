@@ -179,6 +179,11 @@ pub struct Hit { pub chunk:[i32;2], pub speedtree_index:u32, pub resource:String
     pub concealment_additive:f64, pub t_enter:f64, pub t_exit:f64 }
 
 impl Foliage {
+    pub(crate) fn allows_roster(&self, players: usize) -> bool {
+        let max = if self.map == MapId::Prohorovka { super::model::MAX_ACTORS } else { 6 };
+        players <= max
+    }
+
     /// `expected_sha256` must come from the operator's trusted, versioned map
     /// configuration, not from this file. Loading alone never enables foliage.
     pub fn load(path:&Path, expected_sha256:&str)->io::Result<Self> {
@@ -455,6 +460,17 @@ mod tests {
                 "aabb_half_extents_world":[1,1,1],"concealment_additive":0.2}]})
     }
     fn parse_fixture(v:&Value)->io::Result<Foliage> {Foliage::parse(&serde_json::to_vec(v).unwrap())}
+    #[test] fn large_roster_foliage_requires_prohorovka() {
+        let mut foliage = parse_fixture(&fixture()).unwrap();
+        assert!(foliage.allows_roster(6));
+        assert!(!foliage.allows_roster(7));
+        assert!(!foliage.allows_roster(30));
+        foliage.map = MapId::Prohorovka;
+        assert!(foliage.allows_roster(7));
+        assert!(foliage.allows_roster(30));
+        assert!(!foliage.allows_roster(31));
+    }
+
     #[test] fn segment_endpoint_tangent_inside_and_miss() {
         assert_eq!(unit_segment([-2.,0.,0.],[4.,0.,0.]),Some((0.25,0.75)));
         assert_eq!(unit_segment([0.,1.,0.],[1.,0.,0.]),Some((0.,0.)));

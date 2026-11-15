@@ -612,8 +612,8 @@ impl Config {
             return Err(invalid("domain_service requires profile13 battle; training-room selection keeps its bridge writer"));
         }
         let foliage_value=value.remove("foliage_v1");
-        if foliage_value.is_some() && (!camouflage_v1 || !cfg!(feature="test_lab") || battle_players>6) {
-            return Err(invalid("foliage_v1 requires camouflage test_lab and at most six battle places"));
+        if foliage_value.is_some() && (!camouflage_v1 || !cfg!(feature="test_lab")) {
+            return Err(invalid("foliage_v1 requires camouflage test_lab"));
         }
         let keys=["login_bind","base_bind","identity_endpoint","identity_token_file","local_root","session_duration_seconds"];
         if value.len()!=keys.len() || keys.iter().any(|key|!value.contains_key(*key)) {return Err(invalid("gateway config fields"));}
@@ -643,7 +643,11 @@ impl Config {
             let input=input.canonicalize()?;
             if !input.starts_with(&local_root) || input==local_root {return Err(invalid("foliage file escapes local root"));}
             let digest=m["sha256"].as_str().ok_or_else(||invalid("foliage sha256"))?;
-            Some(Arc::new(crate::gateway091::shared::foliage::Foliage::load(&input,digest)?))
+            let foliage = crate::gateway091::shared::foliage::Foliage::load(&input, digest)?;
+            if !foliage.allows_roster(battle_players) || (battle_players > 6 && matchmaker.is_none()) {
+                return Err(invalid("foliage_v1 requires at most six battle places or ordinary battles on pinned Prohorovka"));
+            }
+            Some(Arc::new(foliage))
         } else {None};
         let token_path=Path::new(text(&value,"identity_token_file")?).canonicalize()?;
         if !token_path.starts_with(&local_root) {return Err(invalid("identity token file escapes local root"));}
@@ -1496,7 +1500,14 @@ mod tests {
         assert_eq!(load(&trees).map(|c|c.foliage_v1.unwrap().len()).ok(),cfg!(feature="test_lab").then_some(1));
         let mut wrong=trees.clone();wrong["foliage_v1"]["sha256"]="0".repeat(64).into();assert!(load(&wrong).is_err());
         let mut wrong=trees.clone();wrong["camouflage_v1"]=false.into();assert!(load(&wrong).is_err());
-        let mut wrong=trees.clone();wrong["battle_players"]=30.into();assert!(load(&wrong).is_err());
+        let mut large=calibrated.clone();
+        large["battle_players"]=30.into();large["connection_capacity"]=32.into();
+        large["spawn_policy"]=crate::gateway091::shared::team_spawn::POLICY.into();
+        if cfg!(feature="test_lab") {
+            assert_eq!(load(&large).unwrap().battle_players,30);
+            large["foliage_v1"]=trees["foliage_v1"].clone();
+            assert!(load(&large).err().unwrap().to_string().contains("ordinary battles on pinned Prohorovka"));
+        }
         let mut no_visibility=calibrated.clone();no_visibility["visibility_v1"]=false.into();assert!(load(&no_visibility).is_err());
         for invalid in [Value::Null,0.into(),"true".into()] {let mut row=enabled.clone();row["camouflage_v1"]=invalid;assert!(load(&row).is_err());}
         for bad in [Value::Null,0.into(),1.into(),"true".into(),serde_json::json!([]),serde_json::json!({})]{
