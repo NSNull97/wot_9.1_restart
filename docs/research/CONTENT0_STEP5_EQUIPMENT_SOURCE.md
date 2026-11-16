@@ -1,0 +1,592 @@
+# CONTENT-0 step 5 equipment source receipt
+
+The original RU 0.9.1 #717 client was read as data from the configured original
+root. The runtime never loads client bytecode on the server. The generated
+catalogue records all 43 optional devices and 18 consumables, including ordered
+source include/exclude clauses, effect properties and historical prices. Its
+sources are identified by size and SHA-256 in the catalogue.
+
+```powershell
+python -B -X utf8 tools/content0_equipment_catalog.py check --client C:/WoT_0.9.1_RU_0717_original
+```
+
+Verified catalogue SHA-256
+`2c38786202ef015ae0e3a645719b869fe1e01421b7ec9521e2af93332f4b76af`.
+
+## VERIFIED source facts
+
+| Source | Function and bytecode offsets | Argument and data layout |
+| --- | --- | --- |
+| `common/accountcommands.pyc`, `ba439d8…` | Module stores at 121, 133, 157, 277 and 313 | Commands 102, 104, 108, 302 and 308 |
+| `client/account_helpers/inventory.pyc`, `3d17842…` | `Inventory.__equipOptionDevice_onShopSynced`, 80–119 | 102 int-array `[shopRev, vehInvID, deviceCDOrZero, slot, int(isPaidRemoval)]` |
+| Same | `Inventory.equipEquipments`, 127–133 | 104 int-array `[vehInvID, cdOrZero, cdOrZero, cdOrZero]` |
+| Same | `Inventory.__setAndFillLayouts_onShopSynced`, 86–224 | 108 int-array `[shopRev, vehInvID, shellIntCount, shellData…, equipmentIntCount, equipmentData…]` |
+| `client/account_helpers/shop.pyc`, `84aa30e…` | `Shop.buy`, 151–175 and `Shop.buyAndEquipItem`, 89–128 | 302 int4 `[shopRev, cd, count, goldForCredits]`. 308 int-array `[shopRev, cd, vehInvID, slot, isPaidRemoval, gunCD]` |
+| `client/gui/scaleform/daapi/view/lobby/hangar/technicalmaintenance.pyc`, `1193382…` | `TechnicalMaintenance.fillVehicle`, 126–280 | Consumable part contains three `(cd, 1)` or `(0, 0)` pairs. Negative CD indicates buying a gold item with credits |
+| `client/gui/shared/gui_items/vehicle.pyc`, `ec78e36…` | `Vehicle.__init__` and `Vehicle._parseEqs`, 34–99 | `inventory[1].eqs` and `eqsLayout` are raw compact ID slot lists read separately |
+| `common/items/vehicles.pyc`, `805240e…` | `VehicleDescr.makeCompactDescr`, 175–294 and `_combineVehicleCompactDescr`, 146–164 | Shift mask left per slot and prepend each occupied raw `device.id[1]` as LE uint16. Slots 0, 1 and 2 set bits 2, 1 and 0 |
+| Same | `VehicleDescr.__initFromCompactDescr`, 450–543 | Reverse loop starts at slot 2, reads low flag bit and consumes the first remaining device word |
+| `client/gui/shared/gui_items/processors/module.pyc`, `9ed4b67…` | `OptDeviceInstaller.__init__`, 243–342 and `_request`, 0–81 | Distinct preservation and destruction dialogs for a non-removable device, transmitted via the paid-removal flag |
+| `client/gui/scaleform/daapi/view/lobby/hangar/ammunitionpanel.pyc`, `54d139d…` | `AmmunitionPanel.setVehicleModule`, 317, 347, 505 | Purchase from the original UI uses the Shop buyer before the native installer when the item is absent from stock |
+
+Examples of equipped descriptor suffixes replacing the plain descriptor's
+final `00`. Coated optics raw item ID is 5 and compact ID is 1529.
+
+| Slot | Suffix |
+| --- | --- |
+| 0 | `04 05 00` |
+| 1 | `02 05 00` |
+| 2 | `01 05 00` |
+
+## Project policy and coverage
+
+- The first stand offered coated optics, two repair kits, two first-aid kits
+  and two extinguishers. The weighted candidate adds the six rows below. The
+  native callback uses projected zero-priced rows and retains original
+  confirmation behavior.
+- The catalogue records source vehicle filters. Source duplicate restrictions
+  are enforced at the store.
+- Four fuel items, `lendLeaseOil`, `gasoline100`, `gasoline105` and `qualityOil`,
+  have the nested `incompatibleTags/installed=fuel` rule. The source builder
+  checks it and the live catalogue enforces it. The original v1 artefact
+  digest remains valid for stored inventories and command ledgers.
+- Separate current and preferred consumable slots let settlement clear only
+  units used while retaining the maintenance selection. Unloading returns unused
+  consumables to shared stock. Destroying a non-removable device clears it,
+  while demounting it preserves it at the stand's configured zero cost.
+- The original client and full wire transport must still be exercised for
+  native acceptance. Bytecode inspection and repository tests cover source
+  contracts and server transactions.
+
+## Hangar parameter display in #717
+
+VERIFIED in `gui/shared/utils/parameterscache.pyc` (SHA-256
+`e5aa176b58c059d17287b7cde2f41786bd3bc87d57d4431a5c3b275bf84925a4`).
+`getVehicleParameters` takes the shot rate from the gun at offsets 324–338.
+`_getShotsPerMinute` uses the raw reload time and clip/burst properties. View
+range reads the turret's `circularVisionRadius` at offsets 676–689, and aiming
+time reads the gun at offsets 725–747. These paths do not evaluate the assigned
+crew or specify a fixed crew level. Whether the source values were calibrated
+to any specific crew level is UNKNOWN. Other rows can read computed descriptor
+properties, for example mass from `vd.physics`.
+
+## Weighted equipment
+
+VERIFIED against the same `optional_devices.xml` source and existing manifest.
+
+| Item subtype | Compact ID | Added mass | Source effect |
+| --- | ---: | ---: | --- |
+| Toolbox | 249 | 100 kg | `repairSpeedFactor` × 1.25 |
+| Medium caliber tank rammer | 5625 | 200 kg | `gunReloadTimeFactor` × 0.90 |
+| Large caliber tank rammer | 5881 | 400 kg | `gunReloadTimeFactor` × 0.90 |
+| Medium caliber howitzer rammer | 6137 | 300 kg | `gunReloadTimeFactor` × 0.90 |
+| Large caliber howitzer rammer | 6393 | 500 kg | `gunReloadTimeFactor` × 0.90 |
+| Enhanced gun laying drive | 6649 | 100 kg | `gunAimingTimeFactor` × 0.91 |
+
+`artefacts._VehicleFilter.checkCompatibility` checks exclusions first at
+bytecode offsets 0–54, then includes at 58–122. `_matchSubfilter` checks the
+nation at 41–80, any matching vehicle tag at 122–168, then minimum and maximum
+tiers at 174–267. Separate `<include>` entries are alternatives. The four
+rammers have no individual component filters, so every mounted build inherits
+its vehicle type's eligibility. Medium and large tank rammers require their
+respective `*TankRammer_user` tags. Medium and large SPG rammers require their
+respective `*HowitzerRammer_user` tags or an American SPG of tier ≤6 or 8–10,
+respectively. A scan of all 374 original vehicle types found 157, 74, 37 and 13
+matches in that order and zero overlaps.
+
+`VehicleDescr.mayInstallComponent` recalculates optional-device compatibility
+and weight at offsets 684–736 before approving a module replacement. The server
+retains compatible equipment and refuses a replacement that would exceed the
+new chassis's weight allowance. Every stored configuration must already fit, so
+the client's alternative non-worsening overload condition cannot occur in this
+slice. The mass check uses integer grams and the existing module catalogue.
+For example, the stock MS-1 has 199 kg reserve, allowing either a toolbox or
+laying drive. The two together require an upgraded suspension. The IS-7 takes
+the large tank rammer and enhanced laying drive on its stock suspension.
+
+## Ventilation and rations
+
+VERIFIED against the pinned `optional_devices.xml` and `equipments.xml`.
+Ventilation uses `StaticAdditiveDevice` on `miscAttrs/crewLevelIncrease`.
+The three filters below had 87, 120 and 95 matches respectively across the 374
+entries in the seven native vehicle lists, with no overlapping classes.
+
+| Source subtype | Compact ID | Qualification | Added mass | Included tags (any) | Excluded tags (any) |
+| --- | ---: | ---: | ---: | --- | --- |
+| `improvedVentilation_class1` | 4601 | +5 | 100 kg | `lightTank improvedVentilation_class1_user` | `noImprovedVentilation` |
+| `improvedVentilation_class2` | 4857 | +5 | 150 kg | `mediumTank mediumAT-SPG improvedVentilation_class2_user` | `noImprovedVentilation lightTankArtefacts_User` |
+| `improvedVentilation_class3` | 5113 | +5 | 200 kg | `heavyTank heavyAT-SPG improvedVentilation_class3_user` | `noImprovedVentilation` |
+
+Each ration is a zero-mass consumable tagged `stimulator`, filtered to its
+source nation. `Stimulator._readConfig` reads `crewLevelIncrease` at offsets
+0–24 in `common/items/artefacts.pyc` (SHA-256 `aedbfc161d7f0b2b78f376540811a0b4113736757982d03bceb4e6f4cccac49c`).
+
+| Source subtype | Compact ID | Nation | Qualification |
+| --- | ---: | --- | ---: |
+| `chocolate` | 2555 | Germany | +10 |
+| `ration` | 3067 | USSR | +10 |
+| `hotCoffee` | 3579 | France | +10 |
+| `ration_china` | 4091 | China | +10 |
+| `ration_uk` | 4603 | UK | +10 |
+| `ration_japan` | 4859 | Japan | +10 |
+| `cocacola` | 25851 | USA | +10 |
+
+All seven `*/always` strings in pinned `res/text/lc_messages/artefacts.mo`
+(SHA-256 `87e24105b2794fa64363ee72ff0554e38173c94c4df1be485c83a2a94f690c8a`)
+describe a +10 bonus and one-battle use. Each `*/onUse` text is empty.
+`PlayerAvatar.onEquipmentButtonPressed` exits at offsets 126–158 for a
+`stimulator` or `fuel` tag, before sending `ACTIVATE_EQUIPMENT`, in
+`client/avatar.pyc` (SHA-256 `c13cd58a4c5d766dfd3c5f47ae7be50c962aee6c7f8cf25b4341322381f21e0e`).
+The official 9.0 manual shows Extra Combat Rations active for the course of
+the battle (p. 26). It also says automatic and battle-long consumables are
+displayed without an item count (p. 30). [Wargaming 9.0 manual](https://worldoftanks.eu/dcont/fb/document/world_of_tanks_oyun_klavuzu_tr_web_9_0.pdf#page=30)
+
+The exact original server tick and HUD packet values are UNKNOWN. The project
+projects the bonus during setup and applies it automatically in combat. It
+records one spent slot when combat begins and clears that slot at settlement.
+A reservation canceled before combat does not consume a ration. The battle
+HUD keeps the loaded ration icon while the effect lasts. A quantity of zero
+would show its spent state:
+`BattleConsumablesPanel.swf` (SHA-256 `a425cf4f53f867f1f86cb2b3f2de1741a541dee05916d2b567d11d578a641fb7`)
+sets renderer `quantity` at expanded body offsets 16839–16882. In
+`BattleArtefactButtons.swf` (SHA-256 `a42fc15f29f1b0db8efbf6e7344ab3103bc0ad9715d102166e894ae406c1ccaf`),
+zero quantity calls `setEmpty(true)` at offsets 165747–165789 or 166614–166655
+on initialization. The icon remains visible at 166756–166805 and receives a
+color transform at 184591–184813. The automatic slot class has an empty
+`handleClick` at 187466. The icon presentation and settlement state are tracked
+independently by the project.
+
+### Crew qualification and combat calibration
+
+VERIFIED in the original garage bytecode. `Vehicle._calcCrewBonuses` in
+`client/gui/shared/gui_items/vehicle.pyc` (`ec78e36…`) sums ration effects at
+offsets 19–72 and reads ventilation at 73–92. It rounds the commander's
+trained qualification including ventilation at 336–380, then adds food and any
+fully trained crew-wide Brotherhood bonus before dividing by 10 and rounding
+at 390–434. `Tankman.realRoleLevel` in `client/gui/shared/gui_items/tankman.pyc`
+(`07645906…`) suppresses the commander's self-bonus at offsets 43–73 and sums
+qualification and bonuses at 139–158. `TankmanDescr.efficiencyOnVehicle` in
+`common/items/tankmen.pyc` (`74f914b1…`) supplies the training factor and
+ventilation addition at offsets 39–151. For a fully trained separate-seat crew
+with no perks, both items give commander 115 and other crew 127; the original
+GUI rounds 11.5 to 12. See [the P04B crew audit](P04B_CREW_EQUIPMENT_SNAPSHOT.md).
+
+INFERRED combat calibration. The static scan of 1,081 `common` and `client`
+`.pyc` files parsed all files and found no implementation tying the effective
+qualification to gun timing or spotting distance. The scan checked relevant
+attribute names and the candidate curve constants. It cannot rule out an
+equivalent expression or implementation in the unavailable original server.
+The period Wargaming manual links the gunner to aiming speed, the loader to
+reload and the commander to sight. A 2012 player report compared the public
+curve against in-game reload timer results across training levels and bonuses.
+Neither establishes the original server formula for all three characteristics
+on this specific build. [Wargaming 9.0 manual, p. 58](https://worldoftanks.eu/dcont/fb/document/world_of_tanks_oyun_klavuzu_tr_web_9_0.pdf#page=58) ·
+[2012 primary measurement report](https://whrl.pl/RdcrrN)
+
+The stand uses `Q(level) = 0.5 + 0.00375 × level`, normalized to the fully
+trained healthy reference for the mounted seats (100 for the commander, 110
+for a separate crew member receiving the commander's bonus). The gunner and
+loader time factors are `Q(reference) / Q(effective)`, and the commander's range
+factor is `Q(effective) / Q(reference)`. This calibration preserves the previous
+stand's effective timings at the project reference; the source XML values alone
+cannot establish the historical reference. Rammer, gun laying drive and coated
+optics compose with their respective factors. Existing wounded-crew and
+damaged-module penalties still apply through the established damage paths.
+These checks concern mounted qualification and rations/ventilation; the wider
+combat effect of perks and other role-dependent parameters has separate scope.
+
+### KV-1S test configuration
+
+The pinned `res/scripts/item_defs/vehicles/ussr/kv-1s.xml` (SHA-256
+`16cd67ba2f6297c74ee101d4edb819badbf9b76177f00cb9340ae4b315221994`) gives
+the KV1S_mod_43 turret 330 m view range (320 m for KV1S_mod_42) and a separate
+seat for each role. The 122 mm D-25T on that turret has 16.0 s reload and
+3.4 s nominal aiming time. The `ussr-KV-1s--84818961` assembly weighs 43,970 kg;
+its KV-1s_bis chassis limit is 48,200 kg. Rammer, gun laying drive and class 3
+ventilation bring mass to 44,670 kg with 3,530 kg reserve.
+
+Calculated stand expectations for a healthy, correctly trained 100% crew with
+rammer and gun laying drive retained, no perk bonus and no optics. These values
+are test expectations and do not represent measurements from a native battle.
+
+| Additional equipment and consumable | Commander / gunner / loader | Full reload | Nominal aim time | View range |
+| --- | ---: | ---: | ---: | ---: |
+| None | 100 / 110 / 110 | 14.40 s | 3.094 s | 330.0 m |
+| Class 3 ventilation | 105 / 116 / 116 | 14.05 s | 3.020 s | 337.1 m |
+| Soviet ration | 110 / 121 / 121 | 13.78 s | 2.960 s | 344.1 m |
+| Class 3 ventilation and Soviet ration | 115 / 127 / 127 | 13.46 s | 2.892 s | 351.2 m |
+
+## Stabilizers, stereoscope and module protection
+
+The pinned `optional_devices.xml` defines these effects and installation filters.
+
+| Item | Compact ID | Mass added | Source effect and filter |
+| --- | ---: | ---: | --- |
+| Vertical stabilizer Mk1 | 7929 | 100 kg | `additiveShotDispersionFactor` × 0.8, `aimingStabilizer_Mk1_user` |
+| Vertical stabilizer Mk2 | 8185 | 200 kg | `additiveShotDispersionFactor` × 0.8, `aimingStabilizer_Mk2_user` |
+| Stereoscope | 1273 | 50 kg | 3 s stationary, `circularVisionRadiusFactor` × 1.25 |
+| Wet ammo rack, classes 1 and 2 | 6905 / 7161 | 1% of base assembled mass | `ammoBayHealthFactor` × 1.5, corresponding `wetCombatPack_class*_user` |
+| Cyclone filter | 7673 | 10 kg | `engineHealthFactor` × 1.5, USSR except `lendLeaseVehicle` |
+| CO₂ fuel tanks | 7417 | 50 kg | `fuelTankHealthFactor` × 1.5, tier VI and above |
+
+VERIFIED in `Avatar.getOwnVehicleShotDispersionAngle`: the stabilizer multiplies
+the sum of the squared motion, rotation and post-shot penalties by `0.8²` before
+the square root. The fixed stationary term stays one. The native descriptor
+already carries the device. `updateTargetingInfo` therefore sends unscaled
+movement coefficients so the client does not apply the effect twice. A scan of
+374 vehicle types found 52 Mk1 and 37 Mk2 matches with no overlap. The IS-7 can
+take Mk2. The KV-1S has neither of the stabilizer tags.
+
+The stereoscope drive condition uses the committed pose of the hull. Rotation
+of the turret alone is excluded. The [8.5 release notes](https://worldoftanks.com/en/news/general-news/85-update-notes/)
+explicitly document retaining stereoscope and camouflage net effects when a
+damaged track prevents movement. The [2014 official manual](https://worldoftanks.eu/dcont/fb/document/world_of_tanks_game_manual_fr_web_8_11_3.pdf)
+shows ×1.25 while stationary, with a 500 m equipment ceiling. The existing
+server spotting cap is measured separately. Exact historical movement
+tolerances and telescope/optics interaction are not exposed by #717. The stand
+uses a 5 cm translation limit from the stationary anchor, a 0.01 rad hull
+orientation limit and a 0.1 m/s speed limit to reject solver drift. It uses the
+stronger active range when both devices are fitted. The existing direct spotting
+limit is 445 m. The owner's equipment HUD is notified with the original
+`Avatar.updateVehicleOptionalDeviceStatus` raw ID 4 and a boolean. Avatar slot
+`0x3d` follows the inherited method table of the pinned client.
+
+The camouflage net sources establish an activation delay of 3 s, 100 kg and a
+stationary effect. The [8.6 release notes](https://worldoftanks.com/en/content/docs/release_notes/86-update-notes-archive/)
+confirm a fixed class-dependent bonus. The #717 `camouflageNetBonus` reader
+has no corresponding value in the pinned vehicle XML. The existing spotting
+law has no camouflage rating for the target. Net activation can follow the
+same stationary state after a target camouflage model and its data are bound.
+
+Module HP multipliers are source values. Whole HP rounds half up in the
+stand and `maxRegenHealth` remains source-pinned. Original server rounding and
+regeneration treatment are unknown. The frozen equipment sets maxima in the
+live damage state and in the result validators, including cancellation. The
+wet rack uses original `VehicleDescr.__computeWeight` order: 1% of the assembled
+mass before adding the fixed weights of other equipment.
+
+## Spall liners and passive first-aid protection
+
+VERIFIED against `optional_devices.xml` and `AntifragmentationLining.updateVehicleDescrAttrs`
+in `common/items/artefacts.pyc` (SHA-256
+`aedbfc161d7f0b2b78f376540811a0b4113736757982d03bceb4e6f4cccac49c`). At offsets
+9–27 the descriptor multiplies `antifragmentationLiningFactor` by the XML
+factor. At offsets 28–50 it multiplies `crewChanceToHitFactor` by one minus
+`increaseCrewChanceToEvadeHit`.
+
+| Spall liner | Compact ID | Added mass | Absorption factor | Crew hit chance factor |
+| --- | ---: | ---: | ---: | ---: |
+| Light | 505 | 250 kg | 1.20 | 0.80 |
+| Medium | 761 | 500 kg | 1.25 | 0.75 |
+| Heavy | 1017 | 1,000 kg | 1.30 | 0.70 |
+| Superheavy | 11001 | 1,500 kg | 1.50 | 0.50 |
+
+The #717 descriptions identify absorption for explosions and ramming. The
+[official 8.8 release notes](https://worldoftanks.eu/en/content/docs/release_notes/release-notes-88/)
+independently confirm the four reductions in crew wound chance. The original
+server's application of the absorption multiplier to a ramming collision is
+UNKNOWN. The project currently uses a contact-energy law in `tank_ram.rs`.
+The project multiplies the HE/HESH armor deduction by the fitted liner's
+absorption factor on a material with `useAntifragmentationLining`. Direct
+penetration tests use the original armor value. Splash applies the factor
+to the target plate and adds the traversed screens and tracks at their
+ordinary value. The impact trace independently checks the target and
+recalculates both direct and splash damage. Ramming uses the existing
+contact-energy share divided by the recipient's factor before flooring
+and clamping to the project's damage bounds. The owner reports that ramming
+itself behaves incorrectly. The current test policy uses the closing speed
+along the contact normal, a cutoff of 0.5 m/s, and a 1–500 HP clamp. It suppresses
+damage on subsequent frames of an already active pair. These are project
+choices. Native ramming remains open with vehicle collision work. The liner
+test establishes only the modifier on that existing law.
+
+The #717 Russian tooltip `largeMedkit/always` and the
+[official 8.8 manual, p. 52](https://worldoftanks.eu/dcont/fb/updated_manuals/world_of_tanks_game_manual_en_eu_web_8_8.pdf#page=52)
+both specify +15% crew wound protection. `Repairkit._readConfig` offsets 21–42
+read the XML `bonusValue` of 0.30 as a fraction. No battle consumer of that
+property exists in the scanned original `common` or `client` bytecode. The
+exact original server conversion, combination with spall lining and duration
+after use are UNKNOWN. The stand implements the documented relative crew
+chance factor 0.85 on penetrating projectile and HE/HESH seat rolls. It uses
+the frozen loadout so the effect lasts throughout the battle, including after
+active healing. That lifetime is a project decision. Spall liner integration
+now multiplies that chance by the liner's crew factor on ordinary or explosive
+penetrating hits. External splash in the current model rolls only for exposed
+modules. Equipment mass uses the same frozen loadout as Jolt and ramming.
+The four filters cover 374 pinned types with no class overlap. The counts are
+119 light, 149 medium, 88 heavy and 18 superheavy. Effective mounting still
+checks assembled mass against the installed chassis's load allowance.
+
+Verification: three target Python/SQLite tests with the pinned test-lab bundle,
+the equipment manifest check, direct and splash HE checks, penetrating crew
+rolls and trace replay, and a ram through the world/terminal validator passed.
+The isolated shop projection from the current stand copy includes all four
+liners at revision 5 in 29,880 bytes. Evidence is under
+`local/evidence/content0-s5/` in `spall-liner-stand-shop.json`,
+`spall-liner-catalog-test-lab.log`, `spall-focused-rust-r2.log`, and
+`spall-a_protected_crew_roll-rust.log`. The isolated release build and local
+deployment are recorded in `spall-release-canonical.log` and
+`spall-stand-deploy.json`. The same shop was published on the active stand.
+Deploy used `domain.ps1` and `services.ps1` with the known previous gateway
+path saved in `services.before-spall-liners.ps1`. Revert the gateway and
+Domain code together after undoing new liner installs if reverting a test DB
+with liners fitted. A native equipped fight remains NOT_RUN.
+
+## Stereoscope HUD and audio
+
+OBSERVED on `content0-step5-equipment-02`, battle `30671350172957519`,
+the SU-152 fitted coated optics (`1529`). The gateway receipt lists
+`devices=[5881, 5113, 1529]`. The trial did not exercise stereoscope `1273`.
+
+VERIFIED in #717, `PlayerAvatar.updateVehicleOptionalDeviceStatus` delegates
+to `__processVehicleOptionalDevices`, which resolves raw ID `4`, adds the
+slot with `stereoscope.png` and passes the boolean to `setOptionalDeviceState`.
+The latter changes the cooldown frame. Both native consumables SWFs have zero
+audio tags, and the callback and original GUI FMOD project have no scope cue.
+
+VERIFIED in local Lesta v1.46.0.0 #2320, `opt_device_in_battle.pyc` has SHA-256
+`5d460ca6d7bbe7c12d60b0bd1426a6bd35bab1d71199f00f380d9620cd5b2458`.
+`stereo_trumpet_start` plays Wwise media `1064042675`. `stereo_trumpet_stop`
+fades the same sound for 500 ms. `tools/stereoscope_lesta_audio.py` extracts
+the full 29,064-frame stream and pins the decoder and result. It writes the WAV
+and provenance to ignored local storage. The sample stays on local test copies.
+
+The client receives the original HUD callback first. The added hook uses raw
+ID `4`, plays on the rising edge and fades the handle when the scope deactivates.
+The extra FMOD project registers its own event and wave bank in `res/audio`.
+A test using the pinned x86 FMOD libraries played the 606 ms scope cue and the
+original GUI event in the same mixer. They shared the original `gui` category.
+The FMOD test does not count as playback in a native battle. Evidence lives in
+`local/evidence/content0-s5/stereoscope-audio.json` and
+`local/evidence/content0-s5/stereoscope-fmod-probe.actual.log`.
+The `content0-step5-equipment-b` client installed the hook and reached the
+login screen. Its receipt is `install-stereoscope/install.json` and its
+bootstrap records are in `runtime/native-18648-1794658096157.jsonl` under
+`local/stands/content0-step5-equipment-client-b` in the client worktree.
+
+Prepare uses the normal native client options plus `--stereoscope-sample` and
+the extracted WAV path. The usual `interactive_client.py rollback --out`
+uses the installation ledger to remove the two audio files and restore
+the prior client configuration. The owner confirmed the HUD and sound in
+battle `30671350172957520`. Client trace lines 510 and 555 show 3.110 s from
+the inactive callback to `played`. Later lines 974, 1200, 1263 and 1310 show
+deactivation and reactivation. The native cue handle had already expired on
+some deactivations. The client now limits its fade to the clip's playback time.
+
+## Demount slot and lifecycle stall
+
+OBSERVED in the same session, the Flash callback sent compact ID `1529` and
+zero-based slot `0` for a removal. The authoritative loadout was
+`[1273, 5113, 1529]`. Request `228` returned `-10` at revision `811`.
+The original `AmmunitionPanel.setVehicleModule` passes the slot to
+`OptDeviceInstaller._request`. The resulting CMD102 carries zero as the item
+on removal, so the server can only address the slot. The project callback
+resolves the selected compact ID in the native `Vehicle.optDevices` list
+and passes the matching physical slot to the original handler. It preserves
+the native preservation/destroy choice. A missing or ambiguous item warns
+the player before any removal request is sent.
+
+The first retest still removed the rammer instead of the requested optics.
+The optional-device list itself was decoded from reversed descriptor words.
+In #717 `VehicleDescr.makeCompactDescr` offsets 230–285 shift the mask left
+and prepend each nonempty device word. The decoder reads from the end of the
+slot list and consumes the first remaining word. `[1273, 5113, 1529]` must
+produce suffix `07 05 00 13 00 04 00`. Both hangar and battle serializers
+now use that order. Server slots and stock are stored independently of wire
+bytes. The wrong removals at revisions 814 and 816 returned the tube and
+rammer respectively to the depot. Neither item was lost.
+Current multi-device snapshots publish beside older immutable snapshots under
+`p09d-rREV-optdev2`. The equipment and research journals still validate
+historical digests and return current wire encoding on replay. On the stand,
+the refreshed fixture for revision 816 contains bits `03` and words `05 00 13 00`
+for authoritative slots `[0, 5113, 1529]`. The local verification receipt is
+`local/evidence/content0-s5/demount-native-fixture.json`.
+
+The gateway recorded an isolated 2146.8 ms loop gap and a drive resync with
+2114 ms lag and 21 skipped frames, followed by `world_step` failure
+`battle lifecycle: clock/membership bound`. The owner still had 867 HP.
+The gateway persisted `BattleFailure` in revision `813` and reused the channel
+to return to the hangar. The lifecycle's 1000 ms normal step bound conflicted
+with the drive scheduler's allowed recovery window. The integrated lifecycle
+now accepts up to 5100 ms of elapsed wall time with no capture credit across
+the unobserved interval. The ordinary 1000 ms limit is unchanged. The source of the
+machine pause itself is unknown. The relevant gateway lines are 28435–28443
+and 28516–28522, with the equipped loadout at line 21285.
+
+Rebuilt the gateway with `cargo build --locked --offline --release --features
+test_lab --manifest-path server/gateway/Cargo.toml`. Targeted Rust and SQLite
+logs sit under `local/evidence/content0-s5/` with the deployment receipt
+`demount-lifecycle-deploy.json`. The stand restart uses `domain.ps1` and
+`services.ps1`; the previous gateway path is in `services.before-demount-lifecycle.ps1`.
+The client uses the normal installer and the `install-demount-fix` rollback ledger.
+The owner confirmed native demount on the updated stand. Client trace
+`native-42252-1794659900340.jsonl` line 191 records item `1529`, slot `2`.
+Gateway `gateway-20261114-173738.stdout.log` line 603 commits revision 818.
+SQLite has slots `[0, 5113, 0]` and one `1529` in the depot.
+
+The owner completed native battle `46723758016008944` on the updated gateway.
+`gateway-20261114-173738.stdout.log` line 1847 records devices `[1273, 5113, 5881]`
+and ration `3067`. Native trace `native-42252-1794659900340.jsonl` lines 3536
+and 3584 show the first inactive and active callbacks 3.064 s apart. There
+are five successful playbacks and five deactivations. The battle finished
+with a team 1 win by elimination. The result was committed at revision 823,
+and SQLite has `p06t_result.acked=1`. Gateway lines 14852, 15065, 15070, 15080
+and 15101 show the outcome, commit, result-confirmed return, hangar sync and
+processed ACK. Client trace line 7245 shows the loaded hangar and selected
+SU-152 on the existing connection. The persisted result has 10 spent shells
+and 870 terminal HP. The ration slot is empty and its layout is retained.
+
+The active phase had no drive resync, battle fault or reliable retransmits.
+The maximum gateway loop time in the 23 complete active-phase windows was
+17.0 ms (line 9678). This native run did not encounter a long stall. Recovery
+from the 5.1 s boundary remains covered by the controlled cadence test.
+
+## Enhanced suspensions
+
+**VERIFIED #717** — `res/scripts/common/items/artefacts.pyc` SHA‑256
+`aedbfc161d7f0b2b78f376540811a0b4113736757982d03bceb4e6f4cccac49c`.
+`EnhancedSuspension.weightOnVehicle`, lines 247–252, adds the chassis limit
+times `chassisMaxLoadFactor − 1`. `updateVehicleDescrAttrs`, lines 262–265,
+multiplies `chassisHealthFactor` and `vehicleByChassisDamageFactor`. All 20
+original items use 1.10, 1.20 and 0.50. Original vehicle filters select one
+compatible item for 315 of 374 catalogue vehicles. The items have no weight
+and the original preservation flag applies when demounting them.
+
+**PROJECT** — the authoritative store checks the fitted item and complete
+vehicle mass on install, demount, module change, relog and mixed battle
+reservation. Research journals record the fitted suspension used for a
+weight-sensitive module command, so identical replays survive removal later.
+The gateway independently requires the exact native item for each extended
+build. Both tracks receive +20% maximum HP, rounded to nearest (project rule),
+with source regen values and unrelated device caps preserved. Terminal caps
+are checked independently in the gateway and the SQLite writer. The 0.50
+vehicle damage factor needs a server landing damage event, which is pending.
+
+**PASS** — both build modes exported 14,382 generated assemblies, including
+1,862 additional configurations across 145 vehicle types. Existing stock
+profiles remain byte-identical. Native Jolt qualified 14,377 ordinary and
+14,378 `test_lab` definitions. Results and source bundles are in
+`local/evidence/suspension-builds-{main,lab}-01` and
+`local/evidence/suspension-qualify-{main,lab}-01`.
+The actual SQLite/native argument test installed the U-11 on a KV-1: stock
+chassis limit 47,800 kg, assembly 47,850 kg, new limit 52,580 kg. It refused
+removal while overweight without changing SQLite, accepted removal after
+returning the stock gun, and replayed the mount across reopen and removal.
+Gateway tests applied three real-rule 30 HP hits per track. Stock tracks
+dropped to zero, fitted tracks kept 18 of 108 HP, and repair restored 108.
+Gateway also refused absent, foreign and duplicate suspension classes for a
+build with a required item. Logs: `local/evidence/content0-s5/suspension-*.log`.
+
+Generation: `tools/battle_any_profiles.py build --original <original>
+--out <local-export> --update`, `server/build.py physics --out <local-worker>`
+and `tools/battle_any_profiles.py qualify --worker <worker> --out <local-proof>`.
+Run both variants using `WOT091_TEST_LAB=1` and `server/build.py physics
+--test-lab` for the lab. Live Jolt/gateway/Domain deployment and a natively
+driven round are **NOT_RUN**. Before deploying, retain a scoped game database
+snapshot and the previous gateway and worker. Roll back the generated pins,
+worker, gateway and Domain together with the pre-test snapshot when a new
+overweight assembly or suspension is already present in the database.
+
+## Fuel and removed RPM limiter
+
+**VERIFIED #717** — `equipments.xml` defines Lend-Lease oil (`1787`),
+100-octane gasoline (`2043`), 105-octane gasoline (`2299`) and quality oil
+(`4347`). Oils give +5% engine power. Gasoline gives +5% or +10% to engine
+power and turret traverse. Both gasoline items require the fitted engine's
+`gasoline` tag and the listed nations. The nested conflict is common to
+all four fuel items. The generated manifest contains 244 gasoline engine
+IDs from the pinned research inputs. The separate grouser manifest contains
+22 compatible vehicle IDs. The gateway checks the same IDs independently
+from the frozen exact descriptor, in addition to the garage store checks.
+
+The RPM limiter (`3323`) is a reusable trigger for USSR and China. Source
+XML specifies +10% power and 1.5 engine HP/s. The native `Avatar` trigger
+sends low word `12` and an explicit on/off high word. The own-vehicle
+damage codes for critical and destroyed engine at unrestricted RPM are 24
+and 25. The server applies wear in fixed-point time, including fractional
+carry across switches. The native HUD and rejoin behavior of this projection
+still need a game-client check. Historical server rounding is unknown.
+
+**PROJECT** — passive fuel lasts through the battle and the existing
+terminal settlement spends its slot once. Prebattle cancellation preserves
+it. The regulator is never spent, and the terminal validators reject a
+settlement that tries to spend it. A different fuel or a module change from
+gasoline to diesel is rejected while it violates the fitted loadout. No
+new persistent catalogue hash or save migration is required.
+
+**PASS** — real SQLite tests on the pinned fixture checked T18 diesel versus
+gasoline, double fuel refusal, compatible remount and unchanged state on
+refusal. They also checked oil settlement, replay and rejection of regulator
+spending. See `local/evidence/content0-s5/fuel-fitment-r4.log` and
+`fuel-settlement.log`. The focused gateway `content0_s5` run passed 28
+tests. One of its two local-fixture tests was then run explicitly against
+the real worker and passed. See `fuel-ground-final-rust.log` and
+`fuel-ground-ipc7.log`. The full gate and native-client battle wait for
+the combined step 5/5a candidate.
+
+## Ground strength and grouser effects
+
+**VERIFIED #717** — all three registered map packages contain a
+`terrain2/dominantTextures` entry for every outdoor terrain tile. Each entry
+holds a compressed byte grid. The lower nibble is the texture index and the
+upper nibble holds authored ground strength. `constants.pyc` SHA‑256
+`1c07c2e6a956dcfef95c4020954b4ca39efd77844d328cded935307a6515eebd`
+gives `NONE=0`, `FIRM=1`, `MEDIUM=2`, `SOFT=3`, `SLOPE=4`, `DEATH_ZONE=5`.
+The [BigWorld file-format guide](https://howarduong.github.io/github.io/doc/html/file_grammar_guide/ch07.html)
+documents the dominant texture container. The
+[BigWorld 14.4.1 engine-family source](https://github.com/v2v3v4/BigWorld-Engine-14.4.1/blob/master/programming/bigworld/lib/terrain/dominant_texture_map.cpp#L140-L158)
+corroborates the two nibble fields and the nearest-texel X/Z lookup. The
+source material table also assigns default ground classes to texture names.
+Those defaults and the authored map codes can differ on the same texel, so
+the exporter uses the authored codes. The original server's support averaging
+and treatment of the special terrain codes remain unknown.
+
+**PROJECT** — the `ground_strength` reference in map configs points to a
+bounded local export pinned by SHA‑256 and bound to the exact terrain manifest
+and registered map. Shared IPC7 manifest v5 opens this asset with the same pin
+for every actor. The worker samples world X/Z at the previous Jolt step's
+terrain contacts. It averages over grounded wheel
+supports. Nonterrain supports, unclassified and special cells use the hard
+resistance profile. Those fallback rules do not add slope or death-zone
+behavior. `grousers` contributes 1,000 kg and changes the original
+medium/soft coefficients by ×0.952/×0.909. Resistance scales both the existing
+rolling force and the PHYS‑01 yaw limit. Old scenes without an authored map
+keep the hard profile. Map geometry and projectile contacts are unchanged.
+
+**PASS** — all three runtime maps exported 144 tiles each into
+`D:/WoT_9.1_Server/local/evidence/20261114-content0-ground-strength-01`.
+With equal mass and actual ground contact positions on Malinovka, fit versus
+no fit gives identical firm-ground traces. After three seconds, medium-ground
+speed increases from 4.500 to 4.568 m/s and yaw from 0.3567 to 0.3747 rad/s.
+On soft ground these change from 3.883 to 4.057 m/s and 0.2434 to 0.2677 rad/s.
+The same worker path applies bounded fuel/limiter power through the Jolt
+drivetrain. At +10% the three-second speed is 5.422 m/s versus 5.106 m/s, and
+disabling power at 1.5 s gives 5.229 m/s. See
+`worker-final-comparisons.json` and `worker-rejections.json` in that directory.
+The worker also rejects mismatched map pins, over-ceiling power and grouser
+flags without 1,000 kg of equipment. On a legacy manifest v4 without a ground
+asset, all 31 sampled worker frames match the previous build byte for byte.
+Native-client play remains **NOT_RUN**.
+
+Rebuild movement source data with `python -B -X utf8 tools/phys01_characteristics.py build`
+after changing the build registry. At this handoff its 14,397 rows include
+the previously missing suspension assemblies. The lab worker settles and
+moves the added KV‑1/U‑11 assembly `ussr-KV1--037b4a69`, with evidence
+`suspension-kv1-u11-malinovka.stdout.jsonl`. The numerical physics profile
+and Jolt DLL pins for the existing inertia qualification are unchanged.
+
+Export with `python -B -X utf8 tools/ground_strength.py export --original <original>
+--terrain <pinned terrain manifest> --out <fresh local file>` and build the
+worker with `python -B -X utf8 server/build.py physics --test-lab --out <local output>`.
+Bind the sidecar with `python -B -X utf8 tools/full_test_stand.py ground-strength
+--stand <stopped stand> --ground-strength <sidecar>` from the checkout that
+owns the stand. A copied Malinovka manifest passed pin checks on 361 pools.
+Scene startup requires this binding when a seated tank mounts grousers.
+For rollback restore `battle-profiles.before-ground-strength.json` plus the
+previous matched gateway and worker. The running stands were left intact.
+
+The Rust v5 adapter launched the final worker on the pinned Malinovka scene,
+checked both 30-step runs and compared physical speed at 100% and 110% power.
+See `local/evidence/content0-s5/fuel-ground-ipc7.log`. The test is an explicit
+local fixture run using `WOT091_MOTION_TEST_ROOT`, `WOT091_MOTION_TEST_SCENE`
+and `WOT091_MOTION_TEST_WORKER` with `--ignored`.

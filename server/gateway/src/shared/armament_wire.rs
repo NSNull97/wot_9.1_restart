@@ -22,7 +22,7 @@ pub fn effect_index(shell:Shell)->io::Result<u8>{
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Setting{Current,Next}
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
-pub enum Intent{Select(Setting,u16),ReloadPartialClip}
+pub enum Intent{Select(Setting,u16),ReloadPartialClip,ActivateEquipment{item:u16,extra:u16}}
 /// One complete original Base VAR2 method. Transport framing stays elsewhere.
 /// Source now proves partial reload sends code17/value0. No free replenishment.
 pub fn command(record:&[u8])->io::Result<Option<Intent>>{
@@ -36,9 +36,40 @@ pub fn command(record:&[u8])->io::Result<Option<Intent>>{
             // current/next; this is not a transport/channel failure.
             Ok(Some(Intent::Select(if record[3]==0{Setting::Current}else{Setting::Next},cd)))},
         17 if value==0=>Ok(Some(Intent::ReloadPartialClip)),
-        2|16=>Ok(None), // retained handlers own these original settings
+        16=>Ok(Some(Intent::ActivateEquipment{item:value as u16,extra:(value as u32>>16) as u16})),
+        2=>Ok(None), // retained handler owns autorotation
         _=>Err(bad("P06T unsupported original setting/value")),
     }
+}
+
+/// The same #717 callback presents consumables; zero CD occupies an empty slot.
+pub fn equipment_row(compact:u16,quantity:u16)->io::Result<Vec<u8>>{
+    equipment_row_with_trigger(compact,quantity,false)
+}
+
+pub(crate) fn equipment_row_with_trigger(compact:u16,quantity:u16,trigger_on:bool)->io::Result<Vec<u8>>{
+    use crate::profile13_v2091::{is_supported_consumable,RPM_LIMITER};
+    if quantity>1 || compact==0 && quantity!=0 || compact!=0 && !is_supported_consumable(compact)
+        || trigger_on && (compact!=RPM_LIMITER || quantity!=1){
+        return Err(bad("equipment row compact/quantity"));
+    }
+    let mut body=vec![0x13,0x44];body.extend(i32::from(compact).to_le_bytes());body.extend(quantity.to_le_bytes());
+    // #717 already latches a trigger on the click. At creation any nonzero
+    // time restores its latch; negative time keeps onEquipmentButtonPressed
+    // enabled (positive time would make it a cooldown).
+    body.push(0);
+    body.extend(if trigger_on {-1i16} else {0}.to_le_bytes());
+    Ok(body)
+}
+
+/// #717 Avatar.updateVehicleOptionalDeviceStatus takes the raw item ID, not its compact ID.
+pub(super) fn stereoscope_status(active: bool) -> Vec<u8> {
+    let item_id = (crate::profile13_v2091::STEREOSCOPE >> 8) as u8;
+    vec![0x13, 0x3d, item_id, u8::from(active)]
+}
+
+pub(super) fn camouflage_net_status(active: bool) -> Vec<u8> {
+    vec![0x13, 0x3d, (crate::gateway091::shared::camouflage::NET >> 8) as u8, u8::from(active)]
 }
 
 fn shot(mount:Mount,compact:u16)->io::Result<Shell>{crate::p06t_shells091::profile(mount).shots.into_iter().find(|s|s.compact_descr==compact&&!s.is_absent()).ok_or_else(||bad("P06T shell not mounted"))}
@@ -88,10 +119,12 @@ pub fn ammo_delta(mount:Mount,before:([u16;3],u16,u16,u8),now:([u16;3],u16,u16,u
 }
 /// Original FLOAT32 timeLeft/baseTime. Only authoritative nonnegative timers
 /// are emitted; negative original sentinels remain deliberately unavailable.
-/// 480 is the explicit LAB source-base ceiling120 * module/crew scale4.
 pub fn reload(vehicle_id:u32,time_left:f32,base_time:f32)->io::Result<Vec<u8>>{
+    use crate::p06t_armament091::{MAX_BASE_RELOAD_SECONDS,MAX_RELOAD_SCALE,MIN_BASE_RELOAD_SECONDS,MIN_RELOAD_SCALE};
     entity(vehicle_id)?;
-    if !base_time.is_finite()||!(0.1..=480.).contains(&base_time)||!time_left.is_finite()||!(0. ..=base_time).contains(&time_left){return Err(bad("P06T bounded reload clock"));}
+    let minimum=(MIN_BASE_RELOAD_SECONDS*MIN_RELOAD_SCALE) as f32;
+    let maximum=(MAX_BASE_RELOAD_SECONDS*MAX_RELOAD_SCALE) as f32;
+    if !(minimum..=maximum).contains(&base_time)||!(0. ..=base_time).contains(&time_left){return Err(bad("P06T bounded reload clock"));}
     let mut b=vec![0x13,0x46];b.extend(vehicle_id.to_le_bytes());b.extend(time_left.to_le_bytes());b.extend(base_time.to_le_bytes());Ok(b)
 }
 

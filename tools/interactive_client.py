@@ -21,6 +21,7 @@ from client_audit import ROOT, config, output_dir, read_limited, save_json, sha2
 from client_probe import to_element
 from packed_xml import decode
 from hangar_config import overrides
+from profile13_fight_binding import from_receipt as fight_binding_from_receipt
 
 MODULES = ('sr_interactive', 'collision_oracle', 'destructible_probe', 'destructible_catalog_probe', 'project_auth', 'project_preferences', 'hangar_bootstrap', 'hangar_ui_probe', 'hangar_capabilities', 'crew_capabilities', 'ms1_crew_probe', 'ms1_crew_scenario', 'hangar_limits_scenario', 'hangar_windows_scenario', 'hangar_relogin_scenario', 'account_switch_scenario', 'long_hangar_scenario', 'ms1_ammo_probe', 'ms1_ammo_scenario', 'arena_entry_probe', 'arena_bootstrap', 'arena_space_scenario', 'arena_vehicle_scenario', 'arena_ready_scenario', 'arena_movement_scenario', 'map_drive_scenario', 'map_drive_client', 'map_drive_acceptance')
 LOGS = ('python.log', 'Influx_PS.log', 'Influx_PS.bak')
@@ -35,6 +36,7 @@ MODULES += ('native_contract',)
 MODULES += ('native_call_trace',)
 MODULES += ('hangar_latency_trace',)
 MODULES += ('project_sixth_sense_sound',)
+MODULES += ('project_stereoscope_sound',)
 MODULES += ('project_player_kill_marker',)
 MODULES += ('project_loading_icons',)
 MODULES += ('project_pose_trace',)
@@ -207,6 +209,36 @@ def network_options(args, profile13, mixed_ammo):
                                   args.registration_url, profile13, mixed_ammo)
 
 
+def visibility_debug_options(args, profile13, network, copy_info, paths=None):
+    """Explicit operator-only build: absence never adds a module or movie."""
+    pair = getattr(args, 'visibility_debug', None)
+    run = getattr(args, 'visibility_debug_run', None)
+    account = getattr(args, 'visibility_debug_account', None)
+    grant_file = getattr(args, 'visibility_debug_grant_file', None)
+    pair_keys = getattr(args, 'visibility_debug_pair_keys', False)
+    if type(pair_keys) is not bool: raise ValueError('pair key option must be boolean')
+    if pair is None:
+        if pair_keys or any(v is not None for v in (run,account,grant_file)): raise ValueError('visibility debug options require --visibility-debug')
+        return None
+    if (not profile13 or copy_info is None or network.get('network_policy') is not None
+            or not network['endpoint'].startswith('127.0.0.1:')):
+        raise ValueError('--visibility-debug requires an isolated profile13 copy and loopback endpoint')
+    if (len(pair) != 2 or any(type(slot) is not int or not 0 <= slot < 6 for slot in pair)
+            or pair[0] == pair[1]):
+        raise ValueError('--visibility-debug requires two distinct slots from 0 to 5')
+    if (not isinstance(run,str) or re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',run) is None):
+        raise ValueError('--visibility-debug-run requires the exact lowercase run UUID of the test stand')
+    if (not isinstance(account,str) or re.fullmatch(r'[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}',account) is None):
+        raise ValueError('--visibility-debug-account requires the test operator UUID')
+    if grant_file is None or paths is None:raise ValueError('--visibility-debug-grant-file is required')
+    grant=local_path(grant_file,paths)
+    data=read_limited(grant,43)
+    if re.fullmatch(rb'[A-Za-z0-9_-]{43}',data) is None:raise ValueError('operator grant must be exactly 43 base64url bytes')
+    result={'observer':pair[0], 'target':pair[1], 'run':run, 'account':account, 'grant_file':str(grant)}
+    if pair_keys: result['pair_hotkeys']=True
+    return result
+
+
 def hit_indicator_policy():
     path = Path(__file__).resolve().parents[1] / 'client_patch/project_hit_indicator.py'
     spec = importlib.util.spec_from_file_location('_project_hit_indicator_prepare', path)
@@ -319,6 +351,12 @@ def prepare(args):
         raise ValueError('prepare requires an empty output directory')
     root, original = paths['research_client_root'], paths['original_client_root']
     copy_info = None
+    thin_overlay = getattr(args, 'thin_overlay', None)
+    if thin_overlay and getattr(args, 'research_copy', None):
+        raise ValueError('Choose either a manifested full copy or a thin overlay')
+    if thin_overlay:
+        from content0_s5a_overlay import checked_overlay
+        root, copy_info = checked_overlay(thin_overlay, paths)
     if getattr(args, 'research_copy', None):
         from shared_client_copy import checked_copy
         root, copy_info = checked_copy(args.research_copy, paths)
@@ -373,6 +411,17 @@ def prepare(args):
     if shared_lab and (copy_info is None or not args.enable_map_drive):
         raise ValueError('Shared lab requires an explicit isolated copy and native arena services')
     network = network_options(args, profile13_battle, p06t_mixed_ammo)
+    visibility_debug = visibility_debug_options(args, profile13_battle, network, copy_info, paths)
+    foliage_file = getattr(args, 'foliage_debug', None)
+    foliage_catalog = getattr(args, 'foliage_debug_catalog', None)
+    foliage_debug = None
+    if foliage_file is not None or foliage_catalog is not None:
+        if (foliage_file is None or foliage_catalog is None or not profile13_battle or copy_info is None
+                or network.get('network_policy') is not None or not network['endpoint'].startswith('127.0.0.1:')):
+            raise ValueError('foliage preview requires both artifacts, an isolated profile13 copy and a loopback endpoint')
+        import foliage_debug_payload
+        foliage_bytes, foliage_debug, foliage_evidence = foliage_debug_payload.payload(
+            local_path(foliage_file, paths), local_path(foliage_catalog, paths))
     sixth_sense = sixth_sense_option(args, profile13_battle, bool(args.enable_map_drive))
     endpoint = network['endpoint']
     public = local_path(args.public_key, paths)
@@ -382,7 +431,20 @@ def prepare(args):
     profile = local_path(args.profile_dir, paths)
     runtime = local_path(args.trace_dir, paths)
     control = local_path(args.test_control, paths) if args.test_control else None
-    if control and (control == public or control.is_relative_to(root)):
+    fight_test = getattr(args,'profile13_fight_test',False)
+    fight_receipt = getattr(args,'profile13_fight_stand_receipt',None)
+    if (type(fight_test) is not bool or (fight_test and (not profile13_battle or visibility_debug is None
+            or control is None or fight_receipt is None)) or (not fight_test and fight_receipt is not None)):
+        raise ValueError('profile13 fight test requires explicit battle, operator debug, control and live stand receipt')
+    fight_binding = None
+    if fight_test:
+        fight_receipt = local_path(fight_receipt, paths)
+        fight_binding = fight_binding_from_receipt(fight_receipt,paths['local_artifacts_root'],visibility_debug,network['endpoint'])
+    if thin_overlay and (not profile.is_relative_to(root) or not runtime.is_relative_to(root)
+                         or profile == root or runtime == root
+                         or (control is not None and not control.is_relative_to(root))):
+        raise ValueError('Thin overlay profile, runtime and control must stay inside its own root')
+    if control and (control == public or (not thin_overlay and control.is_relative_to(root))):
         raise ValueError('control must be a dedicated ignored local file')
     if args.diagnostic_no_license_dialog and not control:
         raise ValueError('diagnostic license dialog override requires explicit one-shot control')
@@ -394,6 +456,8 @@ def prepare(args):
     if disable_dialog:
         checked_originals.append('version.xml')
     for relative in checked_originals:
+        if thin_overlay and relative == 'paths.xml':
+            continue  # Its checked overlay contract supplies the separate search paths.
         if file_hash(root/relative) != file_hash(original/relative):
             raise ValueError('research configuration differs from original; inspect before prepare: '+relative)
     out.mkdir(parents=True, exist_ok=True)
@@ -403,8 +467,14 @@ def prepare(args):
     compiled = out/'compiled'
     compiled.mkdir()
     payloads, resource_evidence = interactive_resource_overrides(
-        root, args.disable_legacy_license_dialog, args.diagnostic_no_license_dialog,
+        original if thin_overlay else root, args.disable_legacy_license_dialog, args.diagnostic_no_license_dialog,
         has_control=control is not None)
+    if thin_overlay:
+        from content0_s5a_overlay import script_payloads
+        audit_payloads, resource_evidence['thin_overlay_scripts'] = script_payloads(original,copy_info['loose_sha256'])
+        if set(audit_payloads) & set(payloads):
+            raise ValueError('Thin overlay scripts overlap another prepared payload')
+        payloads.update(audit_payloads)
     if dismissal:
         from p04j_dismissal_flash import application_display_payload, APPLICATION_TARGET
         payloads[APPLICATION_TARGET], resource_evidence['crew_dismissal_flash'] = application_display_payload(original)
@@ -458,7 +528,12 @@ def prepare(args):
         raise ValueError('unmeasured original resource search path format')
     own_path = ET.Element('Path')
     own_path.text = str(profile).replace('\\','/')
-    search_list.insert(0, own_path)
+    if thin_overlay:
+        existing_profile = search_list.findall('Path')[0].text
+        if existing_profile != own_path.text:
+            raise ValueError('Thin overlay profile differs from its checked search path')
+    else:
+        search_list.insert(0, own_path)
     payloads['paths.xml'] = xml_bytes(search_paths)
     resource_evidence['preferences_search_path'] = {'source':'paths.xml', 'before_sha256':digest(search_paths_raw),
                                                     'prepended_owned_directory':str(profile)}
@@ -471,6 +546,18 @@ def prepare(args):
         if field is None:
             field = ET.SubElement(shot, name)
         field.text = value
+    stereoscope_sample = getattr(args, 'stereoscope_sample', None)
+    if stereoscope_sample is not None:
+        if not p06t_mixed_ammo:
+            raise ValueError('--stereoscope-sample requires --enable-p06t-mixed-ammo')
+        import stereoscope_fmod
+        soundbanks = engine.find('soundMgr/soundbanks')
+        if soundbanks is None or stereoscope_fmod.PROJECT_NAME in [p.findtext('name') for p in soundbanks]:
+            raise ValueError('Unexpected #717 FMOD project configuration')
+        ET.SubElement(ET.SubElement(soundbanks, 'project'), 'name').text = stereoscope_fmod.PROJECT_NAME
+        cue_files, resource_evidence['project_stereoscope_sound'] = stereoscope_fmod.payloads(
+            original, local_path(stereoscope_sample, paths))
+        payloads.update(cue_files)
     payloads['res/engine_config.xml'] = xml_bytes(engine)
     payloads['res_mods/0.9.1/sr_local.pubkey'] = public_payload
     settings = {'schema_version':1, 'endpoint':endpoint, 'profile_dir':str(profile),
@@ -483,6 +570,9 @@ def prepare(args):
                 # (a test control file or the passive capture turn it on too).
                 'trace_native_calls':bool(getattr(args, 'trace_native_calls', False)),
                 'enable_map_drive':bool(args.enable_map_drive)}
+    if fight_test:
+        settings['enable_profile13_fight_test'] = True
+        settings['profile13_fight_binding'] = fight_binding
     if native_preferences is not None:
         settings['native_preferences'] = native_preferences
     if network.get('network_policy') is not None:
@@ -509,6 +599,12 @@ def prepare(args):
         settings['enable_shared_lab'] = True
     if profile13_battle:
         settings['enable_profile13_battle'] = True
+    if visibility_debug is not None:
+        settings['visibility_debug'] = visibility_debug
+    if foliage_debug is not None:
+        settings['foliage_debug'] = foliage_debug
+        payloads[foliage_debug_payload.TARGET] = foliage_bytes
+        resource_evidence['project_foliage_preview'] = foliage_evidence
     if p06t_mixed_ammo:
         settings['enable_p06t_mixed_ammo'] = True
     if training_rooms:
@@ -522,6 +618,8 @@ def prepare(args):
     if sixth_sense is not None:
         settings['sixth_sense_sound'] = sixth_sense['candidate']
         resource_evidence['project_sixth_sense_sound'] = sixth_sense
+    if stereoscope_sample is not None:
+        settings['stereoscope_sound'] = True
     if getattr(args, 'player_kill_marker', False):
         # Owner order 2026-10-20: keep the player's killing hit/explosion colour.
         if not profile13_battle:
@@ -574,7 +672,7 @@ def prepare(args):
         settings['battle_feed'] = battle_feed_policy().prepare_settings(feed_view)
     if history_view is not None:
         settings['battle_history'] = battle_history_policy().prepare_settings(history_view)
-    if feed_view is not None or history_view is not None:
+    if feed_view is not None or history_view is not None or visibility_debug is not None or foliage_debug is not None:
         # One res_mods copy of the native battle movie, pinned to the #717 bytes:
         # a source that differs refuses the whole prepare.
         import battle_ui_native_flash
@@ -582,7 +680,8 @@ def prepare(args):
         # messages) goes with the project markers.
         movie, resource_evidence['project_battle_native_movie'] = battle_ui_native_flash.payload(
             original, feed_view is not None, history_view is not None, getattr(args, 'battle_icons', None),
-            palette=not getattr(args, 'native_vehicle_markers', False))
+            palette=not getattr(args, 'native_vehicle_markers', False), with_visibility=visibility_debug is not None,
+            with_foliage=foliage_debug is not None)
         payloads[battle_ui_native_flash.TARGET] = movie
     if getattr(args, 'battle_settings', False):
         # UI-05 owner order 2026-11-01: the tab of the native settings windows.
@@ -623,7 +722,12 @@ def prepare(args):
             'native_audio_check':'NOT_RUN'}
     payloads['sr_interactive_settings.json'] = (json.dumps(settings, ensure_ascii=True, indent=2)+'\n').encode()
     sources = []
-    for module in MODULES:
+    optional_modules = tuple(module for enabled, module in (
+        (visibility_debug is not None, 'project_visibility_debug'),
+        (fight_test, 'profile13_fight_test'),
+        (foliage_debug is not None, 'project_foliage_debug'),
+    ) if enabled)
+    for module in MODULES + optional_modules:
         source = ROOT/'client_patch'/f'{module}.py'
         if module == 'catalog_v1_hints' and getattr(args, 'test_vehicle_label', False):
             # TESTVEH-01 stand flag: a test_lab client carries the test_lab CAT-01 hints.
@@ -676,9 +780,15 @@ def prepare(args):
             'preferences_contract':'exact native invalid prefix checked before GUI; owned bounded DataSection XML persistence',
             'normal_auto_login':False, 'normal_auto_quit':False,
             'native_acceptance':'NOT_RUN', 'command':sys.argv}
-    if copy_info is not None:
+    if thin_overlay:
+        plan['thin_overlay'] = True
+        plan['instance_mutex'] = copy_info['instance_mutex']
+        plan['overlay_manifest_sha256'] = sha256(root/'content0_s5a_overlay.json')
+    elif copy_info is not None:
         plan['additional_research_copy'] = True
         plan['instance_mutex'] = copy_info['instance_mutex']
+    if fight_test:
+        plan['profile13_fight_stand_receipt'] = str(fight_receipt)
     save_json(out/'install-plan.json', plan)
     print(json.dumps({'status':'PREPARED','plan':str(out/'install-plan.json'),'client_write_performed':False},ensure_ascii=False))
 
@@ -688,6 +798,15 @@ def load_plan(args):
     out = local_path(args.out, paths)
     plan = json.loads(read_limited(out/'install-plan.json', 1024*1024))
     root = paths['research_client_root']
+    if plan.get('thin_overlay') is True:
+        if plan.get('additional_research_copy'):
+            raise ValueError('ambiguous client isolation contract')
+        from content0_s5a_overlay import checked_overlay
+        root, copy_info = checked_overlay(plan['research_root'], paths)
+        if plan.get('instance_mutex') != copy_info['instance_mutex']:
+            raise ValueError('Thin overlay mutex differs from manifest')
+        if plan.get('overlay_manifest_sha256') != sha256(root/'content0_s5a_overlay.json'):
+            raise ValueError('Thin overlay manifest changed since preparation')
     if plan.get('additional_research_copy') is True:
         from shared_client_copy import checked_copy
         root, copy_info = checked_copy(plan['research_root'], paths)
@@ -703,7 +822,7 @@ def install(args):
     out, root, plan = load_plan(args)
     if (out/'patch-ledger.json').exists():
         raise ValueError('installation already attempted; use its ledger and rollback')
-    with control(plan['instance_mutex']) if plan.get('additional_research_copy') else control() as mutex:
+    with control(plan['instance_mutex']) if plan.get('additional_research_copy') or plan.get('thin_overlay') else control() as mutex:
         for entry in plan['files']:
             if file_hash(target(root,entry['path'])) != entry['before_sha256']:
                 raise ValueError('client changed since reviewed prepare: '+entry['path'])
@@ -748,7 +867,7 @@ def rollback(args):
     ledger = json.loads(read_limited(out/'patch-ledger.json',1024*1024))
     if ledger['plan_sha256'] != sha256(out/'install-plan.json'):
         raise ValueError('prepared plan changed since installation')
-    with control(plan['instance_mutex']) if plan.get('additional_research_copy') else control():
+    with control(plan['instance_mutex']) if plan.get('additional_research_copy') or plan.get('thin_overlay') else control():
         if (out/'restore.json').exists():
             changed = [e['path'] for e in ledger['files'] if file_hash(target(root,e['path'])) != e['before_sha256']]
             if changed:
@@ -797,6 +916,7 @@ def main():
     prep = sub.add_parser('prepare')
     prep.add_argument('--out',required=True)
     prep.add_argument('--research-copy', help='Explicit manifested additional copy below local/clients/')
+    prep.add_argument('--thin-overlay', help='Explicit checked CONTENT-0 thin overlay below local/clients/')
     prep.add_argument('--enable-shared-lab', action='store_true', help='Initialize original arena services before server-assigned laboratory entry')
     prep.add_argument('--public-key',required=True)
     prep.add_argument('--endpoint',default='127.0.0.1:20014')
@@ -833,6 +953,20 @@ def main():
     prep.add_argument('--trace-pose-10hz', action='store_true',
                       help='NET-01 diagnostic: record native vehicle positions, BigWorld.time and serverTime '
                            'every 0.1 s in battle (read-only); requires profile13 battle')
+    prep.add_argument('--visibility-debug', nargs=2, type=int, metavar=('OBSERVER', 'TARGET'),
+                      help='Closed local test build only: selected distinct server slots 0..5; '
+                           'server-side operator authorization is also required')
+    prep.add_argument('--visibility-debug-pair-keys', action='store_true',
+                      help='Opt-in operator control: Ctrl+Alt+arrows select slots; native input still receives each event and may move the vehicle')
+    prep.add_argument('--visibility-debug-run', help='Exact test stand run UUID; required with --visibility-debug')
+    prep.add_argument('--visibility-debug-account', help='Exact test operator account UUID; required with --visibility-debug')
+    prep.add_argument('--visibility-debug-grant-file', help='Ignored local operator grant file; required with --visibility-debug')
+    prep.add_argument('--foliage-debug', help='Admitted Prokhorovka geometry for the local Ctrl+Alt+F preview')
+    prep.add_argument('--foliage-debug-catalog', help='Matching local Prokhorovka contact catalog for fallen crowns')
+    prep.add_argument('--profile13-fight-test', action='store_true',
+                      help='Explicit one-shot native FightButton test and diagnostic screenshot; requires operator debug/control')
+    prep.add_argument('--profile13-fight-stand-receipt',
+                      help='Live own-stand process receipt binding operator UUID and native account ID')
     prep.add_argument('--test-vehicle-label', action='store_true',
                       help='TESTVEH-01 test_lab client: separate Т-62А (Т) (label XI, 1000 mm stats, level bound 1..11) and the test_lab CAT-01 hints; only for a test_lab stand')
     prep.add_argument('--player-kill-marker', action='store_true',
@@ -879,6 +1013,7 @@ def main():
     prep.add_argument('--sixth-sense-sample',
                       help='Owner-supplied lamp sound file (decoded with local ffmpeg) replacing the '
                            'gun_intuition bank via res_mods; requires --sixth-sense-sound gun_intuition')
+    prep.add_argument('--stereoscope-sample', help='Pinned PCM WAV from tools/stereoscope_lesta_audio.py')
     prep.add_argument('--enable-p09d-ammo-service', action='store_true',
                       help='Native maintenance for the two source-bound MS-1 and IS-7 mounts')
     prep.add_argument('--enable-crew-recruitment', action='store_true',

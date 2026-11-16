@@ -14,7 +14,7 @@ fn actor_kind(kind:VehicleKind)->model::Actor {
     w.attach(model::Identity{account:"hull-follow".into(),database:6962,name:"hull".into()},6962).unwrap();
     w.tick=1000;let a=&mut w.actors[0];a.ready=true;a.force_vehicle_kind(VehicleKind::Fv183);
     a.position=[0.;3];a.direction=[0.;3];a.aim.intent=aim::Intent::Point([100.,0.,0.]);
-    let turning=Input{throttle:0,steer:1,brake:false,speed_percent:100};
+    let turning=Input{throttle:0,steer:1,brake:false,speed_percent:100,engine_power_basis_points:10_000};
     assert_eq!(scene_inputs(&mut w,true).unwrap(),vec![turning]);
     // The reserve holds across steps: the point is back inside the engage line, the turn goes on.
     let limits=VehicleKind::Fv183.source_aim().unwrap().envelope.yaw_limits().unwrap();
@@ -66,7 +66,7 @@ fn legal(input:Input)->bool {(-1..=1).contains(&input.throttle)&&(-1..=1).contai
     for (throttle,speed) in [(0,100),(1,100),(1,50),(1,25),(-1,100),(-1,50)] {
         for steer in -1..=1 {
             a.input=model::Input{throttle,steer,speed_percent:speed};
-            let expected=Input{throttle,steer,brake:throttle==0&&steer==0,speed_percent:speed};
+            let expected=Input{throttle,steer,brake:throttle==0&&steer==0,speed_percent:speed,engine_power_basis_points:10_000};
             assert_eq!(actor_input(&a,1000,true).unwrap(),expected);
             a.devices=Some(Devices::new(Profile::Ms1).unwrap());assert_eq!(actor_input(&a,1000,true).unwrap(),expected);a.devices=None;
         }

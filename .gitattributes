@@ -250,3 +250,15 @@ server/gateway/src/shared/chassis_armor_pins.rs text eol=lf
 /config/module_volumes/*.json text eol=lf
 /config/catalog/gun_dispersion.v1.json text eol=lf
 /server/gateway/src/shared/gun_dispersion_pins.rs text eol=lf
+
+# Native acceptance and visibility scene receipts hash these exact bytes.
+/client_patch/arena_movement_scenario.py text eol=lf
+/tools/verify_arena_ready_native.py text eol=lf
+/tools/verify_hangar_limits.py text eol=lf
+/tools/verify_ms1_crew_native.py text eol=lf
+/config/rulesets/content0-s5a-camouflage.v1.json text eol=lf
+/config/rulesets/content0-s5a-dry-scenes.v1.json text eol=lf
+/config/rulesets/content0-s5a-fallen-tree-crowns.v1.json text eol=lf
+/config/rulesets/p07b-original-no-camo.v1.json text eol=crlf
+/tools/malinovka_bush_calibration.v1.json text eol=lf
+/config/rulesets/content0-s5a-prohorovka-bush-calibration.v1.json text eol=lf

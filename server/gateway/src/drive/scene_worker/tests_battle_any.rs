@@ -68,7 +68,7 @@ fn battle_any_stand_pilots_and_t26_drive_one_ipc7_scene_with_original_scalar_pro
     let start=ready.actors.iter().map(|a|a.pose.position).collect::<Vec<_>>();
     let mut last=ready;let mut removed=0;
     for seq in 1..=120 {
-        let inputs=vec![Input{throttle:1,steer:0,brake:false,speed_percent:100};n];
+        let inputs=vec![Input{throttle:1,steer:0,brake:false,speed_percent:100,engine_power_basis_points:10_000};n];
         // Destructible objects the actors break are committed before the next tick (scene ACK).
         if !worker.prepared_ids().is_empty() {
             let mut ids=worker.scene().ids.clone();ids.extend_from_slice(worker.prepared_ids());ids.sort();ids.dedup();

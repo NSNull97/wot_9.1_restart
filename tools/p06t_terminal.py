@@ -14,11 +14,25 @@ from p09d_ammo_store import require,sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p08b_battle_store import _integer, MAX_PARTICIPANTS
+from content0_equipment_catalog import (CO2_FUEL_TANK, CYCLONE_FILTER, ENHANCED_SUSPENSIONS, RPM_LIMITER,
+                                       SUSPENSION_TRACK_HEALTH_PERCENT, WET_AMMO_RACKS)
 
 POLICY_SCHEMA="p06t-terminal-policy.v1"
 MANIFEST_SHA256="cded466bf3c21243c10c0bcee8a013ab4cffc20f31f7275d4eab1672060b3717"
 SOURCE_CAPS_SHA256="3c4219c2adda799677dea310e84765bbfebca6edfa06aa3db450a7ddfb4875b5"
 FIELDS={"policy_revision","roster_size","crew_active","crew","devices","fire","death"}
+
+
+def fitted_device_maxima(devices, frozen):
+    fitted = frozen.get("artefacts", {}).get("optional_devices", ())
+    factors = {26: 150 if CYCLONE_FILTER in fitted else 100,
+               27: 150 if any(item in WET_AMMO_RACKS for item in fitted) else 100,
+               28: 150 if CO2_FUEL_TANK in fitted else 100}
+    if any(item in ENHANCED_SUSPENSIONS for item in fitted):
+        factors.update({30: SUSPENSION_TRACK_HEALTH_PERCENT, 31: SUSPENSION_TRACK_HEALTH_PERCENT})
+    for device in devices:
+        extra, maximum = device["extra_index"], device["max_health"]
+        yield extra, min(65535, (maximum * factors.get(extra, 100) + 50) // 100)
 
 
 class TerminalPolicy:
@@ -83,7 +97,13 @@ class TerminalPolicy:
     def validate(self,raw,*,frozen,terminal_hp,results=None):
         require(type(raw)is str and len(raw.encode("utf8"))<=8192,"INVALID_TERMINAL_STATE")
         value=_json(raw)
-        require(set(value)==FIELDS and value["policy_revision"]==self.document["policy_revision"]
+        if "consumables_used" in value:
+            slots=value["consumables_used"]
+            fitted=frozen.get("artefacts",{}).get("consumables",[0,0,0])
+            require(type(slots) is list and 1<=len(slots)<=3
+                and all(type(slot) is int and 0<=slot<3 and fitted[slot] not in (0, RPM_LIMITER) for slot in slots)
+                and slots==sorted(set(slots)), "INVALID_TERMINAL_STATE")
+        require(set(value)-{"consumables_used"}==FIELDS and value["policy_revision"]==self.document["policy_revision"]
             and frozen["kind"] in self.document["profiles"] and type(value["crew_active"])is bool,"INVALID_TERMINAL_STATE")
         profile=self.document["profiles"][frozen["kind"]]
         require(frozen["max_hp"]==profile["max_hp"] and len(frozen["crew_ids"])==profile["crew_count"],"INVALID_TERMINAL_STATE")
@@ -96,10 +116,10 @@ class TerminalPolicy:
         require(value["crew_active"]==any(row["alive"]for row in crew),"INVALID_TERMINAL_STATE")
         devices=value["devices"];policy=self.document["profiles"][frozen["kind"]]["devices"]
         require(type(devices)is list and len(devices)==len(policy),"INVALID_TERMINAL_STATE")
-        for row,source in zip(devices,policy):
+        for row,(extra,maximum) in zip(devices,fitted_device_maxima(policy,frozen)):
             require(type(row)is dict and set(row)=={"extra_index","health","max_health"}
-                and type(row["extra_index"])is int and row["extra_index"]==source["extra_index"]
-                and type(row["max_health"])is int and row["max_health"]==source["max_health"],"INVALID_TERMINAL_STATE")
+                and type(row["extra_index"])is int and row["extra_index"]==extra
+                and type(row["max_health"])is int and row["max_health"]==maximum,"INVALID_TERMINAL_STATE")
             _integer(row["health"],0,row["max_health"],"INVALID_TERMINAL_STATE")
         fire=value["fire"];death=value["death"]
         require(type(fire)is dict and set(fire)=={"active","ticks","damage"} and type(fire["active"])is bool

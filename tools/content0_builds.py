@@ -114,9 +114,11 @@ def load():
             if stock_pair and e["max_hp"] != stock["max_hp"]:
                 raise BuildTableError(vehicle_id + ": build of the stock pair with other hit points")
             devices = devices_of(v, m)
+            required_suspension = e.get("required_suspension")
             builds[e["descriptor_hex"]] = MappingProxyType(dict(label=e["label"], vehicle_id=vehicle_id,
                 stock_kind=v["hull"]["kind"], modules=MappingProxyType(dict(m)), max_hp=e["max_hp"], mass_kg=e["mass_kg"],
-                stock_pair=stock_pair, devices=devices, crew_count=len(v["hull"]["crew_seats"])))
+                stock_pair=stock_pair, devices=devices, crew_count=len(v["hull"]["crew_seats"]),
+                required_suspension=required_suspension))
     _CACHE[path] = result = MappingProxyType(builds)
     return result
 

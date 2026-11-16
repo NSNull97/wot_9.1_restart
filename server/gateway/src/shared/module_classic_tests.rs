@@ -1,5 +1,39 @@
 //! SHELL-04 (owner 2026-11-08): classic module rules of the layered law.
 use super::*;
+
+#[test]
+fn content0_s5_module_protection_absorbs_real_device_damage_and_repair_restores_effective_maximum() {
+    use crate::p06t_device_caps::{CO2_FUEL_TANK, CYCLONE_FILTER, WET_AMMO_RACKS};
+    use crate::p06t_shells091::{Mount, profile};
+    let mut bare = State::new(Profile::Is7).unwrap();
+    let mut equipped = bare.clone();
+    bare.enable_classic().unwrap();
+    equipped.enable_classic().unwrap();
+    let devices = [WET_AMMO_RACKS[1], CO2_FUEL_TANK, CYCLONE_FILTER];
+    equipped.configure_artefacts(devices, [0; 3]).unwrap();
+    assert_eq!(&equipped.health()[..3], &[540,315,300]);
+    assert_eq!(equipped.caps()[Device::Engine as usize].regen, 180);
+    let health = Health {hp:2150,max_hp:2150,terminal:false};
+    let shell = profile(Mount::Is7Stock).shots[0];
+    let hit = |unit, shot, at_ms| ModuleHit {target:Target::Device(unit),cause:Cause{shot,attacker_slot:1},
+        ordinal:CLASSIC_FIRST_ORDINAL,at_ms,shell,ignition_roll:0.99};
+    for (index, unit) in [Device::Engine, Device::AmmoBay, Device::FuelTank].into_iter().enumerate() {
+        let hits = [hit(unit, index as u32 + 1, 100)];
+        let amount = if unit == Device::Engine { 200 } else { 210 };
+        bare.apply_classic_hits(&hits, &[amount], health).unwrap();
+        equipped.apply_classic_hits(&hits, &[amount], health).unwrap();
+    }
+    assert_eq!(&bare.health()[..3], &[160,0,0]);
+    assert_eq!(&equipped.health()[..3], &[340,105,90]);
+    assert_eq!(bare.capabilities().drive_scale, 0.5);
+    assert_eq!(equipped.capabilities().drive_scale, 1.);
+    assert!(!equipped.fire_active());
+    assert!(bare.fire_active());
+    assert!(equipped.configure_artefacts(devices, [0; 3]).is_err());
+    let repaired = equipped.restore(Consumable::LargeRepairkit,1,100,0,health).unwrap();
+    assert_eq!(repaired.len(),3);
+    assert_eq!(&equipped.health()[..3], &[540,315,300]);
+}
 use crate::p06t_shells091::{self as source,Mount};
 
 fn he()->Shell {*source::profile(Mount::Ms1Stock).shots.iter().find(|s|s.family==source::Family::HighExplosive).unwrap()}
@@ -10,6 +44,37 @@ fn track_hit(shot:u32)->ModuleHit {
 fn after(events:&[Transition])->(u16,Condition) {
     match events.iter().find_map(|e|match e.change{Change::Device{after,after_condition,..}=>Some((after,after_condition)),_=>None}) {
         Some(v)=>v, None=>panic!("no device transition")}
+}
+
+#[test]
+fn content0_s5_enhanced_suspension_keeps_both_tracks_above_zero_on_a_stock_breaking_hit() {
+    use crate::p06t_device_caps::ENHANCED_SUSPENSIONS;
+    let profile = Profile::T34;
+    let mut stock = State::new(profile).unwrap();
+    stock.enable_classic().unwrap();
+    let mut fitted = stock.clone();
+    for id in ENHANCED_SUSPENSIONS {
+        fitted.configure_artefacts([0, id, 0], [0; 3]).unwrap();
+        let caps = fitted.caps();
+        let base = profile.caps();
+        assert_eq!((caps[4].max, caps[5].max, caps[4].regen, caps[5].regen), (108, 108, 70, 70));
+        assert_eq!(&caps[..4], &base[..4]);
+        assert_eq!(&caps[6..], &base[6..]);
+    }
+    for shot in 1..=3 {
+        let left = track_hit(shot);
+        let right = ModuleHit { ordinal: TRACK_ORDINALS[1], target: Target::Device(Device::RightTrack), ..left };
+        let hits = [left, right];
+        stock.apply_explosion_hits(&hits, &[30, 30], full(profile)).unwrap();
+        fitted.apply_explosion_hits(&hits, &[30, 30], full(profile)).unwrap();
+    }
+    assert_eq!(&stock.health()[4..6], &[0, 0]);
+    assert_eq!(&fitted.health()[4..6], &[18, 18]);
+    assert_eq!(stock.capabilities().steer_scale, 0.);
+    assert!(fitted.capabilities().steer_scale > 0.);
+    let repaired = fitted.restore(Consumable::LargeRepairkit, 1, 100, 0, full(profile)).unwrap();
+    assert_eq!(repaired.len(), 2);
+    assert_eq!(&fitted.health()[4..6], &[108, 108]);
 }
 
 #[test] fn classic_damaged_threshold_is_max_regen_health_inclusive() {

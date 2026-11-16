@@ -104,16 +104,22 @@ impl State {
     /// the arc; the caller freezes that same shell if a shot is later admitted.
     /// Module/crew rate factors are explicit LAB policy, not historical server
     /// mechanics. Legacy wrappers retain their original values and arithmetic.
+    #[cfg(test)]
     pub fn advance_pose_for_selected(&mut self, kind: VehicleKind, position: [f32;3], direction: [f32;3], dt: f32,
         shell: crate::p06t_shells091::Shell, caps: crate::p06t_device_state::Capabilities) -> io::Result<()> {
+        self.advance_pose_for_selected_with_fuel(kind,position,direction,dt,shell,caps,1.)
+    }
+    pub(super) fn advance_pose_for_selected_with_fuel(&mut self, kind: VehicleKind, position: [f32;3], direction: [f32;3], dt: f32,
+        shell: crate::p06t_shells091::Shell, caps: crate::p06t_device_state::Capabilities,turret_factor:f32) -> io::Result<()> {
         if !crate::p06t_shells091::profile(kind.mount()).shots.contains(&shell)
             || !dt.is_finite() || !(0. ..=0.2).contains(&dt)
+            || ![1.,1.05,1.10].contains(&turret_factor)
             || position.iter().chain(direction.iter()).any(|v|!v.is_finite())
             || !self.yaw.is_finite() || !self.pitch.is_finite() {return Err(bad());}
         caps.validate()?;self.intent.validate()?;
         if source_controller_supported(kind)? {
             return self.advance_source_pose(kind,position,direction,dt,shell.raw_speed_mps,shell.raw_gravity_mps2,
-                caps.turret_scale,caps.aim_speed_scale);
+                caps.turret_scale*turret_factor,caps.aim_speed_scale);
         }
         let spec=kind.aim();
         let (yaw,pitch)=match self.intent {
@@ -121,7 +127,7 @@ impl State {
                 shell.raw_speed_mps,shell.raw_gravity_mps2),
             Intent::Hold {yaw,pitch}=>(yaw,pitch),
         };
-        let yaw_step=spec.yaw_rate*caps.turret_scale*caps.aim_speed_scale*dt;
+        let yaw_step=spec.yaw_rate*(caps.turret_scale*turret_factor)*caps.aim_speed_scale*dt;
         let pitch_step=spec.pitch_rate*caps.aim_speed_scale*dt;
         if caps.turret_scale>0. && caps.aim_speed_scale>0. {self.yaw=wrap(self.yaw+wrap(yaw-self.yaw).clamp(-yaw_step,yaw_step));}
         let target=pitch.clamp(spec.min_pitch,pitch_max_for(kind,self.yaw));
@@ -138,7 +144,7 @@ impl State {
         if !dt.is_finite()||!(0. ..=0.2).contains(&dt)
             ||position.iter().chain(direction.iter()).any(|v|!v.is_finite())
             ||!raw_speed.is_finite()||raw_speed<=0.||!raw_gravity.is_finite()||raw_gravity<=0.
-            ||[turret_scale,aim_scale].iter().any(|v|!v.is_finite()||!(0. ..=1.).contains(v))
+            ||!(0. ..=1.10).contains(&turret_scale)||!(0. ..=1.).contains(&aim_scale)
             ||!self.yaw.is_finite()||!self.pitch.is_finite(){return Err(bad());}
         self.intent.validate()?;
         let current=envelope.pitch_limits(self.yaw).map_err(|_|bad())?;
@@ -161,6 +167,21 @@ impl State {
         let next_pitch=envelope.clamp_pitch(next_yaw,moved).map_err(|_|bad())?;
         self.yaw=next_yaw;self.pitch=next_pitch;Ok(())
     }
+}
+
+#[cfg(test)]
+#[test]
+fn content0_s5_gasoline_increases_yaw_rate_without_elevation() {
+    let kind=VehicleKind::Generated(super::generated_vehicles::registry().unwrap().by_label("france-AMX50_Foch").unwrap());
+    let caps=crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).unwrap()).unwrap().capabilities();
+    let shell=crate::p06t_shells091::profile(kind.mount()).shots[0];
+    let mut base=State::new();
+    base.set(Intent::Hold{yaw:0.1,pitch:0.1}).unwrap();
+    let mut boosted=base.clone();
+    base.advance_pose_for_selected(kind,[0.;3],[0.;3],0.1,shell,caps).unwrap();
+    boosted.advance_pose_for_selected_with_fuel(kind,[0.;3],[0.;3],0.1,shell,caps,1.1).unwrap();
+    assert!(base.yaw>0. && (boosted.yaw-base.yaw*1.1).abs()<1e-6);
+    assert_eq!(boosted.pitch,base.pitch);
 }
 /// Source-aim kinds use the extended controller. A generated kind's wire
 /// range is its source absolute envelope (see `wire_pitch_range`); it must

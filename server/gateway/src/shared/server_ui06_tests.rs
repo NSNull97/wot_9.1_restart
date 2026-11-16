@@ -11,10 +11,10 @@ use super::super::team_score;
 
 fn id(slot:usize)->u32 {wire::vehicle_id(slot).unwrap()}
 fn ram(attacker:usize,target:usize,before:i16,after:i16)->model::RamDamageRecord {
-    model::RamDamageRecord{sequence:1,tick:1,domain_tick:1000,attacker,target,pair:(0,1),energy_j:1.,closing_speed:1.,health_before:before,health_after:after}
+    model::RamDamageRecord{sequence:1,tick:1,domain_tick:1000,attacker,target,pair:(0,1),energy_j:1.,closing_speed:1.,health_before:before,health_after:after,spotting:None}
 }
 fn damage(reason:u8,attacker:usize,target:usize,before:i16,after:i16)->model::DamageRecord {
-    model::DamageRecord{sequence:1,tick:1000,attacker,target,shot:1,reason,health_before:before,health_after:after,
+    model::DamageRecord{spotting:None,sequence:1,tick:1000,attacker,target,shot:1,reason,health_before:before,health_after:after,
         crew_before:true,crew_after:after>0,direct:reason==0,pierced:reason==0}
 }
 /// Four vehicles of the mixed-ammo journal: 0, 2, 3 against 1.

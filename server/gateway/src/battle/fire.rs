@@ -166,8 +166,8 @@ impl State {
     pub fn lose_loaded_for_detonation(&mut self)->io::Result<[u16;3]>{
         self.typed.as_mut().ok_or_else(||invalid("detonation on legacy armament"))?.lose_loaded_for_detonation()
     }
-    pub fn adjust_reload_scale(&mut self,scale:f32,now:Instant)->io::Result<()>{
-        self.typed.as_mut().ok_or_else(||invalid("typed capability on legacy fire"))?.set_reload_scale(f64::from(scale),now)
+    pub fn adjust_reload_scale(&mut self,scale:f64,now:Instant)->io::Result<()>{
+        self.typed.as_mut().ok_or_else(||invalid("typed capability on legacy fire"))?.set_reload_scale(scale,now)
     }
     pub fn apply_typed(&mut self,commands:&[crate::p06t_armament091::Command],now:Instant)->io::Result<Vec<Outcome>>{
         self.typed.as_mut().ok_or_else(||invalid("typed armament command on legacy state"))?.apply(commands,now)

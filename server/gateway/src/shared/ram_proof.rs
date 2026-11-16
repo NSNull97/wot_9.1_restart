@@ -12,14 +12,23 @@ fn dot(a:[f32;3],b:[f32;3])->f64 { let a=a.map(f64::from);let b=b.map(f64::from)
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Profile { Ms1, Is7, T26, T34, T3485, WtE100128, Fv215b183,
     /// BATTLE-ANY: qualified generated profile (SHA, mass, box, getter bits from the registry).
-    Generated(super::generated_vehicles::GeneratedId) }
+    Generated(super::generated_vehicles::GeneratedId),
+    Equipped(super::vehicle_profile::VehicleKind,u32) }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Profile
 impl crate::bw_wire::Wire for Profile {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ms1=>bw_o.tag(0),Self::Is7=>bw_o.tag(1),Self::T26=>bw_o.tag(2),Self::T34=>bw_o.tag(3),Self::T3485=>bw_o.tag(4),Self::WtE100128=>bw_o.tag(5),Self::Fv215b183=>bw_o.tag(6),Self::Generated(f0)=>{bw_o.tag(7);W::put(f0,bw_o);}}}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ms1),1=>Ok(Self::Is7),2=>Ok(Self::T26),3=>Ok(Self::T34),4=>Ok(Self::T3485),5=>Ok(Self::WtE100128),6=>Ok(Self::Fv215b183),7=>Ok(Self::Generated(W::get(bw_i)?)),t=>crate::bw_wire::variant(t)}}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;match self {Self::Ms1=>bw_o.tag(0),Self::Is7=>bw_o.tag(1),Self::T26=>bw_o.tag(2),Self::T34=>bw_o.tag(3),Self::T3485=>bw_o.tag(4),Self::WtE100128=>bw_o.tag(5),Self::Fv215b183=>bw_o.tag(6),Self::Generated(f0)=>{bw_o.tag(7);W::put(f0,bw_o);},Self::Equipped(kind,mass)=>{bw_o.tag(8);W::put(kind,bw_o);W::put(mass,bw_o);}}}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;match bw_i.tag()? {0=>Ok(Self::Ms1),1=>Ok(Self::Is7),2=>Ok(Self::T26),3=>Ok(Self::T34),4=>Ok(Self::T3485),5=>Ok(Self::WtE100128),6=>Ok(Self::Fv215b183),7=>Ok(Self::Generated(W::get(bw_i)?)),8=>{let kind=W::get(bw_i)?;let mass=f32::from_bits(W::get(bw_i)?);if mass<=0. {return Err(bad());}Self::for_equipment(kind,mass)},t=>crate::bw_wire::variant(t)}}
 }
 // end BW-01 wire codec
 impl Profile {
+    pub(super) fn base(self)->Self {
+        match self {Self::Equipped(kind,_)=>Self::for_vehicle(kind),base=>base}
+    }
+    pub(crate) fn for_equipment(kind:super::vehicle_profile::VehicleKind, added:f32)->io::Result<Self> {
+        let base=Self::for_vehicle(kind);
+        if !(0. ..=5000.).contains(&added) || base.mass()+added>200000. {return Err(bad());}
+        Ok(if added==0. {base}else{Self::Equipped(kind,added.to_bits())})
+    }
     pub fn for_vehicle(kind:super::vehicle_profile::VehicleKind)->Self {
         use super::vehicle_profile::VehicleKind;match kind {
             VehicleKind::Ms1=>Self::Ms1,
@@ -41,6 +50,7 @@ impl Profile {
         Self::Fv215b183=>"0e9eb47ba39b53592e1f7de6a302521ea8252bdb616df0d8f5dc10d2ab28b516",
         Self::WtE100128=>"85c810a944828d23d42ea8691142d16dc1cfb1c73156a6c7b7f11723d4dfd777",
         Self::Generated(id)=>&super::generated_vehicles::entry(id).qualified_sha256,
+        Self::Equipped(kind,_)=>Self::for_vehicle(kind).sha(),
     }}
     pub fn mass(self)->f32 {match self {
         Self::Ms1=>4691.0,
@@ -51,6 +61,7 @@ impl Profile {
         Self::Fv215b183=>60000.0,
         Self::WtE100128=>100000.0,
         Self::Generated(id)=>super::generated_vehicles::entry(id).mass_kg as f32,
+        Self::Equipped(kind,mass)=>Self::for_vehicle(kind).mass()+f32::from_bits(mass),
     }}
     pub fn half(self)->[f32;3] {if let Self::Generated(id)=self{
         let h=&super::generated_vehicles::entry(id).physics["body_half_extents"];
@@ -64,8 +75,17 @@ impl Profile {
         Self::Fv215b183=>[1071931720, 1059939242, 1080605838],
         Self::WtE100128=>[1070290874, 1060339020, 1082354210],
         Self::Generated(_)=>unreachable!("returned above"),
+        Self::Equipped(kind,_)=>return Self::for_vehicle(kind).half(),
     }.map(f32::from_bits)}
     pub fn binding(self)->BodyBinding {
+        if let Self::Equipped(kind,_)=self {
+            let base=Self::for_vehicle(kind);
+            let total=self.mass();
+            let scale=base.mass()/total;
+            let binding=base.binding();
+            return BodyBinding{inverse_mass:1./total,principal:binding.principal.map(|axis|axis*scale),
+                inertia_rotation:binding.inertia_rotation};
+        }
         let (u,p,q)=match self {
             Self::Generated(id)=>{let e=super::generated_vehicles::entry(id);(e.inverse_mass_bits,e.principal_inverse_bits,e.inertia_rotation_bits)},
             Self::Ms1=>(962561921,[957270281, 957988763, 975566011],[1060439283, 1060439283, 0, 0]),
@@ -75,6 +95,7 @@ impl Profile {
             Self::T3485=>(939627237,[924265041, 925539494, 943103976],[1060439283, 1060439283, 0, 0]),
             Self::Fv215b183=>(931909477,[910983497, 913652340, 929452436],[1060439283, 1060439283, 0, 0]),
             Self::WtE100128=>(925353388,[902802560, 904396031, 925297667],[1060439283, 1060439283, 0, 0]),
+            Self::Equipped(..)=>unreachable!("returned above"),
         };
         BodyBinding{inverse_mass:f32::from_bits(u),principal:p.map(f32::from_bits),inertia_rotation:q.map(f32::from_bits)}
     }

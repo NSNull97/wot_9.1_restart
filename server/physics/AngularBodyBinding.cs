@@ -9,6 +9,7 @@ namespace MapDrive;
 // Neither a mass match nor this lookup authenticates a foreign loadout.
 internal sealed class AngularBodyBinding
 {
+    public const float MaxEquipmentMassKg = 5000;
     public string Kind { get; }
     public string ProfileSha256 { get; }
     public float MassKg { get; }
@@ -67,6 +68,24 @@ internal sealed class AngularBodyBinding
             throw new InvalidDataException("stock native binding bounds");
         Kind=kind;ProfileSha256=profileHash;MassKg=massKg;HalfExtents=half;InverseMass=inverseMass;
         PrincipalInverse=principal;InertiaRotation=rotation;
+    }
+    private AngularBodyBinding(AngularBodyBinding source, float massKg)
+    {
+        Kind = source.Kind;
+        ProfileSha256 = source.ProfileSha256;
+        HalfExtents = source.HalfExtents;
+        InertiaRotation = source.InertiaRotation;
+        MassKg = massKg;
+        InverseMass = 1f / massKg;
+        // Keep the qualified hull shape and distribute equipment mass across
+        // that same tensor. Coordinates for individual items are unavailable.
+        PrincipalInverse = source.PrincipalInverse * (source.MassKg / massKg);
+    }
+    public AngularBodyBinding WithEquipmentMass(float extraKg)
+    {
+        if (!float.IsFinite(extraKg) || extraKg < 0 || extraKg > MaxEquipmentMassKg || MassKg + extraKg > 200000)
+            throw new InvalidDataException("battle equipment mass");
+        return extraKg == 0 ? this : new AngularBodyBinding(this, MassKg + extraKg);
     }
     static bool SameNumeric(JsonElement a,JsonElement b)
     {

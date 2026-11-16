@@ -172,7 +172,21 @@ class BattleHost(object):
     def add(self, attach, detach, manager):
         if self.manager is None:
             manager.onInitBattleGUI += self.created
-            manager.onDestroyBattleGUI += self.destroyed
+            try:
+                manager.onDestroyBattleGUI += self.destroyed
+            except Exception:
+                # An event implementation may raise either before or after it
+                # registered the handler. Undo both without leaving a dangling
+                # created() callback on a host whose manager is still None.
+                try:
+                    try:
+                        manager.onDestroyBattleGUI -= self.destroyed
+                    except ValueError:
+                        # The failing subscription did not add its handler.
+                        pass
+                finally:
+                    manager.onInitBattleGUI -= self.created
+                raise
             self.manager = manager
         self.listeners.append((attach, detach))
         if self.manager.battleWindow is not None:

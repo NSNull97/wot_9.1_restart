@@ -166,8 +166,10 @@ class ResearchProjectionSource(BarracksRecruitmentProjectionSource):
         return files
 
 
-def update_delta(catalog, before, after, wire_revision, layouts=None, shell_depot=None):
-    return encode(delta_tree(catalog, before, after, wire_revision, layouts, shell_depot), MAX_UPDATE)
+def update_delta(catalog, before, after, wire_revision, layouts=None, shell_depot=None, *, artefacts=None,
+                 historical_device_order=False):
+    return encode(delta_tree(catalog, before, after, wire_revision, layouts, shell_depot, artefacts=artefacts,
+                             historical_device_order=historical_device_order), MAX_UPDATE)
 
 
 def _merge(base, part):
@@ -203,7 +205,8 @@ def chained_updates(first, parts, wire_revision, maximum):
     return updates
 
 
-def delta_tree(catalog, before, after, wire_revision, layouts=None, shell_depot=None):
+def delta_tree(catalog, before, after, wire_revision, layouts=None, shell_depot=None, *, artefacts=None,
+               historical_device_order=False):
     """``layouts`` (CONTENT-0 4, the pool store): {native: (shells, shellsLayout)} of the vehicles mounted on their
     turret x gun pair's mount; a changed pair then advertises that mount's layout instead of nothing."""
     require(type(wire_revision) is int and 1 <= wire_revision < 2**31 - 1)
@@ -224,7 +227,12 @@ def delta_tree(catalog, before, after, wire_revision, layouts=None, shell_depot=
         if native not in by_id:
             for key, value in garage_record(catalog, vehicle).items(): inv.setdefault(1, {}).setdefault(key, {})[native] = value
         elif vehicle["modules"] != by_id[native]["modules"]:
-            inv.setdefault(1, {}).setdefault("compDescr", {})[native] = descriptor(catalog, vehicle)
+            compact = descriptor(catalog, vehicle)
+            gear = artefacts["vehicles"].get(vehicle["vehicle_inventory_id"]) if artefacts else None
+            if gear and any(gear["devices"]):
+                from content0_equipment_store import installed_descriptor
+                compact = installed_descriptor(compact, gear["devices"], historical_device_order=historical_device_order)
+            inv.setdefault(1, {}).setdefault("compDescr", {})[native] = compact
             if vehicle["modules"]["turret"] != by_id[native]["modules"]["turret"]:
                 inv[1].setdefault("repair", {})[native] = garage_record(catalog, vehicle)["repair"]
             if any(vehicle["modules"][k] != by_id[native]["modules"][k] for k in ("turret", "gun")):

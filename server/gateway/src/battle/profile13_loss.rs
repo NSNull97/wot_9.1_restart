@@ -57,11 +57,7 @@ impl crate::bw_wire::Wire for FrozenLoss {
     fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{base:W::get(bw_i)?,policy_sha256:W::get(bw_i)?,sha256:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
-fn base_value(f:&Frozen)->Value{serde_json::json!({"kind":f.kind.label(),"descriptor_hex":f.descriptor.iter().map(|b|format!("{b:02x}")).collect::<String>(),
-    "native_inventory_id":f.native_inventory_id,"vehicle_inventory_id":f.vehicle_inventory_id,"max_hp":f.max_hp,"crew_ids":f.crew_ids,"capacity":f.capacity,
-    "initial_shell_compact_id":f.initial_shell_compact_id,"ammunition":f.ammunition.iter().filter(|r|r.shell_compact_id!=0).map(|r|serde_json::json!({"shell_definition_id":r.shell_definition_id,
-        "shell_compact_id":r.shell_compact_id,"family":r.family.source_name(),"count":r.count})).collect::<Vec<_>>()})}
-fn wrapper_value(f:&FrozenLoss)->Value{serde_json::json!({"policy_sha256":f.policy_sha256,"loadout":base_value(&f.base),"loadout_sha256":f.base.sha256})}
+fn wrapper_value(f:&FrozenLoss)->Value{serde_json::json!({"policy_sha256":f.policy_sha256,"loadout":f.base.value(),"loadout_sha256":f.base.sha256})}
 impl FrozenLoss{pub fn validate_owned(&self,account:&str)->io::Result<()>{if parse_frozen(&wrapper_value(self),account,&self.sha256)?!=*self{return Err(bad("changed frozen wrapper"));}Ok(())}}
 pub fn parse_frozen(v:&Value,account:&str,sha:&str)->io::Result<FrozenLoss>{keys(v,&["policy_sha256","loadout","loadout_sha256"])?;
     if text(v,"policy_sha256")?!=POLICY_SHA256||digest(v)?!=sha{return Err(bad("frozen spending policy/hash"));}
@@ -86,7 +82,9 @@ pub fn encode_request(c:&Context,r:&Request)->io::Result<Vec<u8>>{context(c)?;
         for a in [remaining_ammunition,fired_ammunition,lost_ammunition]{rows(&rows_value(a))?;}
         if let Some(e)=loss_event{e.validate()?;}
         let state=base::bounded_json(terminal_state_json.as_bytes(),8192)?;
-        keys(&state,&["policy_revision","roster_size","crew_active","crew","devices","fire","death"])?;
+        if !base::terminal_consumables(&state)?.is_empty() && *reason==FinishReason::Cancelled {
+            return Err(bad("cancelled battle consumed equipment"));
+        }
         v["reservation_id"]=reservation_id.clone().into();v["remaining_ammunition"]=rows_value(remaining_ammunition);
         v["fired_ammunition"]=rows_value(fired_ammunition);v["lost_ammunition"]=rows_value(lost_ammunition);v["loss_event"]=event_value(*loss_event);
         v["terminal_hp"]=(*terminal_hp).into();v["terminal_state_json"]=serde_json::to_string(&state).map_err(|_|bad("terminal serialization"))?.into();v["reason"]=reason.name().into();

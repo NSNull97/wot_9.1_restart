@@ -42,7 +42,7 @@ pub(super) fn detonate(world:&mut World){
     world.install_detonation_publication_fixture(ammo_detonation::Input{shot:sequence,target:1,attacker:0,tick:1000,
         device_sequence:3,device_before:12,device_after:0,health_before:hp as u16,residual_hp:18,counts:[2,3,4],
         kind:vehicle_profile::VehicleKind::Ms1,joint:ammo_detonation::JointPose{position:[joint[0],joint[1]+1.,joint[2]],direction:[0.;3]},from_fire:false}).unwrap();
-    world.damage_events.push(model::DamageRecord{sequence,tick:1000,attacker:0,target:1,shot:sequence,reason:0,
+    world.damage_events.push(model::DamageRecord{spotting:None,sequence,tick:1000,attacker:0,target:1,shot:sequence,reason:0,
         health_before:hp,health_after:0,crew_before:true,crew_after:false,direct:true,pierced:true});
 }
 pub(super) fn send_pending(s:&mut Session,now:Instant)->Vec<u8>{

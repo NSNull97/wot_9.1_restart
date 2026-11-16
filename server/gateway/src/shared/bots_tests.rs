@@ -74,6 +74,116 @@ fn bot01_fill_is_synthetic_atomic_and_follows_the_native_places(){
 }
 
 #[test]
+fn content0_s5a_ready_bot_has_direct_sight_and_shares_until_inactive_retention_expires(){
+    let now=Instant::now();let mut w=fixture(1,4,1,now);w.fill_bots().unwrap();
+    // 0 and 2 are allies. The human is outside view range; allied bot 2 sees
+    // enemy 1. Bot sessions are server-reserved identifiers, not native peers.
+    place(&mut w,0,[0.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);
+    place(&mut w,2,[400.,0.,0.],0.);place(&mut w,3,[-400.,0.,-400.],0.);
+    let at=begin(&mut w,now);w.refresh_original_spotting(at).unwrap();
+    assert_eq!(w.actors[2].session,Some(SESSION_BASE+2));
+    assert!(!w.own_sightings(0).unwrap()[1]);assert!(w.own_sightings(2).unwrap()[1]);
+    assert!(w.desired_visibility(0).unwrap()[1],"allied bot shares the actual direct sighting");
+    for mode in 0..3 {
+        let mut copy=w.clone();match mode {
+            0=>copy.actors[2].ready=false,
+            1=>copy.actors[2].health=0,
+            _=>copy.actors[2].session=None,
+        }
+        copy.refresh_original_spotting(at+Duration::from_millis(5100)).unwrap();
+        assert!(!copy.own_sightings(2).unwrap()[1],"inactive bot retains no direct sight, mode={mode}");
+        assert!(!copy.desired_visibility(0).unwrap()[1],"old team sight expires, mode={mode}");
+    }
+}
+
+#[test]
+fn content0_s5a_fixed_scout_preserves_bot_health_and_never_drives(){
+    use super::super::super::fixed_scout::{Scenario,Seat};
+    let malinovka=MapId::from_asset("02_malinovka").unwrap();
+    let prokhorovka=MapId::from_asset("05_prohorovka").unwrap();
+    for (map,other) in [(malinovka,prokhorovka),(prokhorovka,malinovka)] {
+        let now=Instant::now();let mut w=fixture_on(map,1,4,1,now);
+        assert!(w.fixed_scout().is_none(),"default off");
+        let seats=(0..4).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
+        let scenario=Scenario{map,seats,events:vec![]};
+        assert!(w.enable_fixed_scout(Scenario{map:other,..scenario.clone()}).is_err());
+        w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();
+        assert!(w.actors.iter().skip(1).all(|a|a.vehicle_kind()==VehicleKind::Ms1&&a.health==VehicleKind::Ms1.max_health()));
+        assert_eq!(w.actors[1].optional_devices(),[super::super::super::camouflage::NET,0,0]);
+        assert_eq!(w.actors[2].optional_devices(),[0;3]);
+        assert!(w.actors.iter().skip(1).all(|a|a.owned_v2.is_none()),"lab setup does not forge owned loadouts");
+        assert!(w.actors[1].equipment_mass()>w.actors[2].equipment_mass());
+        assert!(!w.bot_turret_test());let at=begin(&mut w,now);
+        for k in 1..=10 {assert_eq!(w.drive_bots(at+STEP*k).unwrap(),0);}
+        assert!(w.actors.iter().skip(1).all(|a|a.input==Input::STOP&&a.health==VehicleKind::Ms1.max_health()));
+        assert_eq!((0..4).map(|slot|w.team(slot).unwrap()).collect::<Vec<_>>(),vec![1,2,1,2]);
+    }
+}
+
+#[test]
+fn content0_s5a_fixed_scout_script_uses_authoritative_input_and_fire_once(){
+    use super::super::super::fixed_scout::{Seat,Scenario,Event};
+    let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,4,1,now);
+    let seats=(0..4).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:slot==1,crew_percent:(slot!=0).then_some(100)}).collect();
+    let events=vec![Event{tick:1,slot:1,action:1,target:None},Event{tick:3,slot:1,action:4,target:None},Event{tick:4,slot:1,action:2,target:None},Event{tick:5,slot:1,action:4,target:None},Event{tick:6,slot:1,action:5,target:None}];
+    let scenario=Scenario{map:MapId::from_asset("02_malinovka").unwrap(),seats,events};scenario.validate().unwrap();
+    let mut invalid=scenario.clone();invalid.events.remove(1);assert!(invalid.validate().is_err());
+    let mut invalid=scenario.clone();invalid.events[0].slot=0;assert!(invalid.validate().is_err());
+    w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();let at=begin(&mut w,now);
+    assert_eq!(w.drive_bots(at).unwrap(),0); // establish battle origin
+    for k in 1..=6 {w.tick+=1;let t=at+STEP*k;let count=w.drive_bots(t).unwrap();
+        assert_eq!(count,if k==2{0}else{1});assert_eq!(w.drive_bots(t).unwrap(),0,"never replay same tick");
+        if k==1{assert_eq!(w.actors[1].input.throttle,1);}if k==4{assert_eq!(w.actors[1].input.steer,-1);}
+        if k==3||k==5{assert_eq!(w.actors[1].input,Input::STOP);}
+    }
+    assert_eq!(w.bot_shots(),1);assert!(w.shots.iter().any(|s|s.slot==1));
+}
+
+#[test]
+fn content0_s5a_shared_only_script_uses_committed_sight_and_server_pose(){
+    use super::super::super::fixed_scout::{Seat,Scenario,Event};
+    let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,6,1,now);
+    let seats=(0..6).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:false,crew_percent:(slot!=0).then_some(100)}).collect();
+    let events=vec![Event{tick:1,slot:4,action:6,target:Some(1)},Event{tick:31,slot:4,action:7,target:Some(1)}];
+    let scenario=Scenario{map:MapId::from_asset("02_malinovka").unwrap(),seats,events};scenario.validate().unwrap();
+    let mut invalid=scenario.clone();invalid.events[0].target=Some(2);assert!(invalid.validate().is_err(),"cannot aim at ally");
+    let mut invalid=scenario.clone();invalid.events[1].tick=30;assert!(invalid.validate().is_err(),"requires three seconds after aim");
+    let mut invalid=scenario.clone();invalid.events[1].target=Some(3);assert!(invalid.validate().is_err(),"fire target must equal aimed target");
+    let mut invalid=scenario.clone();invalid.events.push(Event{tick:32,slot:4,action:7,target:Some(1)});assert!(invalid.validate().is_err(),"one fire per committed aim");
+    w.enable_fixed_scout(scenario).unwrap();w.fill_bots().unwrap();
+    place(&mut w,0,[400.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);place(&mut w,2,[420.,0.,0.],0.);
+    place(&mut w,3,[-400.,0.,-400.],0.);place(&mut w,4,[0.,0.,0.],0.);place(&mut w,5,[-300.,0.,-400.],0.);
+    let at=begin(&mut w,now);w.refresh_original_spotting(at).unwrap();
+    assert!(!w.own_sightings(4).unwrap()[1]);assert!(w.desired_visibility(4).unwrap()[1]);
+    assert_eq!(w.drive_bots(at).unwrap(),0);w.tick+=1;assert_eq!(w.drive_bots(at+STEP).unwrap(),1);
+    assert_eq!(w.actors[4].aim.intent,aim::Intent::Point([500.,1.,0.]),"uses current committed server target pose");
+    assert_eq!(w.drive_bots(at+STEP).unwrap(),0,"same tick cannot replay aim");
+    w.tick+=30;assert_eq!(w.drive_bots(at+STEP*31).unwrap(),1);assert_eq!(w.bot_shots(),1);
+    assert_eq!(w.drive_bots(at+STEP*31).unwrap(),0,"same tick cannot replay fire");
+}
+
+#[test]
+fn content0_s5a_shared_only_script_refuses_direct_or_missing_team_sight(){
+    use super::super::super::fixed_scout::{Seat,Scenario,Event};
+    for mode in 0..3 {
+        let now=Instant::now();let mut w=fixture_on(MapId::from_asset("02_malinovka").unwrap(),1,6,1,now);
+        let seats=(0..6).map(|slot|Seat{kind:(slot!=0).then_some(VehicleKind::Ms1),position:[slot as f32*20.,0.,0.],yaw:0.,net:false,crew_percent:(slot!=0).then_some(100)}).collect();
+        let events=vec![Event{tick:1,slot:4,action:6,target:Some(1)},Event{tick:31,slot:4,action:7,target:Some(1)}];
+        w.enable_fixed_scout(Scenario{map:MapId::from_asset("02_malinovka").unwrap(),seats,events}).unwrap();w.fill_bots().unwrap();
+        place(&mut w,0,[400.,0.,0.],0.);place(&mut w,1,[500.,0.,0.],0.);place(&mut w,2,[420.,0.,0.],0.);
+        place(&mut w,3,[-400.,0.,-400.],0.);place(&mut w,4,if mode==0{[450.,0.,0.]}else{[0.,0.,0.]},0.);place(&mut w,5,[-300.,0.,-400.],0.);
+        if mode==1 {place(&mut w,0,[0.,0.,-300.],0.);place(&mut w,2,[0.,0.,300.],0.);}
+        let at=begin(&mut w,now);if mode!=2{w.refresh_original_spotting(at).unwrap();}
+        w.drive_bots(at).unwrap();w.tick+=1;assert_eq!(w.drive_bots(at+STEP).unwrap(),0,"mode {mode} rejects aim");
+        assert!(matches!(w.actors[4].aim.intent,aim::Intent::Hold{..}));
+        // Even if team visibility subsequently becomes valid, a skipped aim
+        // cannot authorize the scheduled shared shot.
+        place(&mut w,0,[400.,0.,0.],0.);place(&mut w,4,[0.,0.,0.],0.);w.refresh_original_spotting(at+STEP*2).unwrap();
+        w.tick+=30;assert_eq!(w.drive_bots(at+STEP*31).unwrap(),0);assert_eq!(w.bot_shots(),0);
+    }
+}
+
+#[test]
 fn bot01_plan_and_enable_are_bounded(){
     let now=Instant::now();
     for plan in [Plan{human_places:0,seed:0,kinds:vec![VehicleKind::Ms1]},Plan{human_places:6,seed:0,kinds:vec![VehicleKind::Ms1]},
@@ -221,31 +331,70 @@ fn bot01_replay_is_deterministic_and_seed_sensitive(){
 }
 
 #[test]
-fn bot01_mixed_ammo_bot_has_a_stock_lab_loadout_and_shoots_through_the_typed_ledger(){
-    let now=Instant::now();let map=MapId::Prohorovka;
-    let mut w=World::new_for_roster(ID,now,map,2).unwrap();
-    let mut rules=lifecycle::Rules::for_map(map).unwrap();rules.prebattle_ms=1000;w.enable_lifecycle(rules).unwrap();
-    w.bind_geometry(Arc::new(geometry::tests::bundle())).unwrap();
-    w.terrain=Some(Arc::new(terrain::tests::fixture_for_map(map)));
+fn bot01_mixed_ammo_bot_rotates_actual_shells_through_the_typed_ledger(){
+    let now=Instant::now();
+    let mut w=prepared(MapId::Karelia,1,2,9,now);
     w.enable_mixed_ammo().unwrap();
-    for slot in 0..2{
-        let identity=Identity{account:format!("bot01:{slot}"),database:DATABASE_BASE+slot as i32,name:format!("Bot-{:02}",slot+1)};
-        assert_eq!(w.attach_bot_actor(identity,SESSION_BASE+slot as u32,VehicleKind::Ms1,None).unwrap(),slot);
-        w.actors[slot].bot=Some(slot as u8);
-    }
+    let (identity,loadout)=super::super::tests::profile13_loadout(VehicleKind::Ms1,0,7);
+    w.attach_lab_owned_for_test(identity,1,&loadout).unwrap();
+    w.fill_bots().unwrap();
     let source=crate::p06t_shells091::profile(VehicleKind::Ms1.mount());
-    let typed=w.actors[0].fire.typed().expect("typed ledger");
-    assert_eq!(typed.counts(),[source.capacity,0,0]);assert_eq!(typed.current(),source.shots[0]);
-    assert!(w.actors[0].devices.is_some()&&w.actors[0].owned_v2.is_none(),"devices as a player, no owned admission");
+    let typed=w.actors[1].fire.typed().expect("typed ledger");
+    let rack=bot_rack(source);
+    assert_eq!(rack,[source.capacity-2*(source.capacity/5),source.capacity/5,source.capacity/5]);
+    assert_eq!(typed.counts(),rack);assert_eq!(typed.current(),source.shots[1]);
+    assert!(w.actors[1].devices.is_some()&&w.actors[1].owned_v2.is_none(),"devices as a player, no owned admission");
     assert!(w.mixed_ammo(),"world mode restored");
-    place(&mut w,0,[0.,0.,0.],0.);place(&mut w,1,[0.,0.,200.],std::f32::consts::PI);
-    w.start(now).unwrap();w.actors[0].ready=true;w.actors[1].ready=true;w.advance_lifecycle(now).unwrap();
-    let at=begin_from(&mut w,now);
-    let outcomes=w.apply(0,SESSION_BASE,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
-    assert!(matches!(outcomes[0],fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{..})),"{outcomes:?}");
-    assert_eq!(w.actors[0].fire.typed().unwrap().counts()[0],source.capacity-1);
+    place(&mut w,0,[0.,0.,150.],0.);place(&mut w,1,[0.,0.,0.],0.);
+    let at=begin(&mut w,now);
+    let mut fired=Vec::new();
+    for k in 1..=200u32 {
+        let tick_at=at+STEP*k;
+        let before=w.shots.len();
+        w.drive_bots(tick_at).unwrap();
+        if w.shots.len()>before {
+            let projectile=w.projectiles.last().unwrap();
+            assert_eq!(projectile.slot,1);
+            fired.push(projectile.shell.expect("typed projectile"));
+            if fired.len()==3 { break; }
+        }
+        w.advance(tick_at).unwrap();w.refresh_original_spotting(tick_at).unwrap();w.advance_lifecycle(tick_at).unwrap();
+    }
+    assert_eq!(fired,[source.shots[1],source.shots[2],source.shots[0]]);
+    assert!(fired[0].premium_gold_flag);
+    assert_eq!(fired[1].family,crate::p06t_shells091::Family::HighExplosive);
+    assert_eq!(w.actors[1].fire.typed().unwrap().counts(),rack.map(|n|n-1));
     // The bot never gained an owned terminal: writers have nothing to read.
-    assert!(w.terminal_state_json(0).is_err());
+    assert!(w.terminal_state_json(1).is_err());
+}
+
+#[test]
+fn bot01_rack_does_not_invent_a_shell_or_switch_during_an_open_burst_clip() {
+    let source = crate::p06t_shells091::profile(VehicleKind::Ms1.mount());
+    let mut single = *source;
+    single.shots[1].compact_descr = 0;
+    single.shots[2].compact_descr = 0;
+    assert_eq!(bot_rack(&single), [source.capacity, 0, 0]);
+    let mut sparse = *source;
+    sparse.shots[1].compact_descr = 0;
+    assert_eq!(bot_rack(&sparse), [source.capacity - source.capacity / 5, 0, source.capacity / 5]);
+    sparse.capacity = 1;
+    assert_eq!(bot_rack(&sparse), [1, 0, 0]);
+
+    let automatic = crate::p06t_armament091::test_auto(4, 2, 60., 10., 40);
+    crate::p06t_armament091::test_with_source(automatic, || {
+        let mut state = armament::State::new(automatic.mount, [24, 8, 8], source.shots[0].compact_descr).unwrap();
+        assert_eq!(state.clip(), 4);
+        let now = Instant::now();
+        assert!(bot_next_shell(&automatic, &state).is_none());
+        state.apply(&[armament::Command::Shoot], now).unwrap();
+        assert!(state.burst_pending());
+        state.next_burst_shot(now + std::time::Duration::from_secs(1)).unwrap().unwrap();
+        assert!(state.advance(now + std::time::Duration::from_secs(2)));
+        assert_eq!(state.clip(), 2);
+        assert_eq!(bot_next_shell(&automatic, &state),
+            Some(Command::Armament(armament::Command::Select(armament::Selection::Next, source.shots[1].compact_descr))));
+    });
 }
 
 #[test]
@@ -255,6 +404,10 @@ fn turphys01_turret_test_bots_are_passive_targets_with_stepped_racks_and_a_one_h
     assert!(w.enable_bot_turret_test().is_err(),"needs mixed ammo and ammo detonation");
     w.enable_mixed_ammo().unwrap();w.enable_ammo_detonation().unwrap();
     assert!(!w.bot_turret_test());w.enable_bot_turret_test().unwrap();assert!(w.bot_turret_test());
+    let t92 = VehicleKind::from_owned_label("usa-T92").unwrap();
+    let plan = Plan { human_places: 1, kinds: vec![t92], seed: 3 };
+    plan.validate(6).unwrap();
+    assert_eq!(w.bot_roster(&plan, None, true).unwrap(), vec![t92; 5]);
     let capacity=crate::p06t_shells091::profile(VehicleKind::Ms1.mount()).capacity;
     let steps:Vec<u16>=(0..5).map(|k|turret_test_rack(VehicleKind::Ms1,k)).collect();
     assert_eq!(steps,vec![1,capacity/4,capacity/2,capacity,1],"one shell, a quarter, a half, full, again");
@@ -265,7 +418,8 @@ fn turphys01_turret_test_bots_are_passive_targets_with_stepped_racks_and_a_one_h
     }
     assert_eq!(w.actors[0].fire.typed().unwrap().counts(),[steps[1],0,0]);
     assert_eq!(w.actors[0].devices.as_ref().unwrap().health()[bay],1,"test bot: 1 HP ammo bay");
-    assert_eq!(w.actors[1].fire.typed().unwrap().counts(),[capacity,0,0],"an ordinary bot keeps the full rack");
+    assert_eq!(w.actors[1].fire.typed().unwrap().counts(),bot_rack(crate::p06t_shells091::profile(VehicleKind::Ms1.mount())),
+        "an ordinary bot keeps a full mixed rack");
     assert!(w.actors[1].devices.as_ref().unwrap().health()[bay]>1,"an ordinary bot keeps its ammo bay");
     // The rack path destroys the weakened bay on any module hit that reaches it.
     let mut state=crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(VehicleKind::Ms1).unwrap()).unwrap();
@@ -340,7 +494,7 @@ fn bot01_generated_kind_bot_seats_typed_and_shoots(){
         let a=&w.actors[slot];
         assert_eq!(a.vehicle_kind(),kv3);assert_eq!(a.health,kv3.max_health());
         let typed=a.fire.typed().expect("typed gun");
-        assert_eq!((typed.mount(),typed.counts()),(kv3.mount(),[source.capacity,0,0]));
+        assert_eq!((typed.mount(),typed.counts()),(kv3.mount(),bot_rack(source)));
         let devices=a.devices.as_ref().unwrap();
         assert_eq!((devices.policy_version(),devices.profile()),(crate::p06t_device_state::PolicyVersion::V1,crate::p06t_device_caps::Profile::for_owned(kv3).unwrap()));
         assert!(a.owned_v2.is_none(),"no owned admission");
@@ -350,12 +504,105 @@ fn bot01_generated_kind_bot_seats_typed_and_shoots(){
     let at=begin_from(&mut w,now);
     let outcomes=w.apply(1,SESSION_BASE+1,&[Command::Fire(fire::Command::Shoot)],at).unwrap();
     assert!(matches!(outcomes[0],fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot{..})),"{outcomes:?}");
-    assert_eq!(w.actors[1].fire.typed().unwrap().counts()[0],source.capacity-1);
+    assert_eq!(w.actors[1].fire.ammo(),source.capacity-1);
 }
 
 fn wall_box(half:f32,z:f32)->Arc<terrain::Terrain>{
     let a=[[-half,-150.,z],[half,-150.,z],[half,150.,z]];let b=[[-half,-150.,z],[half,150.,z],[-half,150.,z]];
     Arc::new(terrain::tests::fixture_for_map(MapId::Karelia).with_obstacles(Arc::new(obstacles::tests::fixture(vec![a,b]))).unwrap())
+}
+
+#[cfg(feature = "test_lab")]
+#[test]
+fn artillery_bots_respect_the_actual_native_teams_and_tiers() {
+    let now = Instant::now();
+    let mut w = fixture(2, 6, 7, now);
+    w.set_test_teams(&[2, 2, 1, 1, 1, 2]);
+    let spg = VehicleKind::from_owned_label("germany-Grille").unwrap();
+    let regular = VehicleKind::from_owned_label("germany-PzIV").unwrap();
+    let plan = Plan { human_places: 2, seed: 7, kinds: vec![regular, spg] };
+    let roster = |w: &World| w.bot_roster(&plan, Some((5, 5)), false).unwrap();
+    assert_eq!(roster(&w), [regular, regular, spg, spg]);
+    w.actors[0].vehicle_kind = spg;
+    assert_eq!(roster(&w), [regular, regular, spg, regular]);
+    w.actors[1].vehicle_kind = spg;
+    assert_eq!(roster(&w), [regular; 4]);
+    assert_eq!(w.bot_roster(&plan, Some((5, 5)), true).unwrap(), [regular; 4]);
+    assert_eq!(w.bot_roster(&plan, None, false).unwrap(), [spg, regular, spg, regular]);
+    let plan = Plan { kinds: vec![VehicleKind::Ms1, spg], ..plan };
+    assert_eq!(w.bot_roster(&plan, Some((1, 1)), false).unwrap(), [VehicleKind::Ms1; 4]);
+}
+
+#[cfg(feature = "test_lab")]
+#[test]
+#[ignore = "requires local #717 Grille and Pz IV geometry bundles"]
+fn artillery_bot_uses_a_team_spot_and_its_loaded_shell_over_a_wall() {
+    let root = std::path::PathBuf::from(std::env::var_os("WOT091_ROOT").expect("WOT091_ROOT must point to the local #717 research checkout"));
+    let now = Instant::now();
+    let mut w = prepared(MapId::Karelia, 2, 4, 7, now);
+    let spg = VehicleKind::from_owned_label("germany-Grille").unwrap();
+    let regular = VehicleKind::from_owned_label("germany-PzIV").unwrap();
+    for kind in [spg, regular] {
+        let path = root.join("local/evidence/20261112-c024-tl/bundles").join(format!("{}.json", kind.label()));
+        w.bind_geometry(Arc::new(geometry::Bundle::load(&root.join("local"), &path).unwrap())).unwrap();
+    }
+    w.bots = None;
+    w.enable_mixed_ammo().unwrap();
+    let kinds = vec![regular, spg];
+    w.enable_bots(Plan { human_places: 2, seed: 7, kinds: kinds.clone() }).unwrap();
+    w.set_match_roster(2, kinds, (5, 5)).unwrap();
+    for slot in 0..2 {
+        let identity = Identity { account: format!("account{slot}"), database: slot as i32 + 1, name: format!("native{slot}") };
+        assert_eq!(w.attach_native_stand_in(identity, slot as u32 + 1, regular).unwrap(), slot);
+    }
+    w.fill_bots().unwrap();
+    assert_eq!(w.actors[3].vehicle_kind(), spg);
+
+    let a = [[-60., -100., 240.], [60., -100., 240.], [60., 20., 240.]];
+    let b = [[-60., -100., 240.], [60., 20., 240.], [-60., 20., 240.]];
+    w.terrain = Some(Arc::new(terrain::tests::fixture_for_map(MapId::Karelia)
+        .with_obstacles(Arc::new(obstacles::tests::fixture(vec![a, b]))).unwrap()));
+    place(&mut w, 0, [0., 0., 480.], 0.);
+    place(&mut w, 1, [35., 0., 415.], 0.);
+    place(&mut w, 2, [720., 0., 610.], 0.);
+    place(&mut w, 3, [0., 0., 0.], 0.);
+    let at = begin(&mut w, now);
+    assert!(!w.bot_line_clear(&w.actors[3], [0., 1.2, 480.]).unwrap());
+    w.actors[2].ready = false;
+    w.actors[1].ready = false;
+    w.refresh_original_spotting(at).unwrap();
+    assert!(!w.original_spotting.as_ref().unwrap().desired(3).unwrap()[0]);
+    for step in 1..=10 { tick(&mut w, at + STEP * step); }
+    assert!(w.shots.is_empty());
+
+    w.actors[1].ready = true;
+    let loaded = w.actors[3].fire.typed().unwrap().current();
+    let mut fired = None;
+    for step in 11..=120 {
+        let tick_at = at + STEP * step;
+        w.drive_bots(tick_at).unwrap();
+        if let Some(shot) = w.projectiles.last() { fired = Some(*shot); break; }
+        w.advance(tick_at).unwrap();
+        w.refresh_original_spotting(tick_at).unwrap();
+        w.advance_lifecycle(tick_at).unwrap();
+    }
+    let spotting = w.original_spotting.as_ref().unwrap();
+    assert!(spotting.desired(3).unwrap()[0]);
+    assert!(!spotting.direct(3).unwrap()[0]);
+    let shot = fired.expect("artillery fires on a team spot beyond regular engagement range");
+    assert_eq!(shot.slot, 3);
+    assert_eq!(shot.shell, Some(loaded));
+    assert_eq!(w.actors[3].position, [0.; 3]);
+    let goal = [0., 1.2, 480.];
+    let seconds = artillery_probe_seconds(&shot, goal).unwrap();
+    assert!(seconds > 2.);
+    assert!(artillery_probe_seconds(&shot, [0., 110., 480.]).is_none());
+    let middle = super::super::super::projectile::position_at(shot.origin, shot.velocity, shot.gravity, seconds / 2.);
+    place(&mut w, 1, [middle[0], middle[1] - 1.2, middle[2]], 0.);
+    assert!(!w.artillery_fire_line_safe(3, 0, goal, at, loaded).unwrap(), "ally intersects the arc");
+    place(&mut w, 1, [35., 0., 415.], 0.);
+    w.terrain = Some(wall_box(60., 240.));
+    assert!(!w.artillery_fire_line_safe(3, 0, goal, at, loaded).unwrap(), "wall intersects the arc");
 }
 /// Test motion for one vehicle (the LAB kinematics keep a body within 2 m of
 /// its origin): 8 m/s forward/back, 0.8 rad/s turn; `free=false` holds it in place.
@@ -621,4 +868,26 @@ fn a_bot_of_a_layered_battle_has_classic_modules(){
     };
     assert!(build(true).actors[0].devices.as_ref().unwrap().classic(),"layered battle");
     assert!(!build(false).actors[0].devices.as_ref().unwrap().classic(),"single-plate battle keeps the LAB rules");
+}
+
+#[cfg(feature = "test_lab")]
+#[test]
+fn bot_builds_use_the_same_compatible_top_configuration_in_every_battle() {
+    let now = Instant::now();
+    let mut world = fixture(1, 6, 9, now);
+    let matched = [VehicleKind::Ms1; 5];
+    let top = bot_top_loadouts().unwrap()["vehicle:ussr:MS-1"];
+    assert_ne!(top, VehicleKind::Ms1);
+    assert_eq!(build_resources::stock_of(top), Some(VehicleKind::Ms1));
+    assert_eq!(top.tier().unwrap(), VehicleKind::Ms1.tier().unwrap());
+    assert_eq!(top.generated().unwrap().required_suspension, None);
+    for battle in [1, 2, 32] {
+        world.id = battle;
+        let mut selected = matched;
+        world.with_bot_builds(&mut selected, |_, _| true).unwrap();
+        assert_eq!(selected, [top; 5]);
+    }
+    let mut no_files = matched;
+    world.with_bot_builds(&mut no_files, |_, _| false).unwrap();
+    assert_eq!(no_files, matched);
 }

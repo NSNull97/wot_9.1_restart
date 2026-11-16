@@ -7,7 +7,7 @@ use crate::{p06t_shells091::{self as source,Mount},p06t_device_caps::Profile,
     profile13_v2091 as v2};
 use sha2::{Digest,Sha256};
 
-fn actual_frozen_ap_zero()->(Identity,v2::Frozen) {
+pub(in crate::gateway091::shared) fn actual_frozen_ap_zero()->(Identity,v2::Frozen) {
     let bytes=include_bytes!("../../../../tests/fixtures/p06t-writer-vectors.json");
     assert_eq!(format!("{:x}",Sha256::digest(bytes)),"0e293febb5e3053e34f5b543c19aa2f7420918415b22595aaa4bb16e532b2c21");
     let vectors:serde_json::Value=serde_json::from_slice(bytes).unwrap();
@@ -61,11 +61,497 @@ fn actual_owner_world(now:Instant)->World {
     let mut world=base(now,low_ground());let (owner,frozen)=actual_frozen_ap_zero();
     world.attach_owned_v2(owner,1,&frozen).unwrap();lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);start(&mut world,now);world
 }
+pub(in crate::gateway091::shared) fn last_crew_pending(now:Instant)->World {
+    let mut w=actual_owner_world(now);
+    w.original_spotting=Some(super::super::spotting::State::new(super::super::spotting::Rules::selected().unwrap()).unwrap());
+    let extra=w.actors[0].clone();w.actors.push(extra);w.set_test_teams(&[1,2,1]);
+    w.actors[2].position=[10.,0.,20.];w.actors[2].origin=w.actors[2].position;
+    let shell=source::profile(Mount::Ms1Stock).shots[2];
+    w.actors[1].devices.as_mut().unwrap().apply_hits(&[device::ModuleHit{cause:device::Cause{shot:999,attacker_slot:0},
+        ordinal:0,at_ms:0,target:crate::p06t_lab_proxy::Target::Seat(0),shell,ignition_roll:0.9}],
+        device::Health{hp:90,max_hp:90,terminal:false}).unwrap();
+    w.actors[1].direction=[-std::f32::consts::PI,0.,0.];w.actors[1].yaw=-std::f32::consts::PI;
+    let target=w.actors[1].clone();let b=w.geometry_for(target.vehicle_kind()).unwrap().clone();
+    let query=b.explosion_contact(&target,[0.,1.,15.],16.,1,1,1000).unwrap().unwrap();
+    // The fixed aim intersects the fixture's real seat-1 proxy after penetration.
+    aim_at(&mut w,0,[query.endpoint[0]+0.25,query.endpoint[1]-0.2,query.endpoint[2]],now);
+    let at=now+Duration::from_secs(2);
+    // Build a committed scan with only observer 2 in direct range; restore the
+    // staged shooter's pose for this laboratory impact. No event is authored.
+    let p=w.actors[0].position;w.actors[0].position=[500.,0.,500.];w.refresh_original_spotting(at).unwrap();w.actors[0].position=p;
+    w.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();w
+}
+#[test]
+fn content0_s5a_last_crew_impact_rollback_is_atomic() {
+    let now=Instant::now();let mut w=last_crew_pending(now);
+    let row=DamageRecord{sequence:1,tick:1000,attacker:0,target:1,shot:1,reason:0,
+        health_before:90,health_after:90,crew_before:true,crew_after:true,direct:true,pierced:true,spotting:None};
+    w.damage_events=vec![row;MAX_DAMAGE_EVENTS].into();
+    let before=w.clone();assert!(w.advance(now+Duration::from_millis(2100)).is_err());
+    assert_eq!(w.actors,before.actors);assert_eq!(w.projectiles,before.projectiles);assert_eq!(w.contacts,before.contacts);
+    assert_eq!(w.damage_events,before.damage_events);assert_eq!(w.device_events,before.device_events);
+    assert_eq!(w.rng_draws,before.rng_draws);assert_eq!(w.rng_state,before.rng_state);assert_eq!(w.impact.events(),before.impact.events());
+    assert_eq!(w.tick,before.tick);assert_eq!(w.last,before.last);
+}
 fn aim_at(world:&mut World,slot:usize,point:[f32;3],base:Instant) {
     world.apply(slot,slot as u32+1,&[Command::Aim(aim::Intent::Point(point))],base).unwrap();
     for step in 1..=20 {world.advance(base+Duration::from_millis(step*100)).unwrap();}
 }
 fn current(world:&World,slot:usize)->source::Shell {world.actors[slot].fire.typed().unwrap().current()}
+
+#[test]
+fn content0_s5_fuel_and_regulator_use_frozen_loadout_and_are_authoritative() {
+    use crate::p06t_device_caps::Device;
+    let now=Instant::now();
+    let (owner,base_frozen)=actual_frozen_ap_zero();
+    let mut value=base_frozen.value();
+    value["artefacts"]=serde_json::json!({"optional_devices":[0,0,0],"consumables":[1787,v2::RPM_LIMITER,0]});
+    let parse=|value:&serde_json::Value| {
+        let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(value).unwrap()));
+        v2::parse_frozen(value,&owner.account,&digest)
+    };
+    let frozen=parse(&value).unwrap();
+    for id in [2043u16,2299,4347] {
+        let mut invalid=value.clone();
+        invalid["artefacts"]["consumables"][0]=id.into();
+        assert!(parse(&invalid).is_err(),"wrong nation {id}");
+    }
+    let mut invalid=value.clone();
+    invalid["artefacts"]["optional_devices"][0]=v2::GROUSERS.into();
+    assert!(parse(&invalid).is_err(),"MS-1 lacks the source grousers tag");
+    let mut world=base(now,low_ground());
+    world.enable_lifecycle(super::super::lifecycle::Rules {
+        prebattle_ms:1000,..super::super::lifecycle::Rules::prohorovka()
+    }).unwrap();
+    world.attach_owned_v2(owner,1,&frozen).unwrap();
+    lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);
+    start(&mut world,now);
+    let on=Command::ActivateEquipment{item:v2::RPM_LIMITER_ITEM,extra:1};
+    let off=Command::ActivateEquipment{item:v2::RPM_LIMITER_ITEM,extra:0};
+    let at=|ms|now+Duration::from_millis(ms);
+    let engine_hp=|w:&World|w.actors[0].devices.as_ref().unwrap().health()[Device::Engine as usize];
+    let stock_hp=engine_hp(&world);
+    world.advance_lifecycle(now).unwrap();
+    world.apply(0,1,&[on],at(100)).unwrap();
+    assert!(!world.actors[0].rpm_limiter_active());
+    assert_eq!(world.actors[0].engine_power_ceiling_basis_points(),11550);
+    assert!(World::cancelled_terminal_state(&frozen).unwrap().find("consumables_used").is_none());
+    world.advance_lifecycle(at(1000)).unwrap();
+    world.advance(at(1000)).unwrap();
+    assert_eq!(world.actors[0].engine_power_basis_points(),10500);
+    assert_eq!(world.actors[0].consumables,[0,v2::RPM_LIMITER,0]);
+    assert_eq!(world.actors[0].hud_consumables(),[1787,v2::RPM_LIMITER,0]);
+    world.apply(0,1,&[Command::ActivateEquipment{item:v2::RPM_LIMITER_ITEM,extra:2}],at(1000)).unwrap();
+    assert!(!world.actors[0].rpm_limiter_active());
+    world.apply(0,1,&[on],at(1000)).unwrap();
+    assert_eq!(world.actors[0].engine_power_basis_points(),11550);
+    world.advance(at(1500)).unwrap();
+    world.apply(0,1,&[on],at(1500)).unwrap();
+    world.advance(at(2000)).unwrap();
+    assert_eq!(engine_hp(&world),stock_hp-1);
+    world.apply(0,1,&[off],at(2000)).unwrap();
+    world.advance(at(3000)).unwrap();
+    assert_eq!(engine_hp(&world),stock_hp-1);
+    assert_eq!(world.actors[0].engine_power_basis_points(),10500);
+    world.apply(0,1,&[on],at(3000)).unwrap();
+    world.advance(at(4000)).unwrap();
+    assert_eq!(engine_hp(&world),stock_hp-3);
+    for second in 5..=19 {world.advance(at(second*1000)).unwrap();}
+    assert_eq!(engine_hp(&world),0);
+    assert!(!world.actors[0].rpm_limiter_active());
+    assert_eq!(world.actors[0].health,90);
+    assert!(!world.actors[0].devices.as_ref().unwrap().fire_active());
+    let mut terminal:serde_json::Value=serde_json::from_str(&world.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(terminal["consumables_used"],serde_json::json!([0]));
+    v2::validate_terminal_json(&terminal.to_string(),&frozen,90).unwrap();
+    terminal["consumables_used"]=serde_json::json!([0,1]);
+    assert!(v2::validate_terminal_json(&terminal.to_string(),&frozen,90).is_err());
+}
+
+#[test]
+fn content0_s5_optics_use_frozen_slots_for_view_range_and_native_descriptor(){
+    let now=Instant::now();
+    let (owner,base_frozen)=actual_frozen_ap_zero();
+    let mut authored=base_frozen.value();
+    authored["artefacts"]=serde_json::json!({"optional_devices":[1273,0,1529],"consumables":[0,0,0]});
+    let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&authored).unwrap()));
+    let frozen=v2::parse_frozen(&authored,&owner.account,&digest).unwrap();
+    let mut world=base(now,low_ground());
+    let slot=world.attach_owned_v2(owner,1,&frozen).unwrap();
+    lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);
+    start(&mut world,now);
+    let actor=&world.actors[slot];
+    assert_eq!(actor.optional_devices(),[1273,0,1529]);
+    assert_eq!(actor.view_range().unwrap(),VehicleKind::Ms1.view_range()*1.1);
+    assert_eq!(world.actors[1].view_range().unwrap(),VehicleKind::Ms1.view_range());
+    let mut expected=VehicleKind::Ms1.descriptor().to_vec();
+    *expected.last_mut().unwrap()=0b101;
+    expected.extend([5,0,4,0]);
+    for packet in [super::super::wire::create_vehicle(&world,slot).unwrap(),super::super::wire::roster(&world,slot).unwrap()] {
+        assert!(packet.windows(expected.len()).any(|row|row==expected));
+    }
+}
+
+#[test]
+fn content0_s5_module_protection_serializes_effective_caps_at_finish_and_cancellation() {
+    use crate::p06t_device_caps::CYCLONE_FILTER;
+    let now = Instant::now();
+    let (owner, original) = actual_frozen_ap_zero();
+    let mut value = original.value();
+    value["artefacts"] = serde_json::json!({"optional_devices":[CYCLONE_FILTER,0,0],"consumables":[0,0,0]});
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+    let fitted = v2::parse_frozen(&value,&owner.account,&digest).unwrap();
+    let cancelled: serde_json::Value = serde_json::from_str(&World::cancelled_terminal_state(&fitted).unwrap()).unwrap();
+    assert_eq!(cancelled["devices"][0], serde_json::json!({"extra_index":26,"max_health":38,"health":38}));
+    v2::validate_terminal_json(&cancelled.to_string(),&fitted,90).unwrap();
+    assert!(v2::validate_terminal_json(&cancelled.to_string(),&original,90).is_err());
+
+    let mut world = base(now,low_ground());
+    world.impact.enable_layers().unwrap();
+    world.attach_owned_v2(owner,1,&fitted).unwrap();
+    lab_attach(&mut world,VehicleKind::Ms1,1,[5,5,5]);
+    start(&mut world,now);
+    let actor = &mut world.actors[0];
+    let health = device::Health {hp:90,max_hp:90,terminal:false};
+    actor.devices.as_mut().unwrap().apply_classic_hits(&[device::ModuleHit {
+        cause:device::Cause{shot:1,attacker_slot:1}, ordinal:device::CLASSIC_FIRST_ORDINAL,at_ms:0,
+        target:crate::p06t_lab_proxy::Target::Device(crate::p06t_device_caps::Device::Engine),
+        shell:source::profile(Mount::Ms1Stock).shots[0],ignition_roll:0.99,
+    }], &[27],health).unwrap();
+    let terminal: serde_json::Value = serde_json::from_str(&world.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(terminal["devices"][0], serde_json::json!({"extra_index":26,"max_health":38,"health":11}));
+    v2::validate_terminal_json(&terminal.to_string(),&fitted,90).unwrap();
+    assert!(v2::validate_terminal_json(&terminal.to_string(),&original,90).is_err());
+}
+
+#[test]
+fn content0_s5_crew_boosters_change_reload_aim_and_view_and_food_is_consumed_on_battle_start() {
+    let now = Instant::now();
+    let (owner, base_frozen) = actual_frozen_ap_zero();
+    let configured = |devices, food, levels| {
+        let mut value = base_frozen.value();
+        value["artefacts"] = serde_json::json!({"optional_devices":devices,"consumables":[food,0,0]});
+        value["crew_qualification"] = serde_json::json!(levels);
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let frozen = v2::parse_frozen(&value, &owner.account, &digest).unwrap();
+        let mut world = base(now, low_ground());
+        world.enable_lifecycle(super::super::lifecycle::Rules {
+            prebattle_ms: 1000, ..super::super::lifecycle::Rules::prohorovka()
+        }).unwrap();
+        world.enable_original_spotting(super::super::spotting::Rules::selected().unwrap()).unwrap();
+        world.attach_owned_v2(owner.clone(), 1, &frozen).unwrap();
+        lab_attach(&mut world, VehicleKind::Ms1, 1, [5,5,5]);
+        start(&mut world, now);
+        world
+    };
+    let mut boosted = configured([4601,1529,0], 3067, [100,100]);
+    let mut baseline = configured([0,1529,0], 0, [100,100]);
+    let vents = configured([4601,1529,0], 0, [100,100]);
+    let food = configured([0,1529,0], 3067, [100,100]);
+    let rookie = configured([0,1529,0], 0, [50,50]);
+    let rookie_boosted = configured([4601,1529,0], 3067, [50,50]);
+    let a = &boosted.actors[0];
+    let base = &baseline.actors[0];
+    let expected = (0.5 + 115.*0.00375)/0.875;
+    assert!((a.crew_performance(Actor::COMMANDER) - expected).abs()<1e-12);
+    // The MS-1 commander doubles as the gunner and loader and has no self command bonus.
+    assert!((a.fire.typed().unwrap().base_reload_seconds() - base.fire.typed().unwrap().base_reload_seconds()/expected as f32).abs()<1e-6);
+    assert!((a.aiming_spec().aiming_time - base.aiming_spec().aiming_time/expected as f32).abs()<1e-6);
+    assert!((a.view_range().unwrap() - base.view_range().unwrap()*expected as f32).abs()<1e-4);
+    for world in [&vents, &food] {
+        let partial = &world.actors[0];
+        assert!(base.view_range().unwrap() < partial.view_range().unwrap());
+        assert!(partial.view_range().unwrap() < a.view_range().unwrap());
+    }
+    assert!(rookie.actors[0].view_range().unwrap() < rookie_boosted.actors[0].view_range().unwrap());
+    assert!(rookie_boosted.actors[0].view_range().unwrap() < base.view_range().unwrap());
+    assert_eq!(a.equipment_mass(), 100.);
+    let view = a.view_range().unwrap();
+    let reload = a.fire.typed().unwrap().base_reload_seconds();
+    let mut cancelled = boosted.clone();
+    cancelled.detach(2).unwrap();
+    cancelled.advance_lifecycle(now).unwrap();
+    assert_eq!(cancelled.actors[0].consumables, [3067,0,0]);
+    boosted.advance_lifecycle(now).unwrap();
+    boosted.advance_lifecycle(now + Duration::from_millis(999)).unwrap();
+    assert_eq!(boosted.actors[0].consumables, [3067,0,0]);
+    boosted.advance_lifecycle(now + Duration::from_millis(1000)).unwrap();
+    boosted.advance_lifecycle(now + Duration::from_millis(1100)).unwrap();
+    assert_eq!(boosted.actors[0].consumables, [0;3]);
+    assert_eq!(boosted.actors[0].hud_consumables(), [3067,0,0]);
+    assert_eq!(boosted.actors[0].view_range().unwrap(), view);
+    assert_eq!(boosted.actors[0].fire.typed().unwrap().base_reload_seconds(), reload);
+    let terminal: serde_json::Value = serde_json::from_str(&boosted.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(terminal["consumables_used"], serde_json::json!([0]));
+    let fired_at = now + Duration::from_millis(1100);
+    let outcomes = boosted.apply(0, 1, &[Command::Armament(arm::Command::Shoot)], fired_at).unwrap();
+    assert!(matches!(outcomes.as_slice(), [fire::Outcome::Typed(arm::Outcome::Shot { .. })]));
+    let actual_reload = boosted.actors[0].fire.reload_until().unwrap().duration_since(fired_at).as_secs_f32();
+    assert!((actual_reload - reload).abs()<1e-6);
+
+    let distance = (view + baseline.actors[0].view_range().unwrap()) / 2.;
+    for world in [&mut boosted, &mut baseline] {
+        world.actors[1].position = [distance, 0., 0.];
+        world.refresh_original_spotting(fired_at).unwrap();
+    }
+    assert!(boosted.desired_visibility(0).unwrap()[1]);
+    assert!(!baseline.desired_visibility(0).unwrap()[1]);
+}
+
+#[test]
+fn content0_s5_stabilizer_changes_server_bloom_and_native_descriptor_once() {
+    let now = Instant::now();
+    let kind = VehicleKind::Is7;
+    let mount = source::profile(kind.mount());
+    let mut world = base(now, low_ground());
+    world.impact.enable_layers().unwrap();
+    for (slot, equipment) in [8185, 0].into_iter().enumerate() {
+        let (owner, legacy) = tests::profile13_loadout(kind, slot, 10);
+        let mut value = serde_json::json!({
+            "kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":2,"vehicle_inventory_id":legacy.vehicle_inventory_id,"capacity":mount.capacity,
+            "max_hp":kind.max_health(),"crew_ids":legacy.crew_ids,"initial_shell_compact_id":mount.shots[0].compact_descr,
+            "ammunition":mount.shots.iter().zip(["ap","apcr","he"]).enumerate().map(|(index,(shot,suffix))|
+                serde_json::json!({"shell_definition_id":format!("shell:is7-stock-{suffix}"),"shell_compact_id":shot.compact_descr,
+                    "family":shot.family.source_name(),"count":if index==0{10}else{0}})).collect::<Vec<_>>(),
+        });
+        if equipment != 0 {
+            value["artefacts"] = serde_json::json!({"optional_devices":[equipment,0,0],"consumables":[0,0,0]});
+        }
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let frozen = v2::parse_frozen(&value, &owner.account, &digest).unwrap();
+        assert_eq!(world.attach_owned_v2(owner, slot as u32 + 1, &frozen).unwrap(), slot);
+    }
+    start(&mut world, now);
+    let mut equipped = kind.descriptor().to_vec();
+    *equipped.last_mut().unwrap() = 0b100;
+    equipped.extend(31u16.to_le_bytes());
+    assert!(super::super::wire::create_vehicle(&world, 0).unwrap().windows(equipped.len()).any(|bytes| bytes == equipped));
+    let native_aiming_info = |slot| {
+        let body = super::super::wire::binding(&world, slot, now).unwrap();
+        let offset = body.windows(2).position(|bytes| bytes == [0x13,0x4b]).unwrap() + 2 + 4 * 4;
+        body[offset..offset + 5 * 4].to_vec()
+    };
+    assert_eq!(native_aiming_info(0), native_aiming_info(1), "native coefficients stay unchanged when the descriptor supplies the stabilizer");
+    assert_eq!(world.actors[0].equipment_mass(), 200.);
+
+    world.advance(now + STEP).unwrap();
+    assert!(world.actors.iter().all(|actor| actor.dispersion.unwrap().factor == 1.));
+    let rows = [(0,[0.,0.,0.],[0.,0.,0.],10.), (1,[0.,0.,20.],[0.,0.,0.],10.)];
+    let at = now + STEP * 2;
+    world.advance_with_external(at, Some(&rows)).unwrap();
+    let penalty = (10. * f64::from(kind.aim().movement_dispersion)).powi(2);
+    let gun = super::super::dispersion::gun(kind.dispersion_name()).unwrap();
+    for (slot, additive) in [0.8_f64, 1.].into_iter().enumerate() {
+        let expected = (1. + penalty * additive.powi(2)).sqrt();
+        let factor = world.actors[slot].dispersion.unwrap().factor;
+        assert!((factor - expected).abs() < 1e-12);
+        let firing = world.shot_deviation(&world.actors[slot], slot as u32 + 1).unwrap().unwrap();
+        assert!((firing.angle - (gun.radius_m / 100.).atan() * expected).abs() < 1e-12);
+        let shot = world.apply(slot, slot as u32 + 1, &[Command::Armament(arm::Command::Shoot)], at).unwrap();
+        assert!(matches!(shot.as_slice(), [fire::Outcome::Typed(arm::Outcome::Shot { .. })]));
+        let bloom = world.actors[slot].dispersion.unwrap().factor;
+        assert!((bloom - (1. + (penalty + gun.after_shot.powi(2)) * additive.powi(2)).sqrt()).abs() < 1e-12);
+    }
+}
+
+#[test]
+fn content0_s5_weighted_equipment_changes_server_aim_reload_and_repair(){
+    use crate::p06t_device_caps::Device;
+    use crate::p06t_lab_proxy::Target;
+    let now=Instant::now();
+    let owner=Identity{account:"12345678-1234-4234-8234-123456789abc".into(),database:93,name:"T-34 owner".into()};
+    let kind=VehicleKind::T34;
+    let mounted=source::profile(Mount::T34Stock);
+    let slots=[device::GUN_LAYING_DRIVE,device::RAMMERS[0],device::TOOLBOX];
+    let authored=serde_json::json!({
+        "kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+        "native_inventory_id":3,"vehicle_inventory_id":format!("{}:p09e-vehicle:3",owner.account),
+        "max_hp":kind.max_health(),"capacity":mounted.capacity,
+        "crew_ids":(0..Profile::T34.crew().len()).map(|i|format!("{}:crew:{i}",owner.account)).collect::<Vec<_>>(),
+        "ammunition":mounted.shots.iter().zip(["ap","heat","he"]).enumerate().map(|(index,(shot,suffix))|
+            serde_json::json!({"shell_definition_id":format!("shell:t34-stock-{suffix}"),"shell_compact_id":shot.compact_descr,
+                "family":shot.family.source_name(),"count":if index==0{10}else{0}})).collect::<Vec<_>>(),
+        "initial_shell_compact_id":mounted.shots[0].compact_descr,
+        "artefacts":{"optional_devices":slots,"consumables":[0,0,0]},
+    });
+    let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&authored).unwrap()));
+    let frozen=v2::parse_frozen(&authored,&owner.account,&digest).unwrap();
+    let mut world=base(now,low_ground());
+    world.impact.enable_layers().unwrap();
+    world.attach_owned_v2(owner,1,&frozen).unwrap();
+    lab_attach(&mut world,kind,1,[10,0,0]);
+    start(&mut world,now);
+    let expected_reload=Duration::from_secs_f64(mounted.reload_seconds*0.9);
+    assert_eq!(world.actors[0].fire.typed().unwrap().base_reload_seconds(),expected_reload.as_secs_f32());
+    let effective_aim=kind.aim().aiming_time*0.91;
+    let bound=super::super::wire::binding(&world,0,now).unwrap();
+    let targeting=bound.windows(2).position(|row|row==[0x13,0x4b]).unwrap();
+    let aim_offset=targeting+2+8*4;
+    assert_eq!(&bound[aim_offset..aim_offset+4],&effective_aim.to_le_bytes());
+
+    for actor in &mut world.actors {
+        actor.dispersion=Some(super::super::dispersion::State{factor:3.,hull_yaw:0.,turret_yaw:0.});
+    }
+    world.advance(now+STEP).unwrap();
+    let settled=world.actors[0].dispersion.unwrap().factor;
+    assert!(settled < world.actors[1].dispersion.unwrap().factor);
+    assert!((settled-3.*(-f64::from(STEP.as_secs_f32())/f64::from(effective_aim)).exp()).abs()<1e-9);
+
+    let at=now+STEP;
+    world.apply(0,1,&[Command::Armament(arm::Command::Shoot)],at).unwrap();
+    assert_eq!(world.actors[0].fire.reload_until(),Some(at+expected_reload));
+
+    let module=Device::LeftTrack;
+    let hull=kind.max_health() as u16;
+    let health=device::Health{hp:hull,max_hp:hull,terminal:false};
+    for actor in &mut world.actors {
+        let state=actor.devices.as_mut().unwrap();
+        for shot in 1..=9{
+            state.apply_hits(&[device::ModuleHit{cause:device::Cause{shot,attacker_slot:1},
+                ordinal:0,at_ms:100,target:Target::Device(module),shell:mounted.shots[2],ignition_roll:0.}],health).unwrap();
+        }
+        assert_eq!(state.health()[module as usize],0);
+        state.advance_fire(899,health).unwrap();
+        assert_eq!(state.health()[module as usize],0);
+        state.advance_fire(900,health).unwrap();
+    }
+    assert!(world.actors[0].devices.as_ref().unwrap().health()[module as usize]>0);
+    assert_eq!(world.actors[1].devices.as_ref().unwrap().health()[module as usize],0);
+}
+
+#[test]
+fn content0_s5_consumables_authoritative_targeting_use_once_and_terminal_slots(){
+    let now=Instant::now();let (owner,base_frozen)=actual_frozen_ap_zero();
+    let slots=[1275,763,251];let mut value=base_frozen.value();
+    value["artefacts"]=serde_json::json!({"consumables":slots,"optional_devices":[0,0,0]});
+    let digest=format!("{:x}",Sha256::digest(serde_json::to_vec(&value).unwrap()));
+    let frozen=v2::parse_frozen(&value,&owner.account,&digest).unwrap();
+    let mut w=base(now,low_ground());
+    w.attach_owned_v2(owner,1,&frozen).unwrap();lab_attach(&mut w,VehicleKind::Ms1,1,[5,5,5]);start(&mut w,now);
+    assert_eq!(w.actors[0].consumables,slots);
+    let expected=|counts:[u16;3]|slots.into_iter().zip(counts)
+        .flat_map(|(cd,count)|crate::armament_wire091::equipment_row(cd,count).unwrap()).collect::<Vec<_>>();
+    let initial=expected([1;3]);let binding=super::super::wire::binding(&w,0,now).unwrap();
+    assert!(binding.windows(initial.len()).any(|row|row==initial));
+    let command=|item,extra|Command::ActivateEquipment{item,extra};
+    let hits=[(0,crate::p06t_lab_proxy::Target::Device(crate::p06t_device_caps::Device::LeftTrack)),
+        (1,crate::p06t_lab_proxy::Target::Seat(1))];
+    let health=device::Health{hp:90,max_hp:90,terminal:false};
+    let shell=source::profile(Mount::Ms1Stock).shots[2];
+    let mut events=Vec::new();
+    for shot in 1..=4{
+        let cause=device::Cause{shot,attacker_slot:1};
+        let input=hits.map(|(ordinal,target)|device::ModuleHit{cause,ordinal,target,at_ms:0,shell,ignition_roll:0.});
+        events.extend(w.actors[0].devices.as_mut().unwrap().apply_hits(&input,health).unwrap());
+    }
+    w.device_events.extend(events.into_iter().map(|e|(0,e)));
+    let pristine=w.actors[0].clone();
+    assert!(w.apply(0,2,&[command(4,30)],now).is_err());
+    assert!(w.apply(0,1,&[command(4,30),Command::Move(Input{throttle:2,steer:0,speed_percent:100})],now).is_err());
+    w.apply(0,1,&[command(4,31),command(2,35),command(0,1),command(5,1),command(65535,65535)],now).unwrap();
+    assert_eq!(w.actors[0],pristine);
+    w.apply(0,1,&[command(4,30),command(2,36),command(4,30),command(2,36)],now).unwrap();
+    let actor=&w.actors[0];assert_eq!(actor.consumables,[0,0,251]);
+    let state=actor.devices.as_ref().unwrap();
+    assert_eq!(state.health()[4],state.profile().caps()[4].max);
+    assert!(state.crew()[1]);
+    assert_eq!(w.device_events.iter().filter(|(_,e)|e.cause.shot==0).count(),2);
+    let remaining=expected([0,0,1]);let rebound=super::super::wire::binding(&w,0,now).unwrap();
+    assert!(rebound.windows(remaining.len()).any(|row|row==remaining));
+    let raw:serde_json::Value=serde_json::from_str(&w.terminal_state_json(0).unwrap()).unwrap();
+    assert_eq!(raw["consumables_used"],serde_json::json!([0,1]));
+    v2::validate_terminal_json(&raw.to_string(),&frozen,actor.health).unwrap();
+}
+
+#[test]
+fn content0_s5_large_medkit_reduces_crew_wound_chance_throughout_the_battle() {
+    use crate::{p06t_device_caps::Device, p06t_lab_proxy::Target};
+    let now = Instant::now();
+    let (owner, original) = actual_frozen_ap_zero();
+    let mut value = original.value();
+    value["artefacts"] = serde_json::json!({"optional_devices":[0,0,0],"consumables":[1019,0,0]});
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+    let equipped = v2::parse_frozen(&value, &owner.account, &digest).unwrap();
+    let mut world = base(now, low_ground());
+    world.impact.enable_layers().unwrap();
+    world.attach_owned_v2(owner, 1, &equipped).unwrap();
+    lab_attach(&mut world, VehicleKind::Ms1, 1, [5,5,5]);
+    start(&mut world, now);
+    let rules = super::super::shell_rules::rules().unwrap();
+    let chance = |actor: &Actor, target, explosion| p06t::penetration_module_chance(actor, target, explosion, rules);
+    let check = |world: &World| {
+        for explosion in [false, true] {
+            let base_chance = chance(&world.actors[1], Target::Seat(0), explosion);
+            assert!((chance(&world.actors[0], Target::Seat(0), explosion) - base_chance * 0.85).abs() < 1e-12);
+            assert_eq!(chance(&world.actors[0], Target::Device(Device::Gun), explosion),
+                chance(&world.actors[1], Target::Device(Device::Gun), explosion));
+        }
+    };
+    check(&world);
+    let health = device::Health {hp:90,max_hp:90,terminal:false};
+    world.actors[0].devices.as_mut().unwrap().apply_classic_hits(&[device::ModuleHit {
+        cause:device::Cause{shot:1,attacker_slot:1}, ordinal:device::CLASSIC_FIRST_ORDINAL,at_ms:0,
+        target:Target::Seat(0), shell:source::profile(Mount::Ms1Stock).shots[0],ignition_roll:0.,
+    }], &[1],health).unwrap();
+    assert!(!world.actors[0].devices.as_ref().unwrap().crew()[0]);
+    world.apply(0, 1, &[Command::ActivateEquipment{item:3,extra:1}], now).unwrap();
+    assert_eq!(world.actors[0].consumables, [0;3]);
+    assert!(world.actors[0].devices.as_ref().unwrap().crew()[0]);
+    check(&world);
+}
+
+#[test]
+fn content0_s5_each_spall_liner_combines_with_medkit_on_penetrating_crew_rolls() {
+    use crate::{p06t_device_caps::Device, p06t_lab_proxy::Target};
+    let now = Instant::now();
+    let rules = super::super::shell_rules::rules().unwrap();
+    let chance = |actor: &Actor, target, explosion| p06t::penetration_module_chance(actor, target, explosion, rules);
+    for (liner, protection) in [(505, 0.80), (761, 0.75), (1017, 0.70), (11001, 0.50)] {
+        let (owner, original) = actual_frozen_ap_zero();
+        let mut value = original.value();
+        value["artefacts"] = serde_json::json!({"optional_devices":[liner,0,0],"consumables":[1019,0,0]});
+        let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let equipped = v2::parse_frozen(&value, &owner.account, &digest).unwrap();
+        let mut world = base(now, low_ground());
+        world.impact.enable_layers().unwrap();
+        world.attach_owned_v2(owner, 1, &equipped).unwrap();
+        lab_attach(&mut world, VehicleKind::Ms1, 1, [5,5,5]);
+        start(&mut world, now);
+        for explosion in [false, true] {
+            let base = chance(&world.actors[1], Target::Seat(0), explosion);
+            let protected = chance(&world.actors[0], Target::Seat(0), explosion);
+            assert!((protected - base * protection * 0.85).abs() < 1e-12);
+            assert_eq!(chance(&world.actors[0], Target::Device(Device::Gun), explosion),
+                chance(&world.actors[1], Target::Device(Device::Gun), explosion));
+        }
+    }
+}
+
+#[test]
+fn content0_s5_consumables_automatic_extinguisher_stops_authoritative_fire(){
+    use crate::{p06t_device_caps::Device,p06t_lab_proxy::Target};
+    let now=Instant::now();let mut w=actual_owner_world(now);
+    let actor=&mut w.actors[0];actor.consumables=[507,0,0];
+    let health=device::Health{hp:90,max_hp:90,terminal:false};
+    let shell=source::profile(Mount::Ms1Stock).shots[2];
+    let state=actor.devices.as_mut().unwrap();state.configure_artefacts([0;3],actor.consumables).unwrap();
+    let chance=state.profile().engine_fire_chance();
+    let cause=device::Cause{shot:1,attacker_slot:1};
+    assert!(chance>0.);
+    state.apply_hits(&[device::ModuleHit{cause,ordinal:0,at_ms:0,target:Target::Device(Device::Engine),
+        shell,ignition_roll:chance*0.95}],health).unwrap();
+    assert!(!state.fire_active());
+    state.apply_hits(&[device::ModuleHit{cause:device::Cause{shot:2,..cause},ordinal:0,at_ms:0,target:Target::Device(Device::Engine),
+        shell,ignition_roll:0.}],health).unwrap();
+    assert!(state.fire_active());
+    let events=World::extinguish_automatically(actor,0,0).unwrap();
+    assert!(matches!(events.as_slice(),[event] if matches!(event.change,device::Change::Fire{before_active:true,after_active:false})));
+    assert_eq!(events[0].cause,device::Cause{shot:2,..cause});
+    assert_eq!(actor.consumables,[0;3]);
+    assert!(actor.devices.as_mut().unwrap().advance_fire(1000,health).unwrap().iter()
+        .all(|event|!matches!(event.change,device::Change::VehicleDamage{..})));
+}
 
 #[test]
 fn p06t_world_real_sqlite_ap_zero_admission_switch_preserves_airborne_shell_and_conserves_three_stacks() {

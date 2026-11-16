@@ -7,6 +7,7 @@ fn accuracy() -> Accuracy { rules().unwrap().accuracy }
 fn spec() -> AimSpec { VehicleKind::T3485.aim() }
 const GUN: Gun = Gun { radius_m: 0.35, after_shot: 4., spg: false };
 const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
+const NORMAL: Factors = Factors { multiplier: 1., additive: 1. };
 
 #[test] fn the_table_has_every_battle_gun_and_the_curated_guns_are_their_mounts() {
     let registry = crate::gateway091::shared::generated_vehicles::registry().unwrap();
@@ -37,29 +38,39 @@ const STILL: Motion = Motion { speed: 0., hull_rate: 0., turret_rate: 0. };
 
 #[test] fn the_ideal_factor_is_the_client_formula() {
     let s = spec();
-    assert_eq!(ideal(&s, STILL, 0., 1.), 1.);
+    assert_eq!(ideal(&s, STILL, 0., NORMAL), 1.);
     let m = Motion { speed: 2., hull_rate: 0.5, turret_rate: 0.25 };
     let expected = (1f64 + (2. * f64::from(s.movement_dispersion)).powi(2) + (0.5 * f64::from(s.hull_dispersion)).powi(2)
         + (0.25 * f64::from(s.turret_dispersion)).powi(2) + 16.).sqrt() * 2.;
-    assert!((ideal(&s, m, 4., 2.) - expected).abs() < 1e-9);
+    assert!((ideal(&s, m, 4., Factors { multiplier: 2., ..NORMAL }) - expected).abs() < 1e-9);
+}
+
+#[test] fn content0_s5_stabilizer_scales_all_additive_penalties_before_the_square_root() {
+    let s = spec();
+    let factors = Factors { multiplier: 2., additive: 0.8 };
+    assert_eq!(ideal(&s, STILL, 0., factors), 2.);
+    let motion = Motion { speed: 3., hull_rate: 0.5, turret_rate: 0.25 };
+    let penalties = (3. * f64::from(s.movement_dispersion)).powi(2) + (0.5 * f64::from(s.hull_dispersion)).powi(2)
+        + (0.25 * f64::from(s.turret_dispersion)).powi(2) + 16.;
+    assert!((ideal(&s, motion, 4., factors) - 2. * (1. + 0.64 * penalties).sqrt()).abs() < 1e-12);
 }
 
 #[test] fn the_circle_decays_with_the_aiming_time_and_blooms_after_a_shot() {
     let s = spec();
     let mut state = State::new(0., 0.);
-    state.after_shot(&s, GUN, 0., 1.);
+    state.after_shot(&s, GUN, 0., NORMAL);
     let bloom = (1f64 + 16.).sqrt();
     assert!((state.factor - bloom).abs() < 1e-9);
-    state.step(&s, 0., 0., 0., 1., 0.1).unwrap();
+    state.step(&s, 0., 0., 0., NORMAL, 0.1).unwrap();
     assert!((state.factor - bloom * (-f64::from(0.1f32) / f64::from(s.aiming_time)).exp()).abs() < 1e-9);
-    for _ in 0..2000 { state.step(&s, 0., 0., 0., 1., 0.1).unwrap(); }
+    for _ in 0..2000 { state.step(&s, 0., 0., 0., NORMAL, 0.1).unwrap(); }
     assert_eq!(state.factor, 1., "settles at the ideal");
     assert!((state.angle(GUN) - (0.0035f64).atan()).abs() < 1e-12);
     // Motion widens it at once, and the turret rate comes from the yaw change over the step.
-    state.step(&s, 3., 0., 0.1, 1., 0.1).unwrap();
+    state.step(&s, 3., 0., 0.1, NORMAL, 0.1).unwrap();
     let m = Motion { speed: 3., hull_rate: 0., turret_rate: 1. };
-    assert!((state.factor - ideal(&s, m, 0., 1.)).abs() < 1e-3, "{}", state.factor);
-    assert!(state.step(&s, 0., 0., 0., 1., 0.).is_err());
+    assert!((state.factor - ideal(&s, m, 0., NORMAL)).abs() < 1e-3, "{}", state.factor);
+    assert!(state.step(&s, 0., 0., 0., NORMAL, 0.).is_err());
 }
 
 #[test] fn k_follows_the_accuracy_within_its_bounds() {

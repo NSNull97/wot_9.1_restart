@@ -11,7 +11,7 @@ use crate::battle091::profile13::FinishReason;
 /// `spent`: battles of dissolved groups. Their id is never matched again; the
 /// arena resets to its next battle once nothing holds a reservation for it.
 /// `published`: the last queue counts written to sessions and the log.
-pub(super) struct Runtime {pub(super) mm:Matchmaker,bot_tiers:Vec<(VehicleKind,u8)>,spent:Vec<u64>,published:Option<mm::QueueStats>}
+pub(super) struct Runtime {pub(super) mm:Matchmaker,bot_tiers:Vec<(VehicleKind,u8)>,artillery_tiers:Vec<(VehicleKind,u8)>,spent:Vec<u64>,published:Option<mm::QueueStats>}
 
 fn bad(reason:&str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,format!("MM-01: {reason}"))}
 fn profile(s:&Session)->Option<&super::super::profile13_session::State> {s.shared.as_ref().and_then(|c|c.profile13.as_ref())}
@@ -47,12 +47,17 @@ fn cancel(s:&mut Session,world:&World)->io::Result<()> {
 impl Runtime {
     /// Every bot kind needs its client tier: the group's bots keep its tolerance.
     pub(super) fn new(rules:mm::Rules,plan:&model::bots::Plan)->io::Result<Self> {
-        // SPG-01: bots do not drive SPGs (no indirect-fire behaviour).
-        let bot_tiers=plan.kinds.iter().filter(|k|!crate::gateway091::shared::dispersion::gun(k.dispersion_name()).is_ok_and(|g|g.spg)).map(|k|k.tier()?.map(|t|(*k,t)).ok_or_else(||bad("bot kind without a client tier")))
-            .collect::<io::Result<Vec<_>>>()?;
-        Ok(Self{mm:Matchmaker::new(rules),bot_tiers,spent:Vec::new(),published:None})
+        let (mut bot_tiers,mut artillery_tiers)=(Vec::new(),Vec::new());
+        for &kind in &plan.kinds {
+            let artillery=model::bots::artillery_kind(kind);
+            if artillery&&!cfg!(feature="test_lab") {continue;}
+            let tier=kind.tier()?.ok_or_else(||bad("bot kind without a client tier"))?;
+            if artillery {artillery_tiers.push((kind,tier));} else {bot_tiers.push((kind,tier));}
+        }
+        if bot_tiers.is_empty() {return Err(bad("missing regular bot kind"));}
+        Ok(Self{mm:Matchmaker::new(rules),bot_tiers,artillery_tiers,spent:Vec::new(),published:None})
     }
-    pub(super) fn bot_tiers(&self)->&[(VehicleKind,u8)] {&self.bot_tiers}
+    pub(super) fn bot_tiers(&self)->impl Iterator<Item=&(VehicleKind,u8)> {self.bot_tiers.iter().chain(&self.artillery_tiers)}
     fn dissolve(&mut self,battle:u64,reason:&str) {
         if self.mm.dissolve(battle).is_some() {self.spent.push(battle);println!("MM01_GROUP_DISSOLVED battle={battle} reason={reason}");}
     }
@@ -200,7 +205,10 @@ impl Runtime {
             &&!table.sessions.iter().chain(retired).any(|s|profile(s).is_some_and(|p|p.reservation_battle()==Some(a.world.id))))
             .map(|(i,a)|(i,a.world.id)).collect::<Vec<_>>();
         for g in self.mm.form(&free,now) {
-            let (kinds,nearest)=mm::bot_kinds(g.tiers(),self.mm.rules().tier_spread,&self.bot_tiers);
+            let spread=self.mm.rules().tier_spread;
+            let (mut kinds,nearest)=mm::bot_kinds(g.tiers(),spread,&self.bot_tiers);
+            let (artillery,outside_spread)=mm::bot_kinds(g.tiers(),spread,&self.artillery_tiers);
+            if !outside_spread {kinds.extend(artillery);}
             let world=&mut arenas[g.arena].world;
             world.set_match_roster(g.members.len(),kinds.clone(),g.tiers())?;
             let (lo,hi)=g.tiers();

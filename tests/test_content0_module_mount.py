@@ -21,7 +21,7 @@ from game_profile_tx import TransactionError
 from p04m_pool_projection import PoolProjectionSource
 from p08b_battle_projection import BattleProjectionSource
 from p08b_battle_service import battle_service
-from p09e_native_commands import NativeRequest, domain_request
+from p09e_native_commands import NativeRequest, domain_request, is_artefact_request
 from p09e_research_projection import SHOP_REVISION, delta_tree, descriptor, update_delta
 from p09e_research_service import native_service
 from p09e_research_store import ECONOMY_POLICY
@@ -63,10 +63,13 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(self.state(), before)
         request = self.native_request(command, arguments)
         with self.assertRaises(TransactionError) as caught:
-            domain = domain_request(NativeRequest(1, command, tuple(arguments)), catalog=self.catalog,
-                aggregate=self.profile(), account_id=self.account, command_key=request["command_key"],
-                expected_revision=request["expected_revision"], shop_revision=SHOP_REVISION)
-            self.store.execute(domain, authenticated_account_id=self.account)
+            selected = NativeRequest(1, command, tuple(arguments))
+            if is_artefact_request(selected):
+                self.store.artefacts_service(request, authenticated_account_id=self.account)
+            else:
+                domain = domain_request(selected, catalog=self.catalog, aggregate=self.profile(), account_id=self.account,
+                    command_key=request["command_key"], expected_revision=request["expected_revision"], shop_revision=SHOP_REVISION)
+                self.store.execute(domain, authenticated_account_id=self.account)
         self.assertEqual(caught.exception.code, code)
         self.assertEqual(self.state(), before)
 
@@ -222,7 +225,8 @@ class ModuleMountTests(mixed.MixedStoreTests):
         native = self.owned(KV3)["native_id"]
         stock = self.store.mounts[self.store.mount_id_of(self.owned(KV3))]
         self.seed_owned_test_depot("ussr-KV-3", [10, 4, 0])
-        self.store.service(self.ammo_request(native, [6, 3, 0]), authenticated_account_id=self.account)
+        request = self.ammo_request(native, [6, 3, 0])
+        serviced = self.store.service(request, authenticated_account_id=self.account)
         loaded = next(r for r in self.profile()["ammunition"] if r["vehicle_id"] == self.owned(KV3)["vehicle_inventory_id"])["loaded"]
         self.assertEqual([loaded[k] for k in stock.shell_ids], [6, 3, 0])
         depot = {k: self.profile()["depot"][self.store.depot_key[k]] for k in stock.shell_ids}
@@ -240,6 +244,85 @@ class ModuleMountTests(mixed.MixedStoreTests):
         shell_depot = {self.store.shells[k].native_compact_id: profile["depot"][self.store.depot_key[k]] for k, n in zip(stock.shell_ids, [6, 3, 0]) if n}
         self.assertEqual(reply["update_hex"], update_delta(self.catalog, before, after, 1, self.store.pair_layouts(profile), shell_depot).hex())
         self.assertEqual(self.battle_code(native), "INCOMPLETE_CREW")
+        before_replay = self.state()
+        self.assertEqual(self.store.service(request, authenticated_account_id=self.account), dict(serviced, replayed=True))
+        self.assertEqual(self.state(), before_replay)
+
+    def test_enhanced_suspension_carries_overweight_gun_and_blocks_unsafe_demount(self):
+        from p06t_ammo_loss_store import AmmoLossStore
+        from p09e_research_store import assembly
+
+        def reopen():
+            self.store.close()
+            self.store = AmmoLossStore(self.database, self.catalog, account_id=self.account,
+                shell_catalog=mixed.SHELL_SOURCE, terminal_policy=mixed.TERMINAL_POLICY)
+        reopen()
+        self.store.activate_loss(account_id=self.account, authenticated_account_id=self.account,
+                                 expected_revision=self.profile()["revision"], native_database_id=self.native_id)
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=self.account)
+        self.buy_curated("KV1")
+        vehicle = "vehicle:ussr:KV1"
+        native = self.owned(vehicle)["native_id"]
+        suspension = 3321
+        gun = "module:ussr:gun:_122mm_cannon_U-11"
+        baseline = self.catalog.vehicles[vehicle]["defaults"]
+        stock_limit = assembly(self.catalog, vehicle, baseline)["max_load_grams"]
+        self.research(vehicle, gun)
+        self.buy(gun)
+        self.refused("CHASSIS_OVERLOAD", 101, (native, self.cd(gun), 0))
+
+        self.accepted(308, (SHOP_REVISION, suspension, native, 1, 0, 0))
+        mount = self.native_request(101, (native, self.cd(gun), 0))
+        response = native_service(self.store, mount, authenticated_account_id=self.account)
+        self.assertEqual(response["status"], "researched")
+        owned = self.owned(vehicle)
+        self.assertEqual(owned["modules"]["gun"], gun)
+        metrics = assembly(self.catalog, vehicle, owned["modules"], suspension=suspension)
+        self.assertGreater(metrics["mass_grams"], stock_limit)
+        self.assertEqual(metrics["max_load_grams"], stock_limit * 110 // 100)
+        profile = self.store.registry.by_descriptor[descriptor(self.catalog, owned).hex()]
+        self.assertEqual(profile.required_suspension, suspension)
+
+        def remove():
+            return self.native(102, (SHOP_REVISION, native, 0, 1, 1))
+        before = self.state()
+        self.assertEqual(remove()["status"], "rejected")
+        self.assertEqual(self.state(), before)
+        reopen()
+        self.assertEqual(self.owned(vehicle)["modules"]["gun"], gun)
+        self.assertEqual(native_service(self.store, mount, authenticated_account_id=self.account), dict(response, replayed=True))
+        self.accepted(101, (native, self.cd(baseline["gun"]), 0))
+        self.assertEqual(remove()["status"], "researched")
+        self.assertEqual(self.owned(vehicle)["modules"], baseline)
+        self.assertEqual(native_service(self.store, mount, authenticated_account_id=self.account), dict(response, replayed=True))
+        self.assertEqual(self.owned(vehicle)["modules"], baseline)
+
+    def test_fuel_requires_the_installed_engine_and_one_fuel_slot(self):
+        from p06t_ammo_loss_store import AmmoLossStore
+
+        self.store.close()
+        self.store = AmmoLossStore(self.database, self.catalog, account_id=self.account,
+            shell_catalog=mixed.SHELL_SOURCE, terminal_policy=mixed.TERMINAL_POLICY)
+        self.store.activate_loss(account_id=self.account, authenticated_account_id=self.account,
+                                 expected_revision=self.profile()["revision"], native_database_id=self.native_id)
+        self.store.apply_test_lab_economy(account_id=self.account, garage_slots=12, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=self.account)
+        vehicle = "vehicle:usa:T18"
+        self.store.grant_vehicle(account_id=self.account, vehicle_id=vehicle)
+        native = self.owned(vehicle)["native_id"]
+        diesel = self.owned(vehicle)["modules"]["engine"]
+        gasoline = "module:usa:engine:Continental_W-670"
+        self.refused("ARTEFACT_INCOMPATIBLE", 308, (SHOP_REVISION, 2043, native, 0, 0, 0))
+        self.research(vehicle, gasoline)
+        self.buy(gasoline)
+        self.accepted(101, (native, self.cd(gasoline), 0))
+        self.accepted(308, (SHOP_REVISION, 2043, native, 0, 0, 0))
+        self.refused("ARTEFACT_CONFLICT", 308, (SHOP_REVISION, 2299, native, 1, 0, 0))
+        self.refused("ARTEFACT_INCOMPATIBLE", 101, (native, self.cd(diesel), 0))
+        self.accepted(104, (native, 0, 0, 0))
+        self.accepted(101, (native, self.cd(diesel), 0))
+        self.assertEqual(self.owned(vehicle)["modules"]["engine"], diesel)
 
     def test_ms1_nonstock_chassis_and_engine_admit_with_the_starter_inventory_id(self):
         for index in (0, 2, 3): self.accepted(201, (3329, index, 0))
@@ -275,7 +358,8 @@ class ModuleMountTests(mixed.MixedStoreTests):
         for index in (7, 8, 13): self.accepted(201, (3329, index, 0))
         gun = "module:ussr:gun:_45mm_mod_1932"; turret = "module:ussr:turret:T-18_mod"
         self.buy(gun); self.buy(turret)
-        self.load((10, 0, 0))
+        request = self.ammo_request(1, [10, 0, 0])
+        serviced = self.store.service(request, authenticated_account_id=self.account)
         depot_key = self.store.depot_key["shell:ms1-stock-ap"]
         count = self.profile()["depot"][depot_key]
         self.accepted(101, (1, self.cd(turret), self.cd(gun)))
@@ -284,6 +368,9 @@ class ModuleMountTests(mixed.MixedStoreTests):
         self.assertEqual(build.assembly_id, "ms1@T-18_mod/_45mm_mod_1932")
         self.assertEqual(self.profile()["depot"][depot_key], count + 10)
         self.assertEqual(self.battle_code(1), "AMMUNITION_EMPTY")
+        before_replay = self.state()
+        self.assertEqual(self.store.service(request, authenticated_account_id=self.account), dict(serviced, replayed=True))
+        self.assertEqual(self.state(), before_replay)
 
         mount = self.store.mounts[build.assembly_id]
         shell_ids = [self.store.shells[key].native_compact_id for key in mount.shell_ids]

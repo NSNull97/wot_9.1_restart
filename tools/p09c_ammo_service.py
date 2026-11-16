@@ -1,7 +1,7 @@
 """P09C isolated ammunition service extending the P09B store, never live wiring.
 
-Only owned depot shells can be moved. Prices/purchases are unsupported. The
-authenticated subject and server command ID must come from a trusted caller.
+By default, only owned depot shells can be moved. The authenticated subject
+and server command ID must come from a trusted caller.
 The existing P09B reservation, aggregate revision and ledger remain shared.
 """
 from __future__ import annotations
@@ -35,6 +35,38 @@ def _quantities(value: Any, allowed: Iterable[str]) -> dict[str, int]:
     if any(type(key) is not str or key not in allowed for key in value):
         raise TransactionError("INCOMPATIBLE_SHELL")
     return {key: _quantity(value.get(key, 0)) for key in sorted(allowed)}
+
+
+def ammunition_funding(loaded, depot, desired, *, allow_purchase):
+    """Move existing rounds first and purchase only the shortfall when authorized."""
+    remaining, purchased = {}, {}
+    for shell, count in desired.items():
+        available = depot[shell] + loaded[shell] - count
+        if available < 0:
+            if not allow_purchase:
+                raise TransactionError("INSUFFICIENT_STOCK")
+            purchased[shell] = -available
+        if available > MAX_DEPOT:
+            raise TransactionError("DEPOT_OVERFLOW")
+        remaining[shell] = max(0, available)
+    return remaining, purchased
+
+
+def verify_ammunition_funding(loaded, depot, desired, purchased, capacity):
+    """Reconstruct the depot from a historical receipt, independent of current policy."""
+    if (type(loaded) is not dict or type(depot) is not dict
+            or set(loaded) != set(desired) or set(depot) != set(desired)
+            or any(type(n) is not int or not 0 <= n <= capacity for n in loaded.values())
+            or sum(loaded.values()) > capacity
+            or any(type(n) is not int or not 0 <= n <= MAX_DEPOT for n in depot.values())):
+        raise TransactionError("CORRUPT_STORE", "ammunition funding source")
+    try:
+        remaining, expected = ammunition_funding(loaded, depot, desired, allow_purchase=True)
+    except TransactionError as error:
+        raise TransactionError("CORRUPT_STORE", str(error)) from error
+    if type(purchased) is not dict or _canonical(purchased) != _canonical(expected):
+        raise TransactionError("CORRUPT_STORE", "ammunition funding quantities")
+    return remaining
 
 
 def _object(raw: str) -> dict:
@@ -274,6 +306,9 @@ class AmmoServiceStore(GameProfileStore):
             connection.rollback()
             raise
 
+    def _may_purchase_ammunition(self, account_id):
+        return False
+
     def set_ammunition(self, *, authenticated_account_id: str, account_id: str,
                        command_id: str, vehicle_id: str, expected_revision: int,
                        desired: dict[str, int], funding: str = "owned_depot") -> dict:
@@ -333,19 +368,13 @@ class AmmoServiceStore(GameProfileStore):
             loaded = _quantities(desired, mount.shell_ids)
             if sum(loaded.values()) > mount.capacity:
                 raise TransactionError("CAPACITY_EXCEEDED")
-            depot = dict(profile["depot"])
-            delta = {}
-            for shell_id in mount.shell_ids:
-                delta[shell_id] = loaded[shell_id] - ammunition["loaded"][shell_id]
-                remaining = depot[shell_id] - delta[shell_id]
-                if remaining < 0:
-                    raise TransactionError("INSUFFICIENT_STOCK")
-                if remaining > MAX_DEPOT:
-                    raise TransactionError("DEPOT_OVERFLOW")
-                depot[shell_id] = remaining
+            before_loaded = ammunition["loaded"]
+            depot = {shell: profile["depot"][shell] for shell in mount.shell_ids}
+            remaining, purchased = ammunition_funding(before_loaded, depot, loaded,
+                allow_purchase=self._may_purchase_ammunition(account_id))
             connection.executemany(
                 "UPDATE p09c_ammo_depot SET quantity = ? WHERE account_id = ? AND shell_id = ?",
-                [(quantity, account_id, shell_id) for shell_id, quantity in depot.items()],
+                [(quantity, account_id, shell_id) for shell_id, quantity in remaining.items()],
             )
             self._failpoint("after_depot_update")
             connection.execute(
@@ -358,8 +387,12 @@ class AmmoServiceStore(GameProfileStore):
             result = {"schema": SCHEMA, "catalog_sha256": CATALOG_SHA256, "command": COMMAND,
                       "account_id": account_id, "vehicle_id": vehicle_id, "command_id": command_id,
                       "source_revision": expected_revision, "destination_revision": expected_revision + 1,
-                      "mount_id": mount.mount_id, "loaded": loaded, "depot_delta": {k: -v for k, v in delta.items()},
+                      "mount_id": mount.mount_id, "loaded": loaded,
+                      "depot_delta": {k: remaining[k] - depot[k] for k in loaded},
                       "status": "serviced", "financial_status": "UNSUPPORTED", "replayed": False}
+            if purchased:
+                result.update(financial_status="FREE", purchase={"before_loaded": before_loaded,
+                    "before_depot": depot, "quantities": purchased})
             connection.execute(
                 "INSERT INTO game_command_ledger(account_id, command_id, command_type, payload_sha256, "
                 "source_revision, destination_revision, result_json, p09c_result_sha256) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -381,7 +414,7 @@ class AmmoServiceStore(GameProfileStore):
         required = {"schema", "catalog_sha256", "command", "account_id", "vehicle_id", "command_id",
                     "source_revision", "destination_revision", "mount_id", "loaded", "depot_delta",
                     "status", "financial_status", "replayed"}
-        if set(result) != required or mount is None:
+        if set(result) not in (required, required | {"purchase"}) or mount is None:
             raise TransactionError("CORRUPT_STORE", "ledger result shape")
         for key in ("schema", "catalog_sha256", "command", "account_id", "vehicle_id"):
             if result[key] != payload[key]:
@@ -396,9 +429,20 @@ class AmmoServiceStore(GameProfileStore):
         if (result["command_id"] != command_id or source != payload["expected_revision"]
                 or row["source_revision"] != source or row["destination_revision"] != destination
                 or destination != source + 1 or result["replayed"] is not False
-                or result["status"] != "serviced" or result["financial_status"] != "UNSUPPORTED"
+                or result["status"] != "serviced"
+                or result["financial_status"] != ("FREE" if "purchase" in result else "UNSUPPORTED")
                 or _canonical(result["loaded"]) != _canonical(loaded) or sum(loaded.values()) > mount.capacity
                 or type(delta) is not dict or set(delta) != set(mount.shell_ids)
                 or any(type(v) is not int or abs(v) > mount.capacity for v in delta.values())):
             raise TransactionError("CORRUPT_STORE", "ledger result invariant")
+        if "purchase" in result:
+            purchase = result["purchase"]
+            if (type(purchase) is not dict or set(purchase) != {"before_loaded", "before_depot", "quantities"}
+                    or not purchase["quantities"]):
+                raise TransactionError("CORRUPT_STORE", "ammunition purchase receipt")
+            depot = purchase["before_depot"]
+            remaining = verify_ammunition_funding(purchase["before_loaded"], depot, loaded,
+                purchase["quantities"], mount.capacity)
+            if delta != {key: remaining[key] - depot[key] for key in loaded}:
+                raise TransactionError("CORRUPT_STORE", "ammunition purchase depot delta")
         return {**result, "replayed": True}

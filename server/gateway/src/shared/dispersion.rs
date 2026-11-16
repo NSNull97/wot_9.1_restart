@@ -63,11 +63,20 @@ pub fn blast_factor(accuracy: &Accuracy, name: &str) -> io::Result<f64> {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Motion { pub speed: f32, pub hull_rate: f32, pub turret_rate: f32 }
 
-/// The client's `idealFactor`; `shot` is 0 or the gun's afterShot, the additive factor is 1.
-pub fn ideal(spec: &AimSpec, motion: Motion, shot: f64, mult: f64) -> f64 {
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Factors {
+    /// Overall factor, for example the effect of a damaged gun.
+    pub multiplier: f64,
+    /// Factor of motion and post-shot penalties from the equipped descriptor.
+    pub additive: f64,
+}
+
+/// The client's `idealFactor`. `shot` is 0 or the gun's afterShot.
+pub fn ideal(spec: &AimSpec, motion: Motion, shot: f64, factors: Factors) -> f64 {
     let square = |value: f32, factor: f32| (f64::from(value) * f64::from(factor)).powi(2);
-    mult * (1. + square(motion.speed, spec.movement_dispersion) + square(motion.hull_rate, spec.hull_dispersion)
-        + square(motion.turret_rate, spec.turret_dispersion) + shot * shot).sqrt()
+    let penalties = square(motion.speed, spec.movement_dispersion) + square(motion.hull_rate, spec.hull_dispersion)
+        + square(motion.turret_rate, spec.turret_dispersion) + shot * shot;
+    factors.multiplier * (1. + penalties * factors.additive.powi(2)).sqrt()
 }
 
 /// The client's aiming factor: it decays by `exp(-dt/aimingTime)`, never below the ideal.
@@ -81,19 +90,19 @@ impl crate::bw_wire::Wire for State {
 // end BW-01 wire codec
 impl State {
     pub fn new(hull_yaw: f32, turret_yaw: f32) -> Self { Self { factor: 1., hull_yaw, turret_yaw } }
-    pub fn step(&mut self, spec: &AimSpec, speed: f32, hull_yaw: f32, turret_yaw: f32, mult: f64, dt: f32) -> io::Result<()> {
+    pub fn step(&mut self, spec: &AimSpec, speed: f32, hull_yaw: f32, turret_yaw: f32, factors: Factors, dt: f32) -> io::Result<()> {
         if !(dt > 0.) || !dt.is_finite() || spec.aiming_time <= 0. { return Err(bad()); }
         let wrap = |d: f32| super::aim::wrap(d).abs() / dt;
         let motion = Motion { speed: speed.abs(), hull_rate: wrap(hull_yaw - self.hull_yaw), turret_rate: wrap(turret_yaw - self.turret_yaw) };
         self.hull_yaw = hull_yaw; self.turret_yaw = turret_yaw;
         let decayed = self.factor * (-f64::from(dt) / f64::from(spec.aiming_time)).exp();
-        self.factor = decayed.max(ideal(spec, motion, 0., mult));
+        self.factor = decayed.max(ideal(spec, motion, 0., factors));
         if !self.factor.is_finite() { return Err(bad()); }
         Ok(())
     }
     /// The bloom of a fired shot: the ideal with the gun's afterShot, as the client's `withShot`.
-    pub fn after_shot(&mut self, spec: &AimSpec, gun: Gun, speed: f32, mult: f64) {
-        let bloom = ideal(spec, Motion { speed: speed.abs(), hull_rate: 0., turret_rate: 0. }, gun.after_shot, mult);
+    pub fn after_shot(&mut self, spec: &AimSpec, gun: Gun, speed: f32, factors: Factors) {
+        let bloom = ideal(spec, Motion { speed: speed.abs(), hull_rate: 0., turret_rate: 0. }, gun.after_shot, factors);
         self.factor = self.factor.max(bloom);
     }
     /// The circle's angular radius now (radians).

@@ -73,7 +73,7 @@ mod av01_tests;
 mod ui02_tests;
 #[cfg(test)]
 #[path="server_ui03_tests.rs"]
-mod ui03_tests;
+pub(super) mod ui03_tests;
 #[cfg(test)]
 #[path="server_ui04_tests.rs"]
 mod ui04_tests;
@@ -326,6 +326,9 @@ impl IntegratedRuntime {
 
     fn start(&mut self, world: &mut World, now: Instant) -> io::Result<()> {
         if let Some(batch)=&mut self.batch{batch.start(world,now)?;self.started=true;return Ok(());}
+        if world.actors.iter().any(|actor|actor.equipment_mass()>0.) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"weighted equipment requires the shared scene worker"));
+        }
         if world.map != self.map_id || world.vehicle_kind()!=self.pool.vehicle_kind()
             || self.started || world.actors.len() != model::CAPACITY
             || world.started.is_none() { return Err(model::bad()); }
@@ -871,7 +874,7 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         if world.lifecycle.as_ref().is_some_and(|state|state.outcome().is_some()) {
             world.advance(now)?;
             // TURRET-01: a detonation that ended the battle still gets its body.
-            if let Some(batch)=runtime.as_mut().and_then(|r|r.batch.as_mut()) {batch.turrets_after_outcome(world,now)?;}
+            if let Some(batch)=runtime.as_mut().and_then(|r|r.batch.as_mut()) {batch.turrets_after_outcome(world)?;}
         }
         else if let Some(r)=runtime {
             if !r.started {r.start(world,now)?;}
@@ -882,7 +885,16 @@ fn advance_battle(world:&mut World, runtime:&mut Option<IntegratedRuntime>, now:
         // A candidate scene owns an atomic World clone. Do not advance the
         // lifecycle outside it and then overwrite a frozen outcome on ACK.
         let lifecycle_span=super::step_profile::span(super::step_profile::Part::Lifecycle);
-        if runtime.as_ref().is_none_or(|r|!r.blocked()) && world.advance_lifecycle(now)? {
+        let lifecycle_changed = match runtime.as_ref() {
+            Some(r) if r.blocked() => false,
+            // The drive scheduler can recover up to MAX_STALL after the next
+            // grid deadline. A pending IPC reply can defer that resync until the
+            // next loop, so allow the same wall-clock bound here independently.
+            Some(_) => world.advance_lifecycle_with_gap_bound(now,
+                (MAX_STALL + crate::map_drive_worker091::STEP).as_millis() as u64)?,
+            None => world.advance_lifecycle(now)?,
+        };
+        if lifecycle_changed {
             println!("P08C_LIFECYCLE battle={} view={:?} policy={}",world.id,
                 world.lifecycle.as_ref().map(|l|l.view()),super::lifecycle::POLICY);
         }
@@ -1528,7 +1540,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         || map!=MapId::Karelia && (integrated_pool.is_none()||!ap_test_lab||terrain.is_none()||removal.is_some()) {
         return Err(model::bad().into());
     }
-    let config = Arc::new(crate::identity091::Config::load(config_path)?);
+    let mut config = crate::identity091::Config::load(config_path)?;
+    config.bind_camouflage_domain()?;
+    let config = Arc::new(config);
     // TESTVEH-01 stand flag: say which catalogue variant this build embeds.
     if cfg!(feature="test_lab"){println!("TEST_LAB build research={} catalog={}",
         crate::research_service091::CATALOG_SHA256,super::vehicle_catalog::CATALOG_SHA256);}
@@ -1571,6 +1585,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
     let mut garage:Vec<GarageJob>=Vec::new();
     let mut result_manager=super::results_session::Manager::default();
     let started = Instant::now();
+    if config.visibility_debug_operator.is_some(){println!("VISIBILITY_DEBUG_RUN run={}",config.battle_run_id);}
     // Native Account.doCmdInt3 carries the result arena key as signed INT64.
     // ARENA-01: K > 1 arenas get non-overlapping battle id ranges; one arena keeps the old id.
     let arena_ids=if config.arenas>1 {Some(arena::arena_ids(config.arenas,OsRng.next_u64())?)} else {None};
@@ -1639,10 +1654,17 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             rules.config_version,rules.rules_hash,rules.direct_law,rules.track_law,rules.layers_law,config.shell_layers);
     }
     if profile13_mode && config.visibility_v1 {
-        battle_template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+        let mut rules=super::spotting::Rules::selected()?; rules.camouflage=config.camouflage_v1; rules.diagnostics=config.visibility_debug_operator.is_some();
+        battle_template.world.enable_original_spotting(rules)?;
+        if let Some(foliage)=&config.foliage_v1 {battle_template.world.enable_foliage(foliage.clone())?;}
         battle_template.world.enable_result_spots()?;
         battle_template.select(&mut world,&mut integrated,started)?;
         println!("P08C_FIRST_SPOT_BOUND policy={}", model::result_spots::POLICY);
+        if model::prohorovka_owner_spotting_log_enabled() && !rules.diagnostics
+            && config.battle_players == model::MAX_ACTORS && config.foliage_v1.is_some()
+            && battle_template.world.map == crate::map_profile091::MapId::Prohorovka {
+            println!("SPOTTING_OWNER_SCAN_ENABLED map=05_prohorovka roster=30 target=single_native_player period_ms=1000");
+        }
     }
     if config.results_ledger{
         if !profile13_mode{return Err(model::bad().into());}
@@ -1667,6 +1689,11 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
         // Config already requires profile13, connection capacity, visibility and no hold5/training.
         if !profile13_mode||qualification.is_some()||battle_template.shared.is_none()||!table.arena_split||!config.visibility_v1{return Err(model::bad().into());}
         battle_template.world.enable_bots(plan.clone()).map_err(|_|io::Error::other("BOT-01 bots: kinds not bound by the battle profiles or map unsupported"))?;
+        if let Some(scenario)=&config.fixed_scout_v1 {
+            battle_template.world.enable_fixed_scout(scenario.clone())?;
+            println!("FIXED_SCOUT_BOUND map={} seats={} policy=project_test_lab events={}",
+                scenario.map.asset(),scenario.seats.len(),scenario.events.len());
+        }
         if config.bots_turret_test{
             battle_template.world.enable_bot_turret_test().map_err(|_|io::Error::other("TURPHYS-01 turret test needs mixed ammo and ammo detonation"))?;
             println!("TURPHYS01_TURRET_TEST_BOUND racks={:?} passive_bots=true ammo_bay_hp=1 penetration_reaches_ammo_bay=true scope=test_lab",
@@ -1722,14 +1749,16 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             let runtime=matchmaking::Runtime::new(rules.clone(),plan)?;
             println!("MM01_POLICY_BOUND policy={} team_size={} places={} tiers={}..{} tier_spread={} wait_s={} lease_s={} arenas={} bot_tiers={:?} historical_matchmaker=UNKNOWN",
                 super::matchmaker::POLICY,rules.team_size,rules.places(),rules.tiers.0,rules.tiers.1,rules.tier_spread,rules.wait.as_secs(),
-                rules.lease.as_secs(),arenas.len(),runtime.bot_tiers().iter().map(|(k,t)|format!("{}:{t}",k.label())).collect::<Vec<_>>());
+                rules.lease.as_secs(),arenas.len(),runtime.bot_tiers().map(|(k,t)|format!("{}:{t}",k.label())).collect::<Vec<_>>());
             Some(runtime)
         },
         _=>return Err(model::bad().into()),
     };
     let mut net_stats=super::net01::LoopStats::default();
     println!("NET01_POSE_DELIVERY mode={} report_s={}",config.pose_delivery.label(),super::net01::REPORT.as_secs());
+    let _camouflage_live_guard = config.start_camouflage_guard()?;
     loop {
+        if let Some(guard)=&_camouflage_live_guard {guard.pulse();}
         let now = Instant::now();
         if now.duration_since(started) >= if profile13_mode {PROFILE13_SERVICE_LIFETIME} else {model::LIFETIME} {
             println!("SHARED_STOP reason=lab_lifetime"); break;
@@ -1777,6 +1806,12 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                         s.login_attempt = Some(job.attempt); s.login_account = Some(pending.account); s.identity = Some(accepted.identity);
                         s.hangar = Some(accepted.fixtures); s.int_settings = accepted.int_settings; s.shared = Some(Client::new(slot));
                         if config.visibility_v1 {s.shared.as_mut().ok_or_else(||model::bad())?.enable_spotting()?;}
+                        if config.visibility_debug_operator.as_ref().is_some_and(|allowed|s.identity.as_ref().is_some_and(|id|&id.account_id==allowed)) {
+                            let debug=s.shared.as_mut().ok_or_else(||model::bad())?;
+                            debug.visibility_debug_owner=config.visibility_debug_operator.clone();
+                            debug.visibility_debug_run=Some(config.battle_run_id.clone());
+                            debug.visibility_debug_grant=config.visibility_debug_grant.clone();
+                        }
                         s.shared.as_mut().ok_or_else(||model::bad())?.set_pose_delivery(config.pose_delivery)?;
                         if config.battle_events {s.shared.as_mut().ok_or_else(||model::bad())?.enable_battle_events(config.battle_feed,config.battle_history)?;}
                         if profile13_mode {
@@ -2017,7 +2052,9 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
                             let r=resources.as_ref().and_then(|rows|rows.iter().find(|r|r.kind==kind)).ok_or_else(||model::bad())?;
                             let mut template=BattleTemplate::from_resources(r,a.world.id,now)?;
                             if config.visibility_v1 {
-                                template.world.enable_original_spotting(super::spotting::Rules::selected()?)?;
+                                let mut rules=super::spotting::Rules::selected()?; rules.camouflage=config.camouflage_v1; rules.diagnostics=config.visibility_debug_operator.is_some();
+                                template.world.enable_original_spotting(rules)?;
+                                if let Some(foliage)=&config.foliage_v1 {template.world.enable_foliage(foliage.clone())?;}
                                 template.world.enable_result_spots()?;
                             }
                             if config.results_ledger {template.world.enable_result_ledger()?;}
@@ -2385,6 +2422,28 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     }
     if !c.correction { return Ok(()); }
     let outcomes = next_world.apply(slot, s.id, &commands, now)?;
+    if next_world.mixed_ammo() {
+        let owner=&next_world.actors[slot];
+        if owner.hud_consumables().contains(&crate::profile13_v2091::RPM_LIMITER)
+            && commands.iter().rev().find_map(|command|match command {
+                model::Command::ActivateEquipment{item,extra} if *item==crate::profile13_v2091::RPM_LIMITER_ITEM&&*extra<=1 => Some(*extra==1),
+                _=>None,
+            }).is_some_and(|requested|!requested||!owner.rpm_limiter_active()) {
+            // The original trigger flips its latch before sending. Reconcile
+            // a denied attempt during the countdown or with a ruined engine.
+            next.shared.as_mut().ok_or_else(model::bad)?.rpm_limiter_sent=None;
+        }
+        // #717 locks an extinguisher button locally on click. A valid, still
+        // mounted extinguisher with no fire to stop reconciles the local flag.
+        use crate::p06t_device_state::Consumable;
+        for kind in [Consumable::HandExtinguisher,Consumable::AutoExtinguisher] {
+            if next_world.actors[slot].consumables.contains(&kind.compact())
+                &&commands.iter().any(|command|matches!(command,
+                    model::Command::ActivateEquipment{item,extra:1} if *item==kind as u16)){
+                next.outbox.push_back(crate::armament_wire091::equipment_row(kind.compact(),1)?);
+            }
+        }
+    }
     if next_world.mixed_ammo()&&outcomes.iter().any(|outcome|matches!(outcome,
         crate::battle091::fire::Outcome::Typed(crate::p06t_armament091::Outcome::Refused(_))
         |crate::battle091::fire::Outcome::RejectedBattlePeriod|crate::battle091::fire::Outcome::RejectedVehicleState)){
@@ -2684,6 +2743,7 @@ fn poll_with_native_start(s: &mut Session, world: &mut World, now: Instant,
     if next.outbox.len()+next.shared.as_ref().ok_or_else(||model::bad())?.pending_private_len() > next_world.shot_limit() * 4 + 32 { return Err(model::bad()); } next.drain_outbox()?;next.flush_shared_private()?;
     {let backlog=next.outbox.len();let c=next.shared.as_mut().ok_or_else(||model::bad())?;c.pose_stats.outbox_max=c.pose_stats.outbox_max.max(backlog);}
     let mut turret_events=Vec::new();next.flush_shared_turrets(&next_world,&mut turret_events)?;
+    publish_visibility_debug(&mut next,&next_world,now);
     for outcome in outcomes { println!("SHARED_FIRE battle={} session={} slot={slot} outcome={outcome:?}", world.id, s.id); }
     for command in &commands { if let model::Command::Move(input) = command { println!("SHARED_INPUT battle={} session={} slot={slot} input={input:?} client_position_used=false", world.id, s.id); } }
     for command in &commands { if let model::Command::Aim(intent) = command { println!("SHARED_AIM battle={} session={} slot={slot} intent={intent:?} client_angles_authoritative=false", world.id, s.id); } }
@@ -2772,6 +2832,29 @@ fn projectile_effects(projectile:&super::projectile::Projectile)->io::Result<u8>
 /// one private body per vehicle (a hide invalidates only that vehicle), at
 /// most six engineMode and two damageStickers bodies per call (bounded queue
 /// growth; the rest follows on later calls), and the spotter's first spots.
+/// Low-priority diagnostic delivery after gameplay queues have drained. Leave
+/// five of eight reliable window entries for gameplay; never park debug frames
+/// behind gameplay output or private updates. Every part is independently paced.
+pub(super) fn publish_visibility_debug(session:&mut Session,world:&World,now:Instant) {
+    let Some(c)=session.shared.as_mut() else{return;};
+    let allowed=c.visibility_debug_owner.as_ref()
+        .is_some_and(|owner|session.identity.as_ref().is_some_and(|id|&id.account_id==owner));
+    if !allowed {c.visibility_debug=None;return;}
+    if !session.outbox.is_empty() || c.pending_private_len()!=0 || session.tx.len()>=3
+        || c.visibility_debug_last_frame.is_some_and(|at|now.saturating_duration_since(at)<Duration::from_millis(100)) {return;}
+    let Some(channel)=c.visibility_debug.as_mut() else{return;};
+    let run=c.visibility_debug_run.as_deref().unwrap_or("");
+    let Some(grant)=c.visibility_debug_grant.as_deref() else {c.visibility_debug=None;return;};
+    match channel.publish(world,run,grant,now,session.outbox.len()) {
+        Ok(Some(frame))=>match session.tx.enqueue_body(&frame) {
+            Ok(())=>c.visibility_debug_last_frame=Some(now),
+            Err(error)=>{println!("VISIBILITY_DEBUG_DISABLED session={} reason={}",session.id,error);c.visibility_debug=None;}
+        },
+        Ok(None)=>{},
+        Err(error)=>{println!("VISIBILITY_DEBUG_DISABLED session={} reason={}",session.id,error);c.visibility_debug=None;}
+    }
+}
+
 fn publish_av01(c:&mut Client,outbox:&mut std::collections::VecDeque<Vec<u8>>,world:&World,impact_from:usize)->io::Result<()> {
     use super::av01_feedback as av;
     let visible=c.visible();

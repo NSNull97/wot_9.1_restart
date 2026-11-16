@@ -34,7 +34,7 @@ pub(super) fn table(world:&World)->io::Result<[Score;model::MAX_ACTORS]> {
             row.frags-=1;row.team_kills=row.team_kills.checked_add(1).ok_or_else(||model::bad())?;row.team_killer=true;
         } else {row.frags+=1;}
     }
-    for harm in battle_ledger::harms(world,0,0)? {
+    for harm in battle_ledger::harms(world,0,0,world.ram_damage_events.len())? {
         if harm.attacker==harm.target||team(harm.attacker)?!=team(harm.target)? {continue;}
         let row=&mut rows[harm.attacker];
         row.team_damage=row.team_damage.checked_add(u32::from(harm.amount)).ok_or_else(||model::bad())?;row.team_killer=true;

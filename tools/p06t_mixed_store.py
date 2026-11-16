@@ -13,14 +13,20 @@ from p09d_ammo_store import require, sha
 from p09d_ammo_projection import canonical
 from p09e_research_store import _json
 from p04m_pool_store import PoolStore
+from p04m_pool_crew import decode as decode_crew
 from p04m_stock_registry import mixed_admission
 from p08b_battle_store import _uuid, _integer, REASONS, MAX_RESULT_BYTES, MAX_RESULT_REQUEST
 from p08c_battle_results import results_value
 from destructible_catalog import json_value, no_links
+from content0_equipment_catalog import CONSUMABLE_EFFECTS, CREW_FOOD, active_device_effects, SLOT_COUNT, VENTILATION_BONUS
+from content0_equipment_store import battle_loadout, consume_battle, validate_installed_consumables, validate_installed_devices
 
 # CONTENT-0 2.6: one stack of a vehicle's load (gateway model.rs MAX_AMMO_PER_ACTOR); M2 light carries 1800.
 MAX_STACK = 2048
 from p06t_terminal import TerminalPolicy, MANIFEST_SHA256
+
+# #717 common/items/vehicles.pyc, module offsets 432–456.
+CREW_VEHICLE_CLASSES = frozenset(("lightTank", "mediumTank", "heavyTank", "AT-SPG", "SPG"))
 
 SCHEMA = "p06t-owned-mixed-ammunition.v2"
 SOURCE_SHA256 = "6af1bdc74aff853360b282c3850e0aa3c97c856a7d39835c198c67fdeb342430"
@@ -238,9 +244,39 @@ class MixedAmmoStore(PoolStore):
             family=self.shells[key].kind, count=ammo["loaded"][key]) for key in mount.shell_ids]
         require(all(type(r["count"]) is int and 0 <= r["count"] <= p.capacity for r in rows), "CORRUPT_STORE")
         require(1 <= sum(r["count"] for r in rows) <= p.capacity, "AMMUNITION_EMPTY")
-        return dict(kind=p.kind, descriptor_hex=p.descriptor_hex, native_inventory_id=native, vehicle_inventory_id=vehicle["vehicle_id"],
-            max_hp=p.max_hp, crew_ids=[r["crew_id"] for r in members], capacity=p.capacity,
+        frozen = dict(kind=p.kind, descriptor_hex=p.descriptor_hex, native_inventory_id=native, vehicle_inventory_id=vehicle["vehicle_id"],
+            max_hp=p.max_hp, crew_ids=[r["crew_id"] for r in members], crew_qualification=self._crew_qualification(p, members), capacity=p.capacity,
             ammunition=rows, initial_shell_compact_id=next(r["shell_compact_id"] for r in rows if r["count"]))
+        devices, consumables = battle_loadout(self.connection, aggregate["account_id"], vehicle["vehicle_id"])
+        require(p.required_suspension is None or p.required_suspension in devices, "BATTLE_PROFILE_UNSUPPORTED")
+        assembly = {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}
+        validate_installed_devices(self.catalog, assembly, devices)
+        if any(devices) or any(consumables):
+            validate_installed_consumables(self.catalog, assembly, consumables)
+            frozen["artefacts"] = {"optional_devices": list(devices), "consumables": list(consumables)}
+        return frozen
+
+    def _crew_qualification(self, profile, members):
+        target = self.catalog.vehicles[profile.vehicle_id]
+        nation = (profile.type_compact_id >> 4) & 15
+        target_type = profile.type_compact_id >> 8
+        target_tags = set(target["tags"])
+        trained_by_type = {row["native_compact_id"] >> 8: row["tags"] for row in self.catalog.vehicles.values()
+                           if row["nation"] == target["nation"]}
+        levels = []
+        for member in members:
+            trained = decode_crew(bytes.fromhex(member["descriptor_hex"]))
+            require(trained["nation_id"] == nation, "CORRUPT_STORE")
+            trained_type = trained["vehicle_type_id"]
+            factor = 4
+            if trained_type != target_type:
+                source_tags = trained_by_type.get(trained_type)
+                require(source_tags is not None, "CORRUPT_STORE")
+                same_class = not (CREW_VEHICLE_CLASSES & target_tags).isdisjoint(source_tags)
+                factor = 2 + int(same_class) + int("premium" in target_tags)
+            # Original Tankman.efficiencyRoleLevel uses Python 2 round on positive values.
+            levels.append((trained["role_level"] * factor + 2) // 4)
+        return levels
 
     def _active_mixed(self, account):
         if not self._mixed_tables(): return []
@@ -253,20 +289,44 @@ class MixedAmmoStore(PoolStore):
         reserved = [r for r in aggregate["vehicles"] if r["state"] == "reserved"]
         require(len(active) == len(reserved) == 1 and old is None, "CORRUPT_STORE")
         row = active[0]; value = self._mixed_reservation(row)
+        current = self.freeze_mixed(aggregate, row["native_inventory_id"], available=False)
+        if "crew_qualification" not in value["frozen"]:
+            del current["crew_qualification"]
         require(reserved[0]["vehicle_id"] == row["vehicle_inventory_id"] and reserved[0]["battle_id"] == row["battle_id"]
             and self._current_run(aggregate["account_id"]) == row["run_id"]
-            and value["frozen"] == self.freeze_mixed(aggregate, row["native_inventory_id"], available=False), "CORRUPT_STORE")
+            and value["frozen"] == current, "CORRUPT_STORE")
 
     def _mixed_reservation(self, row):
         require(row is not None, "RESERVATION_MISMATCH")
         f = _json(row["frozen_json"])
+        fields = {"kind", "descriptor_hex", "native_inventory_id", "vehicle_inventory_id", "max_hp", "crew_ids", "capacity", "ammunition", "initial_shell_compact_id"}
+        if "crew_qualification" in f:
+            fields.add("crew_qualification")
+        if "artefacts" in f:
+            fields.add("artefacts")
+            items = f["artefacts"]
+            require(type(items) is dict and set(items) == {"optional_devices", "consumables"}, "CORRUPT_STORE")
+            for key, supported in (("optional_devices", active_device_effects()), ("consumables", CONSUMABLE_EFFECTS)):
+                slots = items[key]
+                require(type(slots) is list and len(slots) == SLOT_COUNT and all(type(cd) is int and (cd == 0 or cd in supported) for cd in slots), "CORRUPT_STORE")
+                equipped = [cd for cd in slots if cd]
+                require(len(equipped) == len(set(equipped)), "CORRUPT_STORE")
+            require(any(items["optional_devices"]) or any(items["consumables"]), "CORRUPT_STORE")
+            if any(cd in VENTILATION_BONUS for cd in items["optional_devices"]) or any(cd in CREW_FOOD for cd in items["consumables"]):
+                require("crew_qualification" in f, "CORRUPT_STORE")
         require(len(row["frozen_json"]) <= 4096 and sha(canonical(f)) == row["frozen_sha256"]
-            and set(f) == {"kind", "descriptor_hex", "native_inventory_id", "vehicle_inventory_id", "max_hp", "crew_ids", "capacity", "ammunition", "initial_shell_compact_id"}, "CORRUPT_STORE")
+            and set(f) == fields, "CORRUPT_STORE")
         p = self.registry.profiles.get(f["kind"])
         require(p is not None and mixed_admission(p.kind, lambda: self.zero_economy(row["account_id"])) and f["descriptor_hex"] == p.descriptor_hex and f["max_hp"] == p.max_hp
             and type(f["max_hp"]) is int and type(f["capacity"]) is int and f["capacity"] == p.capacity
             and f["native_inventory_id"] == row["native_inventory_id"] and type(f["native_inventory_id"]) is int
             and f["vehicle_inventory_id"] == row["vehicle_inventory_id"] == self.registry.inventory_id(row["account_id"], f["native_inventory_id"], p.kind), "CORRUPT_STORE")
+        require(p.required_suspension is None or p.required_suspension in f.get("artefacts", {}).get("optional_devices", ()), "CORRUPT_STORE")
+        assembly = {"vehicle_id": p.vehicle_id, "modules": dict(p.modules)}
+        validate_installed_devices(self.catalog, assembly,
+                                   f.get("artefacts", {}).get("optional_devices", [0] * SLOT_COUNT))
+        if "artefacts" in f:
+            validate_installed_consumables(self.catalog, assembly, f["artefacts"]["consumables"])
         mount = self.mounts[p.assembly_id]; ammo = f["ammunition"]
         require(type(ammo) is list and len(ammo) == len(mount.shell_ids) and 1 <= len(ammo) <= 3, "CORRUPT_STORE")
         for value, key in zip(ammo, mount.shell_ids):
@@ -280,6 +340,10 @@ class MixedAmmoStore(PoolStore):
         by_id = {r[0]: r[1] for r in crew}
         require(type(f["crew_ids"]) is list and len(f["crew_ids"]) == len(p.crew_roles) and len(set(f["crew_ids"])) == len(f["crew_ids"])
             and all(by_id.get(identity) == role for identity, role in zip(f["crew_ids"], p.primary_roles)), "CORRUPT_STORE")
+        if "crew_qualification" in f:
+            levels = f["crew_qualification"]
+            require(type(levels) is list and len(levels) == len(p.crew_roles)
+                    and all(type(level) is int and 25 <= level <= 100 for level in levels), "CORRUPT_STORE")
         result = None
         if row["status"] != "active":
             result = _json(row["result_json"])
@@ -302,6 +366,7 @@ class MixedAmmoStore(PoolStore):
             or (not abort and type(hp) is int and 0 <= hp <= frozen["max_hp"] and reason in REASONS), "INVALID_RESULT")
         if abort:require(terminal_state is None,"INVALID_RESULT")
         else:terminal_state=self.terminal_policy.validate(canonical(terminal_state).decode("ascii"),frozen=frozen,terminal_hp=hp)
+        if reason == "cancelled":require("consumables_used" not in terminal_state,"INVALID_RESULT")
         return dict(reason=reason, remaining_ammunition=remaining,
             consumed_ammunition=[dict(shell_compact_id=b["shell_compact_id"], count=b["count"]-a["count"]) for a,b in zip(remaining, original)],
             terminal_hp=hp, destroyed=None if abort else hp == 0 or not terminal_state["crew_active"], repaired_hp=frozen["max_hp"], credits=0, xp=0,terminal_state=terminal_state)
@@ -311,6 +376,8 @@ class MixedAmmoStore(PoolStore):
         remaining = [dict(shell_compact_id=r["shell_compact_id"], count=r["count"]) for r in f["ammunition"]] if abort else request["remaining_ammunition"]
         result = self._terminal(f, remaining, None if abort else request["terminal_hp"], "aborted_restart" if abort else request["reason"],
             terminal_state=None if abort else _json(request["terminal_state_json"]),abort=abort)
+        if not abort and "consumables_used" in result["terminal_state"]:
+            consume_battle(c, account, row["vehicle_inventory_id"], f["artefacts"]["consumables"], result["terminal_state"]["consumables_used"])
         layout = self.layouts(account)[row["native_inventory_id"]]
         counts = {r["shell_compact_id"]: r["count"] for r in remaining}
         loaded = {r["shell_definition_id"]: counts[r["shell_compact_id"]] for r in f["ammunition"]}

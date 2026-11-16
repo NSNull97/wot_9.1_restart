@@ -63,6 +63,20 @@ pub fn slot_for_vehicle(id: u32) -> io::Result<usize> {
 fn string(b: &mut Vec<u8>, value: &[u8]) -> io::Result<()> {
     if value.len() >= 255 { return Err(model::bad()); } b.push(value.len() as u8); b.extend(value); Ok(())
 }
+fn equipped_descriptor(b:&mut Vec<u8>,a:&Actor)->io::Result<()> {
+    let ids=a.optional_devices();
+    let descriptor=a.vehicle_kind().descriptor();
+    if ids==[0;3] {return string(b,descriptor);}
+    let (&flags,base)=descriptor.split_last().ok_or_else(model::bad)?;
+    if flags!=0 {return Err(model::bad());}
+    let mut equipped=base.to_vec();
+    equipped.push(ids.iter().fold(0,|mask,id|(mask<<1)|u8::from(*id!=0)));
+    // #717 reads the low mask bit (last slot) and consumes the first word.
+    for id in ids.into_iter().rev().filter(|id|*id!=0) {
+        equipped.extend((id>>8).to_le_bytes());
+    }
+    string(b,&equipped)
+}
 fn var16(id: u8, p: &[u8]) -> io::Result<Vec<u8>> {
     if p.is_empty() || p.len() > 500 { return Err(model::bad()); }
     let mut b = vec![id]; b.extend((p.len() as u16).to_le_bytes()); b.extend(p); Ok(b)
@@ -90,7 +104,7 @@ pub fn roster(w: &World,viewer:usize) -> io::Result<Vec<u8>> {
 }
 fn roster_row(w:&World,slot:usize,viewer:usize)->io::Result<Vec<u8>> {
     let a=actor(w,slot)?;let mut d=vec![b'(',b'J'];d.extend(vehicle_id(slot)?.to_le_bytes());
-    d.push(b'U');string(&mut d,a.vehicle_kind().descriptor())?;
+    d.push(b'U');equipped_descriptor(&mut d,a)?;
     d.push(b'U');string(&mut d,a.identity.name.as_bytes())?;
     // UI-06: a later VEHICLE_LIST rebuilds the native info objects from these
     // rows, so the flag of TEAM_KILLER has to stay here for its own team.
@@ -198,7 +212,7 @@ pub fn create_vehicle(w: &World, slot: usize) -> io::Result<Vec<u8>> {
     f3(&mut p, a.position); f3(&mut p, a.direction);
     p.extend([8, 0, 0, 1, u8::from(a.crew_active()), 2]); p.extend(packed_angles_for(a.vehicle_kind(),&a.aim)?.to_le_bytes());
     p.push(3); p.extend(a.health.to_le_bytes()); p.extend([4, 0, 0, 5]);
-    string(&mut p, a.identity.name.as_bytes())?; string(&mut p, a.vehicle_kind().descriptor())?;
+    string(&mut p, a.identity.name.as_bytes())?; equipped_descriptor(&mut p,a)?;
     p.push(w.team(slot)?); p.extend(0i32.to_le_bytes()); p.push(0);
     p.push(6); p.extend(0i32.to_le_bytes()); p.push(7);
     p.extend(crate::armament_wire091::modifiers_value(&a.public_modifiers())?);
@@ -440,10 +454,10 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     b.extend([0x13, 0x4a]); f3(&mut b, a.position); f3(&mut b, a.direction);
     b.extend(a.speed.to_le_bytes()); b.extend(0f32.to_le_bytes());
     // Native Avatar.updateTargetingInfo starts the original gun rotator and
-    // its original target-input path. Nominal resource parameters, no crew
-    // modifier claim; conversions mirror the original resource readers.
+    // its original target-input path. Publish the same effective aim time the
+    // server uses to settle the circle.
     b.extend([0x13, 0x4b]);
-    let kind=a.vehicle_kind(); let aiming=kind.aim();
+    let kind=a.vehicle_kind(); let aiming=a.aiming_spec();
     for value in [a.aim.yaw, a.aim.pitch, aiming.yaw_rate, aiming.pitch_rate, 1.,
         aiming.turret_dispersion, aiming.movement_dispersion, aiming.hull_dispersion, aiming.aiming_time] {
         b.extend(value.to_le_bytes());
@@ -451,6 +465,14 @@ pub fn binding(w: &World, own: usize, now: std::time::Instant) -> io::Result<Vec
     if let Some(typed)=a.fire.typed() {
         b.extend(crate::armament_wire091::ammo_snapshot(typed.mount(),typed.counts(),
             typed.current().compact_descr,typed.next().compact_descr,typed.clip())?);
+        // Reserve the native consumable slots before the optional-device HUD
+        // callback uses the client's next slot index.
+        if let Some(frozen)=a.owned_v2.as_ref().filter(|f|f.consumables!=[0;3]||a.stereoscope_status().is_some()||w.camouflage_enabled()&&a.camouflage_net_status().is_some()) {
+            for (cd,remaining) in frozen.consumables.into_iter().zip(a.hud_consumables()){
+                let trigger_on=cd==crate::profile13_v2091::RPM_LIMITER&&a.rpm_limiter_active();
+                b.extend(crate::armament_wire091::equipment_row_with_trigger(cd,u16::from(remaining!=0),trigger_on)?);
+            }
+        }
         b.extend(crate::armament_wire091::reload(vehicle_id(own)?,typed.remaining_seconds(now),typed.base_reload_seconds())?);
     } else {
         for (descriptor, original_count) in kind.panel_rows() {

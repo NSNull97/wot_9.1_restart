@@ -339,6 +339,11 @@ impl State {
     fn latest_tick(&self)->Option<u32>{self.events.last().map(|event|event.tick).into_iter()
         .chain(self.vehicle_events.last().map(|event|event.tick)).max()}
     pub fn scene_version(&self)->u32{self.health.iter().zip(&self.fallen).filter(|(h,f)|**h==0||f.is_some()).count() as u32}
+    pub(super) fn committed_fallen_trees(&self) -> impl Iterator<Item = (&Object, u32)> {
+        self.catalog.objects.iter().zip(&self.fallen).filter_map(|(object, packed)| {
+            (*packed).filter(|_| object.kind == ObjectKind::Tree).map(|value| (object, value))
+        })
+    }
     pub fn removed_ids(&self)->Vec<u32>{self.catalog.objects.iter().zip(self.health.iter().zip(&self.fallen)).filter(|(_, (h,f))|**h==0||f.is_some()).map(|(o,_)|o.object_id).collect()}
     pub fn excluded(&self)->Vec<u32>{self.catalog.objects.iter().zip(self.health.iter().zip(&self.fallen))
         .filter(|(_, (h,f))|**h==0||f.is_some()).map(|(o,_)|o.instance_id).collect()}

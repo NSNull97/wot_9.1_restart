@@ -19,6 +19,7 @@
 ## Механика снарядов
 
 - [SHELL_MECH.md](SHELL_MECH.md) — исследование #717 (Codex 27.10) и сверка с main 04.11: броня и ходовая, неизвестные внутренние объёмы и законы сервера, инварианты 6/4/275, декали AV-01, сверка с Shell Mechanics 2.0 владельца; native NOT_RUN
+- [CONTENT0_BOT_LOADOUTS.md](CONTENT0_BOT_LOADOUTS.md) — комплектации, боекомплект и артиллерия серверных ботов на отдельном стенде
 
 ## Карты
 
@@ -52,6 +53,8 @@
 - [P07B_NATIVE_INTEREST.md](P07B_NATIVE_INTEREST.md) — original AoI enter/leave и source stock vision ranges
 - [P07B_SERVER_VISIBILITY.md](P07B_SERVER_VISIBILITY.md) — recipient LOS/epochs/packet filtering, full975PASS, native NOT_RUN
 - [P07B_ORIGINAL_SOURCES.md](P07B_ORIGINAL_SOURCES.md) — bounded #717 source ledger for six static points, dynamic gunner point, mounted ranges and Sixth Sense
+- [CONTENT0_S5A_CAMOUFLAGE.md](CONTENT0_S5A_CAMOUFLAGE.md) — источник 5a, неизвестные параметры и изоляция стенда; приёмка NOT_RUN
+- [CONTENT0_S5A_ASSIST.md](CONTENT0_S5A_ASSIST.md) — проектное деление ассиста между прямыми наблюдателями, ограничения и проверки
 - [P07B_PUBLICATION_BOUNDARY.md](P07B_PUBLICATION_BOUNDARY.md) — recipient publication gate for hidden-shooter terrain FX and current integration boundary
 - [P07B_AUDIO_BOUNDARY_20261018.md](P07B_AUDIO_BOUNDARY_20261018.md) — лампа 6-го чувства в #717 без звука (VERIFIED); проектный FX за флагом `--sixth-sense-sound`, native NOT_RUN
 - [P04M_FIVE_PROFILES.md](P04M_FIVE_PROFILES.md) — пять source-bound боевых профилей, actual Jolt/World/ACK, версия SQLite/crew/ammo, native NOT_RUN
@@ -233,6 +236,8 @@
 
 - [CONTENT0_BUILD_BATTLE.md](CONTENT0_BUILD_BATTLE.md) — нативная проверка нестоковой сборки, gate шагов 3–4,
   восстановление закреплённого воркера и остаток из 319 сборок старых видов.
+- [CONTENT0_STEP5_EQUIPMENT_SOURCE.md](CONTENT0_STEP5_EQUIPMENT_SOURCE.md) — каталог оборудования и расходников #717,
+  команды ангара, слоты и кодирование установленного оборудования.
 - [CONTENT0_LEGACY_BUILDS.md](CONTENT0_LEGACY_BUILDS.md) — допуск 319 сборок старых видов, сцены Jolt,
   полный нативный бой на МС-1 и сравнение Python с базой.
 - [CONTENT0_INVENTORY.md](CONTENT0_INVENTORY.md) — опись контента 0.9.1 «клиент ↔ сервер» (шаг 0): машины, модули,

@@ -153,7 +153,11 @@ impl State {
     }
     /// Atomic: a malformed last member or backwards clock cannot mutate progress.
     pub fn advance(&mut self, now_ms: u64, members: &[Member]) -> io::Result<bool> {
-        if now_ms < self.last_ms || now_ms > 3_600_000 || now_ms - self.last_ms > MAX_STEP_MS
+        self.advance_with_gap_bound(now_ms, members, MAX_STEP_MS)
+    }
+
+    pub(super) fn advance_with_gap_bound(&mut self, now_ms: u64, members: &[Member], max_gap_ms: u64) -> io::Result<bool> {
+        if now_ms < self.last_ms || now_ms > 3_600_000 || now_ms - self.last_ms > max_gap_ms
             || !(2..=MAX_ACTORS).contains(&members.len()) || (!self.damage_epochs.is_empty() && self.damage_epochs.len() != members.len()) {
             return Err(bad("clock/membership bound"));
         }
@@ -197,7 +201,11 @@ impl State {
             } else {
                 // Clamp integration to the active period, including its first tick.
                 let start = next.battle_start_ms.ok_or_else(|| bad("battle clock"))?;
-                let elapsed = now_ms.min(start + next.rules.battle_ms).saturating_sub((now_ms - dt).max(start));
+                // A recovered scheduler gap advances the battle clock. There are
+                // no committed poses through that gap to award capture progress.
+                let elapsed = if dt > MAX_STEP_MS { 0 } else {
+                    now_ms.min(start + next.rules.battle_ms).saturating_sub((now_ms - dt).max(start))
+                };
                 for i in 0..2 {
                     let base = next.rules.bases[i];
                     let inside = |a: &Member| a.present && a.alive && {
@@ -264,6 +272,36 @@ mod tests {
         s.advance(1_199,&m).unwrap();assert!(!s.allows_actions());s.advance(1_200,&m).unwrap();assert!(s.allows_actions());
         let before=s.clone();assert!(s.advance(1_199,&m).is_err());assert_eq!(s,before);
         assert!(s.advance(2_201,&m).is_err());assert_eq!(s,before);
+    }
+
+    #[test]
+    fn recovered_drive_stall_advances_clock_without_crediting_unobserved_capture() {
+        let (mut state, mut roster) = battle();
+        let [x, z] = state.rules.bases[1].xz;
+        roster[0].position = [x, 0., z];
+        state.advance(2_000, &roster).unwrap();
+        assert_eq!(state.capture_points(0), 1);
+
+        let previous = state.clone();
+        assert!(state.advance(4_200, &roster).is_err());
+        assert!(state.advance_with_gap_bound(7_101, &roster, 5_100).is_err());
+        assert!(state.advance_with_gap_bound(1_999, &roster, 5_100).is_err());
+        assert!(state.advance_with_gap_bound(4_200, &roster[..1], 5_100).is_err());
+        assert_eq!(state, previous);
+
+        state.advance_with_gap_bound(4_200, &roster, 5_100).unwrap();
+        assert!(state.allows_actions());
+        assert_eq!(state.elapsed_battle_ms(), 3_200);
+        assert_eq!(state.capture_points(0), 1);
+        state.advance(5_200, &roster).unwrap();
+        assert_eq!(state.capture_points(0), 2);
+
+        roster[0].position = [500., 0., 500.];
+        for elapsed in 6..=199 {
+            state.advance(elapsed * 1_000, &roster).unwrap();
+        }
+        state.advance_with_gap_bound(201_200, &roster, 5_100).unwrap();
+        assert_eq!(state.outcome(), Some(Outcome { winner: 0, reason: Reason::Timeout, ended_ms: 201_000 }));
     }
     #[test] fn countdown_disconnect_is_explicit_technical_forfeit_and_never_waits_forever() {
         let mut s=State::new(fast()).unwrap();let mut m=members();m.iter_mut().for_each(|a|a.ready=true);

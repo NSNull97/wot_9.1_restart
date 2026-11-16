@@ -1,6 +1,27 @@
 use crate::{armament_wire091 as w,p06t_shells091::{Mount,PROFILES}};
 fn hex(bytes:Vec<u8>)->String{bytes.iter().map(|v|format!("{v:02x}")).collect()}
 
+#[test]
+fn content0_s5_consumables_literal_codes_and_owner_quantity_rows(){
+    assert_eq!(w::command(&[0x8d,5,0,16,4,0,30,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:4,extra:30}));
+    assert_eq!(w::command(&[0x8d,5,0,16,0,0,1,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:0,extra:1}));
+    assert_eq!(w::command(&[0x8d,5,0,16,255,255,255,255]).unwrap(),Some(w::Intent::ActivateEquipment{item:65535,extra:65535}));
+    assert_eq!(hex(w::equipment_row(1275,1).unwrap()),"1344fb0400000100000000");
+    assert_eq!(hex(w::equipment_row(1275,0).unwrap()),"1344fb0400000000000000");
+    assert_eq!(hex(w::equipment_row(0,0).unwrap()),"1344000000000000000000");
+    assert_eq!(hex(w::equipment_row(3067,0).unwrap()),"1344fb0b00000000000000");
+    assert_eq!(hex(w::equipment_row(3067,1).unwrap()),"1344fb0b00000100000000");
+    assert_eq!(w::command(&[0x8d,5,0,16,12,0,1,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:12,extra:1}));
+    assert_eq!(w::command(&[0x8d,5,0,16,12,0,0,0]).unwrap(),Some(w::Intent::ActivateEquipment{item:12,extra:0}));
+    assert_eq!(hex(w::equipment_row(2299,1).unwrap()),"1344fb0800000100000000");
+    assert_eq!(hex(w::equipment_row_with_trigger(3323,1,true).unwrap()),"1344fb0c0000010000ffff");
+    assert!(w::equipment_row_with_trigger(3323,0,true).is_err());
+    assert!(w::equipment_row_with_trigger(2299,1,true).is_err());
+    assert!(w::equipment_row(0,1).is_err());
+    assert!(w::equipment_row(2570,1).is_err());
+    assert!(w::equipment_row(251,2).is_err());
+}
+
 #[test]fn p06t_effects_all24_original_order_and_launch_snapshot_identity(){
     let expected=[[2,4,3],[14,17,15],[2,5,3],[6,8,7],[6,9,7],[14,17,15],[14,16,15],[18,19,19]];
     for(m,p)in PROFILES.iter().enumerate(){for(s,shell)in p.shots.into_iter().enumerate(){assert_eq!(w::effect_index(shell).unwrap(),expected[m][s]);}}
@@ -64,7 +85,7 @@ fn hex(bytes:Vec<u8>)->String{bytes.iter().map(|v|format!("{v:02x}")).collect()}
 #[test]fn p06t_literal_reload_start_end_keep_original_float32_order(){
     assert_eq!(hex(w::reload(1002,2.,60.).unwrap()),"1346ea0300000000004000007042");
     assert_eq!(hex(w::reload(1002,0.,60.).unwrap()),"1346ea0300000000000000007042");
-    assert!(w::reload(1002,240.,240.).is_ok());assert!(w::reload(1002,480.,480.).is_ok());assert!(w::reload(1002,0.,481.).is_err());
+    assert!(w::reload(1002,240.,240.).is_ok());assert!(w::reload(1002,960.,960.).is_ok());assert!(w::reload(1002,0.,961.).is_err());
     for(left,base)in [(f32::NAN,60.),(61.,60.),(-1.,60.),(0.,0.),(0.,f32::INFINITY)]{assert!(w::reload(1002,left,base).is_err());}
     assert!(w::reload(0,0.,60.).is_err());
 }
@@ -78,4 +99,11 @@ fn hex(bytes:Vec<u8>)->String{bytes.iter().map(|v|format!("{v:02x}")).collect()}
     assert_eq!(switched,w::setting(m,w::Setting::Current,b).unwrap(),"a switch sends the setting and no row");
     let shot=w::ammo_delta(m,same,([3,2,3],a,b,0)).unwrap();
     assert_eq!(shot,w::ammo_row(m,a,3,0).unwrap(),"a shot sends only its row");
+}
+#[test]
+fn content0_s5_stereoscope_owner_callback_uses_raw_source_id_and_bool() {
+    assert_eq!(crate::armament_wire091::stereoscope_status(false), [0x13, 0x3d, 4, 0]);
+    assert_eq!(crate::armament_wire091::stereoscope_status(true), [0x13, 0x3d, 4, 1]);
+    assert_eq!(crate::armament_wire091::camouflage_net_status(false), [0x13, 0x3d, 6, 0]);
+    assert_eq!(crate::armament_wire091::camouflage_net_status(true), [0x13, 0x3d, 6, 1]);
 }

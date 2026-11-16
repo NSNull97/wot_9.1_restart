@@ -1,6 +1,11 @@
 //! Generated numeric source caps after fresh original-file checks. No historical damage algorithm.
 pub const SOURCE_SHA256:&str="3c4219c2adda799677dea310e84765bbfebca6edfa06aa3db450a7ddfb4875b5";
 pub const SOURCE_V2_SHA256:&str="2d74a8e8f272e6305d6779d887cac44ad9794c4ec40807ddf76a5139e3db9da4";
+pub(crate) const WET_AMMO_RACKS: [u16; 2] = [6905, 7161];
+pub(crate) const CO2_FUEL_TANK: u16 = 7417;
+pub(crate) const CYCLONE_FILTER: u16 = 7673;
+pub(crate) const ENHANCED_SUSPENSIONS: [u16; 20] = [2041, 2297, 2553, 2809, 3065, 3321, 3577, 3833,
+    4089, 4345, 8441, 8697, 8953, 9209, 9465, 9721, 9977, 10233, 10489, 10745];
 #[derive(Clone,Copy,Debug,PartialEq,Eq)]
 pub enum Profile {Ms1,Is7,T26,T34,T3485,Wt128,Fv183,
 /// BATTLE-ANY generated assembly: caps/crew from the verified registry.
@@ -19,6 +24,28 @@ impl Profile {
     pub fn is_legacy(self)->bool{self.index()<Self::ALL.len()}
     fn generated(self)->Option<&'static crate::gateway091::shared::generated_vehicles::Entry>{match self{Self::Generated(id)=>Some(crate::gateway091::shared::generated_vehicles::entry(id)),_=>None}}
     pub fn caps(self)->&'static [Cap;9]{self.generated().map_or_else(||&CAPS[self.index()],|e|&e.caps)}
+    pub fn equipped_caps(self, equipment: [u16; 3]) -> [Cap; 9] {
+        let mut caps = *self.caps();
+        for (device, installed) in [
+            (Device::Engine, equipment.contains(&CYCLONE_FILTER)),
+            (Device::AmmoBay, equipment.iter().any(|item| WET_AMMO_RACKS.contains(item))),
+            (Device::FuelTank, equipment.contains(&CO2_FUEL_TANK)),
+        ] {
+            if installed {
+                let cap = &mut caps[device as usize];
+                // XML changes maxHealth. The project keeps the source maxRegenHealth and
+                // rounds the positive maximum to the nearest integer, half up.
+                cap.max = (u32::from(cap.max) * 3).div_ceil(2).min(u32::from(u16::MAX)) as u16;
+            }
+        }
+        if equipment.iter().any(|id| ENHANCED_SUSPENSIONS.contains(id)) {
+            for device in [Device::LeftTrack, Device::RightTrack] {
+                let max = &mut caps[device as usize].max;
+                *max = ((u32::from(*max) * 6 + 2) / 5).min(u32::from(u16::MAX)) as u16;
+            }
+        }
+        caps
+    }
     pub fn crew(self)->&'static [Seat]{self.generated().map_or_else(||CREW[self.index()],|e|&e.crew)}
     pub fn max_hp(self)->u16{self.generated().map_or_else(||MAX_HP[self.index()],|e|e.max_hp as u16)}
     pub fn engine_fire_chance(self)->f64{self.generated().map_or_else(||ENGINE_FIRE_CHANCE[self.index()],|e|e.engine_fire_chance)}

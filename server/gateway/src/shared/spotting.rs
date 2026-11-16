@@ -72,6 +72,10 @@ impl Parts {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rules {
+    /// Explicit test-lab calibration; old P07B stays byte-for-byte in behavior when off.
+    pub camouflage: bool,
+    /// Explicitly authenticated local-operator trace, disabled by default.
+    pub diagnostics: bool,
     pub max_detection_m: f32,
     pub proximity_m: f32,
     pub scan_period_ms: u64,
@@ -82,8 +86,8 @@ pub struct Rules {
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): Rules
 impl crate::bw_wire::Wire for Rules {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{max_detection_m,proximity_m,scan_period_ms,retention_ms,sixth_sense_delay_ms,share_with_team,rollover_world_up_fallback}=self;W::put(max_detection_m,bw_o);W::put(proximity_m,bw_o);W::put(scan_period_ms,bw_o);W::put(retention_ms,bw_o);W::put(sixth_sense_delay_ms,bw_o);W::put(share_with_team,bw_o);W::put(rollover_world_up_fallback,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{max_detection_m:W::get(bw_i)?,proximity_m:W::get(bw_i)?,scan_period_ms:W::get(bw_i)?,retention_ms:W::get(bw_i)?,sixth_sense_delay_ms:W::get(bw_i)?,share_with_team:W::get(bw_i)?,rollover_world_up_fallback:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{camouflage,diagnostics,max_detection_m,proximity_m,scan_period_ms,retention_ms,sixth_sense_delay_ms,share_with_team,rollover_world_up_fallback}=self;W::put(camouflage,bw_o);W::put(diagnostics,bw_o);W::put(max_detection_m,bw_o);W::put(proximity_m,bw_o);W::put(scan_period_ms,bw_o);W::put(retention_ms,bw_o);W::put(sixth_sense_delay_ms,bw_o);W::put(share_with_team,bw_o);W::put(rollover_world_up_fallback,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{camouflage:W::get(bw_i)?,diagnostics:W::get(bw_i)?,max_detection_m:W::get(bw_i)?,proximity_m:W::get(bw_i)?,scan_period_ms:W::get(bw_i)?,retention_ms:W::get(bw_i)?,sixth_sense_delay_ms:W::get(bw_i)?,share_with_team:W::get(bw_i)?,rollover_world_up_fallback:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 impl Rules {
@@ -91,7 +95,8 @@ impl Rules {
         if !self.max_detection_m.is_finite() || !(1. ..=MAX_VIEW_RANGE).contains(&self.max_detection_m)
             || !self.proximity_m.is_finite() || !(0. ..=self.max_detection_m).contains(&self.proximity_m)
             || !(1..=2000).contains(&self.scan_period_ms) || self.retention_ms > 15_000
-            || self.sixth_sense_delay_ms > 10_000 { return Err(bad("spotting rules outside bounds")); }
+            || self.sixth_sense_delay_ms > 10_000
+            || self.diagnostics && (!cfg!(feature="test_lab") || !self.camouflage) { return Err(bad("spotting rules outside bounds")); }
         Ok(())
     }
     pub fn selected() -> io::Result<Self> {
@@ -99,7 +104,7 @@ impl Rules {
             .map_err(|_| bad("spotting rules JSON"))?;
         if value.get("schema").and_then(|v| v.as_str()) != Some(POLICY) { return Err(bad("spotting policy schema")); }
         let number = |name: &str| value.get(name).and_then(|v| v.as_f64()).ok_or_else(|| bad("spotting policy number"));
-        let rules = Self { max_detection_m: number("max_detection_m")? as f32, proximity_m: number("proximity_m")? as f32,
+        let rules = Self { camouflage: false, diagnostics: false, max_detection_m: number("max_detection_m")? as f32, proximity_m: number("proximity_m")? as f32,
             scan_period_ms: number("scan_period_ms")? as u64, retention_ms: number("retention_ms")? as u64,
             sixth_sense_delay_ms: number("sixth_sense_delay_ms")? as u64,
             share_with_team: value.get("share_with_team").and_then(|v| v.as_bool()).ok_or_else(|| bad("spotting share policy"))?,
@@ -113,7 +118,9 @@ impl Rules {
 /// every recipient and stays published (owner 12.11: an enemy killed while
 /// unspotted must appear on the map; before, a never-seen wreck needed direct
 /// LOS, owner run 2026-10-19). Project policy.
-pub struct Actor { pub slot: usize, pub team: u8, pub position: Point, pub points: Points, pub view_range: f32, pub observer_active: bool, pub commander_active: bool, pub wreck: bool }
+pub struct Actor { pub slot: usize, pub team: u8, pub position: Point, pub points: Points, pub view_range: f32, pub camouflage: f32,
+    pub base:f32, pub base_stationary:f32, pub moving:bool, pub net:f32, pub fire_multiplier:f32, pub net_remaining_ms:Option<u64>,
+    pub fired:bool, pub observer_active: bool, pub commander_active: bool, pub wreck: bool }
 
 fn validate_actors(actors: &[Actor]) -> io::Result<()> {
     if actors.is_empty() || actors.len() > MAX_ACTORS { return Err(bad("spotting actor count")); }
@@ -122,6 +129,9 @@ fn validate_actors(actors: &[Actor]) -> io::Result<()> {
         if actor.slot >= MAX_ACTORS || seen[actor.slot] || !matches!(actor.team, 1 | 2) || !finite(actor.position)
             || !actor.points.checks.into_iter().chain(actor.points.observers).all(finite)
             || !actor.view_range.is_finite() || !(0. ..=MAX_VIEW_RANGE).contains(&actor.view_range)
+            || !actor.camouflage.is_finite() || !(0. ..=1.).contains(&actor.camouflage)
+            || [actor.base,actor.base_stationary,actor.net,actor.fire_multiplier].into_iter().any(|x|!x.is_finite() || !(0. ..=1.).contains(&x))
+            || actor.net_remaining_ms.is_some_and(|x|x>3000)
             || actor.commander_active && !actor.observer_active { return Err(bad("spotting actor validation")); }
         seen[actor.slot] = true;
     }
@@ -139,44 +149,127 @@ pub struct State {
     observed: [bool; MAX_ACTORS],
     pending: [Option<u64>; MAX_ACTORS],
     sixth_generation: [u32; MAX_ACTORS],
+    diagnostic_snapshot: Option<serde_json::Value>,
 }
 // BW-01 wire codec (tools/bw01_wire_gen.py): State
 impl crate::bw_wire::Wire for State {
-    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{rules,last_ms,last_scan_ms,direct,last_seen,desired,observed,pending,sixth_generation}=self;W::put(rules,bw_o);W::put(last_ms,bw_o);W::put(last_scan_ms,bw_o);W::put(direct,bw_o);W::put(last_seen,bw_o);W::put(desired,bw_o);W::put(observed,bw_o);W::put(pending,bw_o);W::put(sixth_generation,bw_o);}
-    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{rules:W::get(bw_i)?,last_ms:W::get(bw_i)?,last_scan_ms:W::get(bw_i)?,direct:W::get(bw_i)?,last_seen:W::get(bw_i)?,desired:W::get(bw_i)?,observed:W::get(bw_i)?,pending:W::get(bw_i)?,sixth_generation:W::get(bw_i)?})}
+    fn put(&self,bw_o:&mut crate::bw_wire::Enc){use crate::bw_wire::Wire as W;let Self{rules,last_ms,last_scan_ms,direct,last_seen,desired,observed,pending,sixth_generation,diagnostic_snapshot}=self;W::put(rules,bw_o);W::put(last_ms,bw_o);W::put(last_scan_ms,bw_o);W::put(direct,bw_o);W::put(last_seen,bw_o);W::put(desired,bw_o);W::put(observed,bw_o);W::put(pending,bw_o);W::put(sixth_generation,bw_o);W::put(diagnostic_snapshot,bw_o);}
+    fn get(bw_i:&mut crate::bw_wire::Dec)->std::io::Result<Self>{use crate::bw_wire::Wire as W;Ok(Self{rules:W::get(bw_i)?,last_ms:W::get(bw_i)?,last_scan_ms:W::get(bw_i)?,direct:W::get(bw_i)?,last_seen:W::get(bw_i)?,desired:W::get(bw_i)?,observed:W::get(bw_i)?,pending:W::get(bw_i)?,sixth_generation:W::get(bw_i)?,diagnostic_snapshot:W::get(bw_i)?})}
 }
 // end BW-01 wire codec
 /// One observer's direct sightings of this scan.
-fn scan_observer<F>(rules: Rules, observer: &Actor, actors: &[Actor], clear: &mut F) -> io::Result<[bool; MAX_ACTORS]>
-where F: FnMut(usize, usize, Point, Point) -> io::Result<bool> {
+#[derive(Clone,Copy,Debug,PartialEq)]
+pub enum RayOutcome { Clear(f32), Blocked { kind:&'static str, hit_point:Option<Point> } }
+type RayTrace = (RayOutcome, Option<serde_json::Value>);
+type ScanRow = ([bool; MAX_ACTORS], Vec<serde_json::Value>);
+
+fn scan_observer<F>(rules: Rules, observer: &Actor, actors: &[Actor], server_target: Option<usize>, clear: &mut F) -> io::Result<ScanRow>
+where F: FnMut(&Actor, &Actor, [usize; 2], Point, Point) -> io::Result<RayTrace> {
     let mut row = [false; MAX_ACTORS];
+    let mut records=Vec::new();
     for target in actors.iter().filter(|a| a.team != observer.team) {
         let distance = distance2(observer.position, target.position);
-        if distance <= f64::from(rules.proximity_m).powi(2) { row[target.slot] = true; continue; }
-        if distance > f64::from(observer.view_range.min(rules.max_detection_m)).powi(2) { continue; }
-        'ray: for (observer_point, start) in observer.points.observers.into_iter().enumerate() {
-            for (target_point, end) in target.points.checks.into_iter().enumerate() {
-                if start == end || clear(observer_point, target_point, start, end)? { row[target.slot] = true; break 'ray; }
+        let limit=if rules.camouflage { super::camouflage::threshold(observer.view_range,rules.max_detection_m,rules.proximity_m,target.camouflage)? }
+            else { observer.view_range.min(rules.max_detection_m) };
+        let server_trace = server_target == Some(target.slot);
+        let trace = rules.diagnostics || server_trace;
+        let mut rays=Vec::new();
+        let mut reason="no_clear_ray";
+        if distance <= f64::from(rules.proximity_m).powi(2) {row[target.slot]=true;reason="proximity";}
+        else if distance > f64::from(limit).powi(2) {reason="outside_base_threshold";}
+        else {
+            'ray: for (observer_point, start) in observer.points.observers.into_iter().enumerate() {
+                for (target_point, end) in target.points.checks.into_iter().enumerate() {
+                    let (result, foliage_hits) = if start==end { (RayOutcome::Clear(0.), None) }
+                        else { clear(observer, target, [observer_point, target_point], start, end)? };
+                    let mut ray_limit=limit;
+                    if let RayOutcome::Clear(foliage)=result {
+                        if !foliage.is_finite() || !(0. ..=1.).contains(&foliage) {return Err(bad("spotting foliage coefficient"));}
+                        ray_limit=if rules.camouflage {
+                            super::camouflage::threshold(observer.view_range,rules.max_detection_m,rules.proximity_m,(target.camouflage+foliage).min(1.))?
+                        } else if foliage==0. {limit} else {return Err(bad("foliage requires camouflage"));};
+                    }
+                    let direct = matches!(result, RayOutcome::Clear(_)) && distance <= f64::from(ray_limit).powi(2);
+                    if trace {
+                        let (label,foliage,hit_point)=match result {
+                            RayOutcome::Clear(foliage)=>(if start==end {"coincident"} else {"clear"},Some(foliage),None),
+                            RayOutcome::Blocked{kind,hit_point}=>(kind,None,hit_point),
+                        };
+                        let mut ray = serde_json::json!({"observer_point":observer_point,"target_point":target_point,
+                            "start":start,"end":end,"result":label,"hit_point":hit_point,
+                            "foliage":foliage,"threshold_m":if foliage.is_some(){Some(ray_limit)}else{None}});
+                        if server_trace {
+                            ray["direct"] = direct.into();
+                            ray["foliage_hits"] = foliage_hits.unwrap_or_default();
+                        }
+                        rays.push(ray);
+                    }
+                    if direct {row[target.slot]=true;reason="direct_ray";break 'ray;}
+                    if matches!(result,RayOutcome::Clear(_)) {reason="foliage_threshold";}
+                }
             }
         }
+        if trace {
+            let checked_ray_count = rays.len();
+            let unchecked_ray_count = 14 - checked_ray_count;
+            let mut pair = serde_json::json!({"observer":observer.slot,"target":target.slot,"distance_m":distance.sqrt(),
+            "view_m":observer.view_range,"base":target.base,"base_stationary":target.base_stationary,"movement_delta":target.base-target.base_stationary,"moving":target.moving,"net":target.net,
+            "fire_multiplier":target.fire_multiplier,"fired":target.fired,"effective":target.camouflage,
+            "net_remaining_ms":target.net_remaining_ms,"threshold_m":limit,"direct":row[target.slot],"reason":reason,
+            "unchecked_ray_count":unchecked_ray_count,"rays":rays});
+            if rules.diagnostics {
+                pair["unchecked_rays"] = serde_json::Value::Array((checked_ray_count..14).map(|i|serde_json::json!({"observer_point":i/7,"target_point":i%7,
+                    "start":observer.points.observers[i/7],"end":target.points.checks[i%7],"result":"not_checked"})).collect());
+            } else {
+                pair["observer_position"] = serde_json::json!(observer.position);
+                pair["target_position"] = serde_json::json!(target.position);
+                pair["target_wreck"] = target.wreck.into();
+            }
+            records.push(pair);
+        }
     }
-    Ok(row)
+    Ok((row,records))
 }
 
 impl State {
-    pub fn new(rules: Rules) -> io::Result<Self> { rules.validate()?; Ok(Self { rules, last_ms: None, last_scan_ms: None, direct: [[false; MAX_ACTORS]; MAX_ACTORS], last_seen: [[None; MAX_ACTORS]; MAX_ACTORS], desired: [[false; MAX_ACTORS]; MAX_ACTORS], observed: [false; MAX_ACTORS], pending: [None; MAX_ACTORS], sixth_generation: [0; MAX_ACTORS] }) }
+    pub fn new(rules: Rules) -> io::Result<Self> { rules.validate()?; Ok(Self { rules, last_ms: None, last_scan_ms: None, direct: [[false; MAX_ACTORS]; MAX_ACTORS], last_seen: [[None; MAX_ACTORS]; MAX_ACTORS], desired: [[false; MAX_ACTORS]; MAX_ACTORS], observed: [false; MAX_ACTORS], pending: [None; MAX_ACTORS], sixth_generation: [0; MAX_ACTORS],diagnostic_snapshot:None }) }
     pub fn initialized(&self) -> bool { self.last_ms.is_some() }
+    /// Last committed scan time relative to battle start, not the current
+    /// presentation/retention time. Used for server-side impact attribution.
+    pub(super) fn last_scan_ms(&self)->Option<u64>{self.last_scan_ms}
     pub fn desired(&self, slot: usize) -> io::Result<[bool; MAX_ACTORS]> { self.desired.get(slot).copied().ok_or_else(|| bad("spotting recipient slot")) }
     /// What `slot` itself sees in the last scan (no team sharing, no retention).
     pub fn direct(&self, slot: usize) -> io::Result<[bool; MAX_ACTORS]> { self.direct.get(slot).copied().ok_or_else(|| bad("spotting observer slot")) }
     pub fn sixth_generation(&self, slot: usize) -> io::Result<u32> { self.sixth_generation.get(slot).copied().ok_or_else(|| bad("spotting sixth slot")) }
+    pub fn diagnostics(&self)->Option<&serde_json::Value> {self.diagnostic_snapshot.as_ref()}
+    /// Called on a newly completed scan before World commits the cloned state.
+    pub(super) fn bind_diagnostic_tick(&mut self,tick:u32,vehicles:&[&str],asset:&str)->io::Result<()> {
+        let row=self.diagnostic_snapshot.as_mut().and_then(serde_json::Value::as_object_mut)
+            .ok_or_else(||bad("spotting diagnostic snapshot"))?;
+        if row.contains_key("scan_tick") {return Err(bad("spotting diagnostic tick already bound"));}
+        let actors=row.get_mut("actors").and_then(serde_json::Value::as_array_mut).ok_or_else(||bad("spotting diagnostic actors"))?;
+        for actor in actors {
+            let slot=actor["slot"].as_u64().and_then(|v|usize::try_from(v).ok()).ok_or_else(||bad("spotting actor slot"))?;
+            let vehicle=*vehicles.get(slot).ok_or_else(||bad("spotting vehicle slot"))?;
+            if vehicle.is_empty() || vehicle.len()>96 {return Err(bad("spotting vehicle name"));}
+            actor.as_object_mut().ok_or_else(||bad("spotting actor"))?.insert("vehicle".into(),vehicle.into());
+        }
+        if asset.is_empty() || asset.len()>96 {return Err(bad("spotting map asset"));}
+        row.insert("map_asset".into(),asset.into());
+        row.insert("scan_tick".into(),serde_json::Value::from(tick));Ok(())
+    }
     pub fn refresh<F>(&mut self, ms: u64, actors: &[Actor], mut clear: F) -> io::Result<()>
     where F: FnMut(usize, usize, Point, Point) -> io::Result<bool> {
         self.refresh_with(ms, actors, |rules, observers| {
             let mut rows = Vec::with_capacity(observers.len());
-            for observer in observers { rows.push(scan_observer(rules, observer, actors, &mut clear)?); }
+            for observer in observers {
+                rows.push(scan_observer(rules, observer, actors, None, &mut |_, _, [a, b], c, d| {
+                    let outcome = if clear(a,b,c,d)? {RayOutcome::Clear(0.)}else{RayOutcome::Blocked{kind:"terrain_or_object",hit_point:None}};
+                    Ok((outcome, None))
+                })?);
+            }
             Ok(rows)
-        })
+        }).map(|_| ())
     }
     /// `refresh` over a pure `clear`, the rays spread on up to `threads`
     /// threads. Each observer's row depends only on its own rays, so the
@@ -184,6 +277,37 @@ impl State {
     /// in slot order decides the error.
     pub fn refresh_parallel<F>(&mut self, ms: u64, actors: &[Actor], threads: usize, clear: F) -> io::Result<()>
     where F: Fn(usize, usize, Point, Point) -> io::Result<bool> + Sync {
+        self.refresh_foliage_parallel(ms,actors,threads,|a,b,c,d,_|Ok(clear(a,b,c,d)?.then_some(0.)))
+    }
+    /// Each clear ray carries its authoritative project-calibrated shrub
+    /// contribution. None means the terrain/object LOS is blocked. This is
+    /// internal server data, not a client-provided visibility result.
+    pub fn refresh_foliage_parallel<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, clear:F)->io::Result<()>
+    where F: Fn(usize, usize, Point, Point, bool) -> io::Result<Option<f32>> + Sync {
+        self.refresh_trace_parallel(ms,actors,threads,|a,b,c,d,f|Ok(match clear(a,b,c,d,f)? {
+            Some(value)=>RayOutcome::Clear(value),None=>RayOutcome::Blocked{kind:"terrain_or_object",hit_point:None}}))
+    }
+    pub fn refresh_trace_parallel<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, clear:F)->io::Result<()>
+    where F: Fn(usize, usize, Point, Point, bool) -> io::Result<RayOutcome> + Sync {
+        self.refresh_parallel_with(ms, actors, threads, None, |_, target, [a, b], start, end| {
+            Ok((clear(a, b, start, end, target.fired)?, None))
+        }).map(|_| ())
+    }
+
+    /// Ephemeral, server-only records of the actual scan toward one target.
+    /// The callback serves the whole scan so ordinary visibility still updates.
+    pub fn refresh_server_trace_parallel<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, target:usize, clear:F)
+        -> io::Result<Vec<serde_json::Value>>
+    where F: Fn(usize, usize, Point, Point, bool) -> io::Result<RayTrace> + Sync {
+        if self.rules.diagnostics || target >= MAX_ACTORS { return Err(bad("server spotting trace target or diagnostics")); }
+        self.refresh_parallel_with(ms, actors, threads, Some(target), |observer, target, _, start, end| {
+            clear(observer.slot, target.slot, start, end, target.fired)
+        })
+    }
+
+    fn refresh_parallel_with<F>(&mut self, ms:u64, actors:&[Actor], threads:usize, server_target:Option<usize>, clear:F)
+        -> io::Result<Vec<serde_json::Value>>
+    where F: Fn(&Actor, &Actor, [usize; 2], Point, Point) -> io::Result<RayTrace> + Sync {
         self.refresh_with(ms, actors, |rules, observers| {
             let (next, clear) = (AtomicUsize::new(0), &clear);
             let work = || {
@@ -191,7 +315,9 @@ impl State {
                 loop {
                     let index = next.fetch_add(1, Ordering::Relaxed);
                     let Some(observer) = observers.get(index) else { return done; };
-                    done.push((index, scan_observer(rules, observer, actors, &mut |a, b, c, d| clear(a, b, c, d))));
+                    done.push((index, scan_observer(rules, observer, actors, server_target, &mut |o, t, points, start, end| {
+                        clear(o, t, points, start, end)
+                    })));
                 }
             };
             let mut done = std::thread::scope(|scope| {
@@ -204,16 +330,18 @@ impl State {
             done.into_iter().map(|row| row.1).collect()
         })
     }
-    fn refresh_with<S>(&mut self, ms: u64, actors: &[Actor], scan_rows: S) -> io::Result<()>
-    where S: FnOnce(Rules, &[Actor]) -> io::Result<Vec<[bool; MAX_ACTORS]>> {
+    fn refresh_with<S>(&mut self, ms: u64, actors: &[Actor], scan_rows: S) -> io::Result<Vec<serde_json::Value>>
+    where S: FnOnce(Rules, &[Actor]) -> io::Result<Vec<ScanRow>> {
         validate_actors(actors)?; self.rules.validate()?;
+        if self.rules.diagnostics && actors.len()>6 {return Err(bad("spotting diagnostic actor bound"));}
         if ms > 3_600_000 || self.last_ms.is_some_and(|old| ms < old) { return Err(bad("spotting clock")); }
         let mut next = self.clone();
+        let mut diagnostic_pairs=Vec::new();
         let scan = next.last_scan_ms.is_none_or(|old| ms.saturating_sub(old) >= next.rules.scan_period_ms);
         if scan {
             next.direct = [[false; MAX_ACTORS]; MAX_ACTORS];
             let observers = actors.iter().filter(|a| a.observer_active).copied().collect::<Vec<_>>();
-            for (observer, row) in observers.iter().zip(scan_rows(next.rules, &observers)?) { next.direct[observer.slot] = row; }
+            for (observer, (row,records)) in observers.iter().zip(scan_rows(next.rules, &observers)?) { next.direct[observer.slot] = row;diagnostic_pairs.extend(records); }
             next.last_scan_ms = Some(ms);
             for observer in actors { for target in actors { if next.direct[observer.slot][target.slot] { next.last_seen[observer.slot][target.slot] = Some(ms); } } }
         }
@@ -236,7 +364,24 @@ impl State {
             if observed[actor.slot] && !next.observed[actor.slot] && next.pending[actor.slot].is_none() { next.pending[actor.slot] = Some(ms.checked_add(next.rules.sixth_sense_delay_ms).ok_or_else(|| bad("sixth sense clock"))?); }
             if next.pending[actor.slot].is_some_and(|due| ms >= due) { next.sixth_generation[actor.slot] = next.sixth_generation[actor.slot].checked_add(1).ok_or_else(|| bad("sixth sense sequence"))?; next.pending[actor.slot] = None; }
         }
-        next.observed = observed; next.last_ms = Some(ms); *self = next; Ok(())
+        diagnostic_pairs.sort_by_key(|v|(v["observer"].as_u64().unwrap_or(u64::MAX),v["target"].as_u64().unwrap_or(u64::MAX)));
+        if scan && next.rules.diagnostics {
+            let mut ordered=actors.to_vec();ordered.sort_by_key(|a|a.slot);
+            let map_actors=ordered.iter().map(|a|serde_json::json!({"slot":a.slot,"team":a.team,"position":a.position})).collect::<Vec<_>>();
+            let mut publications=Vec::new();
+            for recipient in &ordered {for target in ordered.iter().filter(|target|target.team!=recipient.team) {
+                let (source,spotter)=if target.wreck {("wreck",None)}
+                else if next.direct[recipient.slot][target.slot] {("direct",Some(recipient.slot))}
+                else if let Some(o)=ordered.iter().find(|o|next.rules.share_with_team && o.team==recipient.team && o.slot!=recipient.slot && next.direct[o.slot][target.slot]) {("team",Some(o.slot))}
+                else if next.last_seen[recipient.slot][target.slot].is_some_and(|at|ms.saturating_sub(at)<next.rules.retention_ms) {("direct_retained",Some(recipient.slot))}
+                else if let Some(o)=ordered.iter().find(|o|next.rules.share_with_team && o.team==recipient.team && o.slot!=recipient.slot && next.last_seen[o.slot][target.slot].is_some_and(|at|ms.saturating_sub(at)<next.rules.retention_ms)) {("team_retained",Some(o.slot))}
+                else {("hidden",None)};
+                publications.push(serde_json::json!({"recipient":recipient.slot,"target":target.slot,"visible":next.desired[recipient.slot][target.slot],"source":source,"spotter":spotter}));
+            }}
+            next.diagnostic_snapshot=Some(serde_json::json!({"schema":"content0-s5a-spotting-trace.v1","scan_ms":ms,
+                "next_scan_ms":ms+next.rules.scan_period_ms,"actors":map_actors,"pairs":std::mem::take(&mut diagnostic_pairs),"publications":publications}));
+        } else if !next.rules.diagnostics {next.diagnostic_snapshot=None;}
+        next.observed = observed; next.last_ms = Some(ms); *self = next; Ok(diagnostic_pairs)
     }
 }
 
@@ -244,7 +389,7 @@ impl State {
 mod tests {
     use super::*;
     fn parts() -> Parts { Parts { hull:[1.,2.,3.], turret:[4.,5.,6.], gun:[7.,8.,9.], hull_bounds:[[-2.,-1.,-4.],[2.,3.,4.]], turret_top:6. } }
-    fn actor(slot:usize,team:u8,x:f32)->Actor { Actor {slot,team,position:[x,0.,0.],points:Points{checks:[[x,1.,0.];7],observers:[[x,1.,0.];2]},view_range:400.,observer_active:true,commander_active:true,wreck:false} }
+    fn actor(slot:usize,team:u8,x:f32)->Actor { Actor {slot,team,position:[x,0.,0.],points:Points{checks:[[x,1.,0.];7],observers:[[x,1.,0.];2]},view_range:400.,camouflage:0.,base:0.,base_stationary:0.,moving:false,net:0.,fire_multiplier:1.,net_remaining_ms:None,fired:false,observer_active:true,commander_active:true,wreck:false} }
     #[test] fn source_static_and_dynamic_points_are_bounded_and_transform_full_ypr() {
         let p=parts().local().unwrap(); assert_eq!(p.checks,[[0.,13.,0.],[12.,15.,18.],[1.,3.,7.],[1.,3.,-1.],[3.,15.,3.],[-1.,15.,3.],[12.,15.,18.]]); assert_eq!(p.observers,[[0.,13.,0.],[7.,8.,9.]]);
         let world=parts().world([10.,20.,30.],[0.,0.,0.],std::f32::consts::FRAC_PI_2).unwrap(); assert_eq!(world.checks[6],world.observers[1]); assert!((world.observers[1][0]-24.).abs()<1e-5); assert!((world.observers[1][2]-32.).abs()<1e-5);
@@ -254,6 +399,89 @@ mod tests {
     #[test] fn direct_rays_are_bounded_and_state_is_atomic_on_late_error() {
         let actors=[actor(0,1,0.),actor(1,2,100.)]; let mut state=State::new(Rules::selected().unwrap()).unwrap(); state.refresh(0,&actors,|_,_,_,_|Ok(false)).unwrap(); let old=state.clone(); let mut calls=0; assert!(state.refresh(100,&actors,|_,_,_,_|{calls+=1;if calls==2{Err(io::Error::other("late LOS"))}else{Ok(true)}}).is_err()); assert_eq!(state,old);
         state.refresh(100,&actors,|_,_,_,_|Ok(true)).unwrap(); assert!(state.desired(0).unwrap()[1]);
+    }
+    #[test] fn project_foliage_is_evaluated_per_clear_ray_before_team_publication() {
+        let mut rules=Rules::selected().unwrap();rules.camouflage=true;rules.retention_ms=0;
+        let actors=[actor(0,1,0.),actor(1,2,300.),actor(2,1,-1000.)];
+        let mut state=State::new(rules).unwrap();
+        state.refresh_foliage_parallel(0,&actors,1,|_,_,_,_,_|Ok(Some(0.4))).unwrap();
+        assert!(!state.direct(0).unwrap()[1]);assert!(!state.desired(2).unwrap()[1]);
+        state.refresh_foliage_parallel(100,&actors,1,|_,_,_,_,_|Ok(Some(0.))).unwrap();
+        assert!(state.direct(0).unwrap()[1]);assert!(state.desired(2).unwrap()[1]);
+        let old=state.clone();
+        assert!(state.refresh_foliage_parallel(200,&actors,1,|_,_,_,_,_|Ok(Some(f32::NAN))).is_err());
+        assert_eq!(state,old);
+    }
+    #[test] fn server_trace_collects_only_actual_target_rays_in_a_thirty_actor_scan() {
+        let mut rules=Rules::selected().unwrap();
+        rules.camouflage=true;
+        let mut actors=(0..30).map(|slot|actor(slot, 1+(slot%2) as u8, 115. + slot as f32 * 8.)).collect::<Vec<_>>();
+        actors[0]=actor(0, 1, 0.);
+        actors[0].points.checks[0][1]=2.;
+        actors[0].points.checks[1][1]=3.;
+        actors[0].points.checks[2][1]=4.;
+        actors[29]=actor(29, 2, 1000.);
+        actors[27].observer_active=false;
+        actors[27].commander_active=false;
+        let ray=|end:Point|match end[1] {
+            2. => RayOutcome::Blocked{kind:"object",hit_point:Some([30.,1.2,0.])},
+            3. => RayOutcome::Clear(0.9),
+            _ => RayOutcome::Clear(0.),
+        };
+        let mut plain=State::new(rules).unwrap();
+        let mut traced=plain.clone();
+        for ms in [0,50,100,3100,8100] {
+            plain.refresh_trace_parallel(ms,&actors,4,|_,_,_,end,_|Ok(ray(end))).unwrap();
+            let pairs=traced.refresh_server_trace_parallel(ms,&actors,4,0,|observer,target,_,end,_| {
+                let hits=(target==0).then(||serde_json::json!({"observer":observer}));
+                Ok((ray(end),hits))
+            }).unwrap();
+            assert_eq!(traced,plain);
+            assert!(traced.diagnostics().is_none());
+            if ms==50 {
+                assert!(pairs.is_empty());
+                continue;
+            }
+            assert_eq!(pairs.len(),14);
+            assert!(pairs.iter().all(|pair|pair["target"]==0 && pair["observer"]!=27));
+            let nearest=&pairs[0];
+            assert_eq!(nearest["observer"],1);
+            assert_eq!(nearest["reason"],"direct_ray");
+            assert_eq!(nearest["unchecked_ray_count"],11);
+            let rays=nearest["rays"].as_array().unwrap();
+            assert_eq!(rays.len(),3);
+            assert_eq!(rays[0]["result"],"object");
+            assert_eq!(rays[1]["foliage_hits"]["observer"],1);
+            assert_eq!(rays[1]["direct"],false);
+            assert_eq!(rays[2]["direct"],true);
+            assert_eq!(pairs.last().unwrap()["reason"],"outside_base_threshold");
+            assert!(pairs.last().unwrap()["rays"].as_array().unwrap().is_empty());
+        }
+    }
+    #[cfg(feature="test_lab")]
+    #[test] fn operator_trace_is_only_committed_actual_rays_and_survives_bw() {
+        let mut rules=Rules::selected().unwrap();rules.camouflage=true;rules.diagnostics=true;
+        let actors=[actor(0,1,0.),actor(1,2,300.),actor(2,1,-1000.)];
+        let mut state=State::new(rules).unwrap();
+        state.refresh_foliage_parallel(0,&actors,1,|_,target_point,_,_,_| {
+            Ok(if target_point==0 {None} else {Some(0.1)})
+        }).unwrap();
+        let snapshot=state.diagnostics().unwrap();
+        let pair=snapshot["pairs"].as_array().unwrap().iter().find(|p|p["observer"]==0 && p["target"]==1).unwrap();
+        assert_eq!(pair["reason"],"direct_ray");assert_eq!(pair["rays"].as_array().unwrap().len(),2);
+        assert_eq!(pair["unchecked_ray_count"],12);assert_eq!(pair["unchecked_rays"][0]["result"],"not_checked");
+        assert_eq!(pair["rays"][0]["result"],"terrain_or_object");assert_eq!(pair["rays"][1]["result"],"clear");
+        assert_eq!(pair["rays"][1]["foliage"].as_f64().unwrap() as f32,0.1);
+        let ally=snapshot["publications"].as_array().unwrap().iter().find(|p|p["recipient"]==2 && p["target"]==1).unwrap();
+        assert_eq!(ally["source"],"team");assert_eq!(ally["spotter"],0);
+        let old=state.clone();
+        assert!(state.refresh_foliage_parallel(100,&actors,1,|_,_,_,_,_|Err(bad("trace LOS failure"))).is_err());
+        assert_eq!(state,old);
+        let now=std::time::Instant::now();let mut a=crate::bw_wire::Arcs::new(false);let mut b=crate::bw_wire::Arcs::new(true);
+        let wire=crate::bw_wire::encode(&state,now,&mut a).unwrap();
+        let received:State=crate::bw_wire::decode(&wire,now,&mut b).unwrap();assert_eq!(received.diagnostics(),state.diagnostics());
+        let mut disabled=Rules::selected().unwrap();disabled.camouflage=true;
+        let mut plain=State::new(disabled).unwrap();plain.refresh(0,&actors,|_,_,_,_|Ok(true)).unwrap();assert!(plain.diagnostics().is_none());
     }
     #[test] fn parallel_scan_builds_the_serial_matrix_and_fails_like_it() {
         let actors=(0..30).map(|slot|{let x=slot as f32*17.;let mut a=actor(slot,1+(slot%2) as u8,x);a.observer_active=slot%7!=3;a.commander_active=a.observer_active;a}).collect::<Vec<_>>();

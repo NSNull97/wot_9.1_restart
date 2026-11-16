@@ -11,6 +11,7 @@ sys.path.insert(0,str(ROOT)); sys.path.insert(0,str(ROOT/"tools"))
 from tests import test_p04m_pool_store as previous
 from p06t_mixed_store import MixedAmmoStore, POLICY_SHA256, validate_request
 from p09d_ammo_projection import canonical
+from p09d_ammo_store import sha
 from p08b_battle_projection import BattleProjectionSource
 from p06t_mixed_projection import publish_mixed
 from game_profile_tx import TransactionError
@@ -87,6 +88,7 @@ class MixedStoreTests(unittest.TestCase):
     def test_actual_three_stacks_AP_zero_and_normal_cancel_persist_per_type_once(self):
         request,admitted=self.start((0,4,11));f=admitted["reservation"]["frozen"]
         self.assertEqual([r["count"]for r in f["ammunition"]],[0,4,11]);self.assertEqual(f["initial_shell_compact_id"],2826)
+        self.assertEqual(f["crew_qualification"], [100, 100])
         self.assertEqual(admitted["policy_sha256"],POLICY_SHA256)
         self.reject("MIXED_RESERVATION_ACTIVE",lambda:self.store.battle(dict(request,version=1),authenticated_account_id=self.account))
         self.reject("VEHICLE_RESERVED",lambda:self.load((0,4,10)))
@@ -160,6 +162,7 @@ class MixedStoreTests(unittest.TestCase):
         self.reject("AMMUNITION_UNSUPPORTED",lambda:self.send(old))
         admitted=self.send(self.rq("admit",native_inventory_id=2));f=admitted["reservation"]["frozen"]
         self.assertEqual((f["kind"],len(f["crew_ids"]),f["capacity"]),("is7",5,30))
+        self.assertEqual(f["crew_qualification"], [50] * 5)
         self.assertEqual([r["count"]for r in f["ammunition"]],[12,7,11])
         finish=self.rq("finish",native_inventory_id=2,reservation_id=admitted["reservation"]["reservation_id"],terminal_hp=0,reason="battle_failure",
             remaining_ammunition=[dict(shell_compact_id=cd,count=n)for cd,n in zip((14602,14858,15114),(11,3,8))],
@@ -226,6 +229,34 @@ class MixedStoreTests(unittest.TestCase):
         self.assertEqual(response["reservation"]["result"]["terminal_state"],state)
         self.assertEqual(response["reservation"]["result"]["repaired_hp"],90)
         self.assertEqual([r["crew_id"]for r in self.profile()["crew_inventory"]["members"] if r["vehicle_native_id"]==1],admitted["reservation"]["frozen"]["crew_ids"])
+
+    def test_crew_qualification_cross_training_and_old_active_rows(self):
+        _, admitted = self.start()
+        frozen = admitted["reservation"]["frozen"]
+        profile = self.profile()
+        members = sorted((r for r in profile["crew_inventory"]["members"] if r["vehicle_native_id"] == 1),
+                         key=lambda row: row["seat"])
+        self.assertEqual(frozen["crew_qualification"], [100, 100])
+        self.assertEqual(self.store._crew_qualification(self.store.registry.profiles["is7"], members), [50, 50])
+        self.assertEqual(self.store._crew_qualification(self.store.registry.profiles["t26"], members), [75, 75])
+
+        # Read an existing active schema without rewriting its saved hash.
+        frozen.pop("crew_qualification")
+        original = canonical(frozen)
+        key = admitted["reservation"]["reservation_id"]
+        self.store.connection.execute("UPDATE p06t_reservation SET frozen_json=?, frozen_sha256=? WHERE reservation_id=?",
+                                      (original.decode("ascii"), sha(original), key))
+        self.store.connection.commit()
+        self.assertEqual(self.profile()["revision"], profile["revision"])
+        self.assertEqual(self.send(self.rq("inspect"))["reservation"]["frozen"], frozen)
+
+        # A structurally valid but changed current qualification is still rejected on read.
+        frozen["crew_qualification"] = [50, 100]
+        changed = canonical(frozen)
+        self.store.connection.execute("UPDATE p06t_reservation SET frozen_json=?, frozen_sha256=? WHERE reservation_id=?",
+                                      (changed.decode("ascii"), sha(changed), key))
+        self.store.connection.commit()
+        self.reject("CORRUPT_STORE", self.profile)
 
     def test_explicit_cli_uses_version2_factory_and_fresh_owner_bound_projection(self):
         self.load((0,4,11))

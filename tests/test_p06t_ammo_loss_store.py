@@ -12,6 +12,7 @@ from p06t_ammo_loss_store import AmmoLossStore, CONTRACT, POLICY_SHA256, validat
 from p06t_mixed_store import MixedAmmoStore
 from p08b_battle_projection import BattleProjectionSource
 from p09d_ammo_projection import canonical
+from p09e_research_service import native_service
 from game_profile_tx import TransactionError
 
 
@@ -94,6 +95,650 @@ class AmmoLossStoreTests(unittest.TestCase):
         self.fx.store.close()
         self.fx.store = self.factory()
         self.assertEqual(json.loads(self.query()["results_json"]), stats)
+
+    def test_equipment_freeze_and_consumable_settlement_are_bound_to_the_reservation(self):
+        from p09e_research_store import ECONOMY_POLICY
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        def equipment(key, cd, slot):
+            result = native_service(self.store, dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=key, expected_revision=self.profile()["revision"], wire_revision=1,
+                command=308, arguments=[5, cd, 1, slot, 0, 0]), authenticated_account_id=account)
+            self.assertEqual(result["status"], "researched")
+        equipment("equipment-optics", 1529, 1)
+        equipment("equipment-medkit", 763, 0)
+        equipment("equipment-repair", 1275, 2)
+        self.send(self.request("run_open"))
+        receipt = self.send(self.request("admit"))["reservation"]
+        frozen = receipt["frozen"]["loadout"]
+        self.assertEqual(frozen["artefacts"], {"optional_devices": [0,1529,0], "consumables": [763,0,1275]})
+        initial = [r["count"] for r in frozen["ammunition"]]
+        finish = self.finish(receipt, fired=(0,0,0), lost=(0,0,0), remaining=initial, event=False, natural=False)
+        terminal = json.loads(finish["terminal_state_json"])
+        finish["terminal_state_json"] = canonical(dict(terminal, consumables_used=[1])).decode("ascii")
+        self.reject("INVALID_TERMINAL_STATE", lambda:self.send(finish))
+        finish["terminal_state_json"] = canonical(dict(terminal, consumables_used=[0])).decode("ascii")
+        self.store.failpoint = "after_mixed_result"
+        before = self.state()
+        with self.assertRaises(TransactionError): self.send(finish)
+        self.assertEqual(self.state(), before)
+        self.store.failpoint = None
+        result = self.send(finish)
+        self.assertEqual(result["reservation"]["result"]["terminal_state"]["consumables_used"], [0])
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][frozen["vehicle_inventory_id"]],
+            {"devices": [0,1529,0], "consumables": [0,0,1275], "layout": [763,0,1275]})
+        self.assertEqual(self.send(finish), dict(result, replayed=True))
+
+    def test_module_protection_preserves_fitted_maxima_in_cancel_and_battle_result(self):
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        installed = native_service(self.store, dict(account_id=account, native_database_id=self.fx.native_id,
+            command_key="mount-cyclone", expected_revision=self.profile()["revision"], wire_revision=1,
+            command=308, arguments=[5,7673,1,0,0,0]), authenticated_account_id=account)
+        self.assertEqual(installed["status"], "researched")
+        self.send(self.request("run_open"))
+
+        for index, reason in enumerate(("cancelled", "battle_finished")):
+            battle_id = previous.RUN + ":" + str(9007199254740993 + index)
+            receipt = self.send(self.request("admit", battle_id=battle_id))["reservation"]
+            frozen = receipt["frozen"]["loadout"]
+            self.assertEqual(frozen["artefacts"]["optional_devices"], [7673,0,0])
+            counts = tuple(row["count"] for row in frozen["ammunition"])
+            finish = self.finish(receipt, fired=(0,0,0), lost=(0,0,0), remaining=counts,
+                                 event=False, natural=reason == "battle_finished")
+            finish.update(battle_id=battle_id, reason=reason)
+            terminal = json.loads(finish["terminal_state_json"])
+            self.reject("INVALID_TERMINAL_STATE", lambda: self.send(finish))
+            if reason == "cancelled":
+                finish["terminal_hp"] = frozen["max_hp"]
+                terminal["roster_size"] = 0
+            else:
+                result = json.loads(finish["results_json"])
+                result["arena_id"] = int(battle_id.rsplit(":",1)[1])
+                finish["results_json"] = canonical(result).decode("ascii")
+            engine = terminal["devices"][0]
+            engine.update(max_health=38, health=38 if reason == "cancelled" else 11)
+            finish["terminal_state_json"] = canonical(terminal).decode("ascii")
+            response = self.send(finish)
+            self.assertEqual(response["reservation"]["result"]["terminal_state"]["devices"][0], engine)
+            self.assertEqual(self.send(finish), dict(response,replayed=True))
+
+    def test_camouflage_net_stays_closed_without_coordinated_server_capability(self):
+        """A disabled net must not reach stock, equipment or a frozen loadout."""
+        from content0_equipment_catalog import DEVICE_EFFECTS, live_items, MANIFEST, MANIFEST_SHA256, MAX_MANIFEST
+        from destructible_catalog import read
+        from p09e_research_store import ECONOMY_POLICY
+
+        # Hash-pinned #717 catalogue facts; this is not a claim that the item is enabled.
+        manifest = json.loads(read(MANIFEST, MAX_MANIFEST, MANIFEST_SHA256))
+        rows = [row for row in manifest["items"] if row["compact_id"] == 1785]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["source_id"], rows[0]["source_name"], rows[0]["removable"], rows[0]["filters"]),
+                         (6, "camouflageNet", True, []))
+        self.assertEqual(rows[0]["effect"], {"weight": 100, "activateWhenStillSec": "3.0"})
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        self.assertNotIn(1785, DEVICE_EFFECTS)
+        self.assertNotIn(1785, live_items())
+        before = self.state()
+        for label, command, arguments in (
+            ("buy", 302, [5, 1785, 1, 0]),
+            ("install", 102, [5, 1, 1785, 0, 0]),
+            ("buy-and-install", 308, [5, 1785, 1, 0, 0, 0]),
+        ):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key="net-disabled:" + label, expected_revision=self.profile()["revision"],
+                wire_revision=1, command=command, arguments=arguments)
+            response = native_service(self.store, request, authenticated_account_id=account)
+            self.assertEqual(response["status"], "rejected", label)
+            self.assertEqual(response["result_code"], -10, label)
+            self.assertEqual(self.state(), before, label)
+        self.fx.load((0, 4, 10))
+        self.send(self.request("run_open"))
+        frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
+        self.assertNotIn(1785, frozen.get("artefacts", {}).get("optional_devices", []))
+
+    def test_scoped_camouflage_net_store_and_frozen_loadout(self):
+        """Isolated trusted-scope exercise; it is not a Domain/gateway handshake."""
+        from unittest.mock import patch
+        from content0_equipment_catalog import live_items, trusted_camouflage_test_scope
+        from content0_equipment_store import battle_loadout, installed_descriptor, validate_installed_devices
+        from p09e_research_store import ECONOMY_POLICY, assembly
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        vehicle = next(row for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)
+        vehicle_id = vehicle["vehicle_inventory_id"]
+        self.assertNotIn(1785, live_items())
+        with trusted_camouflage_test_scope():
+            item = live_items()[1785]
+            self.assertEqual(item.weight_grams, 100_000)
+            self.assertTrue(item.removable)
+            self.assertTrue(item.compatible(self.store.catalog.vehicles[vehicle["vehicle_id"]]))
+            base = assembly(self.store.catalog, vehicle["vehicle_id"], vehicle["modules"])
+            for delta, accepted in ((100_000, True), (99_999, False)):
+                with patch("p09e_research_store.assembly", return_value=dict(base, max_load_grams=base["mass_grams"] + delta)):
+                    if accepted:
+                        validate_installed_devices(self.store.catalog, vehicle, [1785, 0, 0])
+                    else:
+                        self.reject("CHASSIS_OVERLOAD", lambda: validate_installed_devices(self.store.catalog, vehicle, [1785, 0, 0]))
+            def apply(command, args, label):
+                request = dict(account_id=account, native_database_id=self.fx.native_id,
+                    command_key="net-scoped:" + label, expected_revision=self.profile()["revision"],
+                    wire_revision=1, command=command, arguments=args)
+                result = native_service(self.store, request, authenticated_account_id=account)
+                self.assertEqual(result["status"], "researched")
+                return request, result
+            buy, bought = apply(302, [5, 1785, 1, 0], "buy")
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            apply(102, [5, 1, 1785, 0, 0], "install")
+            self.assertEqual(battle_loadout(self.store.connection, account, vehicle_id), ((1785, 0, 0), (0, 0, 0)))
+            self.assertEqual(self.profile()["artefacts"]["depot"], {})
+            from p09e_research_projection import descriptor
+            plain = descriptor(self.store.catalog, vehicle)
+            self.assertEqual(installed_descriptor(plain, [1785, 0, 0]), plain[:-1] + bytes.fromhex("040600"))
+            apply(102, [5, 1, 0, 0, 0], "demount")
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            apply(308, [5, 1785, 1, 0, 0, 0], "buy-install")
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            self.assertEqual(native_service(self.store, buy, authenticated_account_id=account), dict(bought, replayed=True))
+            self.fx.load((0, 4, 10))
+            self.send(self.request("run_open"))
+            frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
+            self.assertEqual(frozen["artefacts"]["optional_devices"], [1785, 0, 0])
+            self.fx.store.close()
+            self.fx.store = self.factory()
+            self.assertEqual(self.profile()["artefacts"]["depot"], {"1785": 1})
+            self.assertEqual(self.store._active_mixed(account)[0]["native_inventory_id"], 1)
+        self.assertNotIn(1785, live_items())
+        with self.assertRaises(TransactionError):
+            self.profile()
+
+    def test_camouflage_scope_resets_after_error_and_does_not_cross_threads(self):
+        from concurrent.futures import ThreadPoolExecutor
+        from content0_equipment_catalog import live_items, trusted_camouflage_test_scope
+        self.assertNotIn(1785, live_items())
+        with self.assertRaisesRegex(RuntimeError, "abort"):
+            with trusted_camouflage_test_scope():
+                self.assertIn(1785, live_items())
+                with ThreadPoolExecutor(max_workers=1) as executor:
+                    self.assertFalse(executor.submit(lambda: 1785 in live_items()).result())
+                raise RuntimeError("abort")
+        self.assertNotIn(1785, live_items())
+
+    def test_native_maintenance_buys_shells_and_consumables_atomically(self):
+        from p09e_research_service import existing_service
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        previous.previous.PoolStoreTests.seed_owned_test_depot(self.fx, "ms1", (0, 0, 0))
+        vehicle = next(row["vehicle_inventory_id"] for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)
+
+        def request(layout, wire_revision=1):
+            revision = self.profile()["revision"]
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key="maintenance:" + str(revision),
+                expected_revision=revision, wire_revision=wire_revision, layout=layout)
+
+        def apply(value):
+            return existing_service(self.store, "service", value, authenticated_account_id=account)
+
+        combined = request([5, 1, 6, 2570, 52, 2826, 16, 3082, 18, 6, -1275, 1, 763, 1, 251, 1])
+        for point in ("after_ammo_update", "after_maintenance_update", "before_commit"):
+            self.store.failpoint = point
+            self.reject("INJECTED_FAILURE", lambda: apply(combined))
+        self.store.failpoint = None
+        response = apply(combined)
+        updates = [response["update_hex"], *response.get("extra_update_hex", [])]
+        self.assertEqual(response["wire_revision"], combined["wire_revision"] + len(updates))
+        self.assertTrue(all(len(bytes.fromhex(raw)) <= 240 for raw in updates))
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][vehicle]["consumables"], [1275, 763, 251])
+        self.assertEqual(self.store.layouts(account)[1][1::2], [52, 16, 18])
+        invalid = request([5, 1, 6, 2570, 60, 2826, 10, 3082, 10, 6, 1275, 1, 1275, 1, 0, 0])
+        before = self.state()
+        self.assertEqual(apply(invalid)["result_code"], -10)
+        self.assertEqual(self.state(), before)
+        refill = request([5, 1, 6, 2570, 45, 2826, 15, 3082, 15, 0])
+        apply(refill)
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][vehicle]["consumables"], [1275, 763, 251])
+        clear_same_key = dict(refill, layout=refill["layout"][:-1] + [6] + [0] * 6)
+        self.reject("DUPLICATE_PAYLOAD_MISMATCH", lambda: apply(clear_same_key))
+        apply(request([5, 1, 0, 6, 0, 0, 0, 0, 0, 0]))
+        self.assertEqual(self.store.layouts(account)[1][1::2], [45, 15, 15])
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"1275": 1, "251": 1, "763": 1})
+        before = self.state()
+        self.assertEqual(apply(combined), dict(response, replayed=True))
+        self.assertEqual(self.state(), before)
+
+        from content0_equipment_store import save_state
+
+        values = self.profile()
+        artefacts = values["artefacts"]
+        artefacts["vehicles"][vehicle] = {"devices": [0, 0, 0], "consumables": [1275, 763, 251], "layout": [1275, 763, 251]}
+        artefacts["depot"] = {str(cd): 999_999 for cd in (1275, 763, 251, 1531, 1019, 507)}
+        previous.previous.PoolStoreTests.seed_owned_test_depot(self.fx, "ms1", (999_999, 999_999, 999_999))
+        conn = self.store.connection
+        conn.execute("BEGIN IMMEDIATE")
+        save_state(conn, account, artefacts)
+        before = conn.execute("SELECT profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()[0]
+        self.store._save_crew_projection(account, values["revision"], before)
+        conn.commit()
+
+        staged = request([5, 1, 6, 2570, 52, 2826, 16, 3082, 18, 6, 1531, 1, 1019, 1, 507, 1], wire_revision=65_536)
+        response = apply(staged)
+        self.assertTrue(response["extra_update_hex"], "large native deltas require more than one update")
+        self.assertEqual(response["wire_revision"], staged["wire_revision"] + 1 + len(response["extra_update_hex"]))
+        self.assertEqual(apply(staged), dict(response, replayed=True))
+
+    def test_native_shop_buy_install_demount_and_remove_keep_stock_and_replay(self):
+        from p09e_research_store import ECONOMY_POLICY
+        from content0_equipment_store import battle_loadout, installed_descriptor
+        from p09e_research_projection import descriptor
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        vehicle = next(row for row in self.profile()["research"]["vehicles"] if row["native_id"] == 1)
+        vehicle_id = vehicle["vehicle_inventory_id"]
+        plain = descriptor(self.store.catalog, vehicle)
+        for slot, suffix in enumerate(("040500", "020500", "010500")):
+            devices = [1529 if index == slot else 0 for index in range(3)]
+            self.assertEqual(installed_descriptor(plain, devices), plain[:-1] + bytes.fromhex(suffix))
+        for devices, suffix in (([1273, 5113, 1529], "07050013000400"),
+                                ([1273, 0, 1529], "0505000400"),
+                                ([0, 5113, 1529], "0305001300")):
+            self.assertEqual(installed_descriptor(plain, devices), plain[:-1] + bytes.fromhex(suffix))
+
+        def request(command, args, label):
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key="artefacts:" + label,
+                expected_revision=self.profile()["revision"], wire_revision=1, command=command, arguments=args)
+
+        def apply(value, status="researched"):
+            result = native_service(self.store, value, authenticated_account_id=account)
+            self.assertEqual(result["status"], status)
+            return result
+
+        buy = request(302, [5, 1529, 1, 0], "buy")
+        bought = apply(buy)
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"1529": 1})
+        install = request(102, [5, 1, 1529, 2, 0], "install")
+        self.store.failpoint = "after_artefact_state"
+        self.reject("INJECTED_FAILURE", lambda: apply(install))
+        self.store.failpoint = None
+        apply(install)
+        self.assertEqual(battle_loadout(self.store.connection, account, vehicle_id), ((0, 0, 1529), (0, 0, 0)))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {})
+        apply(request(308, [5, 1529, 1, 1, 0, 0], "duplicate"), "rejected")
+        apply(request(102, [5, 1, 0, 2, 1], "demount"))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"1529": 1})
+        apply(request(102, [5, 1, 1529, 0, 0], "remount"))
+        apply(request(102, [5, 1, 0, 0, 0], "destroy"))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {})
+        apply(request(302, [5, 763, 2, 0], "buy-kits"))
+        apply(request(104, [1, 0, 763, 0], "mount-kit"))
+        self.assertEqual(battle_loadout(self.store.connection, account, vehicle_id), ((0, 0, 0), (0, 763, 0)))
+        apply(request(104, [1, 0, 0, 0], "remove-kit"))
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"763": 2})
+        self.assertEqual(self.profile()["artefacts"]["vehicles"], {})
+        self.assertEqual(apply(buy), dict(bought, replayed=True))
+
+    def test_historical_optdev_reply_replays_with_corrected_descriptor(self):
+        from unittest.mock import patch
+        from content0_equipment_store import projection_updates
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+
+        def install(cd, slot):
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key="optdev-" + str(cd),
+                        expected_revision=self.profile()["revision"], wire_revision=1, command=308,
+                        arguments=[5, cd, 1, slot, 0, 0])
+
+        native_service(self.store, install(1529, 2), authenticated_account_id=account)
+        request = install(1273, 0)
+
+        def historical_updates(*args, **kwargs):
+            return projection_updates(*args, **kwargs, historical_device_order=True)
+
+        with patch("content0_equipment_store.projection_updates", historical_updates):
+            saved = native_service(self.store, request, authenticated_account_id=account)
+        self.assertEqual(saved["status"], "researched")
+        self.assertIn("0504000500", saved["update_hex"])
+        before = self.profile()
+        replay = native_service(self.store, request, authenticated_account_id=account)
+        self.assertEqual(replay, dict(saved, replayed=True,
+                                     update_hex=saved["update_hex"].replace("0504000500", "0505000400", 1)))
+        self.assertEqual(self.profile(), before)
+
+        from content0_equipment_store import installed_descriptor
+        source = BattleProjectionSource(self.fx.source.bundle.root, self.fx.catalog)
+        root = Path(self.fx.temp.name) / "optdev-fixtures"
+
+        def old_descriptor(plain, slots):
+            return installed_descriptor(plain, slots, historical_device_order=True)
+
+        with patch("p04m_pool_projection.installed_descriptor", old_descriptor):
+            previous_fixture = Path(self.store.publish(source, account, root)["fixture_dir"])
+        # Recreate the old revision directory name to exercise collision-free publication.
+        unchanged = previous_fixture.with_name(f"p09d-r{before['revision']}")
+        previous_fixture.rename(unchanged)
+        published = Path(self.store.publish(source, account, root)["fixture_dir"])
+        self.assertEqual(published, previous_fixture)
+        self.assertIn(bytes.fromhex("0504000500"), (unchanged / "state.bin").read_bytes())
+        self.assertIn(bytes.fromhex("0505000400"), (published / "state.bin").read_bytes())
+        self.assertEqual(self.store.publish(source, account, root)["fixture_dir"], str(published))
+
+    def test_historical_research_reply_replays_with_corrected_descriptor(self):
+        from unittest.mock import patch
+        from p09e_research_projection import update_delta
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+
+        def request(command, args, key):
+            return dict(account_id=account, native_database_id=self.fx.native_id, command_key=key,
+                        expected_revision=self.profile()["revision"], wire_revision=1, command=command, arguments=args)
+
+        def execute(request):
+            return native_service(self.store, request, authenticated_account_id=account)
+
+        for slot, cd in ((0, 1273), (2, 1529)):
+            self.assertEqual(execute(request(308, [5, cd, 1, slot, 0, 0], f"fitted-{cd}"))["status"], "researched")
+        chassis = "module:ussr:chassis:T-18Bis"
+        upgrade = next(row for row in self.store.catalog.unlocks if row["vehicle_id"] == "vehicle:ussr:MS-1"
+                       and row["item_id"] == chassis)
+        native = self.store.catalog.vehicles["vehicle:ussr:MS-1"]["native_compact_id"]
+        self.assertEqual(execute(request(201, [native, upgrade["native_index"], 0], "unlock"))["status"], "researched")
+        upgrade_cd = self.store.catalog.modules[chassis]["native_compact_id"]
+        change = request(308, [5, upgrade_cd, 1, 0, 0, 0], "change-chassis")
+
+        def old_delta(*args, **kwargs):
+            return update_delta(*args, **dict(kwargs, historical_device_order=True))
+
+        with patch("p09e_research_service.update_delta", old_delta):
+            saved = execute(change)
+        self.assertEqual(saved["status"], "researched")
+        self.assertIn("0504000500", saved["update_hex"])
+        before = self.profile()
+        self.assertEqual(execute(change), dict(saved, replayed=True,
+                                              update_hex=saved["update_hex"].replace("0504000500", "0505000400", 1)))
+        self.assertEqual(self.profile(), before)
+
+    def test_weighted_equipment_checks_source_filter_and_preserves_full_chassis_load(self):
+        from collections import Counter
+        from content0_equipment_catalog import live_items
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        items = live_items()
+        rammers = [5625, 5881, 6137, 6393]
+        classes = Counter()
+        for vehicle in self.store.catalog.vehicles.values():
+            compatible = [cd for cd in rammers if items[cd].compatible(vehicle)]
+            self.assertLessEqual(len(compatible), 1)
+            if "test_lab" not in vehicle:
+                classes.update(compatible)
+        self.assertEqual(classes, {5625: 157, 5881: 74, 6137: 37, 6393: 13})
+
+        def send(command, arguments, *, rejected=False):
+            revision = self.profile()["revision"]
+            key = f"weighted:{command}:{revision}:" + ":".join(map(str, arguments))
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=key, expected_revision=revision, wire_revision=1, command=command, arguments=arguments)
+            previous = self.state() if rejected else None
+            result = native_service(self.store, request, authenticated_account_id=account)
+            self.assertEqual(result["status"], "rejected" if rejected else "researched")
+            if rejected:
+                self.assertEqual(self.state(), previous)
+            return request, result
+
+        ms1, is7 = self.profile()["research"]["vehicles"][:2]
+        garage = self.store.catalog.vehicles[ms1["vehicle_id"]]
+        stock_chassis = self.store.catalog.modules[garage["defaults"]["chassis"]]["native_compact_id"]
+        upgrade = "module:ussr:chassis:T-18Bis"
+        upgraded = self.store.catalog.modules[upgrade]["native_compact_id"]
+        unlock = next(row for row in self.store.catalog.unlocks if row["vehicle_id"] == ms1["vehicle_id"] and row["item_id"] == upgrade)
+        request, reply = send(308, [5, 6649, 1, 0, 0, 0])
+        send(308, [5, 5625, 1, 1, 0, 0], rejected=True)
+        send(308, [5, 249, 1, 1, 0, 0], rejected=True)  # MS-1 stock has 199 kg reserve
+        send(201, [garage["native_compact_id"], unlock["native_index"], 0])
+        send(308, [5, upgraded, 1, 0, 0, 0])
+        send(308, [5, 249, 1, 1, 0, 0]); send(101, [1, stock_chassis, 0], rejected=True)
+        send(102, [5, 1, 0, 1, 0]); send(101, [1, stock_chassis, 0])
+        send(308, [5, 5625, 2, 0, 0, 0], rejected=True)
+        send(308, [5, 5881, 2, 0, 0, 0])
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][is7["vehicle_inventory_id"]]["devices"], [5881, 0, 0])
+        self.assertEqual(native_service(self.store, request, authenticated_account_id=account), dict(reply, replayed=True))
+
+        self.send(self.request("run_open"))
+        frozen = self.send(self.request("admit"))["reservation"]["frozen"]["loadout"]
+        self.assertEqual(frozen["artefacts"]["optional_devices"], [6649, 0, 0])
+
+    def test_stereoscope_stabilizers_and_module_protection_use_source_filters_and_mass(self):
+        from unittest.mock import patch
+        from content0_equipment_catalog import live_items
+        from content0_equipment_store import validate_installed_devices
+        from p09e_research_store import assembly
+
+        catalog = self.store.catalog
+        is7 = catalog.vehicles["vehicle:ussr:IS-7"]
+        ms1 = catalog.vehicles["vehicle:ussr:MS-1"]
+        items = live_items()
+        self.assertEqual([items[cd].weight_grams for cd in (1273, 7929, 8185, 7417, 7673)],
+                         [50_000, 100_000, 200_000, 50_000, 10_000])
+        self.assertEqual([items[cd].weight_percent for cd in (6905, 7161)], [1, 1])
+        self.assertTrue(items[1273].compatible(ms1))
+        self.assertTrue(items[8185].compatible(is7))
+        self.assertFalse(items[7929].compatible(is7))
+        self.assertFalse(items[7417].compatible(ms1))
+        self.assertTrue(items[7673].compatible(ms1))
+        self.assertFalse(items[7161].compatible(ms1))
+
+        owned = {"vehicle_id": "vehicle:ussr:IS-7", "modules": is7["defaults"]}
+        equipped = [7161, 8185, 1273]
+        validate_installed_devices(catalog, owned, equipped)
+        chassis = assembly(catalog, owned["vehicle_id"], owned["modules"])
+        exact_max = chassis["mass_grams"] * 101 // 100 + 250_000
+        for limit, valid in [(exact_max, True), (exact_max - 1, False)]:
+            with patch("p09e_research_store.assembly", return_value=dict(chassis, max_load_grams=limit)):
+                if valid:
+                    validate_installed_devices(catalog, owned, equipped)
+                else:
+                    self.reject("CHASSIS_OVERLOAD", lambda: validate_installed_devices(catalog, owned, equipped))
+
+    def test_spall_liners_use_source_classes_and_complete_chassis_load(self):
+        from collections import Counter
+        from unittest.mock import patch
+        from content0_equipment_catalog import SPALL_LINERS, live_items
+        from content0_equipment_store import validate_installed_devices
+        from p09e_research_store import ECONOMY_POLICY
+
+        catalog = self.store.catalog
+        items = live_items()
+        self.assertEqual([items[cd].weight_grams for cd in SPALL_LINERS],
+                         [250_000, 500_000, 1_000_000, 1_500_000])
+        self.assertTrue(all(not items[cd].removable for cd in SPALL_LINERS))
+        classes = Counter()
+        for vehicle in catalog.vehicles.values():
+            compatible = [cd for cd in SPALL_LINERS if items[cd].compatible(vehicle)]
+            self.assertEqual(len(compatible), 1)
+            if "test_lab" not in vehicle:
+                classes.update(compatible)
+        self.assertEqual(classes, {505: 119, 761: 149, 1017: 88, 11001: 18})
+
+        def stock(vehicle_id):
+            return {"vehicle_id": vehicle_id, "modules": catalog.vehicles[vehicle_id]["defaults"]}
+
+        targets = ["vehicle:ussr:T-26", "vehicle:ussr:T-34", "vehicle:ussr:IS-7", "vehicle:germany:Maus"]
+        for vehicle_id, cd in zip(targets, SPALL_LINERS):
+            with self.subTest(vehicle_id=vehicle_id):
+                validate_installed_devices(catalog, stock(vehicle_id), [0, cd, 0])
+
+        for vehicle_id, slots, error in (
+            ("vehicle:ussr:MS-1", [505, 0, 0], "CHASSIS_OVERLOAD"),
+            ("vehicle:ussr:IS-7", [1017, 1017, 0], "ARTEFACT_DUPLICATE"),
+            ("vehicle:germany:Maus", [1017, 0, 0], "ARTEFACT_INCOMPATIBLE"),
+        ):
+            with self.subTest(vehicle_id=vehicle_id, slots=slots):
+                with self.assertRaises(TransactionError) as caught:
+                    validate_installed_devices(catalog, stock(vehicle_id), slots)
+                self.assertEqual(caught.exception.code, error)
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        self.assertEqual(self.profile()["artefacts"]["vehicles"], {})
+        source = BattleProjectionSource(self.fx.source.bundle.root, catalog)
+        root = Path(self.fx.temp.name) / "spall-shop"
+        with patch("p04m_pool_projection.live_items", return_value={cd: item for cd, item in items.items()
+                                                                     if cd not in SPALL_LINERS}):
+            old = self.store.publish(source, account, root)
+        old_dir = Path(old["fixture_dir"])
+        old_shop = (old_dir / "shop.bin").read_bytes()
+        legacy_dir = old_dir.with_name(f"p09d-r{old['revision']}")
+        old_dir.rename(legacy_dir)
+        current = self.store.publish(source, account, root)
+        self.assertEqual(current["revision"], old["revision"])
+        self.assertTrue(Path(current["fixture_dir"]).name.startswith(legacy_dir.name + "-optdev2-shop-"))
+        self.assertNotEqual((Path(current["fixture_dir"]) / "shop.bin").read_bytes(), old_shop)
+        self.assertEqual((legacy_dir / "shop.bin").read_bytes(), old_shop)
+        self.assertEqual(self.store.publish(source, account, root)["fixture_dir"], current["fixture_dir"])
+
+    def test_enhanced_suspension_terminal_uses_fitted_track_maxima(self):
+        from content0_equipment_catalog import ENHANCED_SUSPENSIONS, live_items
+        from p06t_terminal import fitted_device_maxima
+
+        items = live_items()
+        self.assertEqual(len(ENHANCED_SUSPENSIONS), 20)
+        self.assertTrue(all(not items[cd].removable and not items[cd].weight_grams for cd in ENHANCED_SUSPENSIONS))
+        is7 = self.store.catalog.vehicles["vehicle:ussr:IS-7"]
+        self.assertEqual([cd for cd in ENHANCED_SUSPENSIONS if items[cd].compatible(is7)], [3321])
+
+        frozen = {"kind": "is7", "max_hp": 2150, "crew_ids": [f"crew-{i}" for i in range(5)],
+                  "artefacts": {"optional_devices": [0, 3321, 0], "consumables": [0, 0, 0]}}
+        terminal = self.fx.terminal(frozen, 2150)
+        policy = self.store.terminal_policy
+        policy_caps = policy.document["profiles"]["is7"]["devices"]
+        caps = dict(fitted_device_maxima(policy_caps, frozen))
+        self.assertEqual((caps[30], caps[31]), (300, 300))
+        with self.assertRaises(TransactionError) as caught:
+            policy.validate(canonical(terminal).decode("ascii"), frozen=frozen, terminal_hp=2150)
+        self.assertEqual(caught.exception.code, "INVALID_TERMINAL_STATE")
+        for row in terminal["devices"]:
+            if row["extra_index"] in (30, 31):
+                row.update(health=300, max_health=300)
+        policy.validate(canonical(terminal).decode("ascii"), frozen=frozen, terminal_hp=2150)
+
+    def test_ventilation_and_rations_use_source_filters_and_settle_frozen_food(self):
+        from content0_equipment_catalog import CREW_FOOD, VENTILATION_BONUS, live_items
+        from p09e_research_service import existing_service
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        items = live_items()
+        self.assertEqual([items[cd].weight_grams for cd in VENTILATION_BONUS], [100_000, 150_000, 200_000])
+        for vehicle in self.store.catalog.vehicles.values():
+            self.assertLessEqual(sum(items[cd].compatible(vehicle) for cd in VENTILATION_BONUS), 1)
+            self.assertEqual(sum(items[cd].compatible(vehicle) for cd in CREW_FOOD), 1)
+
+        def equip(label, command, arguments, *, rejected=False):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=f"crew-equipment:{label}", expected_revision=self.profile()["revision"], wire_revision=1,
+                command=command, arguments=arguments)
+            before = self.state() if rejected else None
+            result = native_service(self.store, request, authenticated_account_id=account)
+            self.assertEqual(result["status"], "rejected" if rejected else "researched")
+            if rejected:
+                self.assertEqual(self.state(), before)
+
+        equip("wrong-vent-class", 308, [5, 5113, 1, 0, 0, 0], rejected=True)
+        equip("vent-class-one", 308, [5, 4601, 1, 0, 0, 0])
+        equip("wrong-food-direct", 308, [5, 2555, 1, 1, 0, 0], rejected=True)
+        equip("food-depot", 302, [5, 2555, 1, 0])
+        equip("wrong-food-depot", 104, [1, 0, 2555, 0], rejected=True)
+
+        def fill(cd, label):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=f"crew-maintenance:{label}", expected_revision=self.profile()["revision"], wire_revision=1,
+                layout=[5, 1, 6, 2570, 12, 2826, 14, 3082, 16, 6, 0, 0, -cd, 1, 0, 0])
+            return existing_service(self.store, "service", request, authenticated_account_id=account)
+
+        before = self.state()
+        self.assertEqual(fill(2555, "wrong-nation")["result_code"], -10)
+        self.assertEqual(self.state(), before)
+        self.assertEqual(fill(3067, "ussr-ration")["result_code"], 0)
+
+        self.send(self.request("run_open"))
+        receipt = self.send(self.request("admit"))["reservation"]
+        loadout = receipt["frozen"]["loadout"]
+        self.assertEqual(loadout["artefacts"], {"optional_devices": [4601, 0, 0], "consumables": [0, 3067, 0]})
+        initial = [row["count"] for row in loadout["ammunition"]]
+        finish = self.finish(receipt, fired=(0, 0, 0), lost=(0, 0, 0), remaining=initial, event=False)
+        terminal = dict(json.loads(finish["terminal_state_json"]), consumables_used=[1])
+        finish["terminal_state_json"] = canonical(terminal).decode("ascii")
+        cancelled = dict(finish, reason="cancelled", terminal_hp=loadout["max_hp"])
+        del cancelled["results_json"]
+        self.reject("INVALID_RESULT", lambda: self.send(cancelled))
+        reply = self.send(finish)
+        self.assertEqual(reply["reservation"]["result"]["terminal_state"]["consumables_used"], [1])
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][loadout["vehicle_inventory_id"]],
+            {"devices": [4601, 0, 0], "consumables": [0, 0, 0], "layout": [0, 3067, 0]})
+        self.assertEqual(self.profile()["artefacts"]["depot"], {"2555": 1})
+        self.assertEqual(self.send(finish), dict(reply, replayed=True))
+        self.assertEqual(self.query()["status"], "found")
+
+    def test_fuel_is_spent_at_settlement_and_limiter_is_retained(self):
+        from content0_equipment_catalog import RPM_LIMITER
+        from p09e_research_store import ECONOMY_POLICY
+
+        account = self.fx.account
+        self.activate()
+        self.store.apply_test_lab_economy(account_id=account, garage_slots=100, policy=ECONOMY_POLICY)
+        self.store.activate_artefacts(account_id=account)
+        for slot, item in enumerate((1787, RPM_LIMITER)):
+            request = dict(account_id=account, native_database_id=self.fx.native_id,
+                command_key=f"fuel-setup:{slot}", expected_revision=self.profile()["revision"], wire_revision=1,
+                command=308, arguments=[5, item, 1, slot, 0, 0])
+            self.assertEqual(native_service(self.store, request, authenticated_account_id=account)["status"], "researched")
+        self.send(self.request("run_open"))
+        receipt = self.send(self.request("admit"))["reservation"]
+        loadout = receipt["frozen"]["loadout"]
+        initial = [row["count"] for row in loadout["ammunition"]]
+        finish = self.finish(receipt, fired=(0, 0, 0), lost=(0, 0, 0), remaining=initial, event=False)
+        terminal = json.loads(finish["terminal_state_json"])
+        forged = dict(finish, terminal_state_json=canonical(dict(terminal, consumables_used=[1])).decode("ascii"))
+        self.reject("INVALID_TERMINAL_STATE", lambda: self.send(forged))
+        finish["terminal_state_json"] = canonical(dict(terminal, consumables_used=[0])).decode("ascii")
+        reply = self.send(finish)
+        self.assertEqual(self.profile()["artefacts"]["vehicles"][loadout["vehicle_inventory_id"]],
+            {"devices": [0, 0, 0], "consumables": [0, RPM_LIMITER, 0], "layout": [1787, RPM_LIMITER, 0]})
+        self.assertEqual(self.send(finish), dict(reply, replayed=True))
 
     def test_activation_is_additive_and_wrong_old_active_contract_is_refused(self):
         old = {r[0]: [tuple(v) for v in self.store.connection.execute('SELECT * FROM "'+r[0]+'"')] for r in self.store.connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}

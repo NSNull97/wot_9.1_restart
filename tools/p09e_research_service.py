@@ -6,6 +6,7 @@ cannot select another account, source path, policy, catalogue or database.
 from __future__ import annotations
 
 import argparse
+from functools import partial
 import json
 from pathlib import Path
 import sys
@@ -14,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from p09e_research_catalog import load_catalog
 from p09e_research_store import ResearchStore, POLICY, POLICY_SHA256
 from p09e_research_projection import ResearchProjectionSource, SHOP_REVISION, update_delta
-from p09e_native_commands import NativeRequest, domain_request, validate_selection
+from p09e_native_commands import NativeRequest, domain_request, is_artefact_request, validate_selection
 from p09e_native_research_audit import audit
 from p09d_ammo_projection import canonical
 from p09d_ammo_store import sha, require
@@ -30,6 +31,8 @@ REJECTIONS = frozenset({"INVALID_NATIVE_REQUEST", "UNKNOWN_VEHICLE", "UNKNOWN_MO
     "INTERNAL_COMPONENT_UNSUPPORTED", "MODULE_NOT_RESEARCHED", "DEPOT_OVERFLOW", "VEHICLE_RESERVED",
     "DUPLICATE_MODULE_SLOT", "INCOMPATIBLE_MODULE", "INCOMPATIBLE_TURRET_GUN", "CHASSIS_OVERLOAD",
     "NO_CONFIGURATION_CHANGE", "UNLOAD_AMMUNITION_REQUIRED", "MODULE_NOT_OWNED", "INVALID_INPUT",
+    "ARTEFACTS_UNAVAILABLE", "ARTEFACT_UNSUPPORTED", "ARTEFACT_SLOT_INVALID", "ARTEFACT_DUPLICATE",
+    "ARTEFACT_CONFLICT", "ARTEFACT_INCOMPATIBLE", "ARTEFACT_NO_CHANGE", "INSUFFICIENT_STOCK", "PURCHASE_UNSUPPORTED",
     # CONTENT-0 purchase with crew/base ammunition (pool store only).
     "FREE_RECRUITMENT_EXHAUSTED", "RECRUIT_SELECTION_UNSUPPORTED", "UNSUPPORTED_MOUNT", "AMMUNITION_CONFIGURATION_UNSUPPORTED"})
 GARAGE_REJECTIONS = REJECTIONS | frozenset({"AMMUNITION_CONFIGURATION_UNSUPPORTED", "PURCHASE_UNSUPPORTED",
@@ -86,11 +89,13 @@ def native_service(store, request, *, authenticated_account_id):
         "revision": request["expected_revision"] + 1, "wire_revision": request["wire_revision"] + 1,
         "update_hex": "", "replayed": False, "result_code": 0}
     try:
-        validate_selection(selected, shop_revision=SHOP_REVISION)
+        validate_selection(selected, shop_revision=SHOP_REVISION, artefacts="artefacts" in aggregate)
+        if is_artefact_request(selected):
+            return store.artefacts_service(request, authenticated_account_id=authenticated_account_id)
         domain = domain_request(selected, catalog=store.catalog, aggregate=aggregate,
             account_id=authenticated_account_id, command_key=request["command_key"],
             expected_revision=request["expected_revision"], shop_revision=SHOP_REVISION)
-        def project(before, after, result):
+        def project(before, after, result, *, historical_device_order=False):
             value = dict(response)
             value["revision"] = result["revision"]
             if result["operation"] == "buy_vehicle_equipped":
@@ -102,11 +107,13 @@ def native_service(store, request, *, authenticated_account_id):
                 pool = hasattr(store, "pair_layouts") and store.pool_active() and "pool" in after
                 layouts = store.pair_layouts(after) if pool else None
                 depot = {store.depot_cd[key]: n for key, n in after["depot"].items() if before["depot"].get(key) != n} if pool else None
-                updates = [update_delta(store.catalog, before["research"], after["research"], request["wire_revision"], layouts, depot)]
+                updates = [update_delta(store.catalog, before["research"], after["research"], request["wire_revision"], layouts, depot,
+                                        artefacts=after.get("artefacts"), historical_device_order=historical_device_order)]
             value["update_hex"] = updates[0].hex()
             return value
         return store.execute(domain, authenticated_account_id=authenticated_account_id,
-            native_binding=sha(canonical(request)), prepare_response=project)
+            native_binding=sha(canonical(request)), prepare_response=project,
+            prepare_historical_response=partial(project, historical_device_order=True))
     except TransactionError as error:
         if error.code not in REJECTIONS: raise
         current = store.read_profile(authenticated_account_id)

@@ -16,6 +16,10 @@ INT3_METHOD = 0x8E
 INT4_METHOD = 0x90
 INT_ARRAY_METHOD = 0x97
 UNLOCK, EQUIP, BUY_VEHICLE, BUY_ITEM, BUY_AND_EQUIP = 201, 101, 301, 302, 308
+EQUIP_OPTDEV, EQUIP_EQS = 102, 104
+ARTEFACT_KINDS = (9, 11)
+ARRAY_LENGTHS = {EQUIP_OPTDEV: 5, EQUIP_EQS: 4, BUY_AND_EQUIP: 6}
+ARGUMENT_COUNTS = {UNLOCK: 3, EQUIP: 3, BUY_VEHICLE: 4, BUY_ITEM: 4, **ARRAY_LENGTHS}
 MAX_BUNDLE = 512
 # common/accountcommands.pyc BUY_VEHICLE_FLAG: NONE 0, CREW 1, SHELLS 16 (Shop.buyVehicle line 766
 # ORs them). VehicleBuyer passes crewType as the tariff, -1 when "without crew" is checked.
@@ -50,9 +54,10 @@ def decode(method: int, payload: bytes) -> NativeRequest:
         require(command in (BUY_VEHICLE, BUY_ITEM) and len(payload) == 24)
         arguments = struct.unpack_from("<qiii", payload, 4)
     elif method == INT_ARRAY_METHOD:
-        require(command == BUY_AND_EQUIP and len(payload) == 32)
-        require(struct.unpack_from("<I", payload, 4)[0] == 6)
-        arguments = struct.unpack_from("<6i", payload, 8)
+        length = ARRAY_LENGTHS.get(command)
+        require(length is not None and len(payload) == 8 + length * 4)
+        require(struct.unpack_from("<I", payload, 4)[0] == length)
+        arguments = struct.unpack_from(f"<{length}i", payload, 8)
     else:
         raise TransactionError("UNSUPPORTED_NATIVE_METHOD")
     return NativeRequest(request_id, command, arguments)
@@ -79,22 +84,35 @@ its existing typed account decoder and defer writes until channel commit.
     return tuple(rows)
 
 
-def validate_selection(request: NativeRequest, *, shop_revision: int) -> None:
+def is_artefact_request(request: NativeRequest) -> bool:
+    return request.command in (EQUIP_OPTDEV, EQUIP_EQS) or (
+        request.command in (BUY_ITEM, BUY_AND_EQUIP) and request.arguments[1] & 15 in ARTEFACT_KINDS)
+
+
+def validate_selection(request: NativeRequest, *, shop_revision: int, artefacts: bool = False) -> None:
     """Validate supported command options, retaining catalogue/state checks downstream.
 
-The sole zero-cost exception is credits/XP. Gold conversion, paid removal,
-crew and shell auto-purchase must never become free by a generic cost override.
+Artefacts require a separate activated policy. The original module bounds and
+paid flags remain closed for legacy research requests.
 """
     require(type(request) is NativeRequest and type(shop_revision) is int and 0 < shop_revision < 2**31)
     a = request.arguments
     require(type(request.request_id) is int and 0 < request.request_id <= 32767
             and type(request.command) is int and type(a) is tuple
-            and len(a) == {UNLOCK: 3, EQUIP: 3, BUY_VEHICLE: 4, BUY_ITEM: 4, BUY_AND_EQUIP: 6}.get(request.command)
+            and len(a) == ARGUMENT_COUNTS.get(request.command)
             and all(type(v) is int for v in a))
+    if is_artefact_request(request):
+        require(artefacts, "ARTEFACTS_UNAVAILABLE")
     if request.command == UNLOCK:
         require(0 < a[0] < 2**31 and 0 <= a[1] < 4096 and a[2] == 0)
     elif request.command == EQUIP:
         require(0 < a[0] < 2**31 and 0 < a[1] < 2**31 and 0 <= a[2] < 2**31)
+    elif request.command == EQUIP_OPTDEV:
+        require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
+        require(0 < a[1] < 2**31 and 0 <= a[2] < 2**31 and a[3] in range(3) and a[4] in (0, 1))
+        require(a[2] == 0 or a[2] & 15 == ARTEFACT_KINDS[0])
+    elif request.command == EQUIP_EQS:
+        require(0 < a[0] < 2**31 and all(cd == 0 or 0 < cd < 2**31 and cd & 15 == ARTEFACT_KINDS[1] for cd in a[1:]))
     elif request.command == BUY_VEHICLE:
         require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
         require(0 < a[1] < 2**31)
@@ -111,7 +129,10 @@ crew and shell auto-purchase must never become free by a generic cost override.
     elif request.command == BUY_AND_EQUIP:
         require(a[0] == shop_revision, "SHOP_REVISION_MISMATCH")
         require(0 < a[1] < 2**31 and 0 < a[2] < 2**31 and 0 <= a[5] < 2**31)
-        require(a[3] == 0 and a[4] == 0, "PAID_OR_SLOT_OPERATION_UNSUPPORTED")
+        if is_artefact_request(request):
+            require(a[3] in range(3) and a[4] in (0, 1) and a[5] == 0, "PAID_OR_SLOT_OPERATION_UNSUPPORTED")
+        else:
+            require(a[3] == 0 and a[4] == 0, "PAID_OR_SLOT_OPERATION_UNSUPPORTED")
     else:
         raise TransactionError("UNSUPPORTED_NATIVE_COMMAND")
 

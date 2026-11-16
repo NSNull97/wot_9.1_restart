@@ -14,9 +14,11 @@ sys.path.insert(0, str(ROOT / 'tools'))
 sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(ROOT / 'client_patch'))
 import battle_ui_feed_flash as feed
+import battle_ui_foliage_flash as foliage
 import battle_ui_history_flash as history
 import battle_ui_hit_flash as flash
 import battle_ui_native_flash as native
+import battle_ui_visibility_flash as visibility
 import project_battle_feed as feed_client
 import project_battle_history as history_client
 from test_battle_ui_hit_flash import Clip, Delegate, Machine, ORIGINAL, TextFormat
@@ -133,9 +135,95 @@ class BuilderTests(unittest.TestCase):
         self.assertEqual((len(codes), codes.count(12), codes[-3:]), (native.SOURCE_TAGS + 1, 4, [12, 1, 0]))
         feed_only = native.payload(ORIGINAL, True, False)[1]
         self.assertEqual(feed_only['callbacks'], [feed.CALLBACK, feed.PLACE_CALLBACK])
+        foliage_only = native.payload(ORIGINAL, False, False, with_foliage=True)[1]
+        self.assertEqual(foliage_only['callbacks'], [foliage.CLEAR, foliage.POLYGON])
+        self.assertTrue(foliage_only['foliage_debug'])
+        self.assertFalse(foliage_only['visibility_debug'])
 
 
 class SetupTests(unittest.TestCase):
+    def test_foliage_painter_draws_filled_closed_polygon_on_its_own_clip(self):
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine = Machine(root)
+        machine.run(native.actions(False, False, with_foliage=True), [scope])
+        self.assertEqual(set(delegate.callbacks), {foliage.CLEAR, foliage.POLYGON})
+        self.assertNotIn('projectVisibility', root.members)
+        holder = root.members['projectFoliage']
+        self.assertFalse(holder.members['_visible'])
+        machine.invoke(scope['_projectFoliageClear'], root, [True])
+        self.assertTrue(holder.members['_visible'])
+        polygon = scope['_projectFoliagePolygon']
+        coordinates = [11, 21, 31, 41, 51, 61] + [0] * (2 * foliage.MAX_VERTICES - 6)
+        colour, alpha = 0x65BC4A, 28
+        machine.invoke(polygon, root, [colour, alpha, 3] + coordinates)
+        self.assertEqual(holder.calls, [
+            ('clear',), ('lineStyle', 1, colour, 70), ('beginFill', colour, alpha),
+            ('moveTo', 11, 21), ('lineTo', 31, 41), ('lineTo', 51, 61),
+            ('lineTo', 11, 21), ('endFill',),
+        ])
+        original_calls = list(holder.calls)
+        for count in (2, foliage.MAX_VERTICES + 1):
+            machine.invoke(polygon, root, [colour, alpha, count] + coordinates)
+        self.assertEqual(holder.calls, original_calls)
+        machine.invoke(scope['_projectFoliageClear'], root, [False])
+        self.assertFalse(holder.members['_visible'])
+        self.assertEqual(holder.calls[-1], ('clear',))
+
+    def test_visibility_callbacks_draw_and_mark_only_when_requested(self):
+        root, delegate = Clip(), Delegate()
+        root.members['getNextHighestDepth'] = lambda: 300
+        scope = {'this': root, 'TextFormat': TextFormat,
+                 'gfx': {'io': {'GameDelegate': delegate}}}
+        machine=Machine(root)
+        machine.run(native.actions(False,False,with_visibility=True),[scope])
+        self.assertEqual(set(delegate.callbacks),{visibility.CLEAR,visibility.LINE,visibility.PANEL,
+                                                  visibility.MARKER,visibility.LAMP,visibility.NATIVE_LAMP})
+        holder=root.members['projectVisibility']
+        machine.invoke(scope['_projectVisibilityClear'],root,[True])
+        self.assertTrue(holder.members['_visible'])
+        machine.invoke(scope['_projectVisibilityLine'],root,[2,3,20,30,0xff00ff])
+        self.assertIn(('moveTo',2,3),holder.calls)
+        self.assertIn(('lineTo',20,30),holder.calls)
+        machine.invoke(scope['_projectVisibilityMarker'],root,[2,30,40,'#2 ussr:T-50',0xffffff])
+        self.assertEqual(field(holder,'visibilityMarker2'),'#2 ussr:T-50')
+        machine.invoke(scope['_projectVisibilityPanel'],root,['row']*8)
+        panel_calls=[c for c in holder.calls if c[0]=='createTextField' and str(c[1]).startswith('visibilityText')]
+        self.assertEqual([c[4] for c in panel_calls],[230+i*18 for i in range(8)])
+        marker_call=[c for c in holder.calls if c[0]=='createTextField' and c[1]=='visibilityMarker2'][0]
+        self.assertEqual(marker_call[5],256)
+        machine.invoke(scope['_projectVisibilityClear'],root,[False])
+        self.assertFalse(holder.members['_visible'])
+
+    def test_visibility_lamp_cancels_native_fade_and_returns_control_on_expiry(self):
+        root, delegate, indicator = Clip(), Delegate(), Clip('sixthSenseIndicator')
+        root.members['getNextHighestDepth'] = lambda: 300
+        cancelled, native_calls = [], []
+        scope = {'this': root, 'gfx': {'io': {'GameDelegate': delegate}},
+                 'sixthSenseIndicator': indicator, 'sixthSenseStart': 42,
+                 'clearInterval': cancelled.append, 'onShowSixthSense': native_calls.append}
+        machine = Machine(root)
+        machine.run(native.actions(False, False, with_visibility=True), [scope])
+        diagnostic_lamp = scope['_projectVisibilityLamp']
+        native_lamp = scope['_projectVisibilityNativeLamp']
+
+        machine.invoke(native_lamp, root, [True])
+        self.assertEqual(native_calls, [True])
+        machine.invoke(diagnostic_lamp, root, ['spotted'])
+        self.assertEqual(cancelled, [42])
+        self.assertEqual(scope['sixthSenseStart'], -1)
+        self.assertEqual(indicator.calls, [('gotoAndPlay', 'active')])
+        machine.invoke(native_lamp, root, [True])
+        self.assertEqual(native_calls, [True])
+        machine.invoke(diagnostic_lamp, root, ['hidden'])
+        self.assertEqual(indicator.calls[-1], ('gotoAndStop', 'inactive'))
+        machine.invoke(native_lamp, root, [True])
+        self.assertEqual(native_calls, [True])
+        machine.invoke(diagnostic_lamp, root, ['native'])
+        machine.invoke(native_lamp, root, [False])
+        self.assertEqual(native_calls, [True, False])
+
     def test_holders_on_the_root_and_four_callbacks(self):
         machine, scope, root, delegate = loaded()
         self.assertEqual(sorted(delegate.callbacks), sorted([feed.CALLBACK, feed.PLACE_CALLBACK, history.CALLBACK,

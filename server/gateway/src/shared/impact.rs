@@ -55,16 +55,22 @@ pub fn against_winding(chord:[f32;3],normal:[f32;3])->bool{
 /// this class's common_extra is gunHealth/native32 before forming these facts.
 pub fn resolve_mixed_for(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
     chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool)->io::Result<crate::p06t_damage::Resolution>{
-    resolve_mixed_spent(kind,facts,shell,chord,normal,distance,breech_lab,0.,None)
+    resolve_mixed_spent(kind,facts,shell,chord,normal,distance,breech_lab,0.,None,1.)
+}
+
+pub(super) fn spall_for(facts: &materials::MaterialFacts, actor: &super::model::Actor) -> f64 {
+    if facts.effective.as_ref().is_some_and(|material| material.use_antifragmentation_lining) {
+        crate::profile13_v2091::spall_absorption(actor.optional_devices())
+    } else { 1. }
 }
 /// SHELL-02: the same law after `spent_mm` of track armour (sum of this shot's `TrackContact`).
 #[allow(clippy::too_many_arguments)]
 pub fn resolve_mixed_spent(kind:VehicleKind,facts:&materials::MaterialFacts,shell:crate::p06t_shells091::Shell,
-    chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool,spent_mm:f64,rolls:Option<super::shell_rules::Rolls>)->io::Result<crate::p06t_damage::Resolution>{
+    chord:[f32;3],normal:[f32;3],distance:f64,breech_lab:bool,spent_mm:f64,rolls:Option<super::shell_rules::Rolls>,
+    absorption:f64)->io::Result<crate::p06t_damage::Resolution>{
     let(input,unarmored_device)=mixed_direct_input(kind,facts,shell,chord,normal,distance,breech_lab,spent_mm)?;
     if unarmored_device {crate::p06t_damage::resolve_unarmored_device(input)}
-    else if let Some(rolls)=rolls {crate::p06t_damage::resolve_layered(input,spent_mm,rolls)}
-    else {crate::p06t_damage::resolve_direct_spent(input,spent_mm)}
+    else {crate::p06t_damage::resolve_lined(input,spent_mm,rolls,absorption)}
 }
 /// SHELL-CFG: the exact law input of a mixed contact (and whether it is the LAB31
 /// unarmored-device rule); the shot trace records this same input.
@@ -536,7 +542,7 @@ impl Trace {
         self.fragiles=Some(state);Ok(())
     }
     pub fn bind_contact_source(&mut self,slot:usize,source:super::ram_proof::Source)->io::Result<()> {
-        if slot>=self.actor_limit()||source.profile!=super::ram_proof::Profile::for_vehicle(self.kind_for_slot(slot)?)
+        if slot>=self.actor_limit()||source.profile.base()!=super::ram_proof::Profile::for_vehicle(self.kind_for_slot(slot)?)
             ||!source.follows(self.contact_sources[slot].as_ref()){return Err(invalid("vehicle source authority"));}
         if self.contact_revoked[slot]&&self.contact_sources[slot].as_ref().is_some_and(|old|source.generation<=old.generation){return Err(invalid("revoked vehicle source"));}
         self.contact_sources[slot]=Some(source);self.contact_revoked[slot]=false;Ok(())
@@ -848,8 +854,9 @@ impl Trace {
         let distance=(0..3).map(|i|(f64::from(endpoint[i])-f64::from(origin[i])).powi(2)).sum::<f64>().sqrt();
         let chord=std::array::from_fn(|i|end[i]-start[i]);
         let rolls=self.shot_rolls(battle_id,shot_id)?;
+        let absorption = source.map_or(1., |(_, actor)| spall_for(facts, actor));
         let computed=resolve_mixed_spent(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab,
-            self.track_spent(shot_id)?,rolls)?;
+            self.track_spent(shot_id)?,rolls,absorption)?;
         if computed.policy==crate::p06t_damage::UNARMORED_DEVICE_POLICY {
             let(bundle,actor)=source.ok_or_else(||invalid("LAB31 absent actual source witness"))?;
             if actor.vehicle_kind()!=target_kind||bundle.vehicle_kind()!=target_kind||actor.health!=health_before||!actor.alive()
@@ -871,7 +878,7 @@ impl Trace {
         if super::shot_trace::enabled(){
             let spent=self.track_spent(shot_id)?;
             let(input,unarmored)=mixed_direct_input(target_kind,facts,shell,chord,contact.triangle.normal,distance,self.breech_lab,spent)?;
-            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&input,spent,unarmored,rolls,&computed);
+            super::shot_trace::direct(battle_id,shot_id,server_tick,attacker,target,self.kind_for_slot(attacker)?,&input,spent,unarmored,rolls,absorption,&computed);
         }
         self.push(Event::MixedResolution{order:self.next_order_value()?,battle_id,shot_id,server_tick,attacker,target,material_order,
             shell,contact:contact.clone(),resolution:computed,health_before,health_after})?;
@@ -1008,7 +1015,8 @@ impl Trace {
         if !plate.ordinary{return Err(invalid("splash unsupported source plate"));}
         let excluded=self.excluded_before(u32::MAX);let(los_start,blocker)=splash_los_query(terrain,center,contact.endpoint,&excluded)?;
         let input=crate::p06t_damage::SplashTarget{slot:target as u8,distance_m:distance,
-            armor_mm:plate.armor_mm.ok_or_else(||invalid("splash armor absent"))?+layers,los_clear:blocker.is_none()};
+            armor_mm:plate.armor_mm.ok_or_else(||invalid("splash armor absent"))? * spall_for(&contact.material_facts,target_actor) + layers,
+            los_clear:blocker.is_none()};
         let computed=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_blast(shell,&[input],r,blast)?[0],None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
         if computed!=*resolution||health_after!=health_before.saturating_sub(computed.damage_hp as i16).max(0)
             ||self.events.len()+2>self.event_limit()||self.next_order.checked_add(2).is_none(){return Err(invalid("splash recomputed damage/health/capacity"));}

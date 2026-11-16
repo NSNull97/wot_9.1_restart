@@ -49,6 +49,27 @@ fn direct(shell:Shell,armor:f64,angle:f32,distance:f64)->math::Resolution {
     assert_eq!(direct(normal_he,200.,0.,0.).damage_hp,655);
     assert_eq!(hesh.penetration_mm,[275.,275.]);
 }
+
+#[test] fn content0_s5_spall_liners_change_he_absorption_without_changing_penetration() {
+    use crate::profile13_v2091::{SPALL_LINERS, equipment_mass, spall_absorption};
+    let he = shell(Mount::Is7Stock, 2);
+    let mut input = math::DirectInput {shell: he, plate: math::Plate {armor_mm: Some(100.), ordinary: true},
+        chord: [0., 0., 1.], winding_normal: [0., 0., -1.], distance_m: 100.};
+    let baseline = math::resolve_direct(input).unwrap();
+    for (liner, mass, expected) in [(SPALL_LINERS[0], 250., 188), (SPALL_LINERS[1], 500., 182),
+                                     (SPALL_LINERS[2], 1000., 177), (SPALL_LINERS[3], 1500., 155)] {
+        assert_eq!(equipment_mass([0, liner, 0], 48_000.), mass);
+        let absorption = spall_absorption([0, liner, 0]);
+        let result = math::resolve_lined(input, 0., None, absorption).unwrap();
+        assert_eq!((result.decision, result.damage_hp, result.effective_armor_mm),
+                   (baseline.decision, expected, baseline.effective_armor_mm));
+    }
+    input.plate.armor_mm = Some(67.);
+    assert_eq!(math::resolve_lined(input, 0., None, 1.5).unwrap(), math::resolve_direct(input).unwrap());
+    input.shell = shell(Mount::Is7Stock, 0);
+    assert_eq!(math::resolve_lined(input, 0., None, 1.5).unwrap(), math::resolve_direct(input).unwrap());
+    assert!(math::resolve_lined(input, 0., None, 1.75).is_err());
+}
 #[test] fn splash_uses_frozen_he_radius_surface_armor_and_actual_los_facts() {
     let he=shell(Mount::Is7Stock,2);let radius=he.explosion_radius_m.unwrap();
     let inputs=[math::SplashTarget {slot:0,distance_m:radius/2.,armor_mm:10.,los_clear:true},

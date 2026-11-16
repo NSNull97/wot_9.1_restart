@@ -3,9 +3,8 @@
 
 Original module data, parameter highlighting and information windows are kept.
 The measured mutation entry point is denied by default; the explicit research
-lab admits the audited original callback for five supported module kinds only.
-Six genuinely empty optional-item
-selectors show an explicit unavailable tooltip instead of an empty dropdown.
+lab admits the audited original callback for supported modules and items.
+Genuinely empty optional-item selectors show an explicit unavailable tooltip.
 This policy is not server-side authorization or a purchase implementation.
 The battle button keeps its original update and tooltip lifecycle, but cannot
 dispatch a queue action. No vehicle readiness or ammunition data is changed.
@@ -25,6 +24,8 @@ except NameError:
 MODULE_CALLBACK_SHA256 = '02f79342b691d6c512bd441feb8d9239cf820f9044269f9f040f151ad9a09377'
 PROCESS_WRAPPER_SHA256 = '3814ec7ed28deee153a088aa3def670d9cbce6ecc2bdd286e85165a2f3c9f701'
 RESEARCH_MODULE_TYPES = (2, 3, 4, 5, 7)
+OPTIONAL_DEVICE_TYPE = 9
+ARTEFACT_TYPES = (OPTIONAL_DEVICE_TYPE, 11)
 
 AUDITED_SOURCE = 'scripts/client/gui/Scaleform/daapi/view/lobby/hangar/AmmunitionPanel.py'
 AUDITED_PYC_SHA256 = '54d139dd4280314111ce509c15360da8d932cfbc356b30d40c1d9ca96c3addc8'
@@ -34,6 +35,7 @@ NOTICE = (u'Смена модулей, покупка и снятие обору
 # server; this notice names what is still unavailable there.
 RESEARCH_NOTICE = (u'Снятие модулей, оборудование и снаряжение пока недоступны в тестовом стенде. '
                    u'Ходовую, двигатель, радиостанцию, башню и орудие можно установить со Склада.')
+DEMOUNT_NOTICE = u'Это оборудование не найдено в комплектации выбранной машины.'
 EMPTY_TOOLTIP = (u'{HEADER}Недоступно в тестовом стенде{/HEADER}'
                  u'{BODY}Каталог оборудования и снаряжения пока не подключён. '
                  u'Покупка и установка недоступны.{/BODY}')
@@ -62,6 +64,36 @@ def _research_selection(new_id, slot, old_id, remove):
     return (compact is not None and compact & 15 in RESEARCH_MODULE_TYPES
             and type(slot) in _INTEGER_TYPES and slot == 0 and type(remove) is bool and not remove
             and (old_id is None or previous is not None and previous & 15 == compact & 15))
+
+
+def _artefact_selection(new_id, slot, old_id, remove):
+    compact = _module_cd(new_id)
+    previous = _module_cd(old_id) if old_id is not None else None
+    if (compact is None or compact & 15 not in ARTEFACT_TYPES
+            or type(slot) not in _INTEGER_TYPES or slot not in (0, 1, 2)
+            or type(remove) is not bool
+            or (old_id is not None and (previous is None or previous & 15 != compact & 15))):
+        return False
+    return True
+
+
+def _shop_offers_artefact(compact):
+    # These entries originate in the active owner's Shop projection and
+    # provide a UI capability. The server still authorizes selection.
+    from gui.shared import g_itemsCache
+    return g_itemsCache.items.shop.getPrices().get(compact) == (0, 0)
+
+
+def _mounted_optional_device_slot(compact):
+    from CurrentVehicle import g_currentVehicle
+    vehicle = g_currentVehicle.item
+    if vehicle is None:
+        return None
+    slots = vehicle.optDevices
+    if not isinstance(slots, (list, tuple)) or len(slots) != 3:
+        return None
+    matches = [index for index, item in enumerate(slots) if item is not None and item.intCD == compact]
+    return matches[0] if len(matches) == 1 else None
 
 
 def _default_step_callback():
@@ -140,8 +172,8 @@ BATTLE_METHODS = (
 class _ModuleChangeGuard(object):
     """Own reversible class binding; dependencies permit isolated policy tests."""
 
-    def __init__(self, panel_class, messages, record, allow_research=False):
-        if type(allow_research) is not bool:
+    def __init__(self, panel_class, messages, record, allow_research=False, artefact_offered=None):
+        if type(allow_research) is not bool or (artefact_offered is not None and not callable(artefact_offered)):
             raise ValueError('explicit research module capability required')
         self.panel_class = panel_class
         self.messages = messages
@@ -170,13 +202,26 @@ class _ModuleChangeGuard(object):
                 guard.record('research_module_callback', original_mutation_called=True,
                              module_compact_id=_module_cd(newId), authority='server', native_acceptance='NOT_RUN')
                 return guard.original(panel, newId, slotIdx, oldId, isRemove)
+            notice = guard.notice
+            compact = _module_cd(newId)
+            if (guard.allow_research and artefact_offered is not None
+                    and _artefact_selection(newId, slotIdx, oldId, isRemove) and artefact_offered(compact)):
+                slot = slotIdx
+                if isRemove and compact & 15 == OPTIONAL_DEVICE_TYPE:
+                    # #717 may pass the dropdown slot. CMD102 removes by physical slot alone.
+                    slot = _mounted_optional_device_slot(compact)
+                guard.record('artefact_callback', original_mutation_called=slot is not None,
+                             item_compact_id=compact, slot=slot, requested_slot=slotIdx, remove=isRemove)
+                if slot is not None:
+                    return guard.original(panel, newId, slot, oldId, isRemove)
+                notice = DEMOUNT_NOTICE
             action = 'remove' if isRemove else 'install_or_purchase'
             guard.record('capability_denied', capability='module_changes',
                          action=action, origin='project_test_service_policy',
                          original_mutation_called=False)
             if guard.messages.g_instance is None:
                 raise RuntimeError('original SystemMessages is unavailable for module denial')
-            guard.messages.pushMessage(guard.notice, type=guard.messages.SM_TYPE.Warning)
+            guard.messages.pushMessage(notice, type=guard.messages.SM_TYPE.Warning)
             guard.record('capability_notice', capability='module_changes',
                          phase='return', channel='original_SystemMessages_Warning')
 
@@ -572,7 +617,8 @@ def init(record, enable_research_service=False):
     _audit_window_class(AmmunitionPanel)
     if enable_research_service:
         _audit_module_class(AmmunitionPanel)
-    _install_guards(_ModuleChangeGuard(AmmunitionPanel, SystemMessages, record, enable_research_service),
+    _install_guards(_ModuleChangeGuard(AmmunitionPanel, SystemMessages, record,
+                                      enable_research_service, _shop_offers_artefact),
                     _BattleGuard(FightButton, SystemMessages, record),
                     _WindowGuard(AmmunitionPanel, SystemMessages, record))
 

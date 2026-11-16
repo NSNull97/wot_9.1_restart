@@ -261,8 +261,8 @@ pub(super) fn finish(a:&mut arena::Arena)->arena::Event {
         let (got,outcome,error,generation,native_ready,blocked,step_ns)=<(u32,u8,String,Option<u64>,bool,bool,u64)>::get(&mut r)?;
         let world=Option::<World>::get(&mut r)?;r.done()?;
         if got!=seq||outcome>3 {return Err(bw_wire::bad("reply"));}
-        // A runtime the worker could not build is not held there: send the full spec again.
-        if outcome==3 {link.sent=None;}
+        // A failed runtime is released in the worker: send the full spec again.
+        if outcome!=0 {link.sent=None;}
         link.primed=true;w.generation=generation;w.native_ready=native_ready;w.blocked=blocked;
         w.steps+=1;w.step_ns=step_ns;
         Ok((outcome,error,world))
@@ -347,10 +347,14 @@ pub fn run(port:u16)->io::Result<()> {
             },
         };
         let step_ns=u64::try_from(t.elapsed().as_nanos()).unwrap_or(u64::MAX);
-        let state=runtime.as_ref().map(|r|(r.ready_for_native(),r.blocked(),Some(r.generation))).unwrap_or((true,false,None));
+        let state=if outcome==0 {runtime.as_ref().map(|r|(r.ready_for_native(),r.blocked(),Some(r.generation)))} else {None}
+            .unwrap_or((true,false,None));
         let mut out=Enc::new(anchor,&mut arcs);
         (seq,outcome,error,state.2,state.0,state.1,step_ns).put(&mut out);out.bytes(&[1]);world.put(&mut out);
         write_frame(&mut s,STEPPED,&out.finish()?,Instant::now()+HANDSHAKE)?;
+        // An idle reset sends no next STEP. Release the failed scene here so
+        // its physics process is reaped even if nobody joins the next battle.
+        if outcome!=0 {runtime=None;}
     }
 }
 

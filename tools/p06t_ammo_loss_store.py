@@ -196,7 +196,8 @@ class AmmoLossStore(MixedAmmoStore):
                 and event["attacker_slot"] < state["roster_size"] and event["target_slot"] < state["roster_size"]
                 and death["killer_slot"] == event["attacker_slot"] and death["tick"] == event["tick"], "INVALID_RESULT")
         if reason == "cancelled":
-            require(event is None and not any(r["count"] for r in fired + lost) and hp == frozen["max_hp"], "INVALID_RESULT")
+            require(event is None and not any(r["count"] for r in fired + lost) and hp == frozen["max_hp"]
+                and "consumables_used" not in base["terminal_state"], "INVALID_RESULT")
         result = {k: v for k, v in base.items() if k != "consumed_ammunition"}
         return dict(result, fired_ammunition=deepcopy(fired), lost_ammunition=deepcopy(lost), loss_event=deepcopy(event))
 

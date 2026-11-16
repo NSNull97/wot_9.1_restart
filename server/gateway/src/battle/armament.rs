@@ -15,6 +15,11 @@ pub const POLICY:&str="test_lab.p06t.source-stacks-including-clip.v1";
 pub const MAX_CLIP:u8=64;
 /// Mounted burst ceiling (0.9.1 source maximum is 5). Not a historical rule.
 pub const MAX_BURST:u8=10;
+/// Bounds include the existing module/crew damage and a low qualification.
+pub(crate) const MIN_RELOAD_SCALE:f64=0.729;
+pub(crate) const MAX_RELOAD_SCALE:f64=8.;
+pub(crate) const MAX_BASE_RELOAD_SECONDS:f64=120.;
+pub(crate) const MIN_BASE_RELOAD_SECONDS:f64=0.1;
 /// The mounted source of a gun. Unit tests may stage a synthetic automatic
 /// gun on this thread (`tests::with_source`) without a rebuilt vehicle table.
 fn mounted(mount:Mount)->crate::p06t_shells091::GunProfile{
@@ -62,7 +67,7 @@ impl State {
             ||burst>1&&(source.clip_count==1||burst>source.clip_count||!source.burst_interval_seconds.is_finite()
                 ||!(0.01..=2.).contains(&source.burst_interval_seconds)){return Err(bad("armament mounted burst bounds"));}
         if total==0||total>source.capacity||counts[current]==0||source.clip_count==0||source.clip_count>MAX_CLIP
-            ||!source.reload_seconds.is_finite()||!(0.1..=120.).contains(&source.reload_seconds)
+            ||!source.reload_seconds.is_finite()||!(MIN_BASE_RELOAD_SECONDS..=MAX_BASE_RELOAD_SECONDS).contains(&source.reload_seconds)
             ||!source.clip_interval_seconds.is_finite()||!(0. ..=120.).contains(&source.clip_interval_seconds)
             ||source.clip_count>1&&source.clip_interval_seconds<=0. {return Err(bad("armament mounted source bounds"));}
         Ok(Self{mount,counts,current,next:current,clip:counts[current].min(u16::from(source.clip_count))as u8,
@@ -103,9 +108,9 @@ impl State {
         self.until.map_or(0.,|until|until.saturating_duration_since(now).as_secs_f32())
     }
     pub fn set_reload_scale(&mut self,scale:f64,now:Instant)->io::Result<()>{
-        if !scale.is_finite()||!(1. ..=4.).contains(&scale)||self.observed.is_some_and(|previous|now<previous){return Err(bad("armament capability scale/time"));}
+        if !(MIN_RELOAD_SCALE..=MAX_RELOAD_SCALE).contains(&scale)||self.observed.is_some_and(|previous|now<previous){return Err(bad("armament capability scale/time"));}
         let mut next=self.clone();next.advance(now);
-        if scale!=next.reload_scale&&next.magazine_reload {
+        if scale!=next.reload_scale&&(next.magazine_reload||mounted(next.mount).clip_count==1) {
             if let Some(until)=next.until{
                 // Only the reload after the last burst shell is scaled, never the burst cadence.
                 let from=next.burst_end()?.map_or(now,|end|end.max(now));
@@ -424,9 +429,32 @@ mod tests {
         state.apply(&[Command::ReloadClip],start).unwrap();assert_eq!(state.deadline(),Some(start+Duration::from_secs(60)));
         state.set_reload_scale(2.,start+Duration::from_secs(10)).unwrap();
         assert_eq!(state.deadline(),Some(start+Duration::from_secs(110)));assert_eq!(state.base_reload_seconds(),120.);
-        let before=state.clone();for scale in [f64::NAN,0.9,4.1]{assert!(state.set_reload_scale(scale,start+Duration::from_secs(11)).is_err());assert_eq!(state,before);}
+        let before=state.clone();for scale in [f64::NAN,0.7,8.1]{assert!(state.set_reload_scale(scale,start+Duration::from_secs(11)).is_err());assert_eq!(state,before);}
         state.set_reload_scale(4.,start+Duration::from_secs(20)).unwrap();
         assert_eq!(state.deadline(),Some(start+Duration::from_secs(200)));assert_eq!(state.base_reload_seconds(),240.);
         assert_eq!(state.counts(),[12,0,0]);
+    }
+
+    #[test]
+    fn content0_s5_rammer_shortens_full_reload_and_preserves_intershot_cadence(){
+        let now=Instant::now();
+        let profile=PROFILES[Mount::WtE100128.index()];
+        let mut drum=State::new(profile.mount,[12,0,0],profile.shots[0].compact_descr).unwrap();
+        drum.set_reload_scale(0.9,now).unwrap();
+        drum.apply(&[Command::Shoot],now).unwrap();
+        assert_eq!(drum.deadline(),Some(now+Duration::from_secs(2)));
+        drum.set_reload_scale(1.8,now+Duration::from_secs(1)).unwrap();
+        assert_eq!(drum.deadline(),Some(now+Duration::from_secs(2)));
+        drum.set_reload_scale(0.9,now+Duration::from_secs(2)).unwrap();
+        drum.apply(&[Command::ReloadClip],now+Duration::from_secs(2)).unwrap();
+        assert_eq!(drum.deadline(),Some(now+Duration::from_secs(56)));
+
+        let profile=PROFILES[Mount::Ms1Stock.index()];
+        let mut single=State::new(profile.mount,[12,0,0],profile.shots[0].compact_descr).unwrap();
+        single.set_reload_scale(0.9,now).unwrap();
+        single.apply(&[Command::Shoot],now).unwrap();
+        assert_eq!(single.deadline(),Some(now+Duration::from_millis(2250)));
+        single.set_reload_scale(1.8,now+Duration::from_millis(250)).unwrap();
+        assert_eq!(single.deadline(),Some(now+Duration::from_millis(4250)));
     }
 }

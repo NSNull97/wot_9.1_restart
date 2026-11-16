@@ -235,6 +235,9 @@ class NativeAmmoStore(AmmoServiceStore):
         require(sha(native['response_json'].encode('ascii')) == native['response_sha256'], 'CORRUPT_STORE')
         return result
 
+    def _validate_service_layout(self, layout):
+        return self._validate_layout(layout)
+
     def service(self, request, *, authenticated_account_id):
         require(type(request) is dict and set(request) == REQUEST_FIELDS)
         require(request['account_id'] == authenticated_account_id, 'FOREIGN_ACCOUNT')
@@ -242,7 +245,7 @@ class NativeAmmoStore(AmmoServiceStore):
         _revision(request['expected_revision'])
         require(type(request['native_database_id']) is int and 1 <= request['native_database_id'] < 2**31)
         require(type(request['wire_revision']) is int and 1 <= request['wire_revision'] < 2**31 - 1)
-        mount, desired = self._validate_layout(request['layout'])
+        mount, desired = self._validate_service_layout(request['layout'])
         imported = self._import(request['account_id'])
         base = _object(imported['base_json'])
         require(base['native_database_id'] == request['native_database_id'], 'FOREIGN_ACCOUNT')
@@ -275,7 +278,10 @@ class NativeAmmoStore(AmmoServiceStore):
         require(re.fullmatch(r'[0-9a-f-]{36}', account_id) is not None, 'INVALID_ACCOUNT_PATH')
         root = no_links(fixture_root).resolve()
         root.mkdir(parents=True, exist_ok=True)
-        destination = no_links(root / account_id / ('p09d-r' + str(aggregate['revision'])))
+        # Equipment offers can change without a persisted account revision. Keep
+        # the native descriptor format version and immutable shop variant in the path.
+        suffix = '-optdev2-shop-' + sha(files['shop.bin'])[:16] if 'artefacts' in aggregate else ''
+        destination = no_links(root / account_id / ('p09d-r' + str(aggregate['revision']) + suffix))
         def verify_existing():
             no_links(destination)
             require(destination.is_dir(), 'FIXTURE_CHANGED')

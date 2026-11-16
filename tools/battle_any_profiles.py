@@ -35,6 +35,7 @@ for directory in (ROOT, TOOLS):
     if str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
 import ms1_contact_bundle as materials
+from content0_equipment_catalog import SUSPENSION_MAX_LOAD_PERCENT, compatible_suspension
 from geometry_spike import primitive_sections
 from packed_xml import decode, walk
 from p04m_battle_profiles import ProfileError as SourceError, _effective, number, vector
@@ -799,14 +800,16 @@ LEGACY_SUFFIXES = {"ms1": ("ap", "heat", "he"), "is7": ("ap", "apcr", "he"), "t2
                    "t34": ("ap", "heat", "he"), "t3485": ("ap", "apcr", "he")}
 
 
-def configurations(v):
+def configurations(v, *, enhanced=False):
     """CONTENT-0 3.2: every mountable build of a catalogue vehicle, stock first, then sorted.
 
     The 0.9.1 client (`VehicleDescr.__computeWeight`, `mayInstallComponent`) and the P09E store (3.1): chassis x engine
-    x radio x (turret, gun of that turret); the fuel tank stays stock; total mass must not exceed the chassis maxLoad.
+    x radio x (turret, gun of that turret); the fuel tank stays stock. The optional equipment path includes
+    eligible assemblies up to the increased #717 maxLoad. They require the compatible suspension at admission.
     """
     c, d = v["compatible"], v["defaults"]
     grams = v["module_mass_grams"]
+    load_percent = SUSPENSION_MAX_LOAD_PERCENT if enhanced and compatible_suspension(v) is not None else 100
     builds = []
     for chassis in sorted(c["chassis"]):
         for engine in sorted(c["engine"]):
@@ -814,7 +817,8 @@ def configurations(v):
                 for turret in sorted(c["turret"]):
                     for gun in sorted(v["turret_guns"][turret]):
                         m = dict(chassis=chassis, engine=engine, fuelTank=d["fuelTank"], radio=radio, turret=turret, gun=gun)
-                        if v["hull_mass_grams"] + sum(grams[m[k]] for k in MODULE_KINDS) <= v["module_max_load_grams"][chassis]:
+                        mass = v["hull_mass_grams"] + sum(grams[m[k]] for k in MODULE_KINDS)
+                        if 100 * mass <= load_percent * v["module_max_load_grams"][chassis]:
                             builds.append(m)
     stock = {k: d[k] for k in MODULE_KINDS}
     require(stock in builds, v["vehicle_id"] + ": stock build is not mountable")
@@ -928,6 +932,8 @@ def vehicle_builds(catalog, tables, builds, chassis_armor=None):
     parts, rows, out = {}, [], dict(builds=[], chassis={}, engines={}, radios={}, fuel_tanks={}, turrets={}, mounts={},
                                     drives={})
     stock_modules = builds[0]
+    vehicle = catalog.vehicles[vehicle_id]
+    suspension = compatible_suspension(vehicle)
     for m in builds:
         row, raw = assemble(catalog, tables, m)
         stock = m == stock_modules
@@ -935,6 +941,9 @@ def vehicle_builds(catalog, tables, builds, chassis_armor=None):
         entry = dict(modules=m, status=row["status"], refusal=row["refusal"], detail=row["detail"],
                      descriptor_hex=row["identity"]["descriptor_hex"], module_compact_ids=row["identity"]["module_compact_ids"],
                      max_hp=row["identity"]["max_hp"], mass_kg=row["identity"]["mass_kg"], stock=stock)
+        if round(entry["mass_kg"] * 1000) > vehicle["module_max_load_grams"][m["chassis"]]:
+            require(suspension is not None, vehicle_id + ": missing compatible suspension")
+            entry["required_suspension"] = suspension
         if entry["status"] == "generated":
             label = build_label(kind, row, stock)
             require(len(label) <= MAX_BUILD_LABEL, vehicle_id + ": build label bound")
@@ -1020,7 +1029,7 @@ def build_table(original, profile_raw=None):
         if vehicle_id in tests:
             continue
         v = catalog.vehicles[vehicle_id]
-        builds = configurations(v)
+        builds = configurations(v, enhanced=True)
         tables = module_tables(src, catalog, vehicle_id, defaults, factor, effects, builds)
         armor = lambda chassis, vid=vehicle_id: chassis_armor_export.chassis_part(src, catalog, vid, chassis, common, kinds_by_label)
         record, vehicle_parts, vehicle_rows = vehicle_builds(catalog, tables, builds, armor)

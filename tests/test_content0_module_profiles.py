@@ -64,6 +64,20 @@ class Configurations(unittest.TestCase):
         self.assertEqual(2 * 3 * len(v["compatible"]["radio"]) * pairs, 84)
         self.assertEqual(len(builds), 54)
 
+    def test_kv1_suspension_adds_only_source_compatible_overweight_assemblies(self):
+        from content0_equipment_catalog import compatible_suspension
+        v = self.catalog.vehicles["vehicle:ussr:KV1"]
+        self.assertEqual(compatible_suspension(v), 3321)
+        stock_load_builds = generator.configurations(v)
+        enhanced = generator.configurations(v, enhanced=True)
+        extra = [modules for modules in enhanced if modules not in stock_load_builds]
+        self.assertEqual(len(extra), 30)
+        for modules in extra:
+            grams = v["hull_mass_grams"] + sum(v["module_mass_grams"][item] for item in modules.values())
+            limit = v["module_max_load_grams"][modules["chassis"]]
+            self.assertGreater(grams, limit)
+            self.assertLessEqual(100 * grams, 110 * limit)
+
 
 @unittest.skipUnless((ORIGINAL / "WorldOfTanks.exe").is_file(), "original #717 client absent")
 @unittest.skipIf(generator.TEST_LAB, "main catalogue digest")
@@ -124,7 +138,11 @@ class BuildTable(unittest.TestCase):
     def test_rebuild_equals_committed_table(self):
         self.assertEqual(self.raw, generator.BUILDS.read_bytes())
         self.assertEqual(self.table["profile_table_sha256"], generator.sha(generator.TABLE.read_bytes()))
-        self.assertEqual(self.table["builds"], 12520)
+        entries = [entry for v in self.table["vehicles"].values() for entry in v["builds"]
+                   if entry["status"] == "generated"]
+        self.assertEqual(len(entries), self.table["builds"])
+        self.assertEqual(sum("required_suspension" not in entry for entry in entries), 12520)
+        self.assertEqual(sum("required_suspension" in entry for entry in entries), 1862)
 
     def test_every_generated_build_is_copied_from_the_table(self):
         by_label = {e["label"]: (v, e) for v in self.table["vehicles"].values() for e in v["builds"] if "label" in e}

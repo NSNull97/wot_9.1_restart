@@ -41,6 +41,15 @@ try
         "engine_max_torque_nm", "wheel_radius", "suspension_min", "suspension_max", "track_max_brake_torque", "bounds_xz"];
     if (configVersion >= 2) configFields = [..configFields, "longitudinal_friction", "lateral_friction", "stationary_steering_ratio"];
     if (configVersion == 3) configFields = [..configFields, "handling"];
+    if (configVersion == 3 && c.TryGetProperty("ground_strength", out var groundReference))
+    {
+        // This older standalone worker keeps its driving policy; shared IPC7
+        // scenes are the runtime path for authored ground strength.
+        configFields = [..configFields, "ground_strength"];
+        CheckedInput.Fields(groundReference, "path", "sha256");
+        CheckedInput.Owned(root, groundReference.GetProperty("path").GetString()!);
+        CheckedInput.Sha256(groundReference.GetProperty("sha256").GetString());
+    }
     if (configVersion is not (1 or 2 or 3) || c.GetProperty("profile").GetString() != "test_lab")
         throw new InvalidDataException("only explicit test_lab config v1/v2/v3 supported");
     CheckedInput.Fields(c, configFields);

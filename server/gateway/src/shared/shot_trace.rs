@@ -88,9 +88,10 @@ fn context(kind: &str, battle: u64, shot: u32, tick: u32, attacker: usize, targe
 
 #[allow(clippy::too_many_arguments)]
 pub fn direct(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, input: &DirectInput, spent_mm: f64,
-              unarmored_device: bool, rolls: Option<Rolls>, result: &Resolution) {
+              unarmored_device: bool, rolls: Option<Rolls>, absorption: f64, result: &Resolution) {
     let mut v = direct_record(battle, shot, tick, attacker, target, attacker_kind, input, spent_mm, unarmored_device, result);
     v["rng"] = rolls_json(rolls);
+    if absorption != 1. { v["input"]["spall_absorption"] = fb(absorption); }
     write(v);
 }
 /// The shot's seed and rolls (null under the single-plate law); replay derives the
@@ -178,15 +179,19 @@ fn shot_record(battle: u64, shot: u32, tick: u32, attacker: usize, attacker_kind
 /// damage of an explosion hit (None on the internal trace: the shell's device damage).
 #[allow(clippy::too_many_arguments)]
 pub fn module(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
-              module: &str, class: ModuleClass, explosion: bool, chance: f64, roll: f64, applied: bool) {
-    write(module_record(battle, shot, tick, attacker, target, attacker_kind, shell, module, class, explosion, chance, roll, applied));
+              module: &str, class: ModuleClass, explosion: bool, protection: crate::p06t_device_state::CrewProtection,
+              chance: f64, roll: f64, applied: bool) {
+    write(module_record(battle, shot, tick, attacker, target, attacker_kind, shell, module, class, explosion, protection, chance, roll, applied));
 }
 #[allow(clippy::too_many_arguments)]
 fn module_record(battle: u64, shot: u32, tick: u32, attacker: usize, target: usize, attacker_kind: VehicleKind, shell: &Shell,
-                 module: &str, class: ModuleClass, explosion: bool, chance: f64, roll: f64, applied: bool) -> Value {
+                 module: &str, class: ModuleClass, explosion: bool, protection: crate::p06t_device_state::CrewProtection,
+                 chance: f64, roll: f64, applied: bool) -> Value {
     let mut v = context("module", battle, shot, tick, attacker, target, attacker_kind);
     v["shell"] = shell_json(shell);
     v["input"] = json!({"module": module, "class": MODULE_CLASSES[class as usize], "explosion": explosion, "roll": fb(roll)});
+    if let Some(liner) = protection.spall_liner { v["input"]["spall_liner"] = json!(liner); }
+    if protection.large_medkit { v["input"]["large_medkit"] = json!(true); }
     v["result"] = json!({"chance": fb(chance), "applied": applied});
     v
 }
@@ -252,8 +257,9 @@ fn recompute(record: &Value) -> io::Result<Value> {
             let i = DirectInput { shell, plate: Plate { armor_mm: f64_opt(input, "armor_mm")?, ordinary: input["ordinary"].as_bool().ok_or_else(|| bad("ordinary"))? },
                 chord: vec3(input, "chord")?, winding_normal: vec3(input, "winding_normal")?, distance_m: f64_of(input, "distance_m")? };
             let spent = f64_of(input, "spent_mm")?;
+            let absorption = f64_opt(input, "spall_absorption")?.unwrap_or(1.);
             let r = if input["unarmored_device"].as_bool() == Some(true) { law::resolve_unarmored_device(i)? }
-                else if let Some(rolls) = rolls_of(record)? { law::resolve_layered(i, spent, rolls)? } else { law::resolve_direct_spent(i, spent)? };
+                else { law::resolve_lined(i, spent, rolls_of(record)?, absorption)? };
             resolution_json(&r)
         }
         Some("track") => pass_json(&law::track_layered(shell, f64_of(input, "distance_m")?, f64_of(input, "spent_before_mm")?, f64_of(input, "armor_mm")?, rolls_of(record)?)?),
@@ -283,7 +289,17 @@ fn recompute(record: &Value) -> io::Result<Value> {
             let explosion = input["explosion"].as_bool().ok_or_else(|| bad("explosion"))?;
             let roll = f64_of(input, "roll")?;
             if !(0. ..1.).contains(&roll) { return Err(bad("module roll")); }
-            let chance = crate::gateway091::shared::shell_rules::rules()?.module_chances[index][usize::from(explosion)];
+            let spall_liner = input.get("spall_liner").map(|value| {
+                value.as_u64().and_then(|id| u16::try_from(id).ok())
+                    .filter(|id| crate::profile13_v2091::SPALL_LINERS.contains(id)).ok_or_else(|| bad("spall liner"))
+            }).transpose()?;
+            let large_medkit = input.get("large_medkit").map(|value| value.as_bool().ok_or_else(|| bad("large medkit")))
+                .transpose()?.unwrap_or(false);
+            if index != ModuleClass::Crew as usize && (spall_liner.is_some() || large_medkit) {
+                return Err(bad("crew protection on device roll"));
+            }
+            let protection = crate::p06t_device_state::CrewProtection { spall_liner, large_medkit };
+            let chance = protection.apply(crate::gateway091::shared::shell_rules::rules()?.module_chances[index][usize::from(explosion)]);
             json!({"chance": fb(chance), "applied": roll < chance})
         }
         _ => return Err(bad("record kind")),

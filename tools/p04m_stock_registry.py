@@ -87,6 +87,7 @@ class StockProfile:
     assembly_kind: str = ""
     # ... unless (step 4) its turret x gun pair is another one: `<turret resource>/<gun resource>`.
     pair: str = ""
+    required_suspension: int | None = None
 
     @property
     def assembly_id(self): return (self.assembly_kind or self.kind) + ("@" + self.pair if self.pair else "-stock")
@@ -149,13 +150,14 @@ class StockRegistry:
                     extra = dict(max_hp=b["max_hp"], capacity=mount["capacity"], shell_compact_id=mount["shells"][0][4],
                                  pair=pair_name(modules))
                 profiles[b["label"]] = by_descriptor[encoded] = replace(stock, kind=b["label"], descriptor_hex=encoded,
-                    modules=tuple((role, modules[role]) for role in ROLES), assembly_kind=stock.kind, **extra)
+                    modules=tuple((role, modules[role]) for role in ROLES), assembly_kind=stock.kind,
+                    required_suspension=b["required_suspension"], **extra)
         self.profiles = MappingProxyType(profiles)
         self.by_descriptor = MappingProxyType(by_descriptor)
         # The registry hash the gateway pins covers the legacy kinds only; generated
         # (BATTLE-ANY) kinds are bound by the activated catalog hash instead.
         self.sha256 = sha(canonical({"schema": SCHEMA, "definition_sha256": DEFINITION_SHA256,
-            "profiles": [{k: v for k, v in asdict(profiles[kind]).items() if k not in ("assembly_kind", "pair")}
+            "profiles": [{k: v for k, v in asdict(profiles[kind]).items() if k not in ("assembly_kind", "pair", "required_suspension")}
                          for kind in sorted(profiles) if kind in PINS]}))
 
     @staticmethod
@@ -211,6 +213,7 @@ class StockRegistry:
             "vehicle_inventory_id", "ap_count", "shell_definition_id", "shell_compact_id", "max_hp", "crew_ids"}, "INVALID_INPUT")
         require(type(frozen["kind"]) is str and frozen["kind"] in self.profiles, "BATTLE_PROFILE_UNSUPPORTED")
         p = self.profiles[frozen["kind"]]
+        require(p.required_suspension is None, "BATTLE_PROFILE_UNSUPPORTED")
         require(frozen["vehicle_inventory_id"] == self.inventory_id(account, frozen["native_inventory_id"], p.kind), "P04M_INVENTORY_MISMATCH")
         _integer(frozen["ap_count"], 1, p.capacity)
         require(frozen["descriptor_hex"] == p.descriptor_hex and type(frozen["max_hp"]) is int and frozen["max_hp"] == p.max_hp

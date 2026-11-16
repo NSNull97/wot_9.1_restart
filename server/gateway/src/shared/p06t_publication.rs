@@ -34,9 +34,12 @@ fn owner_snapshot(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World)->io:
     let actor=world.actors.get(c.slot).ok_or_else(||model::bad())?;
     let state=actor.devices.as_ref().ok_or_else(||model::bad())?;
     let mut body=Vec::new();let id=wire::vehicle_id(c.slot)?;
-    for(index,(hp,cap))in state.health().iter().zip(*state.profile().caps()).enumerate(){
-        if *hp==0{body.extend(native::damage_info(id,1,26+index as u8,0)?);}
-        else if u32::from(*hp)*2<=u32::from(cap.max){body.extend(native::damage_info(id,0,26+index as u8,0)?);}
+    for unit in crate::p06t_device_caps::Device::ALL {
+        match state.device_condition(unit) {
+            Condition::Destroyed => body.extend(native::damage_info(id,1,unit.extra(),0)?),
+            Condition::Critical => body.extend(native::damage_info(id,0,unit.extra(),0)?),
+            Condition::Normal => (),
+        }
     }
     for(seat,alive)in state.crew().iter().enumerate(){if !alive{
         body.extend(native::damage_info(id,2,state.profile().crew()[seat].extra,0)?);
@@ -60,6 +63,32 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
         };
         body.extend(native::reload(wire::vehicle_id(c.slot)?,state.remaining_seconds(now),state.base_reload_seconds())?);
         outbox.push_back(body);c.armament_sent=Some(key);
+    }
+    let hud_consumables = owner.hud_consumables();
+    if c.consumables_sent!=hud_consumables {
+        let mut body=Vec::new();
+        for (before,after) in c.consumables_sent.into_iter().zip(hud_consumables){
+            if before!=0&&after==0 {body.extend(native::equipment_row(before,0)?);}
+        }
+        if !body.is_empty(){outbox.push_back(body);}
+        c.consumables_sent=hud_consumables;
+    }
+    if hud_consumables.contains(&crate::profile13_v2091::RPM_LIMITER) {
+        let active=owner.rpm_limiter_active();
+        if c.rpm_limiter_sent!=Some(active) {
+            outbox.push_back(native::equipment_row_with_trigger(crate::profile13_v2091::RPM_LIMITER,1,active)?);
+            c.rpm_limiter_sent=Some(active);
+        }
+    }
+    if let Some(active) = owner.stereoscope_status().filter(|active| Some(*active) != c.stereoscope_sent) {
+        outbox.push_back(native::stereoscope_status(active));
+        c.stereoscope_sent = Some(active);
+    }
+    if world.camouflage_enabled() {
+        if let Some(active) = owner.camouflage_net_status().filter(|active| Some(*active) != c.camouflage_net_sent) {
+            outbox.push_back(native::camouflage_net_status(active));
+            c.camouflage_net_sent = Some(active);
+        }
     }
     owner_snapshot(c,outbox,world)?;
     for event in world.damage_events.iter().skip(c.damage_cursor){
@@ -99,6 +128,11 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
     for(target,event)in world.device_events.iter().skip(c.device_cursor){
         if *target==c.slot&&c.visible()[c.slot]{
             let notification=match event.change{
+                // Native #717 DAMAGE_INFO_CODES[24/25] distinguish regulator
+                // wear from incoming fire. Shot 0 is our owner-only event.
+                Change::Device{device:crate::p06t_device_caps::Device::Engine,extra_index,before_condition,
+                    after_condition,repair:false,..} if event.cause.shot==0 && !event.from_fire && before_condition!=after_condition=>
+                    match after_condition{Condition::Critical=>Some((24,extra_index)),Condition::Destroyed=>Some((25,extra_index)),Condition::Normal=>None},
                 Change::Device{extra_index,before_condition,after_condition,repair,..} if before_condition!=after_condition=>
                     if repair {match after_condition{
                         Condition::Critical=>Some((18,extra_index)),Condition::Normal=>Some((19,extra_index)),Condition::Destroyed=>None}
@@ -106,6 +140,7 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
                         Condition::Critical=>Some((if event.from_fire{12}else{4},extra_index)),
                         Condition::Destroyed=>Some((if event.from_fire{13}else{5},extra_index)),Condition::Normal=>None}},
                 Change::Crew{extra_index,before_active:true,after_active:false,..}=>Some((10,extra_index)),
+                Change::Crew{extra_index,before_active:false,after_active:true,..}=>Some((22,extra_index)),
                 // Owner round 15: no "fire" voice. #717 FIRE (3) is a generic state code
                 // of __damageInfoNoNotification; DEVICE_STARTED_FIRE_AT_SHOT (8) is the one
                 // that plays the fire extra's voice. A fire here starts only from a shot.
@@ -117,7 +152,9 @@ pub(super) fn publish(c:&mut Client,outbox:&mut VecDeque<Vec<u8>>,world:&World,n
             };
             if let Some((code,extra))=notification{
                 let attacker=usize::from(event.cause.attacker_slot);
-                let id=if c.visible()[attacker]{wire::vehicle_id(attacker)?}else{0};
+                let id=if event.cause.shot!=0&&(code!=35||event.from_fire)&&c.visible()[attacker]{
+                    wire::vehicle_id(attacker)?
+                }else{0};
                 let mut targets=vec![c.slot];if id!=0&&attacker!=c.slot{targets.push(attacker);}
                 c.queue_private(outbox,native::damage_info(wire::vehicle_id(c.slot)?,code,extra,id)?,&targets)?;
             }

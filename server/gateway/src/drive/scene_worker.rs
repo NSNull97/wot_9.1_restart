@@ -19,6 +19,7 @@ pub const START_TIMEOUT:Duration=Duration::from_secs(120);
 pub const REPLY_TIMEOUT:Duration=Duration::from_millis(500);
 pub const STEP:Duration=Duration::from_millis(100);
 pub const POLICY:&str="p05c-shared-scene-v1";
+const MAX_GROUND_STRENGTH:usize=8*1024*1024;
 const ZERO:&str="0000000000000000000000000000000000000000000000000000000000000000";
 fn bad(reason:&'static str)->io::Error {io::Error::new(io::ErrorKind::InvalidData,format!("shared scene IPC7: {reason}"))}
 fn digest(bytes:&[u8])->String{format!("{:x}",Sha256::digest(bytes))}
@@ -110,10 +111,14 @@ impl Kind{
         Self::T26=>include_bytes!("worker/p04m-t26-qualified-profile.json"),Self::T34=>include_bytes!("worker/p04m-t34-qualified-profile.json"),
         Self::T3485=>include_bytes!("worker/p04m-t3485-qualified-profile.json"),
         Self::WtE100128=>include_bytes!("worker/p06t-wt-e100-128-qualified-profile.json"),Self::Fv215b183=>include_bytes!("worker/p06t-fv215b-183-qualified-profile.json")}}
-    // CONTENT-0 2.2: the qualified inertia rotation of the kind (7 generated kinds report identity, the rest the usual axes).
-    fn binding_bits(self)->(u32,[u32;3],[u32;4]){let b=self.physical_profile().binding();(b.inverse_mass.to_bits(),b.principal.map(f32::to_bits),b.inertia_rotation.map(f32::to_bits))}
 }
-#[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32}
+#[derive(Clone,Debug)]pub struct ActorSpec{pub slot:usize,pub kind:Kind,pub config_sha256:String,pub spawn:[f32;3],pub yaw:f32,
+    pub equipment_mass_kg:f32,pub grousers:bool,pub engine_power_ceiling_basis_points:u16}
+impl ActorSpec {
+    pub(crate) fn physical_profile(&self)->io::Result<crate::gateway091::shared::ram_proof::Profile> {
+        crate::gateway091::shared::ram_proof::Profile::for_equipment(self.kind.extended_vehicle(),self.equipment_mass_kg)
+    }
+}
 #[derive(Clone,Debug)]pub struct SceneSpec{
     pub local_root:PathBuf,pub manifest_path:PathBuf,pub manifest_sha256:String,pub map:String,pub actors:Vec<ActorSpec>,
     catalog_sha256:String,catalog_ids:BTreeSet<u32>,pins:Vec<(PathBuf,String,usize)>,
@@ -122,13 +127,23 @@ impl Kind{
 }
 impl SceneSpec{
     pub fn load(root:&Path,path:&Path,sha:&str)->io::Result<Self>{let manifest_path=owned(root,path)?;let raw=read(&manifest_path,MAX_INPUT,sha)?;let m=parse(&raw,MAX_INPUT)?;
-        keys(&m,&["version","profile","policy","map","catalog","actors"])?;
         let version=uint(&m["version"])?;
-        let map=string(&m,"map")?;if !matches!(version,1|2|3)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
+        if version==5{keys(&m,&["version","profile","policy","map","catalog","actors","ground"])?;}
+        else{keys(&m,&["version","profile","policy","map","catalog","actors"])?;}
+        let map=string(&m,"map")?;if !(1..=5).contains(&version)||string(&m,"profile")?!="test_lab"||string(&m,"policy")?!=POLICY||crate::map_profile091::MapId::from_asset(map).is_err(){return Err(bad("manifest policy"));}
         let rows=array(&m["actors"],MAX_ACTORS)?;if rows.is_empty(){return Err(bad("empty roster"));}
         let mut actors=Vec::new();let mut pins=vec![(manifest_path.clone(),sha.to_string(),MAX_INPUT)];let mut geometry=None;
+        if version==5&&!m["ground"].is_null() {
+            let ground=&m["ground"];keys(ground,&["path","sha256"])?;
+            let path=owned(root,Path::new(string(ground,"path")?))?;
+            let sha=string(ground,"sha256")?;
+            read(&path,MAX_GROUND_STRENGTH,sha)?;
+            pins.push((path,sha.into(),MAX_GROUND_STRENGTH));
+        }
         for row in rows{let mut generated_source:Option<Vec<u8>>=None;
-            if version>=2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
+            if version==5 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile","equipment_mass_kg","grousers","engine_power_ceiling_basis_points"])?;}
+            else if version==4 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile","equipment_mass_kg"])?;}
+            else if version>=2 {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw","source_profile"])?;}
             else {keys(row,&["slot","kind","config","spawn_origin","spawn_yaw"])?;}
             if uint(&row["slot"])?!=actors.len()as u64{return Err(bad("ordered actor slots"));}
             let kind=match string(row,"kind")?{"ms1"=>Kind::Ms1,"is7"=>Kind::Is7,
@@ -145,9 +160,14 @@ impl SceneSpec{
             }else if version>=2&&!row["source_profile"].is_null(){return Err(bad("legacy actor source profile must be null"));}
             let r=&row["config"];keys(r,&["path","sha256"])?;let path=owned(root,Path::new(string(r,"path")?))?;let hash=string(r,"sha256")?;
             let c=parse(&read(&path,16384,hash)?,16384)?;
-            keys(&c,&["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents","body_center_offset","wheel_points",
+            let mut config_keys=vec!["version","profile","map","terrain","obstacles","spawn_origin","spawn_yaw","body_half_extents","body_center_offset","wheel_points",
                 "mass_kg","max_forward_mps","max_reverse_mps","engine_max_torque_nm","wheel_radius","suspension_min","suspension_max","track_max_brake_torque",
-                "bounds_xz","longitudinal_friction","lateral_friction","stationary_steering_ratio","handling"])?;
+                "bounds_xz","longitudinal_friction","lateral_friction","stationary_steering_ratio","handling"];
+            if version==5&&!m["ground"].is_null() {
+                config_keys.push("ground_strength");
+                if c["ground_strength"]!=m["ground"]{return Err(bad("mixed ground strength reference"));}
+            }
+            keys(&c,&config_keys)?;
             let source_bytes=match kind{Kind::Generated(_)=>generated_source.take().ok_or_else(||bad("generated source profile"))?,_=>kind.source().to_vec()};
             if uint(&c["version"])?!=3||string(&c,"profile")?!="test_lab"||string(&c,"map")?!=map||digest(&source_bytes)!=kind.profile_sha(){return Err(bad("source config identity"));}
             let source=parse(&source_bytes,16384)?;
@@ -159,8 +179,17 @@ impl SceneSpec{
                 read(&p,8*1024*1024,sha)?;pins.push((p,sha.into(),8*1024*1024));}
             let spawn=vector::<3>(&row["spawn_origin"],1000.)?;let yaw=number(&row["spawn_yaw"],std::f32::consts::PI)?;let b=vector::<4>(&c["bounds_xz"],1000.)?;
             if b[2]-b[0]<100.||b[3]-b[1]<100.||spawn[0]<b[0]+5.||spawn[0]>b[2]-5.||spawn[2]<b[1]+5.||spawn[2]>b[3]-5.{return Err(bad("spawn/bounds"));}
-            pins.push((path,hash.into(),16384));actors.push(ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw});
+            let equipment_mass_kg=if version>=4 {number(&row["equipment_mass_kg"],5000.)?}else{0.};
+            let grousers=if version==5 {row["grousers"].as_bool().ok_or_else(||bad("grouser flag"))?}else{false};
+            if grousers&&(equipment_mass_kg<1000.||m["ground"].is_null()){return Err(bad("grouser ground or mass"));}
+            let ceiling=if version==5 {uint(&row["engine_power_ceiling_basis_points"])?}else{10000};
+            if !matches!(ceiling,10000|10500|11000|11550|12100){return Err(bad("engine power ceiling"));}
+            let actor=ActorSpec{slot:actors.len(),kind,config_sha256:hash.into(),spawn,yaw,equipment_mass_kg,grousers,
+                engine_power_ceiling_basis_points:ceiling as u16};
+            actor.physical_profile()?;
+            pins.push((path,hash.into(),16384));actors.push(actor);
         }
+        if version==4 && actors.iter().all(|actor|actor.equipment_mass_kg==0.) {return Err(bad("massless roster uses base manifest"));}
         let mut catalog_sha256=ZERO.into();let mut catalog_ids=BTreeSet::new();let mut column_ids=BTreeSet::new();
         if !m["catalog"].is_null(){let r=&m["catalog"];keys(r,&["path","sha256"])?;let p=owned(root,Path::new(string(r,"path")?))?;let h=string(r,"sha256")?;
             let c=parse(&read(&p,1024*1024,h)?,1024*1024)?;
@@ -186,17 +215,25 @@ impl Scene{
             h.update((ids.len()as u32).to_le_bytes());for id in ids{h.update(id.to_le_bytes());}format!("{:x}",h.finalize())};Ok(Self{ids:ids.to_vec(),sha256})}
     pub fn version(&self)->u32{self.ids.len()as u32}
 }
-#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub struct Input{pub throttle:i8,pub steer:i8,pub brake:bool,pub speed_percent:u8}
-impl Input{pub const STOP:Self=Self{throttle:0,steer:0,brake:true,speed_percent:100};
+#[derive(Clone,Copy,Debug,PartialEq,Eq)]pub struct Input{pub throttle:i8,pub steer:i8,pub brake:bool,pub speed_percent:u8,
+    pub engine_power_basis_points:u16}
+impl Input{pub const STOP:Self=Self{throttle:0,steer:0,brake:true,speed_percent:100,engine_power_basis_points:10_000};
     fn valid(self)->bool{(-1..=1).contains(&self.throttle)&&(-1..=1).contains(&self.steer)&&(!self.brake||(self.throttle==0&&self.steer==0))&&
-        (self.speed_percent==100||self.speed_percent==50&&!self.brake&&self.throttle!=0||self.speed_percent==25&&!self.brake&&self.throttle==1)}}
+        (self.speed_percent==100||self.speed_percent==50&&!self.brake&&self.throttle!=0||self.speed_percent==25&&!self.brake&&self.throttle==1)
+        &&matches!(self.engine_power_basis_points,10_000|10_500|11_000|11_550|12_100)}}
 fn header(spec:&SceneSpec,generation:u32)->Value{json!({"version":7,"generation":generation,"manifest_sha256":spec.manifest_sha256,"catalog_sha256":spec.catalog_sha256})}
 fn scene_request(spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32,op:&str)->Value{let mut v=header(spec,generation);let o=v.as_object_mut().unwrap();
     o.extend([("op".into(),op.into()),("advance_seq".into(),seq.into()),("scene_version".into(),scene.version().into()),("removed_object_ids".into(),json!(scene.ids)),("scene_sha256".into(),scene.sha256.clone().into())]);v}
 pub fn advance_request(spec:&SceneSpec,generation:u32,scene:&Scene,seq:u32,inputs:&[Input])->io::Result<Vec<u8>>{
-    if generation==0||!(1..=36000).contains(&seq)||inputs.len()!=spec.actors.len()||inputs.iter().any(|i|!i.valid()){return Err(bad("batch inputs/sequence"));}
+    if generation==0||!(1..=36000).contains(&seq)||inputs.len()!=spec.actors.len()
+        ||inputs.iter().zip(&spec.actors).any(|(input,actor)|!input.valid()
+            ||input.engine_power_basis_points>actor.engine_power_ceiling_basis_points){return Err(bad("batch inputs/sequence"));}
     let mut v=header(spec,generation);v["op"]="advance".into();v["seq"]=seq.into();v["ticks"]=6.into();v["scene_version"]=scene.version().into();v["scene_sha256"]=scene.sha256.clone().into();
-    v["inputs"]=json!(inputs.iter().enumerate().map(|(slot,i)|json!({"slot":slot,"throttle":i.throttle,"steer":i.steer,"brake":i.brake,"speed_percent":i.speed_percent})).collect::<Vec<_>>());line(&v)}
+    v["inputs"]=json!(inputs.iter().enumerate().map(|(slot,i)| {
+        let mut row=json!({"slot":slot,"throttle":i.throttle,"steer":i.steer,"brake":i.brake,"speed_percent":i.speed_percent});
+        if i.engine_power_basis_points!=10_000 {row["engine_power_basis_points"]=i.engine_power_basis_points.into();}
+        row
+    }).collect::<Vec<_>>());line(&v)}
 /// TURRET-01 detached turret body: born joint pose (yaw/pitch/roll), launch
 /// velocities, support points in the joint frame, dead vehicles as obstacles.
 #[derive(Clone,Debug,PartialEq)]pub struct TurretBody{pub slot:usize,pub position:[f32;3],pub direction:[f32;3],pub linear_velocity:[f32;3],
@@ -256,7 +293,9 @@ fn actor_frame(row:&Value,spec:&ActorSpec,catalog:&BTreeSet<u32>)->io::Result<Ac
     let contacts=uint(&v["contacts"])?;if contacts>6{return Err(bad("support count"));}
     let masks=array(&v["wheel_contact_masks"],6)?;if masks.len()!=6{return Err(bad("six support samples"));}let mut wheel_contact_masks=[0;6];
     for(i,m)in masks.iter().enumerate(){let m=uint(m)?;if m>63{return Err(bad("support mask"));}wheel_contact_masks[i]=m as u8;}
-    let b=&v["body_binding"];keys(b,&["inverse_mass","principal_inverse_diagonal","inertia_rotation_xyzw"])?;let(mass,principal,rotation)=spec.kind.binding_bits();
+    let b=&v["body_binding"];keys(b,&["inverse_mass","principal_inverse_diagonal","inertia_rotation_xyzw"])?;
+    let expected=spec.physical_profile()?.binding();
+    let(mass,principal,rotation)=(expected.inverse_mass.to_bits(),expected.principal.map(f32::to_bits),expected.inertia_rotation.map(f32::to_bits));
     let (got_mass,got_principal,got_rotation)=(number(&b["inverse_mass"],1.)?.to_bits(),vector::<3>(&b["principal_inverse_diagonal"],1.)?.map(f32::to_bits),
         vector::<4>(&b["inertia_rotation_xyzw"],1.)?.map(f32::to_bits));
     if got_mass!=mass||got_principal!=principal||got_rotation!=rotation{
@@ -447,7 +486,23 @@ impl Worker{
         if let Some(pending)=&self.pending{let(start,limit)=match pending{Pending::Ready(t)=>(*t,START_TIMEOUT),Pending::Advance(_,t)|Pending::Scene(_,t)|Pending::Turret(_,t)=>(*t,REPLY_TIMEOUT)};
             let elapsed=now.checked_duration_since(start).ok_or_else(||{self.diag_process("deadline_clock_regression",now);bad("clock regression")})?;
             let elapsed=received.map_or(elapsed,|received|received.min(now).saturating_duration_since(start));
-            if elapsed>limit{if let Some(sink)=&self.diagnostics{sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),"elapsed_us":elapsed.as_micros().min(u128::from(u64::MAX)),"limit_us":limit.as_micros(),"status":"FAIL_CLOSED"}));}self.diag_process("worker_deadline_sample",now);return Err(io::Error::new(io::ErrorKind::TimedOut,"shared scene worker deadline"));}}
+            if elapsed>limit {
+                let sequence = match pending { Pending::Advance(sequence, _) => *sequence, _ => self.seq };
+                let elapsed_us = elapsed.as_micros();
+                let limit_us = limit.as_micros();
+                if let Some(sink) = &self.diagnostics {
+                    sink.record(json!({"event":"worker_deadline","at_us":sink.elapsed_us(now),
+                        "kind":pending.kind(),"sequence":sequence,"reply_received":received.is_some(),
+                        "elapsed_us":elapsed_us,"limit_us":limit_us,"status":"FAIL_CLOSED"}));
+                }
+                self.diag_process("worker_deadline_sample", now);
+                // The battle worker forwards this error to the gateway even when
+                // the optional cadence trace has already reached its size limit.
+                return Err(io::Error::new(io::ErrorKind::TimedOut, format!(
+                    "shared scene worker deadline kind={} seq={} generation={} pid={} elapsed_us={elapsed_us} limit_us={limit_us} reply_received={}",
+                    pending.kind(), sequence, self.generation, self.child.id(), received.is_some())));
+            }
+        }
         Ok(())
     }
     fn poll_inner(&mut self,now:Instant)->io::Result<Option<Frame>>{

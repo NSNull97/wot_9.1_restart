@@ -85,6 +85,34 @@ fn source_contact(index:usize,heavy:bool)->(Trace,Contact,crate::p06t_damage::Re
     let good=trace.clone();assert!(trace.splash_resolution(123,1,1001,0,2,&contact,center,&result,90,after,&terrain,&bundle,&actor).is_err());assert_eq!(trace,good);
     trace.terminal(123,1,1001,TerminalReason::TestLabMixedImpact).unwrap();
 }
+
+#[test]
+fn content0_s5_spall_splash_trace_requires_lined_damage_when_source_permits_it() {
+    let (mut trace, direct, result, mut target) = source_contact(2, true);
+    trace.mixed_resolution(123, 1, 1001, 0, 1, &direct, &result, 90, 0).unwrap();
+    let bundle = super::super::geometry::tests::bundle();
+    let shell = PROFILES[1].shots[2];
+    let center = direct.endpoint;
+    let contact = bundle.explosion_contact(&target, center, shell.explosion_radius_m.unwrap() as f32,
+                                          1, 2, 1001).unwrap().unwrap();
+    let terrain = terrain::tests::fixture(-10., 10., 3, vec![-10.; 9]);
+    let chord = std::array::from_fn(|i| contact.endpoint[i] - center[i]);
+    let distance = chord.iter().map(|v| f64::from(*v).powi(2)).sum::<f64>().sqrt();
+    let plate = plate_for(VehicleKind::Ms1, &contact.material_facts, chord, contact.triangle.normal, distance).unwrap();
+    let armor = plate.armor_mm.unwrap();
+    let (_, mut frozen) = super::super::model::p06t_world_tests::actual_frozen_ap_zero();
+    frozen.optional_devices = [505, 0, 0];
+    target.owned_v2 = Some(frozen);
+    assert_eq!(spall_for(&contact.material_facts, &target), 1.20);
+    let mut input = crate::p06t_damage::SplashTarget {slot: 2, distance_m: distance, armor_mm: armor, los_clear: true};
+    let unlined = crate::p06t_damage::resolve_splash(shell, &[input]).unwrap()[0];
+    input.armor_mm *= 1.20;
+    let lined = crate::p06t_damage::resolve_splash(shell, &[input]).unwrap()[0];
+    assert!(lined.damage_hp < unlined.damage_hp);
+    assert!(trace.splash_resolution(123, 1, 1001, 0, 2, &contact, center, &unlined, 90, 0, &terrain, &bundle, &target).is_err());
+    trace.splash_resolution(123, 1, 1001, 0, 2, &contact, center, &lined, 90,
+        90i16.saturating_sub(lined.damage_hp as i16).max(0), &terrain, &bundle, &target).unwrap();
+}
 #[test]fn p06t_splash_los_uses_true_terrain_and_only_explicit_one_mm_self_contact(){
     let t=terrain::tests::fixture(-10.,10.,3,vec![0.;9]);
     assert!(splash_los(&t,[0.,0.,0.],[0.,1.,0.],&[]).unwrap());

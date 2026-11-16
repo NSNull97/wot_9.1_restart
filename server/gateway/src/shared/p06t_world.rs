@@ -13,6 +13,63 @@ pub(super) struct ShotDeviation{pub(super) angle:f64,pub(super) gun:super::super
 const MODULE_ROLL_ORDINAL:u8=0x40;
 /// SHELL-04: battle-RNG ordinals of the explosion chance rolls of external modules (0x60 + index).
 const EXPLOSION_ROLL_ORDINAL:u8=0x60;
+
+#[cfg(test)]
+mod assist_tests {
+    use super::*;
+    #[test] fn content0_s5a_last_crew_hit_keeps_preimpact_direct_snapshot() {
+        let now=Instant::now();let mut world=super::super::spotting_world_tests::fixture(now);
+        let extra=world.actors[0].clone();world.actors.push(extra.clone());world.actors.push(extra);
+        world.set_test_teams(&[1,2,1,2]);
+        world.actors[0].position=[0.,0.,0.];world.actors[1].position=[100.,0.,0.];
+        world.actors[2].position=[500.,0.,0.];world.actors[3].position=[700.,0.,0.];
+        world.actors[1].devices=Some(device::State::new(caps::Profile::Ms1).unwrap());
+        let shell=crate::p06t_shells091::profile(crate::p06t_shells091::Mount::Ms1Stock).shots[2];
+        let cause=device::Cause{shot:1,attacker_slot:2};
+        let hit=|ordinal,target|device::ModuleHit{cause,ordinal,at_ms:0,target:crate::p06t_lab_proxy::Target::Seat(target),shell,ignition_roll:0.9};
+        let health=device::Health{hp:90,max_hp:90,terminal:false};
+        world.actors[1].devices.as_mut().unwrap().apply_hits(&[hit(0,0)],health).unwrap();
+        assert!(world.actors[1].alive());world.refresh_original_spotting(now).unwrap();
+        let mut staged=world.actors.clone();let pre=world.assist_evidence(&staged,2,1,1000).unwrap();
+        assert_eq!(pre.unwrap().direct_mask,1);
+        staged[1].devices.as_mut().unwrap().apply_hits(&[hit(1,1)],health).unwrap();
+        assert!(!staged[1].alive());
+        assert_eq!(world.assist_evidence(&staged,2,1,1000).unwrap().unwrap().direct_mask,0);
+        let hp=staged[1].health;
+        assert!(world.record_damage_with_direct_snapshot(&mut staged,1,2,0,1000,0,25,true,true,true,pre).is_err());
+        assert_eq!(staged[1].health,hp);assert!(world.damage_events.is_empty());
+        // A track event produced after the direct snapshot still belongs to the
+        // HP event; the shooter's own track damage is never credited to them.
+        let track=caps::Device::LeftTrack;
+        world.device_events.push((1,device::Transition{sequence:1,at_ms:0,cause,from_fire:false,
+            change:device::Change::Device{device:track,extra_index:track.extra(),max_health:100,before:100,after:0,
+                before_condition:device::Condition::Normal,after_condition:device::Condition::Destroyed,repair:false}}));
+        world.record_damage_with_direct_snapshot(&mut staged,1,2,1,1000,0,25,true,true,true,pre).unwrap();
+        let event=&world.damage_events[0];assert_eq!(event.health_after,hp-25);
+        assert!(event.crew_before);assert!(!event.crew_after);assert_eq!(event.spotting.unwrap().direct_mask,1);
+        assert_eq!(event.spotting.unwrap().track_mask,1<<2);
+        world.actors=staged;world.mixed_ammo=true;
+        let credits=super::super::super::server::battle_ledger::credits(&world).unwrap();
+        assert_eq!(credits.iter().map(|c|(c.recipient,c.amount)).collect::<Vec<_>>(),vec![(0,25)]);
+    }
+    #[test] fn content0_s5a_assist_mask_is_frozen_at_actual_hp_transition_and_crosses_bw() {
+        let now=Instant::now();let mut world=super::super::spotting_world_tests::fixture(now);
+        let extra=world.actors[0].clone();world.actors.push(extra.clone());world.actors.push(extra.clone());world.actors.push(extra);
+        world.set_test_teams(&[1,2,1,2,1]);
+        world.actors[0].position=[0.,0.,0.];world.actors[1].position=[100.,0.,0.];
+        world.actors[2].position=[500.,0.,0.];world.actors[3].position=[700.,0.,0.];world.actors[4].position=[10.,0.,0.];
+        world.refresh_original_spotting(now).unwrap();
+        let mut staged=world.actors.clone();let before=staged[1].health;
+        world.record_damage(&mut staged,1,2,1,1000,0,25,true,true,true).unwrap();
+        let record=world.damage_events[0].clone();assert_eq!(record.health_before,before);assert_eq!(record.health_after,before-25);
+        assert_eq!(record.spotting.unwrap().direct_mask,(1<<0)|(1<<4));
+        world.actors=staged;world.actors[1].position=[900.,0.,0.];world.refresh_original_spotting(now+STEP).unwrap();
+        assert_eq!(world.damage_events[0],record,"later sighting state must not rewrite credited mask");
+        let mut encoder=crate::bw_wire::Arcs::new(false);let mut decoder=crate::bw_wire::Arcs::new(true);
+        let data=crate::bw_wire::encode(&record,now,&mut encoder).unwrap();
+        let decoded:DamageRecord=crate::bw_wire::decode(&data,now,&mut decoder).unwrap();assert_eq!(decoded,record);
+    }
+}
 /// SHELL-04: the module group of a LAB target (#717 common/vehicle.xml MaterialInfo).
 pub(super) fn module_class(target:crate::p06t_lab_proxy::Target)->crate::gateway091::shared::shell_rules::ModuleClass{
     use crate::gateway091::shared::shell_rules::ModuleClass as M;
@@ -23,6 +80,23 @@ pub(super) fn module_class(target:crate::p06t_lab_proxy::Target)->crate::gateway
             caps::Device::Gun=>M::Gun,caps::Device::TurretRotator=>M::TurretRotator,caps::Device::SurveyingDevice=>M::SurveyingDevice},
     }
 }
+
+fn crew_protection(actor: &Actor, class: super::super::shell_rules::ModuleClass) -> device::CrewProtection {
+    if class != super::super::shell_rules::ModuleClass::Crew {
+        return device::CrewProtection::default();
+    }
+    actor.owned_v2.as_ref().map_or(device::CrewProtection::default(), |loadout| {
+        device::CrewProtection::from_artefacts(loadout.optional_devices, loadout.consumables)
+    })
+}
+
+/// Compute the native crew injury roll from the frozen loadout, including after medkit use.
+pub(super) fn penetration_module_chance(actor: &Actor, target: crate::p06t_lab_proxy::Target,
+    explosion: bool, rules: &crate::gateway091::shared::shell_rules::Rules) -> f64 {
+    let class = module_class(target);
+    crew_protection(actor, class).apply(rules.module_chance(class, explosion))
+}
+
 /// SHELL-04 (owner 2026-11-08): module damage takes the shot's one damage roll (+-25 %), rounded
 /// half away from zero like HP damage, at least 1.
 fn rolled_device_damage(shell:crate::p06t_shells091::Shell,rolls:Option<crate::gateway091::shared::shell_rules::Rolls>)->io::Result<u16>{
@@ -72,26 +146,44 @@ impl World {
     }
     pub fn cancelled_terminal_state(loadout:&crate::profile13_v2091::Frozen)->io::Result<String>{
         let profile=caps::Profile::for_owned(loadout.kind).ok_or_else(bad)?;
-        let state=device::State::new(profile)?;
-        terminal_json(loadout,&state,0,None)
+        let mut state=device::State::new(profile)?;
+        state.configure_artefacts(loadout.optional_devices,loadout.consumables)?;
+        terminal_json(loadout,&state,0,None,&[])
     }
     pub fn terminal_state_json(&self,slot:usize)->io::Result<String>{
         let actor=self.actors.get(slot).ok_or_else(||bad())?;
         let frozen=actor.owned_v2.as_ref().ok_or_else(||bad())?;
         let state=actor.devices.as_ref().ok_or_else(||bad())?;
         let death=self.death_cause(slot)?;
-        terminal_json(frozen,state,self.actors.len(),death)
+        let mut used=Vec::new();
+        for (index,(loaded,remaining)) in frozen.consumables.into_iter().zip(actor.consumables).enumerate(){
+            if loaded==remaining{continue;}
+            if loaded==0||remaining!=0{return Err(bad());}
+            used.push(index);
+        }
+        terminal_json(frozen,state,self.actors.len(),death,&used)
     }
     fn record_damage(&mut self,actors:&mut[Actor],target:usize,attacker:usize,shot:u32,tick:u32,
         reason:u8,amount:u16,crew_before:bool,direct:bool,pierced:bool)->io::Result<()> {
+        self.record_damage_with_direct_snapshot(actors,target,attacker,shot,tick,reason,amount,crew_before,direct,pierced,None)
+    }
+    fn record_damage_with_direct_snapshot(&mut self,actors:&mut[Actor],target:usize,attacker:usize,shot:u32,tick:u32,
+        reason:u8,amount:u16,crew_before:bool,direct:bool,pierced:bool,
+        direct_snapshot:Option<result_spots::AssistEvidence>)->io::Result<()> {
         if target>=actors.len()||attacker>=actors.len()||shot==0||shot as usize>self.shot_limit()||tick<1000
             ||reason>10||self.damage_events.len()>=MAX_DAMAGE_EVENTS{return Err(bad());}
+        let mut spotting=self.assist_evidence(actors,attacker,target,tick)?;
+        // Direct sight is frozen before this impact can kill the last crewman;
+        // track authors still reflect events committed during the same impact.
+        if let (Some(now),Some(before))=(&mut spotting,direct_snapshot) {
+            now.scan_tick=before.scan_tick;now.direct_mask=before.direct_mask;
+        }
         let actor=&mut actors[target];let before=actor.health;
         let after=i32::from(before).saturating_sub(i32::from(amount)).max(0)as i16;
         actor.health=after;let crew_after=actor.alive();
         if before!=after||crew_before!=crew_after {
             {let next_sequence=self.damage_events.len() as u32+1;self.damage_events.push(DamageRecord{sequence:next_sequence,tick,attacker,target,shot,reason,
-                health_before:before,health_after:after,crew_before,crew_after,direct,pierced});}
+                health_before:before,health_after:after,crew_before,crew_after,direct,pierced,spotting});}
         }
         if !crew_after {actor.input=Input::STOP;actor.speed=0.;actor.aim.park();
             if let Some(state)=&mut actor.devices{state.freeze();}}
@@ -105,6 +197,7 @@ impl World {
             if let Some(state)=actor.devices.as_mut(){
                 transitions.extend(state.advance_fire(at_ms,health)?.into_iter().map(|event|(slot,event)));
             }
+            transitions.extend(actor.advance_rpm_limiter(at_ms,slot as u8,health)?.into_iter().map(|event|(slot,event)));
         }
         transitions.sort_by_key(|(slot,event)|(event.at_ms,*slot,event.sequence));
         for (slot,event)in transitions {
@@ -117,6 +210,10 @@ impl World {
             self.device_events.push((slot,event));
         }
         Ok(())
+    }
+    pub(super) fn extinguish_automatically(actor:&mut Actor,at_ms:u64,slot:usize)->io::Result<Vec<device::Transition>>{
+        if actor.devices.as_ref().is_none_or(|state|!state.fire_active()){return Ok(Vec::new());}
+        actor.use_consumable(device::Consumable::AutoExtinguisher,1,at_ms,slot as u8)
     }
     /// Explicit LAB SplitMix64 step of the one battle RNG; callers journal it.
     fn splitmix_next(&mut self)->u64{
@@ -163,12 +260,14 @@ impl World {
         contact:&Contact,bundle:&geometry::Bundle)->io::Result<crate::p06t_damage::Resolution>{
         let shell=projectile.shell.ok_or_else(||bad())?;let slot=contact.target_slot;
         let before=actors.get(slot).ok_or_else(||bad())?.health;let crew_before=actors[slot].alive();
+        let direct_snapshot=self.assist_evidence(actors,projectile.slot,slot,contact.tick)?;
         let chord=std::array::from_fn(|i|contact.segment_end[i]-contact.segment_start[i]);
         let distance=(0..3).map(|i|(f64::from(contact.endpoint[i])-f64::from(projectile.origin[i])).powi(2)).sum::<f64>().sqrt();
         // SHELL-02: track armour this shot already passed (0 without a TrackContact).
         let spent=trace.track_spent(projectile.sequence)?;
+        let absorption = impact::spall_for(&contact.material_facts, &actors[slot]);
         let resolution=impact::resolve_mixed_spent(actors[slot].vehicle_kind(),&contact.material_facts,shell,
-            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent,trace.shot_rolls(self.id,projectile.sequence)?)?;
+            chord,contact.triangle.normal,distance,trace.extended_breech_lab(),spent,trace.shot_rolls(self.id,projectile.sequence)?,absorption)?;
         let after=(i32::from(before)-i32::from(resolution.damage_hp)).max(0)as i16;
         trace.mixed_resolution_source(self.id,projectile.sequence,contact.tick,projectile.slot,slot,contact,&resolution,before,after,bundle,&actors[slot])?;
         let facts=&contact.material_facts;
@@ -212,11 +311,12 @@ impl World {
                         bundle.chassis().is_some(),bundle.module_volumes())?;
                     let explosion=shell.family==crate::p06t_shells091::Family::HighExplosive;
                     for (index,hit) in hits.iter().enumerate() {
-                        let chance=rules.module_chance(module_class(hit.target),explosion);
+                        let chance=penetration_module_chance(&actors[slot],hit.target,explosion,rules);
                         let roll=self.ignition_roll(projectile.sequence,slot,MODULE_ROLL_ORDINAL+index as u8)?;
                         let applied=roll<chance;
                         if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,contact.tick,projectile.slot,slot,
-                            projectile.vehicle_kind,&shell,&format!("{:?}",hit.target),module_class(hit.target),explosion,chance,roll,applied);}
+                            projectile.vehicle_kind,&shell,&format!("{:?}",hit.target),module_class(hit.target),explosion,
+                            crew_protection(&actors[slot], module_class(hit.target)),chance,roll,applied);}
                         if !applied {continue;}
                         let ordinal=device::CLASSIC_FIRST_ORDINAL+inputs.len() as u8;
                         amounts.push(rolled_device_damage(shell,trace.shot_rolls(self.id,projectile.sequence)?)?);
@@ -261,8 +361,12 @@ impl World {
         // HP/death record includes only the residual HP that detonation removes.
         // Even a simultaneous final-seat wound must not create a second kill.
         let damage=resolution.damage_hp.saturating_add(additional).min(before as u16);
-        self.record_damage(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
-            crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced)?;
+        self.record_damage_with_direct_snapshot(actors,slot,projectile.slot,projectile.sequence,contact.tick,0,damage,
+            crew_before,true,resolution.decision==crate::p06t_damage::Decision::Pierced,direct_snapshot)?;
+        let at_ms=u64::from(contact.tick.checked_sub(1000).ok_or_else(bad)?)*100;
+        let events=Self::extinguish_automatically(&mut actors[slot],at_ms,slot)?;
+        if self.device_events.len()+events.len()>MAX_DAMAGE_EVENTS{return Err(bad());}
+        self.device_events.extend(events.into_iter().map(|event|(slot,event)));
         Ok(resolution)
     }
     /// SHELL-04 (owner 2026-11-08): external modules (tracks, gun) of one live vehicle around an
@@ -287,7 +391,8 @@ impl World {
             let roll=self.ignition_roll(projectile.sequence,slot,EXPLOSION_ROLL_ORDINAL+index as u8)?;
             let applied=roll<chance;
             if super::super::shot_trace::enabled(){super::super::shot_trace::module(self.id,projectile.sequence,tick,projectile.slot,slot,
-                projectile.vehicle_kind,&shell,&format!("{target:?}"),module_class(target),true,chance,roll,applied);}
+                projectile.vehicle_kind,&shell,&format!("{target:?}"),module_class(target),true,
+                device::CrewProtection::default(),chance,roll,applied);}
             if !applied{continue;}
             let falloff=(1.-distance/radius).max(0.).powf(rules.he_falloff_exponent);
             let roll_damage=crate::gateway091::shared::shell_rules::shot_rolls(rules,self.id,projectile.sequence).damage;
@@ -344,16 +449,18 @@ impl World {
         health_before:u16,residual_hp:u16,shot:u32,attacker:usize,tick:u32)->io::Result<u16>{
         if self.ammo_detonation.is_none(){return Ok(0);}
         let mut destroyed=events.iter().filter_map(|event|match event.change{
-            device::Change::Device{device:caps::Device::AmmoBay,before,after:0,..}if before>0=>Some((event,before)),_=>None});
-        let Some((transition,device_before))=destroyed.next()else{return Ok(0);};
+            device::Change::Device{device:caps::Device::AmmoBay,max_health,before,after:0,..}if before>0=>Some((event,before,max_health)),_=>None});
+        let Some((transition,device_before,device_max))=destroyed.next()else{return Ok(0);};
         if destroyed.next().is_some()||transition.cause.shot!=shot||usize::from(transition.cause.attacker_slot)!=attacker
             ||transition.at_ms!=u64::from(tick.checked_sub(1000).ok_or_else(||bad())?)*100||transition.from_fire{return Err(bad());}
         let actor=actors.get(slot).ok_or_else(||bad())?;
+        let devices=actor.devices.as_ref().ok_or_else(bad)?;
+        if devices.caps()[caps::Device::AmmoBay as usize].max!=device_max{return Err(bad());}
         let input=rack::Input{shot,target:slot,attacker,tick,device_sequence:transition.sequence,device_before,device_after:0,
             health_before,residual_hp,counts:actor.fire.typed().ok_or_else(||bad())?.counts(),kind:actor.vehicle_kind(),
             joint:turret_joint(actor)?,from_fire:transition.from_fire};
         let mut ledger=self.ammo_detonation.as_ref().ok_or_else(||bad())?.clone();
-        let outcome=ledger.apply(input)?;
+        let outcome=ledger.apply_equipped(input,actor.optional_devices())?;
         match outcome{
             rack::Outcome::New(event)=>{
                 let mut fire=actors[slot].fire.clone();
@@ -393,7 +500,9 @@ impl World {
             if !plate.ordinary{continue;}
             let clear=impact::splash_los(&terrain,center,contact.endpoint,&excluded)?;
             let input=crate::p06t_damage::SplashTarget{
-                slot:slot as u8,distance_m:distance,armor_mm:plate.armor_mm.ok_or_else(||bad())?+layers,los_clear:clear};
+                slot:slot as u8,distance_m:distance,
+                armor_mm:plate.armor_mm.ok_or_else(||bad())? * impact::spall_for(&contact.material_facts,&actors[slot]) + layers,
+                los_clear:clear};
             let result=match rolls{Some(r)=>crate::p06t_damage::resolve_splash_blast(shell,&[input],r,blast)?[0],
                 None=>crate::p06t_damage::resolve_splash(shell,&[input])?[0]};
             let before=actors[slot].health;let after=(i32::from(before)-i32::from(result.damage_hp)).max(0)as i16;
@@ -447,17 +556,19 @@ fn turret_joint(actor:&Actor)->io::Result<rack::JointPose>{
     if joint.position.iter().chain(joint.direction.iter()).any(|v|!v.is_finite()){return Err(bad());}Ok(joint)
 }
 
-fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>)->io::Result<String>{
+fn terminal_json(frozen:&crate::profile13_v2091::Frozen,state:&device::State,roster:usize,death:Option<DeathCause>,used:&[usize])->io::Result<String>{
     if frozen.crew_ids.len()!=state.crew().len()||roster>MAX_ACTORS
         ||state.policy_version()!=device::PolicyVersion::V1
-        ||caps::Profile::for_owned(frozen.kind)!=Some(state.profile()){return Err(bad());}
-    let value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
+        ||caps::Profile::for_owned(frozen.kind)!=Some(state.profile())
+        ||state.caps()!=state.profile().equipped_caps(frozen.optional_devices){return Err(bad());}
+    let mut value=serde_json::json!({"policy_revision":device::POLICY,"roster_size":roster,"crew_active":state.crew_active(),
         "crew":frozen.crew_ids.iter().zip(state.crew()).map(|(id,alive)|serde_json::json!({"crew_id":id,"alive":alive})).collect::<Vec<_>>(),
-        "devices":state.health().iter().zip(*state.profile().caps()).enumerate().map(|(index,(health,cap))|
+        "devices":state.health().iter().zip(state.caps()).enumerate().map(|(index,(health,cap))|
             serde_json::json!({"extra_index":26+index,"health":health,"max_health":cap.max})).collect::<Vec<_>>(),
         "fire":{"active":state.fire_active(),"ticks":state.fire_ticks(),"damage":state.proposed_fire_damage()},
         "death":{"reason":death.map_or(-1i16,|event|i16::from(event.reason)),"killer_slot":death.map(|event|event.attacker),
             "tick":death.map_or(0,|event|event.tick)}});
+    if !used.is_empty(){value["consumables_used"]=serde_json::json!(used);}
     let raw=serde_json::to_string(&value).map_err(|_|bad())?;if raw.len()>8192{return Err(bad());}Ok(raw)
 }
 

@@ -1,5 +1,52 @@
 use super::*;
 use std::path::PathBuf;
+
+#[test]
+#[ignore = "requires the isolated stand and its actual IPC7 physics build"]
+fn content0_s5_weighted_stand_starts_with_actual_body_binding() {
+    let root=PathBuf::from(std::env::var("WOT091_ROOT").unwrap_or_else(|_|"D:/WoT_9.1_Server".into())).join("local");
+    let stand=PathBuf::from(std::env::var("CONTENT0_EQUIPMENT_STAND").expect("CONTENT0_EQUIPMENT_STAND"));
+    crate::profile13_v2091::enable_catalog_v1().unwrap();
+    let rows=super::super::super::profile13_templates::load(&root,&stand.join("battle-profiles.json")).unwrap();
+    let now=Instant::now();
+    let template=BattleTemplate::from_shared(&rows,2,7505,now).unwrap();
+    let mut world=template.world;
+    world.enable_team_base_spawn().unwrap();
+    world.enable_mixed_ammo().unwrap();
+    for (slot,kind,gear) in [(0,VehicleKind::Ms1,[6649,0,0]),(1,VehicleKind::Is7,[7161,8185,1273])] {
+        let account=format!("12345678-1234-4234-8234-{slot:012}");
+        let source=super::super::super::vehicle_catalog::by_kind(kind.label()).unwrap();
+        let (native,suffix)=source.legacy_inventory.unwrap();
+        let gun=crate::p06t_shells091::profile(kind.mount());
+        let crew=crate::p06t_device_caps::Profile::for_owned(kind).unwrap().crew().len();
+        let ammo=source.shells.iter().zip(&gun.shots).enumerate().map(|(i,(shell,shot))|serde_json::json!({
+            "shell_definition_id":format!("shell:{}-stock-{}",kind.label(),shell.suffix),
+            "shell_compact_id":shot.compact_descr,"family":shot.family.source_name(),"count":if i==0{10}else{0}
+        })).collect::<Vec<_>>();
+        let value=serde_json::json!({"kind":kind.label(),"descriptor_hex":kind.descriptor().iter().map(|b|format!("{b:02x}")).collect::<String>(),
+            "native_inventory_id":native,"vehicle_inventory_id":format!("{account}:{suffix}"),"max_hp":kind.max_health(),
+            "crew_ids":(0..crew).map(|i|format!("{account}:crew-{i}")).collect::<Vec<_>>(),"capacity":gun.capacity,
+            "ammunition":ammo,"initial_shell_compact_id":gun.shots[0].compact_descr,
+            "artefacts":{"optional_devices":gear,"consumables":[0,0,0]}});
+        let digest=format!("{:x}",sha2::Sha256::digest(serde_json::to_vec(&value).unwrap()));
+        let frozen=crate::profile13_v2091::parse_frozen(&value,&account,&digest).unwrap();
+        let identity=model::Identity{account,database:slot as i32+1,name:format!("equipment {slot}")};
+        assert_eq!(world.attach_owned_v2(identity,slot as u32+1,&frozen).unwrap(),slot);
+    }
+    world.start(now).unwrap();
+    let mut runtime=BatchRuntime::new(rows[0].shared.clone().unwrap(),rows[0].catalog.1.clone());
+    runtime.start(&mut world,now).unwrap();
+    // The logical step instant is held fixed while the actual child starts.
+    // Polling IPC against that instant could predate the worker's Ready receipt.
+    spin(&mut runtime,&mut world,now,|r,_|r.ready_for_native());
+    let spec=runtime.spec.as_ref().unwrap();
+    assert_eq!(spec.actors.iter().map(|actor|actor.physical_profile().unwrap().mass()).collect::<Vec<_>>(),[4791.,69121.9]);
+    let initial=world.tick;
+    world.lifecycle=None;
+    for slot in 0..2 {world.set_ready(slot,slot as u32+1).unwrap();}
+    spin(&mut runtime,&mut world,Instant::now(),|r,w|w.tick>initial&&!r.blocked());
+}
+
 fn resources()->Vec<super::super::super::profile13_templates::Resources>{
     let root=PathBuf::from(std::env::var("WOT091_ROOT").unwrap_or_else(|_|"D:/WoT_9.1_Server".into())).join("local");
     let (source,_)=crate::portable_test_fixtures::verified(&root.join("stands/p08b-profile13-01/battle-profiles.json"),None);

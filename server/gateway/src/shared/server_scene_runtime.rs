@@ -18,7 +18,7 @@ fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Inp
     if tick<1000 || !(-1..=1).contains(&input.throttle)||!(-1..=1).contains(&input.steer)
         || !crate::map_drive_worker091::partial_cruise_valid(input.throttle,false,input.speed_percent) {return Err(model::bad());}
     let Some(devices)=&actor.devices else {return Ok(Input {throttle:input.throttle,steer:input.steer,
-        brake:input.throttle==0&&input.steer==0,speed_percent:input.speed_percent});};
+        brake:input.throttle==0&&input.steer==0,speed_percent:input.speed_percent,engine_power_basis_points:10_000});};
     if devices.profile().index()!=actor.vehicle_kind().index() {return Err(model::bad());}
     let caps=devices.capabilities();caps.validate()?;
     let mut throttle=if caps.drive_scale>0. {input.throttle}else{0};
@@ -38,7 +38,8 @@ fn actor_input(actor:&model::Actor,tick:u32,allows_actions:bool)->io::Result<Inp
     // stutter (owner battle 2026-11-04).
     // A vehicle that cannot move at all (destroyed track/engine) stays braked.
     let immobile=caps.drive_scale<=0.&&caps.steer_scale<=0.;
-    Ok(Input {throttle,steer,brake:throttle==0&&steer==0&&(immobile||input.throttle==0&&input.steer==0),speed_percent:speed})
+    Ok(Input {throttle,steer,brake:throttle==0&&steer==0&&(immobile||input.throttle==0&&input.steer==0),speed_percent:speed,
+        engine_power_basis_points:actor.engine_power_basis_points()})
 }
 
 /// One scene step: advances every actor's hull turn, then quantizes the inputs for the worker.
@@ -82,14 +83,14 @@ impl BatchRuntime {
     /// One body request when the worker is idle. Returns true if sent; the
     /// next advance then waits for its reply (the debris world never steps
     /// the battle world).
-    fn launch_turret(&mut self,world:&World,now:Instant)->io::Result<bool>{
+    fn launch_turret(&mut self,world:&World)->io::Result<bool>{
         let Some(runtime)=self.runtime.as_mut()else{return Ok(false);};
         if runtime.pending()||!runtime.ready(){return Ok(false);}
         let Some(slot)=world.pending_turret_launches().first().copied()else{return Ok(false);};
         let r=world.turret_launch_request(slot)?;
         let body=TurretBody{slot,position:r.joint.position,direction:r.joint.direction,linear_velocity:r.launch.linear_velocity,
             angular_velocity:r.launch.angular_velocity,turret_points:r.turret_points,gun_points:r.gun_points,wreck_slots:r.wreck_slots};
-        runtime.launch_turret(&body,now)?;
+        runtime.launch_turret(&body)?;
         let event=world.turret_flights().iter().find(|f|f.event().target()==slot).ok_or_else(||model::bad())?.event();
         println!("TURRET01_LAUNCH battle={} slot={} shot={} attacker={} tick={} joint={:?} linear={:?} angular={:?} rng_draws={:?} turret_points={} gun_points={} wrecks={:?} policy={}",
             world.id,slot,event.shot(),event.attacker(),event.tick(),r.joint,r.launch.linear_velocity,r.launch.angular_velocity,r.launch.draws,
@@ -107,22 +108,22 @@ impl BatchRuntime {
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         let deadline=Instant::now()+Duration::from_secs(5);
         // End-of-test evidence only: a battle frame still in flight is dropped.
-        while runtime.pending(){let _=runtime.poll(Instant::now())?;
+        while runtime.pending(){let _=runtime.poll()?;
             if Instant::now()>deadline{return Err(model::bad());}std::thread::sleep(Duration::from_millis(1));}
-        runtime.launch_turret(&body,Instant::now())?;
-        loop{runtime.poll(Instant::now())?;if let Some(t)=runtime.take_turret(){return Ok(t);}
+        runtime.launch_turret(&body)?;
+        loop{runtime.poll()?;if let Some(t)=runtime.take_turret(){return Ok(t);}
             if Instant::now()>deadline{return Err(model::bad());}std::thread::sleep(Duration::from_millis(1));}
     }
     /// After the frozen outcome the battle world is no longer advanced, but a
     /// detonation that ended the battle still needs its body. A pending battle
     /// advance reply is consumed and discarded here (the outcome is frozen).
-    pub(super) fn turrets_after_outcome(&mut self,world:&mut World,now:Instant)->io::Result<()>{
+    pub(super) fn turrets_after_outcome(&mut self,world:&mut World)->io::Result<()>{
         let Some(runtime)=self.runtime.as_mut()else{return Ok(());};
         if world.pending_turret_launches().is_empty(){return Ok(());}
-        if runtime.pending()&&runtime.poll(now)?.is_some(){
+        if runtime.pending()&&runtime.poll()?.is_some(){
             println!("TURRET01_OUTCOME_FRAME_DISCARDED battle={} reason=outcome_frozen",world.id);
         }
-        self.install_turret(world)?;self.launch_turret(world,now)?;Ok(())
+        self.install_turret(world)?;self.launch_turret(world)?;Ok(())
     }
     pub(super) fn failure_snapshot(&self)->serde_json::Value{serde_json::json!({
         "process_id":self.runtime.as_ref().map(|r|r.process_id()),"startup":self.startup.is_some(),"settled":self.settled,
@@ -159,9 +160,10 @@ impl BatchRuntime {
     /// One actor row at an explicit server-chosen pose (LAB lane or SPAWN-15 spot).
     fn actor_manifest_placed(resources:&SharedResources,slot:usize,kind:VehicleKind,version:u8,roster:usize,origin:[f32;3],yaw:f32)->io::Result<serde_json::Value> {
         let bound=Self::slot_bound(roster);
-        if slot>=bound || !matches!(version,1|2|3) || version==1&&kind.index()>=2
-            ||kind.is_extended()&&version!=3||version==3&&(resources.version!=4||resources.maps.len()!=7)
-            ||kind.is_generated()&&(version!=2||resources.version!=5) {return Err(model::bad());}
+        if slot>=bound || !(1..=5).contains(&version) || version==1&&kind.index()>=2
+            ||kind.is_extended()&&(!matches!(version,3|4|5)||resources.version!=4||resources.maps.len()!=7)
+            ||version==3&&(resources.version!=4||resources.maps.len()!=7)
+            ||kind.is_generated()&&(!matches!(version,2|4|5)||resources.version!=5) {return Err(model::bad());}
         let row_slot=resources.slot(resources.template_kind(kind)).ok_or_else(||model::bad())?;
         let stock_map=resources.maps.get(row_slot).ok_or_else(||model::bad())?;
         // CONTENT-0 3.3: a non-stock build uses its own config (stock config + build physics) and qualified profile.
@@ -175,7 +177,7 @@ impl BatchRuntime {
         if version>=2 {
             row["source_profile"]=if kind.index()>=2 {
                 let (path,sha256)=match &build {Some((_,source))=>source,None=>resources.source_profiles[row_slot].as_ref().ok_or_else(||model::bad())?};
-                if version==3&&sha256!=ram_proof::Profile::for_vehicle(kind).sha(){return Err(model::bad());}
+                if version>=3&&sha256!=ram_proof::Profile::for_vehicle(kind).sha(){return Err(model::bad());}
                 serde_json::json!({"path":Self::physical_path(path),"sha256":sha256})
             } else {
                 if resources.source_profiles[row_slot].is_some() {return Err(model::bad());}serde_json::Value::Null
@@ -195,24 +197,40 @@ impl BatchRuntime {
         if world.extended_lab()&&self.resources.version!=4||!world.extended_lab()&&world.actors.iter().any(|a|a.vehicle_kind().is_extended()) {
             return Err(model::bad());
         }
-        let version=if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
+        let ground=self.resources.maps.first().ok_or_else(model::bad)?.ground_strength()?;
+        if ground.is_none()&&world.actors.iter().any(|a|a.optional_devices().contains(&crate::profile13_v2091::GROUSERS)) {
+            return Err(io::Error::new(io::ErrorKind::InvalidData,"grousers require a pinned ground-strength map"));
+        }
+        let version=if ground.is_some()||world.actors.iter().any(|a|a.engine_power_ceiling_basis_points()>10000){5}
+            else if world.actors.iter().any(|actor|actor.equipment_mass()>0.){4}
+            else if world.extended_lab(){3}else if world.actors.iter().any(|actor|actor.vehicle_kind().index()>=2){2}else{1};
         // TURRET-01: this battle has a scene worker, so detached turrets are Jolt bodies.
         world.enable_turret_jolt()?;
         // SPAWN-15: each team on its own base formation; otherwise LAB lanes.
-        let spots=if world.team_base_spawn() {
+        let spots=if let Some(scenario)=world.fixed_scout() {
+            Some((0..world.actors.len()).map(|slot|scenario.spot(slot)).collect::<io::Result<Vec<_>>>()?)
+        } else if world.team_base_spawn() {
             let teams=(0..world.actors.len()).map(|slot|world.team(slot)).collect::<io::Result<Vec<_>>>()?;
             Some(super::super::team_spawn::placement(world.map,&teams)?)
         } else {None};
         let rows=world.actors.iter().enumerate().map(|(slot,actor)|{
-            if let Some(spot)=spots.as_ref().and_then(|s|s.get(slot)) {
-                return Self::actor_manifest_placed(&self.resources,slot,actor.vehicle_kind(),version,world.expected_actors(),spot.position,spot.yaw);
+            let mut row=if let Some(spot)=spots.as_ref().and_then(|s|s.get(slot)) {
+                Self::actor_manifest_placed(&self.resources,slot,actor.vehicle_kind(),version,world.expected_actors(),spot.position,spot.yaw)?
+            } else {
+                let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
+                Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())?
+            };
+            if version>=4 {row["equipment_mass_kg"]=actor.equipment_mass().into();}
+            if version==5 {
+                row["grousers"]=actor.optional_devices().contains(&crate::profile13_v2091::GROUSERS).into();
+                row["engine_power_ceiling_basis_points"]=actor.engine_power_ceiling_basis_points().into();
             }
-            let lane=if world.team_plan().is_some(){world.spawn_lane(slot)?}else{slot};
-            Self::actor_manifest_for_roster(&self.resources,slot,actor.vehicle_kind(),version,lane,world.expected_actors())
+            Ok(row)
         })
             .collect::<io::Result<Vec<_>>>()?;
-        let manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
+        let mut manifest=serde_json::json!({"version":version,"profile":"test_lab","policy":scene_worker::POLICY,
             "map":world.map.asset(),"catalog":{"path":Self::physical_path(self.catalog.path()),"sha256":self.catalog.sha256()},"actors":rows});
+        if version==5 {manifest["ground"]=ground.unwrap_or(serde_json::Value::Null);}
         let raw=serde_json::to_vec(&manifest).map_err(|_|model::bad())?;
         if raw.len()>scene_worker::MAX_INPUT{return Err(model::bad());}
         let directory=self.resources.root.join("test-runs/p05c-scenes");
@@ -231,12 +249,12 @@ impl BatchRuntime {
             let result=(||{fs::create_dir_all(&directory)?;use std::io::Write;let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&path)?;file.write_all(&raw)?;file.sync_all()?;let spec=Arc::new(SceneSpec::load(&resources.root,&path,&sha)?);
                 // The dispatcher clock owns this epoch. The background job
                 // must not introduce a newer clock than the current loop turn.
-                let scene=Scene::new(&spec,&[])?;let runtime=Runtime::launch(resources.artifacts.clone(),spec.clone(),generation,scene,now)?;
+                let scene=Scene::new(&spec,&[])?;let runtime=Runtime::launch(resources.artifacts.clone(),spec.clone(),generation,scene)?;
                 Ok((spec,runtime))})();let _=tx.send(result);
         })?;
         self.startup=Some(rx);self.started_at=Some(now);
         println!("P05C_SCENE_START battle={} actors={} generation={} one_scene=true",world.id,world.actors.len(),generation);
-        if spots.is_some() {println!("SPAWN15_PLACEMENT battle={} map={} policy={} actors={} manifest_sha256={sha_log}",
+        if spots.is_some() && world.fixed_scout().is_none() {println!("SPAWN15_PLACEMENT battle={} map={} policy={} actors={} manifest_sha256={sha_log}",
             world.id,world.map.asset(),super::super::team_spawn::POLICY,world.actors.len());}
         Ok(())
     }
@@ -251,6 +269,12 @@ impl BatchRuntime {
         let domain=world.fragiles.as_ref().ok_or_else(||model::bad())?;
         let mut contacts=Vec::new();
         for actor in &frame.actors {
+            let selected=spec.actors.get(actor.slot).ok_or_else(||model::bad())?;
+            let seated=world.actors.get(actor.slot).ok_or_else(||model::bad())?;
+            if selected.equipment_mass_kg.to_bits()!=seated.equipment_mass().to_bits()
+                ||selected.kind.extended_vehicle()!=seated.vehicle_kind()
+                ||selected.grousers!=seated.optional_devices().contains(&crate::profile13_v2091::GROUSERS)
+                ||selected.engine_power_ceiling_basis_points!=seated.engine_power_ceiling_basis_points(){return Err(model::bad());}
             let rows=actor.proof["object_contacts"].as_array().ok_or_else(||model::bad())?;
             let vec3=|v:&serde_json::Value|->io::Result<[f32;3]>{let a=v.as_array().filter(|a|a.len()==3).ok_or_else(||model::bad())?;
                 let mut out=[0.;3];for(i,n)in a.iter().enumerate(){out[i]=n.as_f64().filter(|x|x.is_finite()).ok_or_else(||model::bad())? as f32;}Ok(out)};
@@ -259,7 +283,7 @@ impl BatchRuntime {
                 substep:c["substep"].as_u64().ok_or_else(||model::bad())?.try_into().map_err(|_|model::bad())?,
                 kind:c["kind"].as_str().ok_or_else(||model::bad())?.into(),point:vec3(&c["point"])?,
                 normal:vec3(&c["normal"])?,velocity:vec3(&c["velocity"])?})).collect::<io::Result<Vec<_>>>()?;
-            let proof=crate::map_drive_worker091::shared_angular_proof(&actor.proof,&raw,&self.catalog,Self::profile(actor.kind,world.extended_lab())?,frame.sequence)?;
+            let proof=crate::map_drive_worker091::shared_angular_proof(&actor.proof,&raw,&self.catalog,selected.physical_profile()?,frame.sequence)?;
             proof.final_motion(actor.pose.linear_velocity,actor.pose.angular_velocity,actor.pose.rspeed)?;
             if frame.sequence==0{continue;}
             let context=ram_proof::Context{battle:world.id,slot:actor.slot,session:self.sessions[actor.slot],generation:self.generation,
@@ -279,7 +303,7 @@ impl BatchRuntime {
                 Err(mpsc::TryRecvError::Disconnected)=>return Err(model::bad())}
         }
         let Some(runtime)=&mut self.runtime else{return Err(model::bad());};
-        let frame=if self.held.is_some(){self.held.take()}else{runtime.poll(now)?};
+        let frame=if self.held.is_some(){self.held.take()}else{runtime.poll()?};
         self.install_turret(world)?;
         if self.staged.is_some(){
             if frame.is_some(){return Err(model::bad());}
@@ -297,9 +321,20 @@ impl BatchRuntime {
             drop(clone_span);
             if frame.sequence==0 {
                 candidate.import_external_poses(&rows)?;
+                if let Some(scenario)=candidate.fixed_scout() {
+                    for (slot,actor) in candidate.actors.iter().enumerate() {
+                        let expected=scenario.seats.get(slot).ok_or_else(||model::bad())?;
+                        if expected.kind.is_some_and(|kind|kind!=actor.vehicle_kind()) || candidate.team(slot)?!=(1+(slot%2)) as u8
+                            || (actor.position[0]-expected.position[0]).hypot(actor.position[2]-expected.position[2])>2.
+                            || (actor.position[1]-expected.position[1]).abs()>3.
+                            || super::super::aim::wrap(actor.direction[0]-expected.yaw).abs()>0.15 {return Err(model::bad());}
+                        println!("FIXED_SCOUT_SETTLED battle={} slot={} team={} kind={} position={:?} yaw={} scope=test_lab",
+                            candidate.id,slot,candidate.team(slot)?,actor.vehicle_kind().label(),actor.position,actor.direction[0]);
+                    }
+                }
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
                 for actor in &frame.actors{candidate.bind_contact_source(actor.slot,ram_proof::Source{session:self.sessions[actor.slot],generation:self.generation,
-                    config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:Self::profile(actor.kind,world.extended_lab())?})?;}
+                    config_sha256:spec.actors[actor.slot].config_sha256.clone(),profile:spec.actors[actor.slot].physical_profile()?})?;}
                 self.settled=true;println!("P05C_SCENE_READY battle={} process_id={} actors={} tick={}",world.id,self.runtime.as_ref().unwrap().process_id(),rows.len(),frame.tick);
             }else{
                 // A quick reply may arrive in the current wall-clock bucket.
@@ -314,7 +349,7 @@ impl BatchRuntime {
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;
                 let columns=frame.column_contacts.iter().map(|c|Ok(model::ColumnContactInput{object_id:c.object_id,shooter:c.slot,substep:c.substep,
                     point:c.point,normal:c.normal,velocity:c.velocity,
-                    mass_kg:Self::profile(spec.actors.get(c.slot).ok_or_else(||model::bad())?.kind,world.extended_lab())?.mass()})).collect::<io::Result<Vec<_>>>()?;
+                    mass_kg:spec.actors.get(c.slot).ok_or_else(||model::bad())?.physical_profile()?.mass()})).collect::<io::Result<Vec<_>>>()?;
                 for event in candidate.apply_column_contacts(&columns)? {
                     println!("SHARED_COLUMN_FALL battle={} slot={} object={} fallen_column={:#06x} tick={} speed_mps={:.3} policy={}",
                         world.id,event.shooter,event.object_id,event.fallen_column.unwrap_or_default(),event.tick,
@@ -324,12 +359,12 @@ impl BatchRuntime {
             if candidate.scene_version()!=world.scene_version()||frame.prepared {
                 let spec=self.spec.as_ref().ok_or_else(||model::bad())?;let ids=candidate.fragiles.as_ref().ok_or_else(||model::bad())?.removed_ids();
                 if frame.prepared_ids.iter().any(|id|ids.binary_search(id).is_err())||frame.prepared&&candidate.scene_version()==world.scene_version(){return Err(model::bad());}
-                let scene=Scene::new(spec,&ids)?;self.runtime.as_mut().unwrap().sync_removed(scene,now)?;self.staged=Some(candidate);return Ok(());
+                let scene=Scene::new(spec,&ids)?;self.runtime.as_mut().unwrap().sync_removed(scene)?;self.staged=Some(candidate);return Ok(());
             }
             *world=candidate;
         }
         if !self.settled||world.tick==1000&&world.actors.iter().any(|a|a.session.is_some()&&!a.ready){return Ok(());}
-        if self.launch_turret(world,now)?{return Ok(());}
+        if self.launch_turret(world)?{return Ok(());}
         let runtime=self.runtime.as_mut().ok_or_else(||model::bad())?;
         if runtime.pending(){return Ok(());}
         let started=world.started.ok_or_else(||model::bad())?;
@@ -341,7 +376,7 @@ impl BatchRuntime {
         if let Some(deadline)=deadline{
             let allows_actions=world.lifecycle.as_ref().is_none_or(|s|s.allows_actions());
             let inputs=scene_inputs(world,allows_actions)?;
-            let seq=runtime.advance(&inputs,now)?;self.dispatched=Some(deadline);
+            let seq=runtime.advance(&inputs)?;self.dispatched=Some(deadline);
             println!("P05C_SCENE_INPUT battle={} seq={} actors={} physical_sessions={:?} inputs={:?} world_tick={} devices_policy={}",
                 world.id,seq,inputs.len(),self.sessions,inputs,world.tick,
                 if world.extended_lab(){crate::p06t_device_state::POLICY_V2}else if world.actors.iter().any(|a|a.devices.is_some()){crate::p06t_device_state::POLICY}else{"legacy"});

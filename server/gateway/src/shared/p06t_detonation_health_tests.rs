@@ -5,7 +5,7 @@ fn contains(body:&[u8],bytes:&[u8])->bool{body.windows(bytes.len()).any(|part|pa
 #[test]fn p06t_detonation_delayed_publication_skips_intermediate_hp_and_emits_one_terminal_snapshot(){
     let now=Instant::now();let(mut s,mut world)=f::fixture(now);
     world.actors[1].health=60;
-    world.damage_events.push(model::DamageRecord{sequence:1,tick:1000,attacker:0,target:1,shot:1,reason:0,
+    world.damage_events.push(model::DamageRecord{spotting:None,sequence:1,tick:1000,attacker:0,target:1,shot:1,reason:0,
         health_before:90,health_after:60,crew_before:true,crew_after:true,direct:true,pierced:true});
     f::detonate(&mut world);let c=s.shared.as_mut().unwrap();publish(c,&mut s.outbox,&world,now).unwrap();
     let final_hp=dt::terminal_health(1,Some(0),0,dt::DeathKind::Detached).unwrap();

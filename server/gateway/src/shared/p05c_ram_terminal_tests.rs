@@ -40,10 +40,34 @@ fn p05c_ram_terminal_nonlethal_has_no_invented_death(){
     let raw=w.terminal_state_json(0).unwrap();let parsed=v2::validate_terminal_json(&raw,&frozen,hp).unwrap();
     assert_eq!((parsed.death_reason,parsed.killer_slot),(-1,None));assert_eq!(parsed.raw["death"]["tick"],0);
 }
+
+#[test]
+fn content0_s5_spall_liner_scales_own_ram_damage_from_the_frozen_loadout() {
+    use sha2::{Digest, Sha256};
+    let (_, mut world) = f::fixture(Instant::now());
+    let base = frozen();
+    let account = base.vehicle_inventory_id.split_once(':').unwrap().0;
+    let mut authored = base.value();
+    authored["artefacts"] = serde_json::json!({"optional_devices": [505, 0, 0], "consumables": [0, 0, 0]});
+    let digest = format!("{:x}", Sha256::digest(serde_json::to_vec(&authored).unwrap()));
+    let lined = v2::parse_frozen(&authored, account, &digest).unwrap();
+    world.actors[0].identity.account = account.into();
+    world.actors[0].owned_v2 = Some(lined.clone());
+
+    contact(&mut world, 16.);
+    assert_eq!((world.actors[0].health, world.actors[1].health), (80, 77));
+    assert_eq!(world.ram_damage_events.len(), 2);
+    let own = world.ram_damage_events.iter().find(|event| event.target == 0).unwrap();
+    assert_eq!((own.attacker, own.health_before, own.health_after), (1, 90, 80));
+    assert!(own.energy_j > 308_000. && own.energy_j < 308_100.);
+    let raw = world.terminal_state_json(0).unwrap();
+    v2::validate_terminal_json(&raw, &lined, 80).unwrap();
+}
+
 #[test]
 fn p05c_ram_terminal_conflicting_death_journals_remain_an_error(){
     let now=Instant::now();let(_,mut w)=f::fixture(now);w.actors[0].owned_v2=Some(frozen());contact(&mut w,50.);
-    w.damage_events.push(DamageRecord{sequence:1,tick:1000,attacker:1,target:0,shot:1,reason:0,
+    w.damage_events.push(DamageRecord{spotting:None,sequence:1,tick:1000,attacker:1,target:0,shot:1,reason:0,
         health_before:1,health_after:0,crew_before:true,crew_after:false,direct:true,pierced:true});
     assert!(w.death_cause(0).is_err());assert!(w.terminal_state_json(0).is_err());
 }

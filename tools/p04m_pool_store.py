@@ -13,10 +13,10 @@ import threading
 
 from game_profile_tx import TransactionError, _bounded_id, _revision, _decode_object
 from p09d_ammo_store import require, sha, REQUEST_FIELDS
-from p09d_ammo_projection import canonical, encode, MAX_UPDATE
+from p09d_ammo_projection import canonical
 from p09c_ammo_catalog import MOUNTS, SHELLS, Mount, Shell
 from p09e_research_store import _json, MAX_OWNED, ResearchStore
-from p09c_ammo_service import MAX_JSON
+from p09c_ammo_service import COMMAND as LEGACY_AMMO_COMMAND, MAX_JSON, ammunition_funding, verify_ammunition_funding
 from p08c_battle_results import ResultsStore
 from p04k_crew_store import NativeBarracksRecruitmentStore
 from p04j_crew_store import MEMBER_COLUMNS
@@ -199,6 +199,18 @@ class PoolStore(ResultsStore):
 
     def pool_active(self): return not self._pool_activating and self._pool_row() is not None
 
+    def artefacts_active(self):
+        from content0_equipment_store import read_state
+        return self.pool_active() and read_state(self.connection, self.pool_account) is not None
+
+    def activate_artefacts(self, *, account_id):
+        from content0_equipment_store import activate
+        return self._guarded(activate, self, account_id)
+
+    def artefacts_service(self, request, *, authenticated_account_id):
+        from content0_equipment_store import service
+        return self._guarded(service, self, request, authenticated_account_id=authenticated_account_id)
+
     def initialize(self):
         # These markers identify the untouched historical F-K source contract;
         # the opt-in current crew contract has its own marker below.
@@ -358,6 +370,10 @@ class PoolStore(ResultsStore):
         value.update(revision=revision, vehicles=rows, research=research, crew_schema=self._crew_contract(account).SCHEMA,
             crew_inventory=self._crew_projection(account), pool={"schema": SCHEMA, "registry_sha256": self.registry.sha256, "policy_sha256": POLICY_SHA256})
         value["ammunition"], value["depot"] = self._ammo_projection(account)
+        from content0_equipment_store import read_state
+        artefacts = read_state(self.connection, account, {row["vehicle_id"] for row in rows})
+        if artefacts is not None:
+            value["artefacts"] = artefacts
         raw = canonical(value); require(len(raw) <= 262144, "PROFILE_TOO_LARGE")
         return raw.decode("ascii"), sha(raw)
 
@@ -654,11 +670,9 @@ class PoolStore(ResultsStore):
 
     def _validate_layout(self, layout, *, _verified_owned=None):
         if not self.pool_active(): return super()._validate_layout(layout)
-        # Native setVehicleLayout: [shop, vehicle, 2*n, (shell, count)*n, 6, 0*6]; SPG-02: n is the gun's shell count (1..3).
-        require(type(layout) is list and len(layout) in (12, 14, 16) and all(type(v) is int and -2**31 <= v < 2**31 for v in layout), "INVALID_INPUT")
+        shells, equipment = self._layout_sections(layout)
+        require(shells and equipment == [0] * 6, "INVALID_INPUT")
         require(layout[0] in (3, 4, 5), "SHOP_REVISION_MISMATCH")
-        k = layout[2]
-        require(k in (2, 4, 6) and len(layout) == 10 + k and layout[3 + k] == 6 and layout[4 + k:] == [0] * 6, "INVALID_INPUT")
         # layouts() already verified this exact account's research and the set
         # of native IDs in the same SQLite snapshot. Never retain that map past
         # the call, and do not use it for an independent command validation.
@@ -668,15 +682,36 @@ class PoolStore(ResultsStore):
             require(self.connection.in_transaction, "POOL_TRANSACTION_REQUIRED")
             owned = _verified_owned.get(layout[1])
         require(owned is not None, "UNKNOWN_VEHICLE")
-        p = self.registry.by_vehicle.get(owned["vehicle_id"])
-        require(p is not None, "UNSUPPORTED_MOUNT")
+        require(owned["vehicle_id"] in self.registry.by_vehicle, "UNSUPPORTED_MOUNT")
         mount = self.mounts[self.mount_id_of(owned)]
+        return mount, self._shell_counts(mount, shells)
+
+    def _validate_service_layout(self, layout):
+        if not self.pool_active():
+            return super()._validate_service_layout(layout)
+        # The ancestor writer owns only these fixed stock mount receipts, even
+        # if the same vehicle has a different gun now. Pool rows use their own path.
+        return ResearchStore._validate_layout(layout)
+
+    @staticmethod
+    def _layout_sections(layout):
+        require(type(layout) is list and 4 <= len(layout) <= 16
+            and all(type(v) is int and -2**31 <= v < 2**31 for v in layout), "INVALID_INPUT")
+        amount = layout[2]
+        require(amount in (0, 2, 4, 6) and 3 + amount < len(layout), "INVALID_INPUT")
+        equipment_amount = layout[3 + amount]
+        require(equipment_amount in (0, 6) and len(layout) == 4 + amount + equipment_amount
+            and (amount or equipment_amount), "INVALID_INPUT")
+        return layout[3:3 + amount], layout[4 + amount:]
+
+    def _shell_counts(self, mount, values):
+        k = len(values)
         expected = {self.shells[key].native_compact_id: key for key in mount.shell_ids}
-        values = layout[3:3 + k]; shells, counts = range(0, k, 2), range(1, k, 2)
+        shells, counts = range(0, k, 2), range(1, k, 2)
         require(k == 2 * len(expected) and {abs(values[i]) for i in shells} == set(expected), "INCOMPATIBLE_SHELL")
         require(all(0 <= values[i] <= mount.capacity for i in counts), "INVALID_QUANTITY")
         require(sum(values[i] for i in counts) <= mount.capacity, "CAPACITY_EXCEEDED")
-        return mount, {expected[abs(values[i])]: values[i + 1] for i in shells}
+        return {expected[abs(values[i])]: values[i + 1] for i in shells}
 
     def layouts(self, account):
         if not self.pool_active(): return super().layouts(account)
@@ -1037,29 +1072,92 @@ class PoolStore(ResultsStore):
         first = delta_tree(self.catalog, before["research"], final["research"], wire_revision)
         return chained_updates(first, parts, wire_revision, EQUIPPED_UPDATES)
 
-    def _pool_ammo_response(self, request, revision, depot):
-        mount, desired = self._validate_layout(request["layout"])
+    def _pool_ammo_response(self, request, revision, mount, depot, equipment_parts):
+        from p09e_research_store import EQUIPPED_UPDATES
+        from p09e_research_projection import chained_updates
+
         native, layout = request["layout"][1], request["layout"][3:3 + request["layout"][2]]
-        data = {"prevRev": request["wire_revision"], "rev": request["wire_revision"] + 1,
-            "inventory": {1: {"shells": {native: [n if i % 2 else abs(n) for i, n in enumerate(layout)]},
+        wire = request["wire_revision"]
+        data = {"prevRev": wire, "rev": wire + 1}
+        if layout:
+            data["inventory"] = {1: {"shells": {native: [n if i % 2 else abs(n) for i, n in enumerate(layout)]},
                 "shellsLayout": {native: {(mount.turret_native_compact_id, mount.gun_native_compact_id): layout}}},
-                10: {self.shells[key].native_compact_id: depot[key] for key in mount.shell_ids}}}
-        return dict(status="serviced", account_id=request["account_id"], native_database_id=request["native_database_id"],
-            command_key=request["command_key"], revision=revision, wire_revision=request["wire_revision"] + 1,
-            update_hex=encode(data, MAX_UPDATE).hex(), replayed=False, result_code=0)
+                10: {self.shells[key].native_compact_id: depot[key] for key in mount.shell_ids}}
+        updates = chained_updates(data, equipment_parts, wire, EQUIPPED_UPDATES)
+        response = dict(status="serviced", account_id=request["account_id"], native_database_id=request["native_database_id"],
+            command_key=request["command_key"], revision=revision, wire_revision=wire + len(updates),
+            update_hex=updates[0].hex(), replayed=False, result_code=0)
+        if len(updates) > 1:
+            response["extra_update_hex"] = [raw.hex() for raw in updates[1:]]
+        return response
 
     def service(self, request, *, authenticated_account_id):
-        native = request.get("layout", [None, None])[1] if type(request) is dict and type(request.get("layout")) is list and len(request["layout"]) > 1 else None
-        if not self.pool_active() or type(native) is not int or native == 2:
+        if not self.pool_active():
             return super().service(request, authenticated_account_id=authenticated_account_id)
-        if native == 1:
-            # The original P09D writer and replies remain valid for the stock pair.
-            # An upgraded MS-1 needs a pool mount, just like any other catalogue vehicle.
-            require(request.get("account_id") == authenticated_account_id == self.pool_account, "FOREIGN_ACCOUNT")
-            owned = next((r for r in self._research(self.pool_account)["vehicles"] if r["native_id"] == native), None)
-            if owned is None or self.mount_id_of(owned) == "ms1-stock":
+        require(type(request) is dict and set(request) == REQUEST_FIELDS, "INVALID_INPUT")
+        account = request["account_id"]
+        require(account == authenticated_account_id == self.pool_account, "FOREIGN_ACCOUNT")
+        key = _bounded_id(request["command_key"], "command_key")
+        shells, equipment = self._layout_sections(request["layout"])
+        native = request["layout"][1]
+        ledger = self.connection.execute("SELECT command_type,result_json FROM game_command_ledger WHERE account_id=? AND command_id=?", (account, key)).fetchone()
+        if ledger is not None and not equipment:
+            request = self._historical_ammo_request(account, key, request, ledger)
+        if ledger is not None and ledger["command_type"] == LEGACY_AMMO_COMMAND:
+            return super().service(request, authenticated_account_id=authenticated_account_id)
+        if ledger is None and native in (1, 2) and shells and equipment == [0] * 6 and not self.artefacts_active():
+            owned = next((row for row in self._research(account)["vehicles"] if row["native_id"] == native), None)
+            if owned is not None and self.mount_id_of(owned) in ("ms1-stock", "is7-stock"):
                 return super().service(request, authenticated_account_id=authenticated_account_id)
         return self._guarded(self._pool_service, request, authenticated_account_id=authenticated_account_id)
+
+    def _historical_ammo_request(self, account, key, request, ledger):
+        # Earlier gateways expanded an omitted equipment section into six zero
+        # integers before hashing. Accept only that exact prior native request.
+        command = ledger["command_type"]
+        if command != LEGACY_AMMO_COMMAND and (command != "p04m.set_ammunition.v1"
+                or "mount_id" in _json(ledger["result_json"])):
+            return request
+        expanded = dict(request, layout=request["layout"][:-1] + [6] + [0] * 6)
+        native = self.connection.execute("SELECT request_sha256 FROM p09d_native_command WHERE account_id=? AND command_id=?",
+            (account, key)).fetchone()
+        if native is not None and native["request_sha256"] == sha(canonical(expanded)):
+            return expanded
+        return request
+
+    @staticmethod
+    def _maintenance_proof(profile, owned, equipment, allow_purchase):
+        # Only this vehicle and the depot rows that can actually change are
+        # needed to reconstruct the historical consumable move on a retry.
+        before = profile.get("artefacts")
+        if before is None or not equipment:
+            return None
+        vehicle_id = owned["vehicle_inventory_id"]
+        row = before["vehicles"].get(vehicle_id)
+        touched = {str(abs(cd)) for cd in equipment[::2] if cd}
+        if row is not None:
+            touched.update(str(cd) for cd in row["consumables"] if cd)
+        return {"vehicle_id": vehicle_id, "allow_purchase": allow_purchase,
+            "before": {"catalog_sha256": before["catalog_sha256"],
+                "depot": {key: before["depot"][key] for key in touched if key in before["depot"]},
+                "vehicles": {vehicle_id: row} if row is not None else {}}}
+
+    @staticmethod
+    def _maintenance_parts(proof, native, layout):
+        from content0_equipment_store import plan_maintenance, projection_parts
+
+        require(type(proof) is dict and set(proof) == {"vehicle_id", "allow_purchase", "before"}
+            and type(proof["allow_purchase"]) is bool, "CORRUPT_STORE")
+        before = proof["before"]
+        try:
+            vehicle_id = _bounded_id(proof["vehicle_id"], "vehicle_id")
+            research = {"vehicles": [{"vehicle_inventory_id": vehicle_id, "native_id": native}]}
+            after = plan_maintenance({"artefacts": before, "research": research}, native, layout,
+                allow_purchase=proof["allow_purchase"])
+            require(after is not None, "CORRUPT_STORE")
+            return projection_parts(before, after, research)
+        except TransactionError as error:
+            raise TransactionError("CORRUPT_STORE", "maintenance receipt") from error
 
     def _pool_service(self, request, *, authenticated_account_id):
         require(type(request) is dict and set(request) == REQUEST_FIELDS, "INVALID_INPUT")
@@ -1068,28 +1166,47 @@ class PoolStore(ResultsStore):
         _bounded_id(key, "command_key"); _revision(request["expected_revision"])
         require(type(request["wire_revision"]) is int and 1 <= request["wire_revision"] < 2**31 - 1
             and len(canonical(request)) <= 4096, "INVALID_INPUT")
+        shells, equipment = self._layout_sections(request["layout"])
+        native_id = request["layout"][1]
         payload = sha(canonical({"request": request, "registry_sha256": self.registry.sha256, "policy_sha256": POLICY_SHA256}))
         c = self.connection; c.execute("BEGIN IMMEDIATE")
         try:
             profile = self.read_profile(account)
             public_before = c.execute("SELECT native_id,profile_json FROM game_profiles WHERE account_id=?", (account,)).fetchone()
             require(type(request["native_database_id"]) is int and request["native_database_id"] == public_before["native_id"], "FOREIGN_ACCOUNT")
-            mount, desired = self._validate_layout(request["layout"])
             ledger = c.execute("SELECT * FROM game_command_ledger WHERE account_id=? AND command_id=?", (account, key)).fetchone()
             if ledger is not None:
                 require(ledger["command_type"] == "p04m.set_ammunition.v1" and ledger["payload_sha256"] == payload, "DUPLICATE_PAYLOAD_MISMATCH")
                 result = _json(ledger["result_json"])
+                required = {"schema", "request", "before_loaded", "before_depot", "response"}
                 require(sha(canonical(result)) == ledger["p09c_result_sha256"]
-                    and set(result) == {"schema", "request", "before_loaded", "before_depot", "response"}
+                    and required <= set(result) <= required | {"purchased", "mount_id", "maintenance"}
+                    and ("purchased" not in result or bool(result["purchased"]))
+                    and ("maintenance" not in result or "mount_id" in result)
                     and result["schema"] == SCHEMA and result["request"] == request, "CORRUPT_STORE")
-                loaded, depot = result["before_loaded"], result["before_depot"]
-                require(type(loaded) is dict and type(depot) is dict and set(loaded) == set(depot) == set(mount.shell_ids)
-                    and all(type(n) is int and 0 <= n <= mount.capacity for n in loaded.values()) and sum(loaded.values()) <= mount.capacity
-                    and all(type(n) is int and 0 <= n <= 1000000 for n in depot.values()), "CORRUPT_STORE")
-                remaining = {shell: depot[shell] + loaded[shell] - desired[shell] for shell in mount.shell_ids}
-                require(all(0 <= n <= 1000000 for n in remaining.values()) and ledger["source_revision"] == request["expected_revision"]
+                mount = None
+                desired = {}
+                if "mount_id" not in result:
+                    require(shells and equipment == [0] * 6 and type(result["before_loaded"]) is dict,
+                        "CORRUPT_STORE")
+                    historical_shells = set(result["before_loaded"])
+                    mounts = [candidate for candidate in self.mounts.values() if set(candidate.shell_ids) == historical_shells]
+                    require(len(mounts) == 1, "CORRUPT_STORE")
+                    mount = mounts[0]
+                    desired = self._shell_counts(mount, shells)
+                elif shells:
+                    mount_id = result["mount_id"]
+                    require(type(mount_id) is str and mount_id in self.mounts, "CORRUPT_STORE")
+                    mount = self.mounts[mount_id]
+                    desired = self._shell_counts(mount, shells)
+                else:
+                    require(result["mount_id"] is None, "CORRUPT_STORE")
+                remaining = verify_ammunition_funding(result["before_loaded"], result["before_depot"],
+                    desired, result.get("purchased", {}), mount.capacity if mount else 0)
+                require(ledger["source_revision"] == request["expected_revision"]
                     and ledger["destination_revision"] == ledger["source_revision"] + 1 <= profile["revision"], "CORRUPT_STORE")
-                expected = self._pool_ammo_response(request, ledger["destination_revision"], remaining)
+                parts = self._maintenance_parts(result["maintenance"], native_id, equipment) if "maintenance" in result else []
+                expected = self._pool_ammo_response(request, ledger["destination_revision"], mount, remaining, parts)
                 native = c.execute("SELECT * FROM p09d_native_command WHERE account_id=? AND command_id=?", (account, key)).fetchone()
                 require(result["response"] == expected and native is not None and native["request_sha256"] == sha(canonical(request))
                     and native["response_json"] == canonical(expected).decode("ascii") and native["response_sha256"] == sha(canonical(expected)), "CORRUPT_STORE")
@@ -1097,25 +1214,51 @@ class PoolStore(ResultsStore):
             require(profile["revision"] == request["expected_revision"], "STALE_REVISION")
             require(profile["revision"] < 2**31 - 1, "REVISION_EXHAUSTED")
             require(request["layout"][0] == 5, "SHOP_REVISION_MISMATCH")
-            owned = next(r for r in profile["research"]["vehicles"] if r["native_id"] == request["layout"][1])
-            # CONTENT-0 4: the layout of the current pair's mount; a pair outside the build table stays unsupported.
-            require(self.pair_mounted(owned), "AMMUNITION_CONFIGURATION_UNSUPPORTED")
-            ammo = next(r for r in profile["ammunition"] if r["vehicle_id"] == owned["vehicle_inventory_id"])
-            require(ammo["mount_id"] == mount.mount_id, "CORRUPT_STORE")
-            loaded = ammo["loaded"]; depot = {shell: profile["depot"][self.depot_key[shell]] for shell in mount.shell_ids}
-            remaining = {shell: depot[shell] + loaded[shell] - desired[shell] for shell in mount.shell_ids}
-            require(all(n >= 0 for n in remaining.values()), "INSUFFICIENT_STOCK")
-            require(all(n <= 1000000 for n in remaining.values()), "DEPOT_OVERFLOW")
-            for shell, n in remaining.items():
-                require(c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (n, account, self.depot_key[shell])).rowcount == 1, "CORRUPT_STORE")
-            self._failpoint("after_depot_update")
-            require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?", (canonical(desired).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
-            c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(request["layout"][3:3 + request["layout"][2]]), account, owned["native_id"]))
-            self._failpoint("after_ammo_update")
+            owned = next((r for r in profile["research"]["vehicles"] if r["native_id"] == native_id), None)
+            require(owned is not None, "UNKNOWN_VEHICLE")
+            allow_purchase = self.zero_economy(account)
+            modern = "artefacts" in profile or not equipment
+            if "artefacts" not in profile:
+                require(shells and (not equipment or equipment == [0] * 6), "INVALID_INPUT")
+            mount, loaded, depot, remaining, purchased = None, {}, {}, {}, {}
+            if shells:
+                # The supported shell types and cap belong to the current gun and turret.
+                require(owned["vehicle_id"] in self.registry.by_vehicle, "UNSUPPORTED_MOUNT")
+                require(self.pair_mounted(owned), "AMMUNITION_CONFIGURATION_UNSUPPORTED")
+                mount = self.mounts[self.mount_id_of(owned)]
+                desired = self._shell_counts(mount, shells)
+                ammo = next(r for r in profile["ammunition"] if r["vehicle_id"] == owned["vehicle_inventory_id"])
+                require(ammo["mount_id"] == mount.mount_id, "CORRUPT_STORE")
+                loaded = ammo["loaded"]
+                depot = {shell: profile["depot"][self.depot_key[shell]] for shell in mount.shell_ids}
+                remaining, purchased = ammunition_funding(loaded, depot, desired, allow_purchase=allow_purchase)
+                for shell, n in remaining.items():
+                    require(c.execute("UPDATE p09c_ammo_depot SET quantity=? WHERE account_id=? AND shell_id=?", (n, account, self.depot_key[shell])).rowcount == 1, "CORRUPT_STORE")
+                self._failpoint("after_depot_update")
+                require(c.execute("UPDATE p09c_ammo_mount SET loaded_json=? WHERE account_id=? AND vehicle_id=?", (canonical(desired).decode("ascii"), account, owned["vehicle_inventory_id"])).rowcount == 1, "CORRUPT_STORE")
+                require(c.execute("UPDATE p09d_native_layout SET layout_json=? WHERE account_id=? AND native_vehicle_id=?", (json.dumps(shells), account, native_id)).rowcount == 1, "CORRUPT_STORE")
+                self._failpoint("after_ammo_update")
+            proof, parts = None, []
+            if "artefacts" in profile and equipment:
+                from content0_equipment_store import plan_maintenance, projection_parts, save_state
+
+                after = plan_maintenance(profile, native_id, equipment, allow_purchase=allow_purchase,
+                                         catalog=self.catalog)
+                if after is not None:
+                    proof = self._maintenance_proof(profile, owned, equipment, allow_purchase)
+                    parts = projection_parts(profile["artefacts"], after, profile["research"])
+                    save_state(c, account, after)
+                    self._failpoint("after_maintenance_update")
             destination = profile["revision"] + 1
             self._save_crew_projection(account, destination, public_before["profile_json"])
-            response = self._pool_ammo_response(request, destination, remaining)
+            response = self._pool_ammo_response(request, destination, mount, remaining, parts)
             result = dict(schema=SCHEMA, request=request, before_loaded=loaded, before_depot=depot, response=response)
+            if purchased:
+                result["purchased"] = purchased
+            if modern:
+                result["mount_id"] = mount.mount_id if mount else None
+            if proof is not None:
+                result["maintenance"] = proof
             raw = canonical(result); encoded = canonical(response)
             c.execute("INSERT INTO game_command_ledger VALUES (?,?,?,?,?,?,?,?)", (account, key, "p04m.set_ammunition.v1", payload, profile["revision"], destination, raw.decode("ascii"), sha(raw)))
             c.execute("INSERT INTO p09d_native_command VALUES (?,?,?,?,?)", (account, key, sha(canonical(request)), encoded.decode("ascii"), sha(encoded)))

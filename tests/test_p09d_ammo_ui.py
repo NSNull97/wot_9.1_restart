@@ -157,6 +157,56 @@ class MountTests(unittest.TestCase):
                 ui.observe()
 
 
+class ZeroPriceModuleReloadTests(unittest.TestCase):
+    def test_only_zero_price_shortage_enters_native_layout_processor(self):
+        vehicle = item()
+        prices = dict.fromkeys(ui.MOUNTS[3329][3], (0, 0))
+        for shell in vehicle.shells:
+            shell.defaultLayoutValue = (shell.intCD, shell.defaultCount)
+        vehicle.shells[0].inventoryCount = 0
+
+        original = mock.Mock(return_value='retained native callback')
+        owners = [types.SimpleNamespace(**{ui._RELOAD_NAME: original}) for _ in range(3)]
+        received = []
+        result = types.SimpleNamespace(success=True)
+
+        def process(callback):
+            def run():
+                request = callback()
+                self.assertEqual(next(request), 'original VehicleLayoutProcessor request')
+                with self.assertRaises(StopIteration):
+                    request.send(result)
+            return run
+
+        def processor(selected, layout):
+            self.assertIs(vehicle, selected)
+            received.append(layout)
+            return types.SimpleNamespace(request=lambda: 'original VehicleLayoutProcessor request')
+
+        binding = ui._DefaultReload(original, owners, processor, process, lambda: prices)
+        binding.install()
+        self.addCleanup(binding.restore)
+        outcomes = []
+        getattr(owners[0], ui._RELOAD_NAME)(vehicle)(outcomes.append)
+        self.assertEqual(received, [[2570, 10, 2826, 10, 3082, 10]])
+        self.assertEqual(outcomes, [True])
+        original.assert_not_called()
+
+        result.success = False
+        getattr(owners[1], ui._RELOAD_NAME)(vehicle)(outcomes.append)
+        self.assertEqual(outcomes, [True, False])
+        prices[2570] = (8, 0)
+        self.assertEqual(getattr(owners[1], ui._RELOAD_NAME)(vehicle), 'retained native callback')
+        del prices[2570]
+        self.assertEqual(getattr(owners[2], ui._RELOAD_NAME)(vehicle), 'retained native callback')
+        prices[2570] = (0, 0)
+        vehicle.shells[0].inventoryCount = 10
+        self.assertEqual(getattr(owners[2], ui._RELOAD_NAME)(vehicle), 'retained native callback')
+        self.assertEqual(original.call_count, 3)
+        binding.restore()
+        self.assertTrue(all(getattr(owner, ui._RELOAD_NAME) is original for owner in owners))
+
+
 class PolicyTests(unittest.TestCase):
     def setUp(self):
         self.events = []
