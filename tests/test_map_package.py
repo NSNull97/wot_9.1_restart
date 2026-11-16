@@ -63,6 +63,28 @@ class UnitTests(unittest.TestCase):
             with self.assertRaises(mp.PackageError):
                 mp.map_name(bad)
 
+    def test_foliage_density_uses_full_paths_and_explicit_tundra_alias(self):
+        tundra = 'speedtree/63_tundra/Thicket_Bush.spt'
+        source_model = 'speedtree/63_tundra/Thicket_bush.spt'
+        exact = 'speedtree/63_tundra/Sedge_1.spt'
+        zero = 'speedtree/63_tundra/DryTree.spt'
+        missing = 'speedtree/15_Komarin/Sedge_1.spt'
+        unlisted_alias = 'speedtree/63_tundra/Maple.SPT'
+        result = mp.foliage_density(
+            '63_tundra', {tundra: 31, exact: 8, zero: 2, missing: 4, unlisted_alias: 1},
+            {source_model: 0.20, exact: 0.50, zero: 0.0, unlisted_alias.lower(): 0.45},
+            'd' * 64,
+        )
+        self.assertEqual(result['map'], '63_tundra')
+        self.assertEqual(result['models'], {
+            tundra: {'density': 0.20, 'instances': 31, 'status': 'alias', 'source_model': source_model},
+            exact: {'density': 0.50, 'instances': 8, 'status': 'exact'},
+            zero: {'density': 0.0, 'instances': 2, 'status': 'exact'},
+            missing: {'density': None, 'instances': 4, 'status': 'missing'},
+            unlisted_alias: {'density': None, 'instances': 1, 'status': 'missing'},
+        })
+        self.assertCountEqual(result['missing_models'], [missing, unlisted_alias])
+
     def test_verify_rejects_changed_missing_or_unsafe_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             directory = Path(tmp)
@@ -123,6 +145,29 @@ class SourceTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.out)
+
+    def test_foliage_density_report_covers_all_registered_arenas(self):
+        report, outputs = mp.foliage_density_artifacts(self.original)
+        arenas, _ = mp.arena_type_ids(self.original)
+        self.assertEqual(len(arenas), 43)
+        self.assertEqual(set(report['maps']), set(arenas))
+        self.assertEqual(set(outputs), {f'{name}/{mp.FOLIAGE_DENSITY_PATH}' for name in arenas})
+        self.assertEqual(report['instances'], {'exact': 94406, 'alias': 31, 'missing': 348})
+        self.assertCountEqual(
+            [(row['map'], row['model'], row['instances']) for row in report['missing_models']],
+            [('00_tank_tutorial', 'speedtree/00_tank_tutorial/Bush_proh.spt', 125),
+             ('15_komarin', 'speedtree/15_Komarin/Sedge_1.spt', 223)],
+        )
+        tundra = json.loads(outputs[f'63_tundra/{mp.FOLIAGE_DENSITY_PATH}'])
+        self.assertEqual(tundra['models']['speedtree/63_tundra/Thicket_Bush.spt'], {
+            'density': 0.20, 'instances': 31, 'status': 'alias',
+            'source_model': 'speedtree/63_tundra/Thicket_bush.spt',
+        })
+        for name in self.packages:
+            with self.subTest(map=name):
+                sidecar = self.out / name / mp.FOLIAGE_DENSITY_PATH
+                self.assertEqual(sidecar.read_bytes(), outputs[f'{name}/{mp.FOLIAGE_DENSITY_PATH}'])
+                self.assertIn(mp.FOLIAGE_DENSITY_PATH, self.packages[name]['files'])
 
     def test_port_reproduces_accepted_runtime_buffers_exactly(self):
         for name in self.packages:

@@ -3,7 +3,8 @@
 One package per map: original terrain triangles, static movement collision
 (BigWorld mask 18, Jolt input), static projectile collision (mask 128 with exact
 per-triangle flags), arena bounds/bases/spawn points and a destructible
-inventory with per-chunk static native indices. Every file is SHA-256 pinned in
+inventory with per-chunk static native indices and a foliage density lookup.
+Every file is SHA-256 pinned in
 ``package.json``. Original client resources are only read; no client code is
 executed and no resource is modified or redistributed outside ignored local/.
 
@@ -43,6 +44,7 @@ if str(TOOLS) not in sys.path:
     sys.path.insert(0, str(TOOLS))
 from packed_xml import decode, walk
 from geometry_spike import primitive_sections
+from destructible_catalog import parse_definitions
 
 ROOT = Path(os.environ.get('WOT091_ROOT', TOOLS.parent)).absolute()
 PACKAGE_VERSION = 1
@@ -55,8 +57,12 @@ PHYSICS_MASK = 18
 PROJECTILE_MASK = 128
 # Native f32 0.001 used by the original height decoder (collect_surface.py).
 SCALE = struct.unpack('<f', bytes.fromhex('6f12833a'))[0]
-FAMILIES = ('trees', 'fallingAtoms', 'fragiles', 'structures')
 CHUNK_TAGS = ('model', 'speedtree', 'shell', 'decal', 'vlo')
+FOLIAGE_DENSITY_PATH = 'foliage/density.json'
+# Explicit #717 package-to-XML spelling. All other paths use exact matches.
+FOLIAGE_DENSITY_ALIASES = {
+    'speedtree/63_tundra/Thicket_Bush.spt': 'speedtree/63_tundra/Thicket_bush.spt',
+}
 # Runtime pins of today's two accepted maps (server/gateway/src/drive/map_profile.rs).
 REGRESSION_PINS = {
     '01_karelia': {
@@ -968,18 +974,75 @@ def arena_type_ids(original):
 
 def destructible_definitions(original):
     raw = read_file(original / 'res/scripts/destructibles.xml', 512 * 1024)
-    root = decode(raw, max_bytes=512 * 1024)
-    by_resource = {}
-    for section in root['children']:
-        if section['name'] not in FAMILIES:
+    _, definitions, _ = parse_definitions(raw)
+    families = {path: row['family'] for path, row in definitions.items()}
+    densities = {}
+    for path, row in definitions.items():
+        if row['family'] != 'trees':
             continue
-        for entry in section['data']['children']:
-            fields = dict(walk(entry['data']))
-            name = resource(fields['/filename[1]'] if type(fields['/filename[1]']) is str else fields['/filename[1]']['base64'])
-            previous = by_resource.get(name)
-            require(previous in (None, section['name']), 'resource in two destructible families')
-            by_resource[name] = section['name']
-    return by_resource, sha(raw)
+        value = float(row['fields']['/density[1]'])
+        require(math.isfinite(value) and 0 <= value <= 1, 'invalid original foliage density: ' + path)
+        densities[path] = value
+    return families, densities, sha(raw)
+
+
+def foliage_density(name, counts, densities, definitions_sha):
+    """Join SpeedTree model placements to the original tree descriptors."""
+    models, missing = {}, []
+    placements = dict.fromkeys(('exact', 'alias', 'missing'), 0)
+    for path, count in sorted(counts.items()):
+        source = path
+        if path not in densities:
+            source = FOLIAGE_DENSITY_ALIASES.get(path, path)
+        value = densities.get(source)
+        if value is None:
+            status = 'missing'
+            missing.append(path)
+        else:
+            status = 'exact' if source == path else 'alias'
+        models[path] = {'density': value, 'instances': count, 'status': status}
+        if status == 'alias':
+            models[path]['source_model'] = source
+        placements[status] += count
+    return {'version': 1, 'kind': 'wot091_foliage_density', 'map': name,
+            'destructibles_sha256': definitions_sha, 'instances': placements,
+            'models': models, 'missing_models': missing}
+
+
+def foliage_density_artifacts(original):
+    """Export density for all registered arenas without terrain or physics prerequisites."""
+    ids, arena_list_sha = arena_type_ids(original)
+    _, densities, definitions_sha = destructible_definitions(original)
+    maps, missing, outputs = {}, [], {}
+    totals = Counter()
+    for name in sorted(ids):
+        map_name(name)
+        counts = Counter()
+        path = no_links(original / 'res/packages' / (name + '.pkg'))
+        require(0 < path.stat().st_size <= MAX_PACKAGE, 'bounded map package required: ' + name)
+        with open_archive(path) as archive:
+            chunks = [info.filename for info in archive.infolist() if info.filename.endswith('.chunk')]
+            require(chunks, 'map has no outdoor chunks: ' + name)
+            for chunk in chunks:
+                require(re.fullmatch(r'spaces/' + name + r'/[0-9a-f]{8}o\.chunk', chunk),
+                        'unestablished indoor/nested chunk: ' + chunk)
+                tree = decode(member(archive, chunk))
+                for row in tree['children']:
+                    if row['name'] == 'speedtree':
+                        fields = dict(walk(row['data']))
+                        counts[resource(fields['/spt[1]'])] += 1
+        document = foliage_density(name, counts, densities, definitions_sha)
+        relative = name + '/' + FOLIAGE_DENSITY_PATH
+        raw = pretty(document)
+        outputs[relative] = raw
+        maps[name] = {'arena_type_id': ids[name], 'chunks': len(chunks), 'models': len(counts),
+                      'instances': document['instances'], 'file': relative, 'sha256': sha(raw)}
+        totals.update(document['instances'])
+        missing.extend({'map': name, 'model': model, 'instances': counts[model]}
+                       for model in document['missing_models'])
+    return {'version': 1, 'kind': 'wot091_foliage_density_report', 'arena_list_sha256': arena_list_sha,
+            'destructibles_sha256': definitions_sha, 'instances': dict(totals),
+            'maps': maps, 'missing_models': missing}, outputs
 
 
 def static_native_index(report, chunk_raw, families):
@@ -1076,8 +1139,10 @@ def export(original, name, out):
     name = map_name(name)
     ids, list_sha = arena_type_ids(original)
     require(name in ids, 'map is not in the client arena list (_list_.xml): not playable in this build')
-    families, definitions_sha = destructible_definitions(original)
+    families, densities, definitions_sha = destructible_definitions(original)
     report, grid, arena, chunk_raw = surface(original, name)
+    foliage_counts = Counter(resource(row['data']['spt[1]']) for row in report['objects']
+                             if row['kind'] == 'speedtree')
     terrain_manifest, terrain_files = terrain(report, grid)
     physics_manifest, physics_files, projectile_manifest, projectile_files, pins, paths_sha256 = obstacles(original, report)
     arena_json = arena_contract(report, grid, arena, ids[name])
@@ -1088,7 +1153,8 @@ def export(original, name, out):
     outputs = {'surface.json': surface_raw, 'terrain/manifest.json': pretty(terrain_manifest),
                'physics/manifest.json': pretty(physics_manifest), 'projectile/manifest.json': pretty(projectile_manifest),
                'arena.json': pretty(arena_json), 'destructibles/static-index.json': canonical(index) + b'\n',
-               'destructibles/inventory.json': canonical(inventory) + b'\n'}
+               'destructibles/inventory.json': canonical(inventory) + b'\n',
+               FOLIAGE_DENSITY_PATH: pretty(foliage_density(name, foliage_counts, densities, definitions_sha))}
     outputs.update({'terrain/' + k: v for k, v in terrain_files.items()})
     outputs.update({'physics/' + k: v for k, v in physics_files.items()})
     outputs.update({'projectile/' + k: v for k, v in projectile_files.items()})
@@ -1362,6 +1428,8 @@ def main(argv=None):
     many = sub.add_parser('batch', help='export every client map, report per-map status')
     many.add_argument('--out', required=True)
     many.add_argument('--map', action='append', help='subset (default: every NN_*.pkg in the client)')
+    foliage = sub.add_parser('foliage-density', help='export original foliage density for all registered arenas')
+    foliage.add_argument('--out', required=True, help='fresh directory under local/')
     check = sub.add_parser('verify', help='recheck package file pins')
     check.add_argument('--package', required=True)
     regress = sub.add_parser('regression', help='compare a K/P package with the current runtime pins')
@@ -1390,6 +1458,14 @@ def main(argv=None):
         rows = batch(original, args.map or client_maps(original), out)
         save(out / 'batch.json', pretty({'version': 1, 'kind': 'wot091_map_batch', 'maps': rows}))
         print(json.dumps({'exported': sum(r['status'] == 'EXPORTED' for r in rows), 'blocked': sum(r['status'] != 'EXPORTED' for r in rows)}))
+    elif args.command == 'foliage-density':
+        result, outputs = foliage_density_artifacts(original)
+        out = fresh_directory(args.out, local)
+        for path, raw in outputs.items():
+            save(out / path, raw)
+        save(out / 'report.json', pretty(result))
+        print(json.dumps({'maps': len(result['maps']), 'instances': result['instances'],
+                          'missing_models': result['missing_models'], 'report': str(out / 'report.json')}))
     elif args.command == 'verify':
         package, digest = verify(args.package)
         print(json.dumps({'map': package['map'], 'package_sha256': digest, 'files': len(package['files'])}))
