@@ -154,6 +154,34 @@ Native-приёмка владельцем — **NOT_RUN**.
 | 87_ruinberg_on_fire | 58 | 641, шаг 1.5625 | NEEDS_WORK | worker_physics_vertices | нет: source file bound |
 | 99_himmelball | 61 | 577, шаг 1.5625 | NEEDS_WORK | ctf_two_bases | 89 / 12 area |
 
+## Коэффициенты растительности #717
+
+`map_package.py export` и `batch` записывают `foliage/density.json` в каждый
+собранный пакет. `package.json` фиксирует размер и SHA-256 этого файла.
+Записи привязаны к полному пути `spt` из чанка и содержат исходный `density`
+из `res/scripts/destructibles.xml` и число размещений модели. Явный ноль
+сохраняется. У записи без исходного коэффициента `density` равен `null`.
+
+`py -B -X utf8 tools/map_package.py foliage-density --out <свежий каталог внутри local>`
+выпускает эти же файлы по всем 43 аренам из `_list_.xml` и сводный `report.json`.
+Команда читает размещения отдельно от рельефа и коллизий, поэтому включает
+`47_canada_a`, где экспорт рельефа блокируется проверкой швов.
+
+**VERIFIED** по #717, 5 744 чанка: 94 406 размещений сопоставлены точно.
+Для 31 размещения `speedtree/63_tundra/Thicket_Bush.spt` задано явное
+сопоставление с `Thicket_bush.spt` (`0,20`). Это правило импортера.
+**UNKNOWN** поведение оригинального сервера при разном регистре.
+Отчёт содержит две модели без записи: `00_tank_tutorial/Bush_proh.spt`
+(125) и `15_Komarin/Sedge_1.spt` (223). Доказательство:
+`local/evidence/20261116-maps-foliage-density-02/report.json`.
+`verify` и `regression` для свежего пакета Прохоровки — PASS. В
+`tests.test_map_package` обе проверки нового экспорта проходят. Сравнение
+нативного индекса с двумя сохранёнными снимками выдаёт те же две ошибки,
+что на базовом экспортере: в локальном архиве отсутствуют файлы
+`destructible-catalog-25340.json` и `destructible-catalog-39152.json`.
+Игровая проверка и полный Python-gate — NOT_RUN. Откат — вернуть коммит
+экспорта и использовать прежние пакеты из реестра.
+
 ## Проверки
 
 - `python -B -X utf8 -m unittest tests.test_map_package -v` — 12/12 PASS
