@@ -5,6 +5,11 @@
 //! aiming rates and damage are therefore the player's. The behaviour below is
 //! explicit PROJECT policy, not a reconstruction of any historical bot.
 use super::*;
+use super::super::build_resources;
+#[cfg(feature = "test_lab")]
+use super::super::generated_vehicles;
+use crate::p06t_armament091 as armament;
+use crate::p06t_shells091::GunProfile;
 use std::f32::consts::PI;
 
 pub const POLICY: &str = "project.bot01.route-hold-visible-aim.v1";
@@ -16,6 +21,10 @@ pub const SESSION_BASE: u32 = 0xB000_0000;
 const DATABASE_BASE: i32 = 0x7F00_0000;
 /// Engagement range: the original spotting `max_detection_m` of the rules.
 const ENGAGE_M: f32 = 445.;
+const ARTILLERY_ARC_STEP_S: f32 = 0.1;
+// A fixed work budget for each eligible indirect shot. Source SPG shells on
+// the test stand are required to reach their target within this interval.
+const ARTILLERY_ARC_SEGMENTS: usize = 150;
 const WAYPOINT_M: f32 = 25.;
 const HOLD_M: f32 = 20.;
 const STEER_DEADBAND: f32 = 8. * PI / 180.;
@@ -92,6 +101,40 @@ const SUPPORT_M: f32 = 120.;
 const UNHITTABLE_ANGLES: u8 = 1;
 const UNHITTABLE_ALLY: u8 = 2;
 
+/// Project bot loadout: stock all real types when capacity allows, then give
+/// each secondary type about a fifth of the rack. A single-type gun keeps its
+/// entire rack and a missing source cell is never populated.
+fn bot_rack(source: &GunProfile) -> [u16; 3] {
+    let mut counts = [0; 3];
+    let mut left = source.capacity;
+    for (shell, count) in source.shots.iter().zip(&mut counts) {
+        if !shell.is_absent() && left > 0 {
+            *count = 1;
+            left -= 1;
+        }
+    }
+    for count in &mut counts[1..] {
+        if *count > 0 {
+            let extra = (source.capacity / 5).saturating_sub(1).min(left);
+            *count += extra;
+            left -= extra;
+        }
+    }
+    if let Some(primary) = counts.iter_mut().find(|n| **n > 0) { *primary += left; }
+    counts
+}
+
+fn bot_next_shell(source: &GunProfile, state: &armament::State) -> Option<Command> {
+    if state.clip() > source.burst_count { return None; }
+    // Queue another stack only when this shot will start a full reload. This
+    // preserves both burst timing and the remaining shots of an open clip.
+    let current = source.shots.iter().position(|shell| shell.compact_descr == state.current().compact_descr)?;
+    (1..source.shots.len()).map(|offset| (current + offset) % source.shots.len())
+        .find(|&idx| state.counts()[idx] > 0)
+        .map(|idx| Command::Armament(armament::Command::Select(armament::Selection::Next,
+                                                               source.shots[idx].compact_descr)))
+}
+
 /// Turret yaw limits of the vehicle's gun from its battle profile (None: full circle).
 fn turret_yaw_limits(kind: VehicleKind) -> Option<(f32, f32)> {
     kind.source_aim().and_then(|s| s.envelope.yaw_limits()).map(|l| (l.min, l.max))
@@ -139,6 +182,10 @@ impl Plan {
             || self.kinds.iter().enumerate().any(|(i, k)| self.kinds[..i].contains(k)) { return Err(bad()); }
         Ok(())
     }
+}
+
+pub(crate) fn artillery_kind(kind: VehicleKind) -> bool {
+    super::super::dispersion::gun(kind.dispersion_name()).is_ok_and(|gun| gun.spg)
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -217,6 +264,36 @@ fn distance(a: [f32; 2], b: [f32; 2]) -> f32 { (a[0] - b[0]).hypot(a[1] - b[1]) 
 fn clamp_box(p: [f32; 2], b: [f32; 4]) -> [f32; 2] { [p[0].clamp(b[0], b[2]), p[1].clamp(b[1], b[3])] }
 fn inside(p: [f32; 2], b: [f32; 4]) -> bool { (b[0]..=b[2]).contains(&p[0]) && (b[1]..=b[3]).contains(&p[1]) }
 
+#[cfg(feature = "test_lab")]
+fn bot_top_loadouts() -> io::Result<&'static std::collections::BTreeMap<String, VehicleKind>> {
+    use std::{collections::BTreeMap, sync::OnceLock};
+
+    static LOADOUTS: OnceLock<BTreeMap<String, VehicleKind>> = OnceLock::new();
+    if let Some(loadouts) = LOADOUTS.get() { return Ok(loadouts); }
+    let data: serde_json::Value = serde_json::from_slice(include_bytes!(
+        "../../../../config/test_lab/bot_top_loadouts.v1.json"
+    )).map_err(|_| bad())?;
+    if data["schema"] != "wot091-bot-top-loadouts.v1"
+        || data["policy"] != "native-module-level-and-order.v1"
+        || data["source"]["battle_builds_sha256"] != generated_vehicles::BUILDS_SHA256
+        || data["source"]["battle_profiles_sha256"] != generated_vehicles::TABLE_SHA256
+        || data["source"]["battle_qualification_sha256"] != generated_vehicles::QUALIFICATION_SHA256 {
+        return Err(bad());
+    }
+    let entries = data["by_vehicle"].as_object().ok_or_else(bad)?;
+    if entries.is_empty() || entries.len() > generated_vehicles::MAX_GENERATED { return Err(bad()); }
+    let mut loadouts = BTreeMap::new();
+    for (vehicle, label) in entries {
+        let kind = VehicleKind::from_owned_label(label.as_str().ok_or_else(bad)?).ok_or_else(bad)?;
+        if vehicle.strip_prefix("vehicle:") != Some(kind.name())
+            || kind.generated().is_some_and(|entry| entry.required_suspension.is_some()) {
+            return Err(bad());
+        }
+        loadouts.insert(vehicle.clone(), kind);
+    }
+    Ok(LOADOUTS.get_or_init(|| loadouts))
+}
+
 impl World {
     /// Bind the bot plan to a template World before any actor attaches.
     pub fn enable_bots(&mut self, plan: Plan) -> io::Result<()> {
@@ -227,7 +304,11 @@ impl World {
         for kind in &plan.kinds {
             // BATTLE-ANY generated kinds only ride mixed-ammo battles (typed gun).
             if kind.is_generated() && !self.mixed_ammo { return Err(bad()); }
-            self.geometry_for(*kind)?;
+            if self.geometry_for(*kind).is_err() {
+                let stock = build_resources::stock_of(*kind).ok_or_else(bad)?;
+                let needs_chassis = self.geometry_for(stock)?.chassis().is_some();
+                if !build_resources::installed(*kind, needs_chassis) { return Err(bad()); }
+            }
         }
         self.bots = Some(Bots { plan: Arc::new(plan), brains: Vec::new(), last_tick: None, digest: 0xcbf2_9ce4_8422_2325, shots: 0, held: [0; 5], repositions: 0, stucks: 0, think_ns: 0, pairing: None, turret_test: false, fixed_scout:None, fixed_origin_tick:None, fixed_shared_aims:[None;6] });
         Ok(())
@@ -276,11 +357,71 @@ impl World {
     fn paired_bot_kinds(&self, plan: &Plan, group: (u8, u8)) -> io::Result<Vec<VehicleKind>> {
         let teams = (0..self.expected_actors).map(|s| self.place_team(s)).collect::<io::Result<Vec<_>>>()?;
         let natives = self.actors.iter().map(|a| a.vehicle_kind().tier()).collect::<io::Result<Vec<_>>>()?;
-        let kinds = plan.kinds.iter().map(|k| Ok((*k, k.tier()?.ok_or_else(bad)?))).collect::<io::Result<Vec<_>>>()?;
+        let kinds = plan.kinds.iter().filter(|&&kind| !artillery_kind(kind))
+            .map(|k| Ok((*k, k.tier()?.ok_or_else(bad)?))).collect::<io::Result<Vec<_>>>()?;
         // Per battle: the stand seed mixed with the battle id (as the behaviour rng below), so the kind order
         // changes between battles and still replays from BOT01_FILL (battle, seed).
         let seed = plan.seed ^ self.id.rotate_left(29);
         super::super::matchmaker::paired_kinds(&teams, &natives, group, seed, &kinds).ok_or_else(bad)
+    }
+    fn bot_roster(&self, plan: &Plan, pairing: Option<(u8, u8)>, turret_test: bool) -> io::Result<Vec<VehicleKind>> {
+        let Some(group) = pairing else {
+            // Explicit lab compositions, including passive T92 targets, keep
+            // their configured kinds in the original order.
+            let offset = (plan.seed % plan.kinds.len() as u64) as usize;
+            return Ok((plan.human_places..self.expected_actors).enumerate()
+                .map(|(ordinal, _)| plan.kinds[(ordinal + offset) % plan.kinds.len()]).collect());
+        };
+        let mut roster = self.paired_bot_kinds(plan, group)?;
+        if cfg!(feature = "test_lab") && !turret_test {
+            self.place_artillery_bots(plan, &mut roster)?;
+        }
+        Ok(roster)
+    }
+    fn place_artillery_bots(&self, plan: &Plan, roster: &mut [VehicleKind]) -> io::Result<()> {
+        let artillery = plan.kinds.iter().copied().filter(|&kind| artillery_kind(kind))
+            .map(|kind| Ok((kind, kind.tier()?.ok_or_else(bad)?)))
+            .collect::<io::Result<Vec<_>>>()?;
+        if artillery.is_empty() { return Ok(()); }
+
+        let mut teams = [0; 2];
+        for (slot, native) in self.actors.iter().enumerate() {
+            if artillery_kind(native.vehicle_kind()) { teams[usize::from(self.place_team(slot)? - 1)] += 1; }
+        }
+        let limit = super::super::matchmaker::MAX_SPG_IN_BATTLE;
+        let seed = plan.seed ^ self.id.rotate_left(29);
+        for (ordinal, kind) in roster.iter_mut().enumerate().rev() {
+            if teams.iter().sum::<usize>() >= limit { break; }
+            let team = usize::from(self.place_team(plan.human_places + ordinal)? - 1);
+            if teams[team] != 0 { continue; }
+            let tier = kind.tier()?.ok_or_else(bad)?;
+            let candidates = artillery.iter().filter(|(_, candidate)| *candidate == tier).collect::<Vec<_>>();
+            if candidates.is_empty() { continue; }
+            *kind = candidates[(seed % candidates.len() as u64) as usize].0;
+            teams[team] += 1;
+        }
+        Ok(())
+    }
+
+    /// Choose the highest compatible #717 configuration for the matched tank.
+    /// Narrow stands can omit the optional build files and still seat the stock tank.
+    #[cfg(feature = "test_lab")]
+    fn with_bot_builds(&self, roster: &mut [VehicleKind],
+        installed: impl Fn(VehicleKind, bool) -> bool) -> io::Result<()> {
+        let loadouts = bot_top_loadouts()?;
+        for kind in roster {
+            let Some(&top) = loadouts.get(&format!("vehicle:{}", kind.name())) else { continue; };
+            if !build_resources::is_build(top) || top == *kind { continue; }
+            if build_resources::stock_of(top) != Some(*kind) { return Err(bad()); }
+            let needs_chassis = self.geometry_for(*kind)?.chassis().is_some();
+            if installed(top, needs_chassis) {
+                *kind = top;
+            } else {
+                println!("BOT01_TOP_FALLBACK battle={} stock={} top={} reason=resource_missing",
+                    self.id, kind.label(), top.label());
+            }
+        }
+        Ok(())
     }
     /// Places taken by native players; the rest of the roster is bots.
     pub fn human_places(&self) -> usize { self.bots.as_ref().map_or(self.expected_actors, |b| b.plan.human_places) }
@@ -303,12 +444,23 @@ impl World {
             || self.actors.iter().any(|a| a.bot.is_some() || a.session.is_some_and(|s| s >= SESSION_BASE)) { return Err(bad()); }
         let mut next = self.clone();
         let count = self.expected_actors - plan.human_places;
-        let paired = bots.pairing.map(|group| self.paired_bot_kinds(&plan, group)).transpose()?;
-        for ordinal in 0..count {
+        let kinds = if let Some(scenario) = &bots.fixed_scout {
+            scenario.seats.iter().skip(plan.human_places)
+                .map(|seat| seat.kind.ok_or_else(bad)).collect::<io::Result<Vec<_>>>()?
+        } else {
+            self.bot_roster(&plan, bots.pairing, bots.turret_test)?
+        };
+        if kinds.len() != count { return Err(bad()); }
+        #[cfg(feature = "test_lab")]
+        let kinds = {
+            let mut kinds = kinds;
+            if self.mixed_ammo && bots.pairing.is_some() && !bots.turret_test && bots.fixed_scout.is_none() {
+                self.with_bot_builds(&mut kinds, build_resources::installed)?;
+            }
+            kinds
+        };
+        for (ordinal, kind) in kinds.into_iter().enumerate() {
             let slot = next.actors.len();
-            let kind = if let Some(scenario)=&bots.fixed_scout {scenario.seats.get(slot).and_then(|seat|seat.kind).ok_or_else(bad)?} else {match &paired { Some(kinds) => *kinds.get(ordinal).ok_or_else(bad)?,
-                None => plan.kinds[(ordinal + (plan.seed % plan.kinds.len() as u64) as usize) % plan.kinds.len()] }
-            };
             let mut database = DATABASE_BASE.checked_add(ordinal as i32).ok_or_else(bad)?;
             while next.actors.iter().any(|a| a.identity.database == database) { database = database.checked_add(1).ok_or_else(bad)?; }
             let rack = bots.turret_test.then(|| turret_test_rack(kind, ordinal));
@@ -359,17 +511,27 @@ impl World {
     pub(crate) fn attach_native_stand_in(&mut self, identity: Identity, session: u32, kind: VehicleKind) -> io::Result<usize> {
         self.attach_bot_actor(identity, session, kind, None)
     }
-    /// The player's attach path with a server-chosen stock LAB loadout; no
+    /// The player's attach path with a server-chosen LAB loadout; no
     /// owned receipt, inventory or reservation is created or implied.
     fn attach_bot_actor(&mut self, identity: Identity, session: u32, kind: VehicleKind, rack: Option<u16>) -> io::Result<usize> {
         if kind.is_extended() || !self.mixed_profiles || self.extended_lab || kind.is_generated() && !self.mixed_ammo
             || rack.is_some() && !self.mixed_ammo { return Err(bad()); }
-        self.geometry_for(kind)?;
-        // Mixed ammo: the full stock rack of the first shell on the typed gun,
-        // v1 devices, as `attach_owned_v2_inner` seats a player's kind.
+        // The shared loadout attach binds a build against its stock template.
+        if !build_resources::is_build(kind) { self.geometry_for(kind)?; }
+        // Use the mounted gun's ammunition. Passive ammo-bay targets and
+        // native stand-ins and fixed scout scenarios keep their first-shell-only racks.
         let typed = if self.mixed_ammo {
             let source = crate::p06t_shells091::profile(kind.mount());
-            Some(fire::State::with_typed(kind.mount(), [rack.unwrap_or(source.capacity), 0, 0], source.shots[0].compact_descr)?)
+            let mixed_slot = session.checked_sub(SESSION_BASE).filter(|_| self.fixed_scout().is_none());
+            let (counts, initial) = if let (None, Some(slot)) = (rack, mixed_slot) {
+                let counts = bot_rack(source);
+                let loaded = counts.iter().filter(|&&n| n > 0).count();
+                if loaded == 0 { return Err(bad()); }
+                let initial = source.shots.iter().zip(counts).filter(|&(_, n)| n > 0)
+                    .nth(slot as usize % loaded).ok_or_else(bad)?.0.compact_descr;
+                (counts, initial)
+            } else { ([rack.unwrap_or(source.capacity), 0, 0], source.shots[0].compact_descr) };
+            Some(fire::State::with_typed(kind.mount(), counts, initial)?)
         } else { None };
         let devices = if self.mixed_ammo {
             let mut state = crate::p06t_device_state::State::new(crate::p06t_device_caps::Profile::for_owned(kind).ok_or_else(bad)?)?;
@@ -423,12 +585,17 @@ impl World {
             if !had_reposition && state.brains[index].reposition.is_some() { state.repositions = state.repositions.saturating_add(1); }
             if commands.is_empty() { continue; }
             let outcomes = self.apply(slot, SESSION_BASE + slot as u32, &commands, now)?;
-            let shot = outcomes.iter().any(|o| matches!(o, fire::Outcome::AcceptedShot { .. }
-                | fire::Outcome::Typed(crate::p06t_armament091::Outcome::Shot { .. })));
-            if shot {
+            let shot = outcomes.iter().find_map(|o| match o {
+                fire::Outcome::Typed(armament::Outcome::Shot {shell, ..}) => Some(Some(*shell)),
+                fire::Outcome::AcceptedShot { .. } => Some(None),
+                _ => None,
+            });
+            if let Some(shell) = shot {
                 state.shots = state.shots.saturating_add(1);
                 if let Some((target, metres, aim_s)) = aimed_for {
-                    println!("BOT01_FIRE battle={} slot={slot} target={target} tick={} distance_m={metres:.0} aim_s={aim_s:.1}", self.id, self.tick);
+                    println!("BOT01_FIRE battle={} slot={slot} target={target} tick={} distance_m={metres:.0} aim_s={aim_s:.1} shell={:?} family={:?} premium={}",
+                        self.id, self.tick, shell.map(|s| s.compact_descr), shell.map(|s| s.family.source_name()),
+                        shell.is_some_and(|s| s.premium_gold_flag));
                 }
             }
             state.digest = fnv(state.digest, format!("{}:{slot}:{commands:?}:{outcomes:?};", self.tick).as_bytes());
@@ -504,6 +671,9 @@ impl World {
     fn think(&self, brain: &mut Brain, now: Instant, held: &mut [u32; 5]) -> io::Result<(Vec<Command>, Option<(usize, f32, f32)>)> {
         let slot = brain.slot;
         let actor = &self.actors[slot];
+        let shell = actor.fire.typed().map(|state| state.current());
+        let artillery = cfg!(feature = "test_lab") && shell.is_some() && artillery_kind(actor.vehicle_kind());
+        let engage_m = if artillery { shell.map_or(0., |s| s.max_distance_m as f32) } else { ENGAGE_M };
         let team = self.team(slot)?;
         let here = [actor.position[0], actor.position[2]];
         // What a native player in this place is sent: the team's spotting.
@@ -517,14 +687,14 @@ impl World {
         for (other, enemy) in self.actors.iter().enumerate() {
             if other == slot || !visible[other] || self.team(other)? == team || !enemy.alive() { continue; }
             let d = distance(here, [enemy.position[0], enemy.position[2]]);
-            if d <= ENGAGE_M && target.is_none_or(|(_, best)| d < best) { target = Some((other, d)); }
+            if d <= engage_m && target.is_none_or(|(_, best)| d < best) { target = Some((other, d)); }
         }
         // Keep the current target while it stays a valid choice and no other
         // is much closer: switching restarts the aim (no flapping).
         if let (Some(current), Some((_, best))) = (brain.target, target) {
             let enemy = &self.actors[current];
             let d = distance(here, [enemy.position[0], enemy.position[2]]);
-            if visible[current] && enemy.alive() && d <= ENGAGE_M && d <= best * 1.25 { target = Some((current, d)); }
+            if visible[current] && enemy.alive() && d <= engage_m && d <= best * 1.25 { target = Some((current, d)); }
         }
         let bounds = playable_bounds(self.map.asset()).ok_or_else(bad)?;
         let inner = [bounds[0] + BOUNDS_INSET_M, bounds[1] + BOUNDS_INSET_M, bounds[2] - BOUNDS_INSET_M, bounds[3] - BOUNDS_INSET_M];
@@ -532,6 +702,7 @@ impl World {
         // this bot cannot hit from where it stands.
         let hold = match target {
             None => { brain.line = None; false },
+            Some(_) if artillery => true,
             Some((enemy, _)) => {
                 let fresh = brain.line.filter(|(e, at, _, _)| *e == enemy && self.tick.saturating_sub(*at) < LINE_RECHECK_TICKS);
                 let (clear, since) = match fresh {
@@ -567,7 +738,9 @@ impl World {
             let p = self.actors[enemy].position;
             hull_turn_for(aim::wrap((p[0] - here[0]).atan2(p[2] - here[1]) - actor.yaw), turret_yaw_limits(actor.vehicle_kind()))
         });
-        let input = if target.is_some() && hold && brain.reposition.is_none() {
+        // Indirect-fire bots hold the spawn position and pivot their hull when
+        // the mounted gun needs more traverse. They use the team's spot row.
+        let input = if artillery || target.is_some() && hold && brain.reposition.is_none() {
             brain.stuck = 0; brain.unstick = 0; brain.progress = None;
             if hull_turn != 0 { Input { throttle: 0, steer: hull_turn, speed_percent: 100 } } else { Input::STOP }
         } else if brain.unstick > 0 {
@@ -661,7 +834,6 @@ impl World {
                 _ => [0.; 3],
             };
             brain.track = Some((enemy, self.tick, observed, velocity));
-            let shell = actor.fire.typed().map(|state| state.current());
             let flight_mps = shell.map_or(actor.vehicle_kind().shell().speed(), |s| s.speed_mps as f32);
             let p = lead_point(actor.position, observed, velocity, flight_mps);
             let line = [p[0] - actor.position[0], p[2] - actor.position[2]];
@@ -674,11 +846,24 @@ impl World {
             let aimed = aim::wrap(yaw - actor.aim.yaw).abs() < AIM_TOLERANCE && (pitch - actor.aim.pitch).abs() < AIM_TOLERANCE
                 && (min..=max).contains(&pitch);
             let reloaded = actor.fire.reload_until().is_none_or(|until| until <= now) && actor.fire.ammo() > 0
+                // Complete the typed reload in the world step before using the
+                // selected projectile's ballistic aim and friendly-fire check.
+                && actor.fire.typed().is_none_or(|gun| gun.deadline().is_none() && gun.clip() > 0)
                 && actor.devices.as_ref().is_none_or(|d| d.capabilities().can_fire);
-            let sighted = brain.line.is_some_and(|(e, _, clear, _)| e == enemy && clear);
+            let sighted = artillery || brain.line.is_some_and(|(e, _, clear, _)| e == enemy && clear);
             let ready = aimed && reloaded && aim_s >= tau && sighted;
             // BOT-02: the shell's own path, against every vehicle, as the server will resolve it.
-            let fire_line = !ready || self.bot_fire_line_safe(slot, enemy, now)?;
+            let fire_line = !ready || if artillery {
+                // Recheck a blocked arc at most every 0.5 s. Every admitted
+                // shot gets a fresh probe against the current positions.
+                let blocked = brain.line.is_some_and(|(e, tick, clear, _)| e == enemy && !clear
+                    && self.tick.saturating_sub(tick) < LINE_RECHECK_TICKS);
+                if blocked { false } else {
+                    let clear = self.artillery_fire_line_safe(slot, enemy, point, now, shell.ok_or_else(bad)?)?;
+                    brain.line = (!clear).then_some((enemy, self.tick, false, self.tick));
+                    clear
+                }
+            } else { self.bot_fire_line_safe(slot, enemy, now)? };
             let clear = ready && fire_line;
             if !clear { held[if !aimed { 0 } else if aim_s < tau { 1 } else if !reloaded { 2 } else if !sighted { 3 } else { 4 }] += 1; }
             // BOT-02: the gun cannot reach the target (elevation/depression limits)
@@ -686,7 +871,7 @@ impl World {
             let reason = if !fire_line { UNHITTABLE_ALLY }
                 else if sighted && hull_turn == 0 && !(min - AIM_TOLERANCE..=max + AIM_TOLERANCE).contains(&pitch) { UNHITTABLE_ANGLES }
                 else { 0 };
-            if reason == 0 { brain.unhittable = None; } else {
+            if reason == 0 || artillery { brain.unhittable = None; } else {
                 let since = match brain.unhittable { Some((e, since, r)) if e == enemy && r == reason => since, _ => self.tick };
                 brain.unhittable = Some((enemy, since, reason));
                 if self.tick.saturating_sub(since) >= REPOSITION_TICKS && brain.reposition.is_none() {
@@ -700,6 +885,9 @@ impl World {
                 }
             }
             if clear {
+                if let Some(next) = actor.fire.typed().and_then(|gun| bot_next_shell(crate::p06t_shells091::profile(gun.mount()), gun)) {
+                    commands.push(next);
+                }
                 commands.push(Command::Fire(fire::Command::Shoot));
                 brain.error = disc(&mut brain.rng);
                 aimed_for = Some((enemy, metres, aim_s));
@@ -715,7 +903,7 @@ impl World {
         };
         if changed {
             // Aim precedes Fire so the shot leaves along the current state.
-            let at = commands.iter().position(|c| matches!(c, Command::Fire(_))).unwrap_or(commands.len());
+            let at = commands.iter().position(|c| matches!(c, Command::Fire(_) | Command::Armament(_))).unwrap_or(commands.len());
             commands.insert(at, Command::Aim(intent)); brain.sent_aim = Some(intent);
         }
         Ok((commands, aimed_for))
@@ -782,6 +970,46 @@ impl World {
         }
         Ok(true)
     }
+    /// Probe the full nominal arc to the predicted target. This uses the
+    /// mounted shell and real hull pose, so a clamped or unreachable aim cannot
+    /// admit a shot merely because the aim solver returned its current angles.
+    fn artillery_fire_line_safe(&self, slot: usize, target: usize, goal: [f32; 3], now: Instant,
+        shell: crate::p06t_shells091::Shell) -> io::Result<bool>
+    {
+        let actor = &self.actors[slot];
+        let probe = Projectile::launch_shell_for_limit(1, slot, actor, now, self.shot_limit(), shell)?;
+        let Some(seconds) = artillery_probe_seconds(&probe, goal) else { return Ok(false); };
+        let terrain = self.terrain.as_ref().ok_or_else(bad)?;
+        let excluded = self.spotting_excluded()?;
+        let at = |t| super::super::projectile::position_at(probe.origin, probe.velocity, probe.gravity, t);
+        let segments = ((seconds / ARTILLERY_ARC_STEP_S).ceil() as usize).min(ARTILLERY_ARC_SEGMENTS);
+        let mut start = probe.origin;
+        for segment in 1..=segments {
+            let end = at((segment as f32 * ARTILLERY_ARC_STEP_S).min(seconds));
+            let terrain_hit = terrain.nearest_excluding_many(start, end, &excluded)?;
+            let mut first = terrain_hit.map(|hit| (hit.t, None));
+            for (other, vehicle) in self.actors.iter().enumerate() {
+                if other == slot { continue; }
+                let geometry = self.geometry_for(vehicle.vehicle_kind())?;
+                if geometry.segment_misses(vehicle, other, self.tick, start, end)? { continue; }
+                let mesh = geometry.world_mesh(vehicle, other, self.tick)?;
+                let mut hit = super::super::collision::query(&mesh, start, end)?.first().map(|hit| hit.t);
+                if vehicle.alive() {
+                    if let Some(chassis) = geometry.chassis_mesh(vehicle, other, self.tick)? {
+                        if let Some(track) = super::super::collision::query(&chassis, start, end)?.first() {
+                            hit = Some(hit.map_or(track.t, |body| body.min(track.t)));
+                        }
+                    }
+                }
+                if let Some(t) = hit.map(f64::from) {
+                    if first.is_none_or(|(previous, _)| t < previous) { first = Some((t, Some(other))); }
+                }
+            }
+            if let Some((_, hit)) = first { return Ok(hit == Some(target)); }
+            start = end;
+        }
+        Ok(true)
+    }
     /// The bot does not fire into a hill: the sight line to its aim point must
     /// clear the terrain (same query and exclusions as spotting).
     fn bot_line_clear(&self, actor: &Actor, point: [f32; 3]) -> io::Result<bool> {
@@ -789,6 +1017,22 @@ impl World {
         let excluded = self.spotting_excluded()?;
         Ok(!terrain.any_hit_excluding_many(Self::visibility_sight_point(actor), point, &excluded)?)
     }
+}
+
+fn artillery_probe_seconds(probe: &Projectile, goal: [f32; 3]) -> Option<f32> {
+    let dx = goal[0] - probe.origin[0];
+    let dz = goal[2] - probe.origin[2];
+    let vx = probe.velocity[0];
+    let vz = probe.velocity[2];
+    let speed = vx.hypot(vz);
+    if speed <= 1. { return None; }
+    let seconds = (dx * vx + dz * vz) / speed.powi(2);
+    let limit = probe.flight_time.as_secs_f32().min(ARTILLERY_ARC_STEP_S * ARTILLERY_ARC_SEGMENTS as f32);
+    if !(seconds > 0. && seconds <= limit) { return None; }
+    let arrival = super::super::projectile::position_at(probe.origin, probe.velocity, probe.gravity, seconds);
+    let miss = (0..3).map(|i| (arrival[i] - goal[i]).powi(2)).sum::<f32>();
+    let tolerance = 2. + dx.hypot(dz) * AIM_TOLERANCE;
+    (miss <= tolerance.powi(2)).then_some(seconds)
 }
 
 /// Where the target will be when a shell fired now arrives: two fixed-point

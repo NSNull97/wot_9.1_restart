@@ -1749,7 +1749,7 @@ fn serve_with_pool_policy(key_path:&str,digest_path:&str,config_path:&str,captur
             let runtime=matchmaking::Runtime::new(rules.clone(),plan)?;
             println!("MM01_POLICY_BOUND policy={} team_size={} places={} tiers={}..{} tier_spread={} wait_s={} lease_s={} arenas={} bot_tiers={:?} historical_matchmaker=UNKNOWN",
                 super::matchmaker::POLICY,rules.team_size,rules.places(),rules.tiers.0,rules.tiers.1,rules.tier_spread,rules.wait.as_secs(),
-                rules.lease.as_secs(),arenas.len(),runtime.bot_tiers().iter().map(|(k,t)|format!("{}:{t}",k.label())).collect::<Vec<_>>());
+                rules.lease.as_secs(),arenas.len(),runtime.bot_tiers().map(|(k,t)|format!("{}:{t}",k.label())).collect::<Vec<_>>());
             Some(runtime)
         },
         _=>return Err(model::bad().into()),
